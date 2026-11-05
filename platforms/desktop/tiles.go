@@ -141,6 +141,7 @@ func (a *app) split(x *tile, side string, n *tile) {
 	}
 	line.even(false)
 	a.activate(n)
+	a.focus++
 }
 
 // fits reports whether x's line (beside it, or below) has room for another tile.
@@ -153,8 +154,12 @@ func (a *app) fits(x *tile, below bool) bool {
 	if line.leaf() {
 		room = map[bool]float32{true: x.height, false: x.width}[below]
 	}
-	return room == 0 || room/float32(line.count(below)+1) >= map[bool]float32{true: 180, false: 300}[below]
+	return room == 0 || room/float32(line.count(below)+1) >= least[below]
 }
+
+// least is the room a tile keeps: a column of text wide, and (below) a few lines of its
+// conversation over its prompt box.
+var least = map[bool]float32{true: 240, false: 300}
 
 // inLine reports whether y shares x's line of tiles beside it (or below).
 func (a *app) inLine(y, x *tile, below bool) bool {
@@ -262,8 +267,12 @@ func (a *app) place(x *tile, side, tab string, shell bool) {
 		}
 	}
 	if side == "middle" {
-		x.tab, x.shell = tab, shell
 		a.activate(x)
+		if shell {
+			x.tab, x.shell = tab, true
+		} else {
+			a.show(tab)
+		}
 		a.reshape()
 		return
 	}
@@ -359,9 +368,8 @@ func (a *app) contains(x *tile) bool {
 // top right, where its controls are.
 func (a *app) layout(c *ui.Context, x *tile, corner bool) {
 	if !x.leaf() {
-		// No tile gets narrower than a column of text, or lower than a few lines, while the room allows.
-		least := map[bool]float32{true: 180, false: 300}[x.below]
-		if lo, hi := 100*least*float32(x.a.count(x.below))/x.room, 100-100*least*float32(x.b.count(x.below))/x.room; x.room > 0 && lo < hi {
+		// No tile gets smaller than least while the room allows.
+		if lo, hi := 100*least[x.below]*float32(x.a.count(x.below))/x.room, 100-100*least[x.below]*float32(x.b.count(x.below))/x.room; x.room > 0 && lo < hi {
 			x.share = min(max(x.share, lo), hi)
 		}
 		first := func() { a.layout(c, x.a, corner && x.below) }
@@ -375,7 +383,8 @@ func (a *app) layout(c *ui.Context, x *tile, corner bool) {
 	}
 	a.building, a.corner = x, corner
 	a.narrow, a.tight = x.width > 0 && x.width < 560, x.width > 0 && x.width < 400
-	if c.FocusWithin(x.at) && a.active != x {
+	// A click into a tile focuses it; until a focus asked for is taken, the keys are still elsewhere.
+	if c.FocusWithin(x.at) && a.active != x && a.focus == a.focused {
 		a.activate(x)
 	}
 	o, pal := a.o, p(c)
@@ -517,6 +526,7 @@ func (a *app) tileMenu(bar ui.Element) {
 	}
 	many := !a.root.leaf()
 	bar.ContextMenu(func(m *ui.Menu) {
+		a.activate(x) // the menu acts on its tile, which the keys then follow
 		if m.Item("Split right").Shortcut(cmd, ui.KeyD).Chosen() {
 			a.split(x, "right", &tile{})
 		}
@@ -536,8 +546,14 @@ func (a *app) tileMenu(bar ui.Element) {
 		if many && m.Item("Close tile").Shortcut(cmd, ui.KeyW).Chosen() {
 			a.unsplit(x)
 		}
-		if x.tab != "" && !x.shell && m.Item("Close conversation").Chosen() {
-			a.close(x.tab)
+		if t := a.o.tab(x.tab); t != nil && !x.shell {
+			if m.Item("Rename…").Chosen() {
+				a.renameTab(*t)
+			}
+			m.Separator()
+			if m.Item("Close conversation").Chosen() {
+				a.close(x.tab)
+			}
 		}
 	})
 }
@@ -601,6 +617,7 @@ func (a *app) loadTiles() {
 		a.active = a.root.tiles(nil)[0]
 	}
 	a.tab = a.active.tab
+	a.focus++ // the focused tile's prompt box takes the keys, not the last one drawn
 }
 
 // saveTiles writes the layout when it changed.

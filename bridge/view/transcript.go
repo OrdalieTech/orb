@@ -112,7 +112,7 @@ func (t *transcript) note(text string, alarm bool) *item {
 // waiting says that a message sent during a run waits: steering lands after the current step,
 // a follow-up after the run.
 func (t *transcript) waiting(steer bool) {
-	t.note(map[bool]string{true: "steering · lands after the current step", false: "queued · sends when this run ends"}[steer], false)
+	t.add(&item{kind: "n", text: map[bool]string{true: "steering · lands after the current step", false: "queued · sends when this run ends"}[steer], live: true})
 }
 
 // shell is a `!command` this side ran: live until the conversation, reloaded, holds its output.
@@ -320,6 +320,10 @@ func (t *transcript) message(m wireMessage, final bool) {
 				via = ""
 				if i >= 0 {
 					t.sent = slices.Delete(t.sent, i, i+1)
+					// It landed: what said it waits goes.
+					if w := slices.IndexFunc(t.items, func(it *item) bool { return it.kind == "n" && it.live }); w >= 0 {
+						t.items = slices.Delete(t.items, w, w+1)
+					}
 				}
 			}
 			t.add(&item{kind: "y", text: text, via: via, images: c.images})

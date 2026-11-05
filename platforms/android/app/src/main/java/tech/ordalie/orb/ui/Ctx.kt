@@ -45,7 +45,7 @@ class Ctx(
 
     /** Where the next message goes: a new conversation on this phone, an Orb running somewhere, or a folder of a machine. */
     fun chooseWhere() {
-        val running = v.home.machines.flatMap { it.running }
+        val running = v.home.machines.flatMap { it.running }.filterNot { it.open } // an open conversation already follows those
         val hosts = v.home.machines.filter { !it.self && it.launch }
         val labels = listOf("new on this phone") + running.map { it.label } + hosts.map { "a folder on ${it.name}…" }
         pick(Picker("run on", labels) { choice ->
@@ -65,21 +65,37 @@ class Ctx(
         if (on == null || on.models.isEmpty()) nav.go(Screen.Providers(on?.peer ?: v.state.self)) else deck(on.id)
     }
 
-    /** Renames a Home row's thread through the Orb that has it open; [delete] offers deleting it. */
-    fun renameThread(e: Entry) = rename(Rename(e.title, if (e.deletable) ({ v.send("delete", "key" to e.key) }) else null) { name -> v.send("rename", "key" to e.key, "name" to name) })
+    /** A Home row held down: what its tab's menu offers, plus deleting a thread no Orb has open,
+     *  which, unlike closing, removes it for good (and asks first). */
+    fun threadMenu(e: Entry) {
+        val t = v.tab(e.tab)
+        pick(Picker(named(e.title), listOfNotNull("rename", "close conversation".takeIf { t != null }, "delete forever".takeIf { e.deletable })) {
+            when (it) {
+                "rename" -> rename(Rename(e.title) { name -> v.send("rename", "key" to e.key, "name" to name) })
+                "close conversation" -> t?.let(::close)
+                else -> pick(Picker("delete ${named(e.title)}? it cannot come back", listOf("delete forever", "keep it")) { yes -> if (yes == "delete forever") v.send("delete", "key" to e.key) })
+            }
+        })
+    }
 
     /** A tab held down: rename its conversation, or stop following it. */
-    fun tabMenu(t: Tab) = pick(Picker(t.title.ifEmpty { "new session" }, listOf("rename", "close conversation")) {
+    fun tabMenu(t: Tab) = pick(Picker(t.name, listOf("rename", "close conversation")) {
         if (it == "rename") rename(Rename(t.title) { name -> v.send("rename", "tab" to t.id, "name" to name) }) else close(t)
     })
 
     /** Stops following a conversation; if it was on screen, its neighbour shows (the next, else the
-     *  previous), Home once none is left. Its thread stays where it runs. */
+     *  previous), Home once none is left. Its thread stays where it runs, so for a few seconds an
+     *  undo opens it again in its place. */
     fun close(t: Tab) {
         val tabs = v.state.tabs
         val at = tabs.indexOfFirst { it.id == t.id }
         val shown = nav.open?.id == t.id
         v.send("close", "tab" to t.id)
+        v.home.entries.firstOrNull { it.tab == t.id }?.let { e ->
+            nav.closed = t.name to {
+                rt.scope.launch { v.ask("open", "key" to e.key).obj?.optString("tab")?.takeIf(String::isNotEmpty)?.let { id -> v.send("move", "tab" to id, "to" to at); nav.show(id) } }
+            }
+        }
         if (!shown) return
         val next = tabs.getOrNull(at + 1) ?: tabs.getOrNull(at - 1) ?: return nav.home()
         rt.scope.launch { snapshotFlow { v.state.tabs.none { it.id == t.id } }.first { it }; nav.show(next.id) }

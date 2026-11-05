@@ -133,7 +133,7 @@ fun PromptBox(
             }
             Row(Modifier.weight(1f).press { c.chooseModel(session) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 val on = session ?: c.fresh
-                val name = on?.model?.substringAfter('/')?.ifEmpty { null } ?: if (on?.loaded == true && on.models.isEmpty()) "connect a provider" else "model"
+                val name = on?.model?.substringAfter('/')?.ifEmpty { null } ?: if (on?.loaded == true && !on.asleep && on.models.isEmpty()) "connect a provider" else "model"
                 T("$name ▾", Modifier.weight(1f, fill = false), size = 14.sp, weight = Medium, color = p.mute, lines = 1)
                 // Reasoning as a small meter: one bar per level the model takes, lit up to the current one.
                 val levels = session?.levels.orEmpty()

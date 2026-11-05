@@ -20,6 +20,8 @@ fun ColumnScope.Home(c: Ctx) {
     val v = c.v
     Notice(c)
     Magi(c)
+    // What runs, as the desktop's sidebar says it under the same cards: "2 working · …", "needs you · …".
+    T(v.state.summary, Modifier.padding(horizontal = Margin + 2.dp, vertical = 2.dp), size = 13.sp, color = if (v.state.summary.startsWith("needs")) Ink.Rupture else p.meta, lines = 1)
     // Every thread on every machine in one list, newest first: where it lives is a detail of the row.
     // Machines narrow the list: all of them or one (whose folders open from here). New
     // conversations start from the prompt box, which also chooses where.
@@ -51,8 +53,9 @@ fun ColumnScope.Home(c: Ctx) {
         }
         items(shown, key = { it.key }) { e ->
             val m = v.machine(e.machine)
-            SessionRow(e.title, m?.name.takeIf { device.isEmpty() }.orEmpty(), if (e.unstored) "open" else ago(e.modified), e.live, e.asks, e.open, hue = v.hue(e.machine),
-                rename = { c.renameThread(e) }) { c.open(e.key) }
+            // An open one says its state as its tab does, its age once at rest; a re-sort slides it into place.
+            SessionRow(named(e.title), m?.name.takeIf { device.isEmpty() }.orEmpty(), v.tab(e.tab)?.let(v::word).orEmpty().ifEmpty { if (e.unstored) "open" else ago(e.modified) },
+                e.live, e.asks, e.open, Modifier.animateItem(), hue = v.hue(e.machine), rename = { c.threadMenu(e) }) { c.open(e.key) }
         }
         if (v.home.machines.size < 2) item(key = "pair") {
             Row(Modifier.fillMaxWidth().press { c.nav.go(Screen.Bridge) }.padding(vertical = 22.dp)) { T("No paired devices", Modifier.weight(1f), color = p.mute); T("Pair ›", weight = Medium) }
@@ -96,7 +99,8 @@ private fun Magi(c: Ctx) {
     val v = c.v
     val peers = v.home.machines.filter { !it.self }
     val connected = peers.count { it.connected }
-    val current = v.state.latest.isEmpty() || !Release.newer(v.state.latest, c.rt.version)
+    // A development build is the newest there is, whatever its number.
+    val current = v.state.latest.isEmpty() || !Release.newer(v.state.latest, c.rt.version) || c.rt.version.endsWith("-dev")
     Row(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 10.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(
             Triple("bridge", if (v.state.up) "up" else "…", v.state.up),
@@ -127,7 +131,10 @@ private fun Notice(c: Ctx) {
     val linux = rt.orb.linux
     val scope = rememberCoroutineScope()
     var updating by remember { mutableStateOf("") }
-    val next = rt.view.state.latest.takeIf { it.isNotEmpty() && Release.newer(it, rt.version) }
+    // Dismissed, an update waits for the next release to offer itself again.
+    val prefs = remember { c.context.getSharedPreferences("orb", android.content.Context.MODE_PRIVATE) }
+    var skipped by remember { mutableStateOf(prefs.getString("skip", "")) }
+    val next = rt.view.state.latest.takeIf { it.isNotEmpty() && it != skipped && Release.newer(it, rt.version) }
     val failed = linux.state.contains("failed") || updating.startsWith("could")
     val (text, act) = when {
         linux.state.isNotEmpty() -> linux.state to { if (failed) rt.setupLinux() }
@@ -145,6 +152,7 @@ private fun Notice(c: Ctx) {
     Row(Modifier.fillMaxWidth().press(onClick = act).padding(start = Margin, end = Margin, top = 12.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Dot(if (failed || next != null) Ink.Rupture else p.mute, pulse = !failed && (linux.state.isNotEmpty() || updating.startsWith("downloading"))); Spacer(Modifier.width(10.dp))
         T(text, Modifier.weight(1f), size = 14.sp, weight = Medium, color = if (failed) Ink.Rupture else p.mute, lines = 2)
+        if (next != null && linux.state.isEmpty()) Box(Modifier.press { prefs.edit().putString("skip", next).apply(); skipped = next }.padding(start = 10.dp, top = 4.dp, bottom = 4.dp)) { T("×", size = 18.sp, color = p.meta) }
     }
 }
 
@@ -155,7 +163,7 @@ fun SessionRow(title: String, meta: String, age: String, live: Boolean, asks: Bo
     Row(modifier.fillMaxWidth().press(onLong = rename, onClick = open).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Where(hue, live, asks)
         T(title, Modifier.weight(1f), size = 15.sp, weight = if (current || live) Strong else Regular, lines = 1)
-        T(listOf(meta, if (asks) "asks" else if (live) "live" else age).filter(String::isNotEmpty).joinToString(" · "), size = 13.sp, color = if (asks) Ink.Rupture else p.meta, lines = 1)
+        T(listOf(meta, if (asks) "asks" else if (live) "working" else age).filter(String::isNotEmpty).joinToString(" · "), size = 13.sp, color = if (asks) Ink.Rupture else p.meta, lines = 1)
     }
 
 /** Where a session runs, as a square: the ink for this phone, a paired device's own hue, red while

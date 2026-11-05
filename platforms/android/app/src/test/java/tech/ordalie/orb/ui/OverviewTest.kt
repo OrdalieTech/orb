@@ -83,7 +83,7 @@ class OverviewTest {
             }
         }
         compose.waitForIdle()
-        compose.onNodeWithText("fix flaky e2e").assertIsDisplayed()
+        compose.onNodeWithText("Fix flaky e2e").assertIsDisplayed()
         compose.onNodeWithText("phone · asks · run tests?").assertIsDisplayed()
         compose.onNodeWithText("Tiles on the desktop", substring = true).assertIsDisplayed()
         compose.onNodeWithText("+ new session").assertIsDisplayed()

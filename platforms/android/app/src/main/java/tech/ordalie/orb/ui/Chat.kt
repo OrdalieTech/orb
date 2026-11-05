@@ -38,7 +38,7 @@ private fun turns(rows: List<Row>): List<List<Row>> = buildList {
 @Composable
 fun ColumnScope.Chat(c: Ctx, t: Tab) {
     val v = c.v
-    Strip(t, { c.usage(t) }) { c.nav.go(Screen.Terminal(t)) }
+    Strip(t, v.word(t), { c.usage(t) }) { c.nav.go(Screen.Terminal(t)) }
     AnimatedVisibility(!t.remote && v.state.acting, enter = expandVertically(spring(stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) { PatternBlue { v.send("abort", "tab" to t.id) } }
     val turns = turns(v.rows[t.id].orEmpty())
     // Anchored at the top, the list never moves on its own: what streams in follows only a reader at
@@ -52,7 +52,10 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
         snapshotFlow { list.canScrollForward to list.layoutInfo.totalItemsCount }.collect { (more, n) -> if (follow && more && n > 0) list.requestScrollToItem(n - 1, Int.MAX_VALUE) }
     }
     Box(Modifier.weight(1f).fillMaxWidth()) {
-        val ghost by animateFloatAsState(if (turns.isEmpty()) 1f else 0f, tween(400), label = "standby")
+        // Shown only once the rows had time to come: a thread opening shows nothing, not "ready".
+        var waited by remember(t.id) { mutableStateOf(false) }
+        LaunchedEffect(t.id) { delay(700); waited = true }
+        val ghost by animateFloatAsState(if (turns.isEmpty() && waited) 1f else 0f, tween(400), label = "standby")
         if (ghost > 0f) Box(Modifier.fillMaxSize().alpha(ghost), contentAlignment = Alignment.Center) { T(t.empty, label = true, color = p.meta) }
         // Items never slide: a streamed line would set every row around it moving.
         LazyColumn(Modifier.fillMaxSize(), list) {
@@ -73,9 +76,10 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
             // Room under the last message, where the caret waits while Orb writes.
             item(key = "end") { Box(Modifier.fillMaxWidth().height(40.dp).padding(start = Margin, top = 6.dp)) { if (t.streaming) Caret(Ink.Rupture, (SIZE * 0.55f).dp, (SIZE * 1.1f).dp) } }
         }
-    }
-    AnimatedVisibility(t.status.isNotBlank(), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-        T(t.status, Modifier.padding(horizontal = Margin + 6.dp, vertical = 6.dp), size = 13.sp, color = p.meta, lines = 1)
+        // Over the room under the last message, so the list never changes height as it comes and goes.
+        androidx.compose.animation.AnimatedVisibility(t.status.isNotBlank(), Modifier.align(Alignment.BottomStart), enter = fadeIn(), exit = fadeOut()) {
+            T(t.status, Modifier.fillMaxWidth().background(p.bg).padding(horizontal = Margin + 6.dp, vertical = 6.dp), size = 13.sp, color = p.meta, lines = 1)
+        }
     }
     // What its plugins show beside it: the task list, a status, the last notice.
     t.slots.forEach { s -> Box(Modifier.padding(horizontal = Margin + 6.dp, vertical = 2.dp)) { Folded(s.lines.joinToString("\n"), if (s.alarm) Ink.Rupture else p.meta) } }
@@ -88,10 +92,9 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
  * at right, the terminal where it runs.
  */
 @Composable
-private fun Strip(t: Tab, usage: () -> Unit, terminal: () -> Unit) =
+private fun Strip(t: Tab, word: String, usage: () -> Unit, terminal: () -> Unit) =
     Row(Modifier.fillMaxWidth().padding(start = Margin, end = 10.dp).height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        val state = when { t.busy -> "working"; !t.online -> t.idleWord; else -> "" }
-        T(listOfNotNull(t.where.takeIf { t.remote }, state.ifEmpty { null }).joinToString(" · "), Modifier.weight(1f), size = 13.sp, weight = Medium, color = if (t.busy) p.fg else p.meta, lines = 1)
+        T(listOfNotNull(t.where.takeIf { t.remote }, word.ifEmpty { null }).joinToString(" · "), Modifier.weight(1f), size = 13.sp, weight = Medium, color = if (t.busy) p.fg else p.meta, lines = 1)
         // Context as a synchronisation rate, as Evangelion reads one out.
         if (t.context > 0) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Gauge(t.context, 0.8)

@@ -69,7 +69,7 @@ fun ColumnScope.FolderScreen(c: Ctx, peerId: String, cwd: String) {
     }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
         items(threads, key = { it.key }) { e ->
-            SessionRow(e.title, if (e.open) "open" else "", ago(e.modified), e.live, e.asks, hue = c.v.hue(peerId), rename = { c.renameThread(e) }) { c.open(e.key) }
+            SessionRow(e.title, if (e.open) "open" else "", ago(e.modified), e.live, e.asks, hue = c.v.hue(peerId), rename = { c.threadMenu(e) }) { c.open(e.key) }
         }
     }
 }

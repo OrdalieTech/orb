@@ -23,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/platforms/native/selfupdate"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/creack/pty"
@@ -91,6 +92,39 @@ func (s *Service) host(ctx context.Context, p bridge.Principal, method string, p
 			first := []rune(e.Preview)
 			out.Items = append(out.Items, item{e.ID, e.Name, e.CWD, modified.UnixMilli(), e.MessageCount, string(first[:min(len(first), 160)])})
 		}
+		return bridge.JSON(out), nil
+	case "host.read":
+		// A thread's last messages, as an Orb serving it would open with: a conversation shown
+		// while no Orb runs it reads as it was.
+		var q struct {
+			SessionID string `json:"session_id"`
+			Tail      int    `json:"tail,omitempty"`
+		}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		thread, err := s.state.Sessions().Open(ctx, harness.SessionMetadata{ID: q.SessionID})
+		if err != nil {
+			return nil, bridge.Fail("not_found")
+		}
+		state, err := thread.Context()
+		if err != nil {
+			return nil, err
+		}
+		from := max(len(state.Messages)-max(q.Tail, 1), 0)
+		out := struct {
+			Messages []json.RawMessage `json:"messages"`
+			From     int               `json:"from"`
+		}{[]json.RawMessage{}, len(state.Messages)}
+		size := 0
+		for i := len(state.Messages) - 1; i >= from; i-- {
+			b, err := json.Marshal(state.Messages[i])
+			if err != nil || size+len(b) > protocol.MaxFrame/2 {
+				break
+			}
+			out.Messages, out.From, size = append(out.Messages, b), i, size+len(b)
+		}
+		slices.Reverse(out.Messages)
 		return bridge.JSON(out), nil
 	case "host.launch":
 		var q struct {

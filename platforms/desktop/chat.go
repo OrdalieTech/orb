@@ -557,7 +557,7 @@ func spans(c *ui.Context, ss []Span) ui.Element {
 }
 
 // table is as wide as its cells (each column up to 28 characters, wrapping beyond); a wide one
-// scrolls sideways.
+// scrolls sideways, and fades at the side more of it is.
 func table(c *ui.Context, rows [][][]Span, size, indent float32) {
 	pal := p(c)
 	cols := 0
@@ -578,7 +578,16 @@ func table(c *ui.Context, rows [][][]Span, size, indent float32) {
 		}
 		widths[i] = float32(n)*(size-1)*0.58 + 16
 	}
-	ui.ScrollHorizontal(c).FillWidth().MarginStart(indent).Children(func() {
+	sc := ui.ScrollHorizontal(c).FillWidth().MarginStart(indent)
+	at := ui.Local(sc, "scroll", func() ui.ScrollState { return ui.ScrollState{} })
+	sc.TrackScroll(at).DrawOver(func(pt *ui.Painter, r ui.Rect) {
+		if at.X < at.MaxX-1 {
+			x := r.X + r.W - 32
+			pt.FillPathGradient((&ui.Path{}).MoveTo(x, r.Y).LineTo(r.X+r.W, r.Y).LineTo(r.X+r.W, r.Y+r.H).LineTo(x, r.Y+r.H).Close(),
+				ui.LinearGradient{From: pal.bg.Alpha(0), To: pal.bg, Angle: 90})
+		}
+	})
+	sc.Children(func() {
 		ui.Column(c).Radius(soft).Border(1, pal.rule).Clip().Dividers(1, pal.rule).Children(func() {
 			for r, row := range rows {
 				e := ui.Row(c).AlignItems(ui.Stretch)

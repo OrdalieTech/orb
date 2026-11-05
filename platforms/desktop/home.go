@@ -222,11 +222,7 @@ func (a *app) folderScreen(c *ui.Context, peer, cwd string) {
 				meta = "open"
 			}
 			row := sessionRow(c.Key(e.Key), e.Title, meta, ago(e.Modified), e.Live, e.Asks, false, o.hue(peer))
-			row.ContextMenu(func(menu *ui.Menu) {
-				if menu.Item("Rename…").Chosen() {
-					a.renameThread(e)
-				}
-			})
+			row.ContextMenu(func(menu *ui.Menu) { a.threadMenu(menu, e) })
 			if press(row) {
 				a.open(e.Key)
 			}

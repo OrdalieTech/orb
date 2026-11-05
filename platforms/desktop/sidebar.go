@@ -176,9 +176,7 @@ func (a *app) threadRow(c *ui.Context, e Entry) {
 		if m.Item("Open to the right").Chosen() {
 			a.dropped(a.active, "right", carried{key: e.Key})
 		}
-		if m.Item("Rename…").Chosen() {
-			a.renameThread(e)
-		}
+		a.threadMenu(m, e)
 	})
 	if press(row) {
 		a.open(e.Key)

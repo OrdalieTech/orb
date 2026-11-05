@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"runtime"
 	"slices"
 	"strings"
@@ -25,11 +26,10 @@ type picker struct {
 	at       *ui.Handle // the trigger it opens out of; none, a dialog
 }
 
-// renaming is a name to change, with the current one ready to edit, and maybe a way to delete it.
+// renaming is a name to change, with the current one ready to edit.
 type renaming struct {
-	name   string
-	delete func()
-	apply  func(string)
+	name  string
+	apply func(string)
 }
 
 // app is everything the window shows that the view does not say: where it is, each conversation's
@@ -61,6 +61,7 @@ type app struct {
 	reading    bool      // fresh is being read
 	viewing    [2]string // an image shown whole: its reference and conversation
 	notice     string    // one line that fades: copied, or why something failed
+	undo       func()    // what takes back what it says, while it shows
 	lists      map[string]*ui.ListState
 	shells     map[string]*shell // each conversation's terminal, while it lives
 	answer     map[string]string // the free answer typed to an interrupt
@@ -106,7 +107,14 @@ func (a *app) top() screen {
 }
 
 func (a *app) push(s screen) { reread(); a.fresh = nil; a.stack = append(a.stack, s) }
-func (a *app) back()         { reread(); a.fresh = nil; a.stack = a.stack[:max(len(a.stack)-1, 0)] }
+func (a *app) back() {
+	reread()
+	a.fresh = nil
+	a.stack = a.stack[:max(len(a.stack)-1, 0)]
+	if len(a.stack) == 0 {
+		a.focus++ // back in the tiles, the focused one's prompt box has the keys again
+	}
+}
 
 // next is the model sheet of the conversation Home starts.
 const next = "next"
@@ -142,6 +150,10 @@ func (a *app) show(tab string) {
 		return
 	}
 	x := a.active
+	// Among tiles, the conversation shown here goes out of sight: say where it still is.
+	if was := a.o.tab(x.tab); was != nil && x.tab != tab && !a.root.leaf() && !x.shell {
+		a.say("“" + cmp.Or(was.Title, "new session") + "” is still open in the sidebar")
+	}
 	if x.shell {
 		if s := a.showing(x.tab); s != nil {
 			x = s
@@ -153,9 +165,12 @@ func (a *app) show(tab string) {
 }
 
 // say shows a line for a moment.
-func (a *app) say(s string) {
-	a.notice = s
-	time.AfterFunc(4*time.Second, func() {
+func (a *app) say(s string) { a.offer(s, nil) }
+
+// offer shows a line with what takes it back, for longer: the hand has to reach it.
+func (a *app) offer(s string, undo func()) {
+	a.notice, a.undo = s, undo
+	time.AfterFunc(map[bool]time.Duration{true: 4, false: 8}[undo == nil]*time.Second, func() {
 		a.o.win.Update(func() {
 			if a.notice == s {
 				a.notice = ""
@@ -199,6 +214,9 @@ func (a *app) view(c *ui.Context) {
 	}
 	o.show(shown)
 	a.shortcuts(c)
+	if len(a.stack) > 0 && a.picker == nil && a.rename == nil && a.model == "" {
+		c.OnShortcut(0, ui.KeyEscape, a.back)
+	}
 	main := func() {
 		ui.Column(c).Fill().Background(pal.bg).Children(func() {
 			top := a.top()
@@ -272,6 +290,12 @@ func (a *app) titleBar(c *ui.Context, body func()) {
 // Among tiles, its tiles close.
 func (a *app) close(id string) {
 	tabs := a.o.state.Tabs
+	// A closed conversation can come back for a moment: its thread reopens in the focused tile.
+	for _, e := range a.o.home.Entries {
+		if e.Tab == id {
+			a.offer("closed “"+cmp.Or(e.Title, "new session")+"”", func() { a.open(e.Key) })
+		}
+	}
 	for _, t := range a.root.tiles(nil) {
 		if t.tab != id {
 			continue
@@ -299,13 +323,19 @@ func (a *app) renameTab(t Tab) {
 	a.rename = &renaming{name: t.Title, apply: func(name string) { a.o.send("rename", "tab", t.ID, "name", name) }}
 }
 
-// renameThread renames a Home row's thread through the Orb that has it open, and offers deleting it.
-func (a *app) renameThread(e Entry) {
-	r := &renaming{name: e.Title, apply: func(name string) { a.o.send("rename", "key", e.Key, "name", name) }}
-	if e.Deletable {
-		r.delete = func() { a.o.send("delete", "key", e.Key) }
+// threadMenu is a thread's menu, as the phone's: rename it through the Orb that has it open, or
+// delete one no Orb has open, which unlike closing cannot come back, so it asks first.
+func (a *app) threadMenu(m *ui.Menu, e Entry) {
+	if m.Item("Rename…").Chosen() {
+		a.rename = &renaming{name: e.Title, apply: func(name string) { a.o.send("rename", "key", e.Key, "name", name) }}
 	}
-	a.rename = r
+	if e.Deletable && m.Item("Delete forever…").Chosen() {
+		a.picker = &picker{title: "delete “" + e.Title + "”? it cannot come back", options: []string{"delete forever", "keep it"}, pick: func(s string) {
+			if s == "delete forever" {
+				a.o.send("delete", "key", e.Key)
+			}
+		}}
+	}
 }
 
 // send sends what the prompt box holds: the view runs commands and messages, and names what only
@@ -373,7 +403,11 @@ func (a *app) chooseWhere() {
 	var running []Running
 	var hosts []Machine
 	for _, m := range a.o.home.Machines {
-		running = append(running, m.Running...)
+		for _, r := range m.Running {
+			if !r.Open {
+				running = append(running, r)
+			}
+		}
 		if !m.Self && m.Launch {
 			hosts = append(hosts, m)
 		}
@@ -634,10 +668,6 @@ func (a *app) renameSheet(c *ui.Context) {
 			if ui.TextInputBase(c, &r.name).Grow(1).FontSize(17).FontWeight(medium).LetterSpacing(-0.3).AutoFocus().Submitted() {
 				done()
 			}
-			if r.delete != nil && btn(c, "delete", false, rupture, pal.bg) {
-				r.delete()
-				a.rename = nil
-			}
 			if btn(c, "save", true, pal.fg, pal.bg) {
 				done()
 			}
@@ -660,7 +690,13 @@ func (a *app) toast(c *ui.Context) {
 			slide := ui.Animation{Duration: 400 * time.Millisecond, Ease: ui.EaseInOut}
 			ui.Row(c.Key(a.notice)).Padding(8, 14).Radius(10).Background(pal.fg).Shadow(0, 8, 24, 0, ui.RGBA(0, 0, 0, 0.18)).
 				Transition(ui.ElementTransition{Enter: &ui.Motion{Y: 16}, Exit: &ui.Motion{Y: 16}, Animation: &slide}).
-				Children(func() { ui.Text(c, a.notice).FontSize(small).TextColor(pal.bg).MaxWidth(520).MaxLines(3) })
+				Gap(14).Children(func() {
+				ui.Text(c, a.notice).FontSize(small).TextColor(pal.bg).MaxWidth(520).MaxLines(3)
+				if a.undo != nil && press(ui.Text(c, "undo").FontSize(small).FontWeight(strong).TextColor(pal.bg)) {
+					a.undo()
+					a.notice, a.undo = "", nil
+				}
+			})
 		})
 	})
 }

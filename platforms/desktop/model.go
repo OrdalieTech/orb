@@ -133,6 +133,7 @@ type Running struct {
 	Instance string `json:"instance"`
 	Label    string `json:"label"`
 	Busy     bool   `json:"busy"`
+	Open     bool   `json:"open"`
 }
 
 type Folder struct {
@@ -151,6 +152,7 @@ type Entry struct {
 	Live      bool   `json:"live"`
 	Asks      bool   `json:"asks"`
 	Open      bool   `json:"open"`
+	Tab       string `json:"tab"`
 	Unstored  bool   `json:"unstored"`
 	Deletable bool   `json:"deletable"`
 }
