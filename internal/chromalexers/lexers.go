@@ -91,11 +91,6 @@ var globalLexerRegistry = sync.OnceValue(func() *chroma.LexerRegistry {
 	return reg
 })
 
-// Names of all lexers, optionally including aliases.
-func Names(withAliases bool) []string {
-	return globalLexerRegistry().Names(withAliases)
-}
-
 // Get a Lexer by name, alias or file extension.
 //
 // Note that this if there isn't an exact match on name or alias, this will
@@ -129,11 +124,6 @@ func registerLazy(build func() chroma.Lexer) func() chroma.Lexer {
 // built.
 func registerSetup(setup func(*chroma.LexerRegistry)) {
 	pendingSetup = append(pendingSetup, setup)
-}
-
-// Analyse text content and return the "best" lexer..
-func Analyse(text string) chroma.Lexer {
-	return globalLexerRegistry().Analyse(text)
 }
 
 // PlaintextRules is used for the fallback lexer as well as the explicit

@@ -192,13 +192,6 @@ func (catalog *Catalog) BaseModels(overlay *Catalog) []ai.Model {
 	return catalog.models
 }
 
-func (catalog *Catalog) MarshalJSON() ([]byte, error) {
-	if catalog == nil {
-		return []byte("{}"), nil
-	}
-	return json.Marshal(catalog.providers)
-}
-
 func cloneProviders(source map[string]map[string]ai.Model) map[string]map[string]ai.Model {
 	result := make(map[string]map[string]ai.Model, len(source))
 	for providerID, entries := range source {

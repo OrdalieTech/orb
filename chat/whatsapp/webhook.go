@@ -11,8 +11,9 @@ import (
 
 // Status is one entry of the statuses[] webhook array. The lifecycle per
 // message id is sent → delivered → read (or the terminal failed), but
-// callbacks arrive out of order: consumers must keep the highest
-// [StatusRank] seen per MessageID instead of trusting arrival order.
+// callbacks arrive out of order: consumers must keep the furthest-progressed
+// status seen per MessageID (failed > read > delivered > sent) instead of
+// trusting arrival order.
 type Status struct {
 	// MessageID is the wamid of the outbound message the status refers to.
 	MessageID string `json:"id"`
@@ -24,23 +25,6 @@ type Status struct {
 	RecipientID string `json:"recipient_id"`
 	// Errors is populated on "failed" statuses.
 	Errors []GraphError `json:"errors,omitempty"`
-}
-
-// StatusRank orders status values so out-of-order callbacks can be reduced
-// to the furthest-progressed state: read > delivered > sent, with the
-// terminal "failed" above all and unknown values at 0.
-func StatusRank(status string) int {
-	switch status {
-	case "sent":
-		return 1
-	case "delivered":
-		return 2
-	case "read":
-		return 3
-	case "failed":
-		return 4
-	}
-	return 0
 }
 
 // webhookPayload is the Cloud API webhook envelope subset the gateway reads.

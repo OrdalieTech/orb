@@ -1,6 +1,7 @@
 package claudesessions
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -452,4 +453,15 @@ func TestSyncRepointsADriftedTranscript(t *testing.T) {
 	if len(got) != 5 || !strings.Contains(got[4], `"leafUuid":"a2"`) {
 		t.Fatalf("file = %s", data)
 	}
+}
+
+// parentsIn maps each record of a session file's data to its parent.
+func parentsIn(data []byte) map[string]string {
+	parents := map[string]string{}
+	for line := range bytes.SplitSeq(data, []byte("\n")) {
+		if l := readLinks(line); l.UUID != "" {
+			parents[l.UUID] = l.Parent
+		}
+	}
+	return parents
 }

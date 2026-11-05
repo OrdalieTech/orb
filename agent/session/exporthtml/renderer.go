@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 // RenderedToolHTML is the custom-tool HTML envelope consumed by the embedded
@@ -128,7 +129,7 @@ func preRenderCustomTools(entries []session.SessionEntry, renderer ToolHTMLRende
 					toolCallID := decodeJSONString(block["id"])
 					callHTML := renderer.RenderCall(toolCallID, toolName, decodeJSONValue(block["arguments"]))
 					if callHTML != nil && *callHTML != "" {
-						renderedTools.set(toolCallID, RenderedToolHTML{CallHTML: cloneString(callHTML)})
+						renderedTools.set(toolCallID, RenderedToolHTML{CallHTML: ptr.Clone(callHTML)})
 					}
 				}
 			}
@@ -156,8 +157,8 @@ func preRenderCustomTools(entries []session.SessionEntry, renderer ToolHTMLRende
 		if result == nil {
 			continue
 		}
-		existing.ResultHTMLCollapsed = cloneString(result.Collapsed)
-		existing.ResultHTMLExpanded = cloneString(result.Expanded)
+		existing.ResultHTMLCollapsed = ptr.Clone(result.Collapsed)
+		existing.ResultHTMLExpanded = ptr.Clone(result.Expanded)
 		renderedTools.set(toolCallID, existing)
 	}
 	if renderedTools.len() == 0 {
@@ -203,12 +204,4 @@ func decodeJSONValue(raw json.RawMessage) any {
 		return nil
 	}
 	return value
-}
-
-func cloneString(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
 }

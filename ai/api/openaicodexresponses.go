@@ -16,6 +16,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/auth/oauth"
+	"github.com/OrdalieTech/orb/internal/ctxsleep"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
@@ -28,7 +29,7 @@ const (
 
 var (
 	errCodexTerminal = errors.New("ai/api: Codex terminal response")
-	openAICodexSleep = sleepWithContext
+	openAICodexSleep = ctxsleep.Sleep
 	// Mirrors upstream /rate.?limit|overloaded|service.?unavailable|upstream.?connect|connection.?refused/i.
 	codexRetryableTextPattern = lazyregexp.New(`(?i)rate.?limit|overloaded|service.?unavailable|upstream.?connect|connection.?refused`)
 )
@@ -1025,15 +1026,4 @@ func parseOpenAICodexHTTPError(status int, statusText string, contents []byte) e
 		}
 	}
 	return errors.New(message)
-}
-
-func sleepWithContext(ctx context.Context, duration time.Duration) error {
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
 }

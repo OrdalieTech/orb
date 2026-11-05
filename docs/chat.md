@@ -233,7 +233,8 @@ verifies `X-Hub-Signature-256` (HMAC-SHA256 over the raw body, `hmac.Equal`) **b
 403 on mismatch; then iterates `entry[].changes[]` with `field == "messages"`. `EventID` is the
 wamid — Meta redelivers on non-2xx, and the ledger dedupes. `statuses[]` entries go to
 `Options.OnStatus` (`Status` carries wamid, status, timestamp, recipient, errors); callbacks
-arrive out of order, so reduce with `StatusRank` (failed > read > delivered > sent).
+arrive out of order, so keep the furthest-progressed status per wamid (failed > read > delivered >
+sent).
 
 **Delivery** — final-message-only. The Cloud API cannot edit sent messages, so `Preview` is a
 no-op and `PreviewID` returns "" (the processor tolerates preview-less adapters — the coalescer

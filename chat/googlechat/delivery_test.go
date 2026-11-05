@@ -21,6 +21,9 @@ var testKey = chat.ConversationKey{
 
 const testReplyTo = "spaces/AAAA/messages/BBBB.CCCC"
 
+// maxMessageLen is Google Chat's hard per-message character cap.
+const maxMessageLen = 4096
+
 // writeCalls filters the recorded calls down to message writes.
 func writeCalls(calls []apiCall) []apiCall {
 	var out []apiCall

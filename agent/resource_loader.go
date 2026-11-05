@@ -9,6 +9,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/internal/ptr"
 	"github.com/OrdalieTech/orb/internal/themefile"
 )
 
@@ -228,7 +229,7 @@ func (loader *DefaultResourceLoader) Reload(ctx context.Context, reloadOptions *
 		resources.ContextFiles = append([]ContextFile(nil), result.AgentsFiles...)
 	}
 	if options.SystemPromptOverride != nil {
-		resources.SystemPrompt = options.SystemPromptOverride(cloneStringPointer(resources.SystemPrompt))
+		resources.SystemPrompt = options.SystemPromptOverride(ptr.Clone(resources.SystemPrompt))
 	}
 	if options.AppendSystemPromptOverride != nil {
 		resources.AppendSystemPrompt = append([]string(nil), options.AppendSystemPromptOverride(append([]string(nil), resources.AppendSystemPrompt...))...)
@@ -290,7 +291,7 @@ func (loader *DefaultResourceLoader) GetAgentsFiles() ResourceAgentsFilesResult 
 func (loader *DefaultResourceLoader) GetSystemPrompt() *string {
 	loader.mu.RLock()
 	defer loader.mu.RUnlock()
-	return cloneStringPointer(loader.resources.SystemPrompt)
+	return ptr.Clone(loader.resources.SystemPrompt)
 }
 
 func (loader *DefaultResourceLoader) GetSystemPromptSource() *PromptSource {
@@ -594,14 +595,6 @@ func cloneResourceExtensionPaths(paths ResourceExtensionPaths) ResourceExtension
 		PromptPaths: append([]ResourcePath(nil), paths.PromptPaths...),
 		ThemePaths:  append([]ResourcePath(nil), paths.ThemePaths...),
 	}
-}
-
-func cloneStringPointer(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	clone := *value
-	return &clone
 }
 
 var _ ResourceLoader = (*DefaultResourceLoader)(nil)
