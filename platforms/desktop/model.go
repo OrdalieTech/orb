@@ -80,8 +80,7 @@ type Command struct {
 }
 
 type Claim struct {
-	Invitation string `json:"invitation"`
-	Claimant   string `json:"claimant"`
+	Claimant string `json:"claimant"`
 }
 
 type Invitation struct {
@@ -90,14 +89,13 @@ type Invitation struct {
 }
 
 type Login struct {
-	Machine      string  `json:"machine"`
-	Provider     string  `json:"provider"`
-	State        string  `json:"state"` // starting · browser · code · asking · done · failed
-	URL          string  `json:"url"`
-	Instructions string  `json:"instructions"`
-	Code         string  `json:"code"`
-	Detail       string  `json:"detail"`
-	Prompt       *Prompt `json:"prompt"`
+	Machine  string  `json:"machine"`
+	Provider string  `json:"provider"`
+	State    string  `json:"state"` // starting · browser · code · asking · done · failed
+	URL      string  `json:"url"`
+	Code     string  `json:"code"`
+	Detail   string  `json:"detail"`
+	Prompt   *Prompt `json:"prompt"`
 }
 
 type Prompt struct {

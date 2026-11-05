@@ -251,16 +251,6 @@ fun Gauge(value: Double, alarm: Double) = Row(horizontalArrangement = Arrangemen
     }
 }
 
-/** A section's name as a HUD numbers it: its index in red, its name, a hairline to the edge. */
-@Composable
-fun HudLabel(index: Int, name: String, state: String = "", modifier: Modifier = Modifier) =
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        T("%02d".format(index), size = Size.Label, weight = Strong, color = Ink.Rupture)
-        T(name, label = true, color = p.meta, lines = 1)
-        Box(Modifier.weight(1f).height(1.dp).background(p.rule.copy(alpha = 0.7f)))
-        if (state.isNotEmpty()) T(state, size = Size.Label, color = p.meta)
-    }
-
 /** 0 to 1 over 260 ms, easing out, from the first composition: what wipes in plays it once. */
 @Composable
 fun reveal(key: Any?, delay: Int = 0): Float {
