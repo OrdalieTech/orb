@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- The terminal UI takes a few of the apps' ideas: the footer shows the model's reasoning as small bars, one per level, lit up to the current one; what is left of the plan window nearest its end once under a quarter (`5h 18% left`, red under a tenth); and, when other Orbs on this machine's Bridge ask or work, `1 asks · 2 working`. A permission approval or a plugin's question is edged in red, and `/model` lists the current model and the machine's default first, the default tagged `default`.
+
 - Orb for the desktop (`platforms/desktop`) replaces the SwiftUI Mac app, on macOS, Linux and Windows: Go drawn by MyGo's native UI, in the Android app's look, with a sidebar of the conversations open and every machine's threads, conversations tiled side by side or stacked as a tiling window manager does (⌘D, ⌘⇧D, ⌘W, ⌘[ ⌘], ⌘=, ⌘⇧↩ to zoom one, or dragging threads and tiles onto a tile's sides; tiles glide as the layout changes), providers, plugins and Bridge beside them, the pairing code as a QR code a phone photographs, and the terminal where a conversation runs under it (⌘J). `platforms/desktop/build.sh` packages each platform's app with its `orb`; `platforms/apple` now builds the iOS app only.
 
 - The Android app's overview (the four squares by the menu) shows every open conversation at once as a live card: where it runs, its title, its state (red while it asks), the end of its transcript as it streams and its context; a tap grows a card into its conversation (and a conversation shrinks back into its card), a hold opens its menu, a swipe aside closes it.

@@ -41,6 +41,7 @@ type ExtensionSelectorComponent struct {
 	onCancel              func()
 	onToggleToolsExpanded func()
 	countdown             *CountdownTimer
+	interrupt             bool
 	// rows holds the first row of every option plus a trailing end row;
 	// options wrap at narrow widths, so their heights cannot be assumed.
 	rows listRowOffsets
@@ -68,7 +69,8 @@ func NewExtensionSelectorItemsComponent(
 		component.ui, _ = config.ui.(*tui.TUI)
 		component.pinnedOptions = config.pinnedOptions
 	}
-	if config != nil && config.card != "" && component.ui != nil {
+	component.interrupt = config != nil && config.card != ""
+	if component.interrupt && component.ui != nil {
 		component.container.AddChild(newInterruptCard(config.card, component.ui))
 	}
 	component.title = tui.NewText(theme.FG("accent", theme.Bold(title)), 1, 0, nil)
@@ -487,6 +489,18 @@ func (card interruptCard) Render(width int) []string {
 	}
 	if lines != nil {
 		lines = append(lines, "")
+	}
+	return lines
+}
+
+// interruptFrame edges an interrupt's dialog in red, as the apps' interrupt screen is: the rail
+// takes the frame's blank first column, so mouse coordinates stay the frame's.
+type interruptFrame struct{ *tui.Frame }
+
+func (frame interruptFrame) Render(width int) []string {
+	lines := frame.Frame.Render(width)
+	for index, line := range lines {
+		lines[index] = theme.FG("error", "▌") + tui.SliceByColumn(line, 1, width-1, true)
 	}
 	return lines
 }

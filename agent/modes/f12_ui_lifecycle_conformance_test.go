@@ -813,7 +813,7 @@ func TestF12ModelSelectorFilteringMatchesUpstream(t *testing.T) {
 	}
 
 	var got f12ModelSelectorFixture
-	all := NewModelSelectorComponent(&alpha1, models, nil, nil, nil, "")
+	all := NewModelSelectorComponent(&alpha1, nil, models, nil, nil, nil, "")
 	all.HandleInput(tui.KeyEvent{Raw: "\x1b[B"})
 	all.HandleInput(tui.KeyEvent{Raw: "\x1b[B"})
 	got.All.BeforeQuery = selectedID(all)
@@ -827,7 +827,7 @@ func TestF12ModelSelectorFilteringMatchesUpstream(t *testing.T) {
 	got.All.AfterClear = selectedID(all)
 
 	scoped := NewModelSelectorComponent(
-		&alpha1,
+		&alpha1, nil,
 		models,
 		[]agent.ScopedModel{{Model: alpha2}, {Model: alpha3}, {Model: alpha1}},
 		nil,

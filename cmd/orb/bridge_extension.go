@@ -109,6 +109,60 @@ func (b ownerBridge) Call(ctx context.Context, peer, method string, params, resu
 
 func (b ownerBridge) Self() string { return b.args.bridgeLink.self() }
 
+// others is what this machine's other Orbs on Bridge are doing, counted as the apps' summary
+// counts them: "1 asks · 2 working", "" when they are quiet or this Orb is not on Bridge. catalogs
+// keeps each one's describe digest, so their models and commands are not sent again.
+func (b ownerBridge) others(ctx context.Context, catalogs map[string]string) string {
+	self := b.Self()
+	if self == "" {
+		return ""
+	}
+	admin, err := b.admin(ctx)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = admin.Close() }()
+	var status struct {
+		PeerID    string            `json:"peer_id"`
+		Instances []bridge.Instance `json:"instances"`
+	}
+	if admin.Call(ctx, "status", struct{}{}, &status) != nil {
+		return ""
+	}
+	asks, working := 0, 0
+	for _, instance := range status.Instances {
+		if !instance.Available || instance.ID == self {
+			continue
+		}
+		var d struct {
+			Catalog string    `json:"catalog"`
+			Input   *struct{} `json:"input"`
+			Target  struct {
+				Execution string `json:"execution_id"`
+			} `json:"target"`
+		}
+		params := map[string]string{"instance_id": instance.ID, "catalog": catalogs[instance.ID]}
+		if admin.Call(ctx, "remote", map[string]any{"peer_id": status.PeerID, "method": "instances.describe", "params": params}, &d) != nil {
+			continue
+		}
+		catalogs[instance.ID] = d.Catalog
+		switch {
+		case d.Input != nil:
+			asks++
+		case d.Target.Execution != "":
+			working++
+		}
+	}
+	var parts []string
+	if asks > 0 {
+		parts = append(parts, fmt.Sprintf("%d asks", asks))
+	}
+	if working > 0 {
+		parts = append(parts, fmt.Sprintf("%d working", working))
+	}
+	return strings.Join(parts, " · ")
+}
+
 // setBridgeStatus shows Bridge as one footer dot. The status key names the
 // command, so clicking the dot opens /bridge.
 func setBridgeStatus(ui extensions.UI, on bool) {

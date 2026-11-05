@@ -302,6 +302,8 @@ type InteractiveModeSettings struct {
 	DefaultProjectTrust  string
 	ShowTerminalProgress bool
 	MermaidRenderingMode string
+	// DefaultProvider and DefaultModel name the model new sessions start on, when set.
+	DefaultProvider, DefaultModel string
 }
 
 func (runtime *SessionRuntime) InteractiveModeSettings() InteractiveModeSettings {
@@ -330,6 +332,8 @@ func (runtime *SessionRuntime) InteractiveModeSettings() InteractiveModeSettings
 		DefaultProjectTrust:  runtime.settings.GetDefaultProjectTrust(),
 		ShowTerminalProgress: runtime.settings.GetShowTerminalProgress(),
 		MermaidRenderingMode: runtime.settings.GetMermaidRenderingMode(),
+		DefaultProvider:      runtime.settings.GetDefaultProvider(),
+		DefaultModel:         runtime.settings.GetDefaultModel(),
 	}
 }
 
@@ -748,7 +752,8 @@ func (runtime *SessionRuntime) AvailableThinkingLevels() []ai.ModelThinkingLevel
 	if runtime == nil {
 		return nil
 	}
-	return append([]ai.ModelThinkingLevel(nil), ai.SupportedThinkingLevels(runtime.agent.State().Model)...)
+	// The footer asks on every frame: State would copy the transcript.
+	return ai.SupportedThinkingLevels(runtime.agent.Model())
 }
 
 func providerLoginHelp() string {
@@ -990,33 +995,32 @@ func (runtime *SessionRuntime) GetSessionStats() SessionStats {
 			continue
 		}
 		stats.TotalMessages++
-		switch jsonwire.MessageRole(entry.Message) {
-		case "user":
+		// The entries' decoded messages: reading each role from its JSON again made every
+		// describe of a long thread O(its bytes).
+		message, err := entry.DecodedMessage()
+		if err != nil {
+			switch jsonwire.MessageRole(entry.Message) {
+			case "user":
+				stats.UserMessages++
+			case "toolResult":
+				stats.ToolResults++
+			}
+			continue
+		}
+		switch message := message.(type) {
+		case *ai.UserMessage:
 			stats.UserMessages++
-		case "toolResult":
+		case *ai.ToolResultMessage:
 			stats.ToolResults++
-			message, err := ai.UnmarshalMessage(entry.Message)
-			if err == nil {
-				if toolResult, ok := message.(*ai.ToolResultMessage); ok {
-					addSessionUsage(&stats.Tokens, &stats.Cost, toolResult.Usage)
-				}
-			}
-		case "assistant":
-			message, err := ai.UnmarshalMessage(entry.Message)
-			if err != nil {
-				continue
-			}
-			assistant, ok := message.(*ai.AssistantMessage)
-			if !ok {
-				continue
-			}
+			addSessionUsage(&stats.Tokens, &stats.Cost, message.Usage)
+		case *ai.AssistantMessage:
 			stats.AssistantMessages++
-			for _, content := range assistant.Content {
+			for _, content := range message.Content {
 				if _, ok := content.(*ai.ToolCall); ok {
 					stats.ToolCalls++
 				}
 			}
-			addSessionUsage(&stats.Tokens, &stats.Cost, &assistant.Usage)
+			addSessionUsage(&stats.Tokens, &stats.Cost, &message.Usage)
 		}
 	}
 	stats.Tokens.Total = stats.Tokens.Input + stats.Tokens.Output + stats.Tokens.CacheRead + stats.Tokens.CacheWrite

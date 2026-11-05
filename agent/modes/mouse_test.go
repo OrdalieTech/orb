@@ -191,7 +191,7 @@ func modelSelectorMouseFixture(t *testing.T, count int, onSelect func(ai.Model))
 			Provider: "prov",
 		}
 	}
-	return NewModelSelectorComponent(nil, models, nil, onSelect, nil, "")
+	return NewModelSelectorComponent(nil, nil, models, nil, onSelect, nil, "")
 }
 
 func TestModelSelectorClickWheelHoverAndDoubleClick(t *testing.T) {

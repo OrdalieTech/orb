@@ -19,7 +19,7 @@ func TestModelSelectorSearchAndKeyboardParity(t *testing.T) {
 
 	var selected ai.Model
 	cancelled := false
-	selector := NewModelSelectorComponent(&alpha1, models, scoped, func(model ai.Model) {
+	selector := NewModelSelectorComponent(&alpha1, nil, models, scoped, func(model ai.Model) {
 		selected = model
 	}, func() {
 		cancelled = true
@@ -67,7 +67,7 @@ func TestModelSelectorSearchAndKeyboardParity(t *testing.T) {
 		t.Fatalf("selected model = %#v, want actual direct model", selected)
 	}
 
-	cancelSelector := NewModelSelectorComponent(&alpha1, models, scoped, nil, func() {
+	cancelSelector := NewModelSelectorComponent(&alpha1, nil, models, scoped, nil, func() {
 		cancelled = true
 	}, "")
 	cancelSelector.HandleInput(tui.KeyEvent{Raw: "\x1b"})
@@ -80,7 +80,7 @@ func TestModelSelectorSaveDefaultUsesHighlightedFilteredModel(t *testing.T) {
 	initTestTheme(t)
 	models := []ai.Model{{Provider: "groq", ID: "first"}, {Provider: "groq", ID: "second"}}
 	chosen, saved := "", ""
-	selector := NewModelSelectorComponent(&models[0], models, nil, func(model ai.Model) { chosen = model.ID }, func() {}, "second")
+	selector := NewModelSelectorComponent(&models[0], nil, models, nil, func(model ai.Model) { chosen = model.ID }, func() {}, "second")
 	selector.onSaveDefault = func(model ai.Model) { saved = model.ID }
 	selector.HandleInput(tui.KeyEvent{Raw: "\x13"})
 	if saved != "second" || chosen != "" {

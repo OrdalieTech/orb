@@ -1010,6 +1010,9 @@ func configOverlayOptions() tui.OverlayOptions {
 // it as a centered floating overlay over the veiled page.
 func (ui *InteractiveUI) floatDialog(component tui.Component) tui.OverlayHandle {
 	frame := menuFrame("", component)
+	if dialog, ok := component.(*ExtensionSelectorComponent); ok && dialog.interrupt {
+		return ui.mode.ui.ShowOverlay(interruptFrame{frame}, configOverlayOptions())
+	}
 	return ui.mode.ui.ShowOverlay(frame, configOverlayOptions())
 }
 

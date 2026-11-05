@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -144,6 +145,7 @@ type InteractiveMode struct {
 	statusNoticeStarted    time.Time
 	statusNoticeOpening    bool
 	footerStatuses         map[string]string
+	others                 string // what this machine's other Orbs are doing, from the host
 	footerTooltip          tui.OverlayHandle
 	autocompleteProvider   tui.AutocompleteProvider
 	paletteCommands        []tui.SlashCommand
@@ -452,6 +454,14 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 	}
 	stopTerminalBackground := mode.watchTerminalBackground(ctx)
 	defer stopTerminalBackground()
+	if host, ok := mode.options.Host.(InteractiveFooterHost); ok {
+		go host.WatchOthers(authContext, func(others string) {
+			mode.mu.Lock()
+			mode.others = others
+			mode.mu.Unlock()
+			mode.ui.RequestRender()
+		})
+	}
 	mode.setupAutocomplete()
 	mode.setupExtensionShortcuts()
 	if mode.options.StartupModelRefresh != nil {
@@ -2163,7 +2173,7 @@ func (mode *InteractiveMode) handleThinkingCommand(args string) {
 			items := make([]tui.SelectItem, len(levels))
 			selected := 0
 			for i, level := range levels {
-				items[i] = tui.SelectItem{Value: string(level), Label: thinkingMeter(string(level)) + " " + string(level)}
+				items[i] = tui.SelectItem{Value: string(level), Label: thinkingMeter(levels, level) + " " + string(level)}
 				if level == current {
 					selected = i
 				}
@@ -2254,6 +2264,14 @@ func (mode *InteractiveMode) showModelSelector(initialSearch string) {
 		scoped = nil
 	}
 	current := mode.session.State().Model
+	// As a new session picks it: the settings' default, else the preferred available model.
+	settings := mode.session.InteractiveModeSettings()
+	defaultModel := agent.PreferredAvailableModel(models)
+	if index := slices.IndexFunc(models, func(model ai.Model) bool {
+		return string(model.Provider) == settings.DefaultProvider && model.ID == settings.DefaultModel
+	}); index >= 0 {
+		defaultModel = &models[index]
+	}
 	ctx, cancel := context.WithCancel(mode.authenticationContext())
 	done := make(chan struct{})
 	mode.mu.Lock()
@@ -2270,7 +2288,7 @@ func (mode *InteractiveMode) showModelSelector(initialSearch string) {
 			}
 			mode.mu.Unlock()
 		}()
-		selected, persist, ok := mode.selectModelSearchable(ctx, current, models, scoped, initialSearch)
+		selected, persist, ok := mode.selectModelSearchable(ctx, current, defaultModel, models, scoped, initialSearch)
 		if !ok {
 			return
 		}
@@ -4051,7 +4069,7 @@ func (mode *InteractiveMode) StatusAction(key string) func() {
 	if key == "orb:thinking" {
 		return mode.cycleThinkingLevel
 	}
-	if key == "provider-usage" {
+	if key == "provider-usage" || key == "orb:limit" {
 		if host, ok := mode.options.Host.(InteractiveProviderHost); ok {
 			return func() { go mode.showProviders(host) }
 		}
@@ -4071,7 +4089,7 @@ func (mode *InteractiveMode) StatusLabel(key string) string {
 	switch key {
 	case "orb:thinking":
 		return "Thinking: " + string(mode.session.State().ThinkingLevel)
-	case "provider-usage":
+	case "provider-usage", "orb:limit":
 		return "Providers"
 	}
 	if mode.session != nil {
@@ -4121,11 +4139,46 @@ func (mode *InteractiveMode) showFooterTooltip(label string, start, end int) {
 }
 
 func (mode *InteractiveMode) Statuses() map[string]string {
+	limit := mode.planLimit()
 	mode.mu.Lock()
 	defer mode.mu.Unlock()
-	result := make(map[string]string, len(mode.footerStatuses))
+	result := make(map[string]string, len(mode.footerStatuses)+2)
 	maps.Copy(result, mode.footerStatuses)
+	if mode.others != "" {
+		result["orb:others"] = mode.others
+	}
+	// The provider-usage plugin already shows the tightest window.
+	if limit != "" && result["provider-usage"] == "" {
+		result["orb:limit"] = limit
+	}
 	return result
+}
+
+// planLimit is what the plan window nearest its end has left, as the apps show it, once under a
+// quarter is left (red under a tenth); "" otherwise.
+func (mode *InteractiveMode) planLimit() string {
+	host, ok := mode.options.Host.(InteractiveFooterHost)
+	if !ok {
+		return ""
+	}
+	reading := host.PlanLimits()
+	if reading == nil {
+		return ""
+	}
+	name, left := "", 25.0
+	for _, window := range reading.Windows {
+		if remaining := math.Round(window.Remaining); remaining < left && (window.ResetsAt.IsZero() || window.ResetsAt.After(time.Now())) {
+			name, left = window.Name, remaining
+		}
+	}
+	if name == "" {
+		return ""
+	}
+	text := fmt.Sprintf("%s %.0f%% left", name, left)
+	if left < 10 {
+		return theme.FG("error", text)
+	}
+	return text
 }
 
 func (mode *InteractiveMode) sessionSnapshot() (*agent.SessionRuntime, string) {
