@@ -1787,17 +1787,13 @@ func footerContextSummary(display engine.AgentDisplayState, usage *harness.Conte
 }
 
 // modelFooterForms keeps the model readable while the footer narrows.
-func modelFooterForms(display engine.AgentDisplayState, providerCount int) []string {
+func modelFooterForms(display engine.AgentDisplayState, meter string, providerCount int) []string {
 	if !display.HasModel {
 		return []string{"no-model"}
 	}
 	thinking := ""
-	if display.Reasoning {
-		level := string(display.ThinkingLevel)
-		if level == "" {
-			level = "off"
-		}
-		thinking = " " + thinkingMeter(level)
+	if meter != "" {
+		thinking = " " + meter
 	}
 	forms := make([]string, 0, 3)
 	if providerCount > 1 {
@@ -1809,37 +1805,45 @@ func modelFooterForms(display engine.AgentDisplayState, providerCount int) []str
 	return append(forms, display.ModelID)
 }
 
-func thinkingMeter(level string) string {
-	switch level {
-	case "minimal":
-		return "○"
-	case "low":
-		return "◔"
-	case "medium":
-		return "◑"
-	case "high":
-		return "◕"
-	case "xhigh":
-		return "●"
-	case "max":
-		return "◉"
-	default:
-		return "·"
+// thinkingMeter is the apps' reasoning meter: one bar per level the model takes, rising, lit up
+// to level ("off" never lights). Unlit bars are faint, so it reads without color too.
+func thinkingMeter(levels []ai.ModelThinkingLevel, level ai.ModelThinkingLevel) string {
+	bars := []rune("▁▂▃▄▅▆▇")
+	now := slices.Index(levels, level)
+	var meter strings.Builder
+	for index, each := range levels {
+		bar := string(bars[index*(len(bars)-1)/max(1, len(levels)-1)])
+		if index <= now && each != ai.ModelThinkingOff {
+			meter.WriteString(theme.FG("text", bar))
+		} else {
+			meter.WriteString("\x1b[2m" + bar + "\x1b[22m")
+		}
 	}
+	return meter.String()
 }
 
-func compactFooterLine(display engine.AgentDisplayState, context *harness.ContextUsage, statuses []string, width int, indicators ...string) string {
+// thinkingLevels are the levels the session's model takes, without copying its transcript.
+func (f *FooterComponent) thinkingLevels() []ai.ModelThinkingLevel {
+	if session, ok := f.session.(interface {
+		AvailableThinkingLevels() []ai.ModelThinkingLevel
+	}); ok {
+		return session.AvailableThinkingLevels()
+	}
+	return ai.SupportedThinkingLevels(f.session.State().Model)
+}
+
+func compactFooterLine(display engine.AgentDisplayState, meter string, context *harness.ContextUsage, statuses []string, width int, indicators ...string) string {
 	tail := strings.Join(indicators, " ")
 	if tail != "" && width > tui.VisibleWidth(tail)+1 {
-		return compactFooterLine(display, context, statuses, width-tui.VisibleWidth(tail)-1) + " " + tail
+		return compactFooterLine(display, meter, context, statuses, width-tui.VisibleWidth(tail)-1) + " " + tail
 	}
 	model := display.ModelID
 	if !display.HasModel {
 		model = "Choose model"
 	}
 	left := model
-	if display.Reasoning {
-		left += " " + thinkingMeter(string(display.ThinkingLevel))
+	if meter != "" {
+		left += " " + meter
 	}
 	right := strings.Join(statuses, " · ")
 	leftBudget := width
@@ -1896,6 +1900,10 @@ func (f *FooterComponent) render(width int) []string {
 	}
 
 	display, stats, latestCacheHitRate, autoCompactEnabled := f.collect()
+	meter := ""
+	if display.Reasoning {
+		meter = thinkingMeter(f.thinkingLevels(), display.ThinkingLevel)
+	}
 	statuses := f.provider.Statuses()
 	keys := slices.Sorted(maps.Keys(statuses))
 	values := make([]string, 0, len(keys))
@@ -1925,8 +1933,8 @@ func (f *FooterComponent) render(width int) []string {
 			if !display.HasModel {
 				model = "Choose model"
 			}
-			if display.Reasoning {
-				model += " " + thinkingMeter(string(display.ThinkingLevel))
+			if meter != "" {
+				model += " " + meter
 			}
 			available := width - tui.VisibleWidth(model) - tui.VisibleWidth(strings.Join(texts, " · ")) - 2
 			if len(texts) > 0 {
@@ -1942,15 +1950,15 @@ func (f *FooterComponent) render(width int) []string {
 			}
 			texts = append(texts, path)
 		}
-		line := compactFooterLine(display, stats.ContextUsage, texts, width, indicators...)
+		line := compactFooterLine(display, meter, stats.ContextUsage, texts, width, indicators...)
 		f.recordStatusHits(line, 0, keys, values)
-		f.recordThinkingHit(line, 0, display)
+		f.recordThinkingHit(line, 0, display, meter)
 		// A colored status ends in a foreground reset; restore dim after it.
 		return []string{theme.FG("dim", strings.ReplaceAll(line, "\x1b[39m", theme.FGANSI("dim")))}
 	}
 
 	contextSummary := footerContextSummary(display, stats.ContextUsage)
-	modelForms := modelFooterForms(display, providerCount)
+	modelForms := modelFooterForms(display, meter, providerCount)
 	modelName := modelForms[0]
 	statsParts := make([]string, 0, 7)
 	if stats.Tokens.Input > 0 {
@@ -1993,7 +2001,7 @@ func (f *FooterComponent) render(width int) []string {
 		theme.FG("dim", statsLeft) + theme.FG("dim", padding+modelName),
 	}
 
-	f.recordThinkingHit(lines[1], 1, display)
+	f.recordThinkingHit(lines[1], 1, display, meter)
 	if len(keys) > 0 {
 		statusLine := tui.TruncateToWidth(strings.Join(values, " "), width, "…", false)
 		f.recordStatusHits(statusLine, len(lines), keys, values)
@@ -2038,21 +2046,21 @@ func (f *FooterComponent) recordStatusHits(text string, row int, keys, values []
 	f.hitMu.Unlock()
 }
 
-func (f *FooterComponent) recordThinkingHit(text string, row int, display engine.AgentDisplayState) {
+func (f *FooterComponent) recordThinkingHit(text string, row int, display engine.AgentDisplayState, meter string) {
 	provider, ok := f.provider.(interface{ StatusAction(string) func() })
-	if !display.Reasoning || !ok {
+	if meter == "" || !ok {
 		return
 	}
-	text = tui.StripANSI(text)
-	label := display.ModelID + " " + thinkingMeter(string(display.ThinkingLevel))
+	text, meter = tui.StripANSI(text), tui.StripANSI(meter)
+	label := display.ModelID + " " + meter
 	start := strings.Index(text, label)
 	action := provider.StatusAction("orb:thinking")
 	if start < 0 || action == nil {
 		return
 	}
-	column := tui.VisibleWidth(text[:start]) + tui.VisibleWidth(label)
+	end := tui.VisibleWidth(text[:start]) + tui.VisibleWidth(label) + 1
 	f.hitMu.Lock()
-	f.hits = append(f.hits, statusHit{row: row, start: column, end: column + 1, key: "orb:thinking", action: action})
+	f.hits = append(f.hits, statusHit{row: row, start: end - tui.VisibleWidth(meter), end: end, key: "orb:thinking", action: action})
 	f.hitMu.Unlock()
 }
 

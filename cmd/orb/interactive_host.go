@@ -38,6 +38,7 @@ type interactiveSessionHost struct {
 	*agent.AgentSessionRuntime
 
 	usageCache usage.Cache
+	quota      *providerUsage
 	mu         sync.Mutex
 	args       CLIArgs
 	agentDir   string
@@ -52,7 +53,7 @@ func newInteractiveSessionHost(
 	agentDir string,
 	stderr io.Writer,
 ) (*interactiveSessionHost, error) {
-	host := &interactiveSessionHost{args: args, agentDir: agentDir}
+	host := &interactiveSessionHost{args: args, agentDir: agentDir, quota: &providerUsage{cache: args.usageCache}}
 	if args.accounts != nil {
 		args.accounts.host.Store(host)
 	}
@@ -652,6 +653,37 @@ func (host *interactiveSessionHost) fetchAccountUsage(ctx context.Context, provi
 		return usage.Snapshot{}, err
 	}
 	return book.usage(ctx, provider, id)
+}
+
+// PlanLimits reads as the Bridge pulse does, sharing the process's quota cache with it: never
+// waiting, at most one request a minute.
+func (host *interactiveSessionHost) PlanLimits() *usage.Snapshot {
+	if session := host.Session(); session != nil {
+		return host.quota.read(session)
+	}
+	return nil
+}
+
+// WatchOthers polls Bridge every 5 s, off the render path: Bridge offers no feed of its Orbs' states.
+func (host *interactiveSessionHost) WatchOthers(ctx context.Context, changed func(string)) {
+	catalogs, last := map[string]string{}, ""
+	for {
+		poll, cancel := context.WithTimeout(ctx, 5*time.Second)
+		now := ownerBridge{host.args, host.currentInputs().Settings}.others(poll, catalogs)
+		cancel()
+		if ctx.Err() != nil {
+			return
+		}
+		if now != last {
+			last = now
+			changed(now)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
+	}
 }
 
 func (host *interactiveSessionHost) UsageEnabled() bool {

@@ -23,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/plugins/usage"
 	"github.com/OrdalieTech/orb/tui"
 
 	theme "github.com/OrdalieTech/orb/agent/modes/theme"
@@ -710,7 +711,7 @@ func TestFooterReasoningBarsClickAtNarrowWidths(t *testing.T) {
 			session := wp450FooterSession{state: engine.AgentState{Model: &ai.Model{ID: "model", Reasoning: true}, ThinkingLevel: level}}
 			footer := NewFooterComponent(&session, data, false)
 			line := tui.StripANSI(footer.Render(width)[0])
-			index := strings.Index(line, thinkingMeter(string(level)))
+			index := strings.Index(line, tui.StripANSI(thinkingMeter(ai.SupportedThinkingLevels(session.state.Model), level)))
 			if index < 0 {
 				t.Fatalf("reasoning bars missing: %q", line)
 			}
@@ -727,6 +728,34 @@ func TestFooterReasoningBarsClickAtNarrowWidths(t *testing.T) {
 					t.Fatal("reasoning target replaced quota target")
 				}
 			}
+		}
+	}
+}
+
+type planLimitHost struct {
+	InteractiveSessionHost
+	reading *usage.Snapshot
+}
+
+func (host planLimitHost) PlanLimits() *usage.Snapshot          { return host.reading }
+func (planLimitHost) WatchOthers(context.Context, func(string)) {}
+
+func TestFooterPlanLimitShowsUnderAQuarter(t *testing.T) {
+	initTestTheme(t)
+	later, past := time.Now().Add(time.Hour), time.Now().Add(-time.Minute)
+	for _, test := range []struct {
+		windows  []usage.Window
+		statuses map[string]string
+		want     string
+	}{
+		{windows: []usage.Window{{Name: "5h", Remaining: 40, ResetsAt: later}, {Name: "7d", Remaining: 60}}},
+		{windows: []usage.Window{{Name: "5h", Remaining: 18.4, ResetsAt: later}, {Name: "7d", Remaining: 60}}, want: "5h 18% left"},
+		{windows: []usage.Window{{Name: "5h", Remaining: 3, ResetsAt: past}, {Name: "7d", Remaining: 7}}, want: theme.FG("error", "7d 7% left")},
+		{windows: []usage.Window{{Name: "5h", Remaining: 18}}, statuses: map[string]string{"provider-usage": "Codex 5h 18% left"}},
+	} {
+		mode := &InteractiveMode{options: InteractiveModeOptions{Host: planLimitHost{reading: &usage.Snapshot{Windows: test.windows}}}, footerStatuses: test.statuses}
+		if got := mode.Statuses()["orb:limit"]; got != test.want {
+			t.Fatalf("%v: %q, want %q", test.windows, got, test.want)
 		}
 	}
 }

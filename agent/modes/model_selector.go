@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"cmp"
 	"context"
 	"math"
 	"slices"
@@ -38,6 +39,7 @@ type ModelSelectorComponent struct {
 	selectedIndex  int
 	window         tui.ListWindow
 	currentModel   *ai.Model
+	defaultModel   *ai.Model // the one new sessions start on, marked default
 	scope          modelSelectorScope
 	onSelect       func(ai.Model)
 	onSaveDefault  func(ai.Model)
@@ -46,7 +48,7 @@ type ModelSelectorComponent struct {
 }
 
 func NewModelSelectorComponent(
-	currentModel *ai.Model,
+	currentModel, defaultModel *ai.Model,
 	models []ai.Model,
 	scoped []agent.ScopedModel,
 	onSelect func(ai.Model),
@@ -58,6 +60,7 @@ func NewModelSelectorComponent(
 		searchInput:   tui.NewInput(),
 		listContainer: &tui.Container{},
 		currentModel:  currentModel,
+		defaultModel:  defaultModel,
 		onSelect:      onSelect,
 		onCancel:      onCancel,
 		scope:         modelScopeAll,
@@ -102,16 +105,18 @@ func (component *ModelSelectorComponent) loadModels(models []ai.Model, scoped []
 		component.allModels[index] = modelSelectorItem{model: model}
 		refreshed[modelSelectorKey(model)] = model
 	}
-	slices.SortStableFunc(component.allModels, func(left, right modelSelectorItem) int {
-		leftCurrent := modelSelectorModelsEqual(component.currentModel, &left.model)
-		rightCurrent := modelSelectorModelsEqual(component.currentModel, &right.model)
-		if leftCurrent != rightCurrent {
-			if leftCurrent {
-				return -1
-			}
+	// The models in use first: the current one, then the default (pi 1.5's order).
+	rank := func(model *ai.Model) int {
+		switch {
+		case modelSelectorModelsEqual(component.currentModel, model):
+			return 0
+		case modelSelectorModelsEqual(component.defaultModel, model):
 			return 1
 		}
-		return strings.Compare(string(left.model.Provider), string(right.model.Provider))
+		return 2
+	}
+	slices.SortStableFunc(component.allModels, func(left, right modelSelectorItem) int {
+		return cmp.Or(cmp.Compare(rank(&left.model), rank(&right.model)), strings.Compare(string(left.model.Provider), string(right.model.Provider)))
 	})
 	component.scopedModels = make([]modelSelectorItem, len(scoped))
 	for index, entry := range scoped {
@@ -185,6 +190,9 @@ func (component *ModelSelectorComponent) filterModels(query string) {
 		component.selectedIndex = min(component.selectedIndex, max(0, len(component.filteredModels)-1))
 	} else {
 		component.filteredModels = tui.FuzzyFilter(component.activeModels, query, func(item modelSelectorItem) string {
+			if modelSelectorModelsEqual(component.defaultModel, &item.model) {
+				return modelSelectorSearchText(item.model) + " default"
+			}
 			return modelSelectorSearchText(item.model)
 		})
 		component.selectedIndex = 0
@@ -236,7 +244,7 @@ func (component *ModelSelectorComponent) updateList() {
 	component.rows.setWindow(start, end-start)
 	for index := start; index < end; index++ {
 		model := component.filteredModels[index].model
-		component.listContainer.AddChild(modelSelectorRow{model: model, selected: index == component.selectedIndex, current: modelSelectorModelsEqual(component.currentModel, &model)})
+		component.listContainer.AddChild(modelSelectorRow{model: model, selected: index == component.selectedIndex, current: modelSelectorModelsEqual(component.currentModel, &model), isDefault: modelSelectorModelsEqual(component.defaultModel, &model)})
 	}
 	// Fixed geometry: the floating window must not grow, shrink, or
 	// re-center while filtering, so the row region, the counter slot, and the
@@ -277,8 +285,8 @@ func (component *ModelSelectorComponent) updateList() {
 
 // Each option occupies one row; metadata belongs to the selected-model detail.
 type modelSelectorRow struct {
-	model             ai.Model
-	selected, current bool
+	model                        ai.Model
+	selected, current, isDefault bool
 }
 
 func (row modelSelectorRow) Render(width int) []string {
@@ -289,6 +297,9 @@ func (row modelSelectorRow) Render(width int) []string {
 	mark := ""
 	if row.current {
 		mark = theme.FG("success", " ✓")
+	}
+	if row.isDefault {
+		mark += theme.FG("muted", " default")
 	}
 	// The provider is a right-aligned column so same-id models from different
 	// providers stay distinguishable.
@@ -409,7 +420,7 @@ func (component *ModelSelectorComponent) ListConfirm() { component.confirmSelect
 
 func (mode *InteractiveMode) selectModelSearchable(
 	ctx context.Context,
-	current *ai.Model,
+	current, defaultModel *ai.Model,
 	models []ai.Model,
 	scoped []agent.ScopedModel,
 	initialSearch string,
@@ -427,7 +438,7 @@ func (mode *InteractiveMode) selectModelSearchable(
 		}
 	}
 	component := NewModelSelectorComponent(
-		current, models, scoped,
+		current, defaultModel, models, scoped,
 		func(model ai.Model) { resolve(selection{model: model, ok: true}) },
 		func() { resolve(selection{}) },
 		initialSearch,

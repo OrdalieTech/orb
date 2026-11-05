@@ -148,8 +148,8 @@ func (p *Panel) Render(width int) []string {
 	defer p.mu.Unlock()
 	lines := p.frame.Render(width)
 	for i, line := range lines {
-		// Add the accent rail without changing Frame's mouse coordinates.
-		lines[i] = p.theme.FG("accent", "│") + tui.SliceByColumn(line, 1, width-1, true)
+		// The interrupt's red rail, as an approval's, without changing Frame's mouse coordinates.
+		lines[i] = p.theme.FG("error", "▌") + tui.SliceByColumn(line, 1, width-1, true)
 	}
 	return lines
 }
