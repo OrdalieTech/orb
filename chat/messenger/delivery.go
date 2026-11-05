@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
-	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
 	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 	"github.com/OrdalieTech/orb/chat/internal/typing"
+	"github.com/OrdalieTech/orb/internal/ctxsleep"
 )
 
 // chunkLimit stays under the Send API's 2000-character cap (runes: the API

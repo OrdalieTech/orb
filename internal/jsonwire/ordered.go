@@ -3,6 +3,8 @@ package jsonwire
 import (
 	"bytes"
 	"encoding/json"
+	"math"
+	"sort"
 	"strconv"
 	"unicode/utf8"
 )
@@ -454,6 +456,34 @@ func decodeString(raw []byte) (string, bool) {
 	}
 	text, err := UnmarshalString(raw)
 	return text, err == nil
+}
+
+// SortJSPropertyOrder stably orders object members as JavaScript enumerates
+// an object's own properties: array-index names ascending, then the rest in
+// their existing order.
+func SortJSPropertyOrder[T any](members []T, name func(T) string) {
+	sort.SliceStable(members, func(left, right int) bool {
+		leftIndex, leftIsIndex := arrayIndex(name(members[left]))
+		rightIndex, rightIsIndex := arrayIndex(name(members[right]))
+		if leftIsIndex && rightIsIndex {
+			return leftIndex < rightIndex
+		}
+		return leftIsIndex && !rightIsIndex
+	})
+}
+
+func arrayIndex(name string) (uint64, bool) {
+	if name == "0" {
+		return 0, true
+	}
+	if name == "" || name[0] == '0' {
+		return 0, false
+	}
+	value, err := strconv.ParseUint(name, 10, 32)
+	if err != nil || value == math.MaxUint32 || strconv.FormatUint(value, 10) != name {
+		return 0, false
+	}
+	return value, true
 }
 
 // Stringified reports whether data is one JSON value spelled as

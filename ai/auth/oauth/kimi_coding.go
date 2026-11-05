@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/internal/ctxsleep"
 )
 
 // KimiCoding ports upstream kimiCodingOAuth (ai/src/auth/oauth/kimi-coding.ts):
@@ -48,7 +49,7 @@ func NewKimiCoding(options *KimiCodingOptions) *KimiCoding {
 		configured.Now = time.Now
 	}
 	if configured.Sleep == nil {
-		configured.Sleep = sleepDeviceCode
+		configured.Sleep = ctxsleep.Sleep
 	}
 	return &KimiCoding{options: configured}
 }

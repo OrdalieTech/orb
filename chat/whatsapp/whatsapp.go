@@ -47,7 +47,7 @@ type Options struct {
 	HTTPClient *http.Client
 	// OnStatus receives delivery status callbacks from the statuses[]
 	// webhook array. Default: no-op. Statuses arrive out of order; keep the
-	// highest [StatusRank] per message id.
+	// furthest-progressed status per message id.
 	OnStatus func(Status)
 }
 

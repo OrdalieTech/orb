@@ -189,15 +189,6 @@ func ExpandSkillCommand(text string, skills []Skill) (string, error) {
 	return text, nil
 }
 
-// FormatSkillInvocation formats an already-loaded harness skill.
-func FormatSkillInvocation(skill Skill, additionalInstructions string) string {
-	block := fmt.Sprintf("<skill name=\"%s\" location=\"%s\">\nReferences are relative to %s.\n\n%s\n</skill>", skill.Name, skill.FilePath, skill.BaseDir, skill.Content)
-	if additionalInstructions != "" {
-		return block + "\n\n" + additionalInstructions
-	}
-	return block
-}
-
 // Commands returns the core/RPC command-list order: extension, prompt, then skill.
 // enableSkillCommands is an interactive autocomplete setting and does not hide
 // commands from the session API.

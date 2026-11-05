@@ -1152,45 +1152,6 @@ func (registry *ModelRegistry) DefaultModelHeadersResolver() func(context.Contex
 	}
 }
 
-// FallbackRequestAuthResolver resolves auth using only stored credentials
-// and built-in provider auth methods, without a ModelRegistry.
-func FallbackRequestAuthResolver(credentials aiauth.CredentialStore) func(context.Context, ai.ProviderID) (*RequestAuth, error) {
-	if credentials == nil {
-		credentials = aiauth.NewMemoryStore(nil)
-	}
-	return func(ctx context.Context, providerID ai.ProviderID) (*RequestAuth, error) {
-		stored, err := credentials.Read(ctx, string(providerID))
-		if err != nil {
-			return nil, err
-		}
-		provider, knownProvider := providers.Get(providerID)
-		if stored != nil && knownProvider {
-			resolved, err := aiauth.ResolveProviderAuth(
-				ctx, string(providerID), provider.Methods, credentials,
-				aiauth.EnvironmentContext{}, nil,
-			)
-			if err != nil || resolved == nil {
-				return nil, err
-			}
-			return registryRequestAuth(resolved), nil
-		}
-		if stored != nil && stored.Type == aiauth.CredentialAPIKey {
-			return &RequestAuth{APIKey: stored.Key, Env: maps.Clone(stored.Env)}, nil
-		}
-		if knownProvider {
-			resolved, err := aiauth.ResolveProviderAuth(
-				ctx, string(providerID), provider.Methods, credentials,
-				aiauth.EnvironmentContext{}, nil,
-			)
-			if err != nil || resolved == nil {
-				return nil, err
-			}
-			return registryRequestAuth(resolved), nil
-		}
-		return nil, nil
-	}
-}
-
 func registryRequestAuth(resolved *aiauth.AuthResult) *RequestAuth {
 	if resolved == nil {
 		return nil

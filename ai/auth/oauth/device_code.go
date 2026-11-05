@@ -5,6 +5,8 @@ import (
 	"errors"
 	"math"
 	"time"
+
+	"github.com/OrdalieTech/orb/internal/ctxsleep"
 )
 
 const (
@@ -54,7 +56,7 @@ func pollOAuthDeviceCodeFlow[T any](options deviceCodePollOptions[T]) (T, error)
 	}
 	sleep := options.sleep
 	if sleep == nil {
-		sleep = sleepDeviceCode
+		sleep = ctxsleep.Sleep
 	}
 	deadline := math.Inf(1)
 	if options.expiresInSeconds != nil {
@@ -116,15 +118,4 @@ func deviceCodeRemaining(deadline float64, now func() time.Time) time.Duration {
 		return time.Duration(math.MaxInt64)
 	}
 	return time.Duration(deadline-float64(now().UnixMilli())) * time.Millisecond
-}
-
-func sleepDeviceCode(ctx context.Context, duration time.Duration) error {
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
 }

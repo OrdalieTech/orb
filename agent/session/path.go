@@ -10,10 +10,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/nodepath"
 )
 
-const (
-	EnvAgentDir   = nodepath.AgentDirEnv
-	EnvSessionDir = "ORB_SESSION_DIR"
-)
+const EnvAgentDir = nodepath.AgentDirEnv
 
 func normalizePath(path string) string {
 	path = nodepath.NormalizeShellPath(path)

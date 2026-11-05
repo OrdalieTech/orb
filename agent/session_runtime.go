@@ -21,6 +21,7 @@ import (
 	allapi "github.com/OrdalieTech/orb/ai/api/all"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/ctxsleep"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
@@ -270,7 +271,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 	}
 	sleep := runtimeConfig.Sleep
 	if sleep == nil {
-		sleep = sleepContext
+		sleep = ctxsleep.Sleep
 	}
 	clock := runtimeConfig.Clock
 	if clock == nil {
@@ -2171,17 +2172,6 @@ func estimateAllTokens(messages engine.AgentMessages) int64 {
 		total += harness.EstimateTokens(message)
 	}
 	return total
-}
-
-func sleepContext(ctx context.Context, duration time.Duration) error {
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }
 
 func parseSessionTimestamp(value string) int64 {

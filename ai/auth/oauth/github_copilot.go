@@ -3,7 +3,6 @@ package oauth
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai/auth"
 	aimodels "github.com/OrdalieTech/orb/ai/models"
+	"github.com/OrdalieTech/orb/internal/ctxsleep"
 	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
@@ -26,7 +26,7 @@ const (
 )
 
 var (
-	githubCopilotClientID = mustDecodeBase64("SXYxLmI1MDdhMDhjODdlY2ZlOTg=")
+	githubCopilotClientID = mustDecode("SXYxLmI1MDdhMDhjODdlY2ZlOTg=")
 	copilotProxyEndpoint  = lazyregexp.New(`proxy-ep=([^;]+)`)
 )
 
@@ -395,7 +395,7 @@ func (flow *GitHubCopilot) fetchWithRateLimitRetry(ctx context.Context, method, 
 		}
 		sleep := flow.options.Sleep
 		if sleep == nil {
-			sleep = sleepDeviceCode
+			sleep = ctxsleep.Sleep
 		}
 		if err := sleep(requestCtx, delay); err != nil {
 			return 0, "", nil, err
@@ -576,12 +576,4 @@ func builtInCopilotModelIDs() []string {
 		result[index] = model.ID
 	}
 	return result
-}
-
-func mustDecodeBase64(value string) string {
-	decoded, err := base64.StdEncoding.DecodeString(value)
-	if err != nil {
-		panic(err)
-	}
-	return string(decoded)
 }

@@ -473,17 +473,6 @@ func readLinks(line []byte) (l links) {
 	return l
 }
 
-// parentsIn maps each record of a session file's data to its parent.
-func parentsIn(data []byte) map[string]string {
-	parents := map[string]string{}
-	for line := range bytes.SplitSeq(data, []byte("\n")) {
-		if l := readLinks(line); l.UUID != "" {
-			parents[l.UUID] = l.Parent
-		}
-	}
-	return parents
-}
-
 // planTranscript is what a session file lacks of records, as lines to append,
 // and the UUID the branch ends at once they are. parents maps each record
 // the file holds to its parent.

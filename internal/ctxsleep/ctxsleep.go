@@ -1,5 +1,5 @@
-// Package ctxsleep provides a context-aware sleep shared by the chat
-// adapters and processor.
+// Package ctxsleep provides the context-aware sleep shared by retry and
+// polling loops across layers.
 package ctxsleep
 
 import (

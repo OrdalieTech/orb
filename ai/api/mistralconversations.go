@@ -46,8 +46,6 @@ type MistralConversationsPayload struct {
 	PromptCacheKey  *string                   `json:"prompt_cache_key,omitempty"`
 }
 
-type MistralChatPayload = MistralConversationsPayload
-
 type MistralConversationTool struct {
 	Type     string                      `json:"type"`
 	Function MistralConversationFunction `json:"function"`

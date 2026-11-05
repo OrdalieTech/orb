@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"sort"
-	"strconv"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
@@ -60,14 +58,7 @@ func writeStreamingJSON(output *bytes.Buffer, value any) error {
 	switch value := value.(type) {
 	case jsonwire.OrderedObject:
 		members := append(jsonwire.OrderedObject(nil), value...)
-		sort.SliceStable(members, func(left, right int) bool {
-			leftIndex, leftIsIndex := streamingJSONArrayIndex(members[left].Name)
-			rightIndex, rightIsIndex := streamingJSONArrayIndex(members[right].Name)
-			if leftIsIndex && rightIsIndex {
-				return leftIndex < rightIndex
-			}
-			return leftIsIndex && !rightIsIndex
-		})
+		jsonwire.SortJSPropertyOrder(members, func(m jsonwire.OrderedMember) string { return m.Name })
 		output.WriteByte('{')
 		for index, member := range members {
 			if index > 0 {
@@ -122,18 +113,4 @@ func writeStreamingJSON(output *bytes.Buffer, value any) error {
 	}
 	output.Write(encoded)
 	return nil
-}
-
-func streamingJSONArrayIndex(name string) (uint64, bool) {
-	if name == "0" {
-		return 0, true
-	}
-	if name == "" || name[0] == '0' {
-		return 0, false
-	}
-	value, err := strconv.ParseUint(name, 10, 32)
-	if err != nil || value == math.MaxUint32 || strconv.FormatUint(value, 10) != name {
-		return 0, false
-	}
-	return value, true
 }

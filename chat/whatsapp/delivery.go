@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/chat"
-	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
 	"github.com/OrdalieTech/orb/chat/internal/httpjson"
 	"github.com/OrdalieTech/orb/chat/internal/runechunk"
+	"github.com/OrdalieTech/orb/internal/ctxsleep"
 )
 
 // delivery is one turn's output surface. chat.Delivery calls are serialized

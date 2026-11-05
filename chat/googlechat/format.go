@@ -11,8 +11,6 @@ import (
 	"github.com/OrdalieTech/orb/chat/internal/runechunk"
 )
 
-const maxMessageLen = 4096
-
 // Leaves room under Chat's 4096-character cap for fence reopening.
 const chunkLimit = 4000
 

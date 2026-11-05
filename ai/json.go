@@ -9,7 +9,6 @@ import (
 	"math"
 	"reflect"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1591,14 +1590,7 @@ func writeJSONStringifyJSONValue(output *bytes.Buffer, source *jsonStringifyDeco
 			if closing != json.Delim('}') {
 				return errors.New("object is not closed")
 			}
-			sort.SliceStable(members, func(left, right int) bool {
-				leftIndex, leftIsIndex := jsArrayIndex(members[left].name)
-				rightIndex, rightIsIndex := jsArrayIndex(members[right].name)
-				if leftIsIndex && rightIsIndex {
-					return leftIndex < rightIndex
-				}
-				return leftIsIndex && !rightIsIndex
-			})
+			jsonwire.SortJSPropertyOrder(members, func(m member) string { return m.name })
 			output.WriteByte('{')
 			for index, member := range members {
 				if index > 0 {
@@ -1672,20 +1664,6 @@ func writeJSONStringifyJSONValue(output *bytes.Buffer, source *jsonStringifyDeco
 	}
 	output.Write(encoded)
 	return nil
-}
-
-func jsArrayIndex(name string) (uint64, bool) {
-	if name == "0" {
-		return 0, true
-	}
-	if name == "" || name[0] == '0' {
-		return 0, false
-	}
-	value, err := strconv.ParseUint(name, 10, 32)
-	if err != nil || value == math.MaxUint32 || strconv.FormatUint(value, 10) != name {
-		return 0, false
-	}
-	return value, true
 }
 
 func marshalRequiredSlice[T any](values []T) ([]byte, error) {

@@ -32,9 +32,6 @@ type NodeExecutionEnv struct {
 	activeChildren map[int]struct{}
 }
 
-// LocalExecutionEnv is the platform-neutral Go name for NodeExecutionEnv.
-type LocalExecutionEnv = NodeExecutionEnv
-
 func (env *NodeExecutionEnv) WorkingDirectory() string {
 	cwd := env.CWD
 	if cwd == "" {
