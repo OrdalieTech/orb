@@ -74,6 +74,9 @@ func (n *Node) Listen(ctx context.Context) (net.Listener, error) {
 	n.mu.Unlock()
 	listener, err := s.Listen(ctx, "tcp", ":443")
 	if err != nil {
+		n.mu.Lock()
+		n.server = nil // tried again later
+		n.mu.Unlock()
 		return nil, bridge.Fail("unavailable")
 	}
 	n.mu.Lock()

@@ -8,6 +8,7 @@ import (
 	"regexp/syntax"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // formatChecks are pi-schema's format checks (adapted from TypeBox 1.3.27).
@@ -16,23 +17,30 @@ import (
 var formatChecks = map[string]func(string) bool{
 	"date":                      isDate,
 	"date-time":                 isDateTime,
-	"duration":                  regexp.MustCompile(`^P(?:(?:\d+Y(?:\d+M(?:\d+D)?)?|\d+M(?:\d+D)?|\d+D)(?:T(?:\d+H(?:\d+M(?:\d+S)?)?|\d+M(?:\d+S)?|\d+S))?|T(?:\d+H(?:\d+M(?:\d+S)?)?|\d+M(?:\d+S)?|\d+S)|\d+W)$`).MatchString,
-	"email":                     regexp.MustCompile(`(?i)^(?:[a-z0-9!#$%&'*+/=?^_` + "`" + `{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_` + "`" + `{|}~-]+)*|"(?:[^"\\]|\\[\x20-\x7e])*")@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*|\[(?:IPv6:[a-f0-9:]+|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})\])$`).MatchString,
+	"duration":                  lazy(`^P(?:(?:\d+Y(?:\d+M(?:\d+D)?)?|\d+M(?:\d+D)?|\d+D)(?:T(?:\d+H(?:\d+M(?:\d+S)?)?|\d+M(?:\d+S)?|\d+S))?|T(?:\d+H(?:\d+M(?:\d+S)?)?|\d+M(?:\d+S)?|\d+S)|\d+W)$`),
+	"email":                     lazy(`(?i)^(?:[a-z0-9!#$%&'*+/=?^_` + "`" + `{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_` + "`" + `{|}~-]+)*|"(?:[^"\\]|\\[\x20-\x7e])*")@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*|\[(?:IPv6:[a-f0-9:]+|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})\])$`),
 	"hostname":                  isHostname,
-	"ipv4":                      regexp.MustCompile(`^(?:` + ipv4Octet + `\.){3}` + ipv4Octet + `$`).MatchString,
-	"ipv6":                      regexp.MustCompile(`(?i)^(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:)?[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:` + ipv4Octet + `\.){3}` + ipv4Octet + `)|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)$`).MatchString,
+	"ipv4":                      lazy(`^(?:` + ipv4Octet + `\.){3}` + ipv4Octet + `$`),
+	"ipv6":                      lazy(`(?i)^(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:)?[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:` + ipv4Octet + `\.){3}` + ipv4Octet + `)|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)$`),
 	"iri":                       isIRI,
 	"iri-reference":             isIRIReference,
-	"json-pointer":              regexp.MustCompile(`^(?:/(?:[^~/]|~0|~1)*)*$`).MatchString,
-	"json-pointer-uri-fragment": regexp.MustCompile(`(?i)^#(?:/(?:[a-z0-9_\-.!$&'()*+,;:=@]|%[0-9a-f]{2}|~0|~1)*)*$`).MatchString,
+	"json-pointer":              lazy(`^(?:/(?:[^~/]|~0|~1)*)*$`),
+	"json-pointer-uri-fragment": lazy(`(?i)^#(?:/(?:[a-z0-9_\-.!$&'()*+,;:=@]|%[0-9a-f]{2}|~0|~1)*)*$`),
 	"regex":                     isRegex,
-	"relative-json-pointer":     regexp.MustCompile(`^(?:0|[1-9][0-9]*)(?:#|(?:/(?:[^~/]|~0|~1)*)*)$`).MatchString,
+	"relative-json-pointer":     lazy(`^(?:0|[1-9][0-9]*)(?:#|(?:/(?:[^~/]|~0|~1)*)*)$`),
 	"time":                      isTime,
-	"uri":                       regexp.MustCompile(`(?i)` + uriPattern).MatchString,
-	"uri-reference":             regexp.MustCompile(`(?i)` + uriReferencePattern).MatchString,
-	"uri-template":              regexp.MustCompile(`(?i)^(?:(?:[^\x00-\x20"<>%\\^` + "`" + `{|}\x7f]|%[0-9a-f]{2})|\{[+#./;?&=,!@|]?(?:[a-z0-9_]|%[0-9a-f]{2})+(?:\.(?:[a-z0-9_]|%[0-9a-f]{2})+)*(?::[1-9]\d{0,3}|\*)?(?:,(?:[a-z0-9_]|%[0-9a-f]{2})+(?:\.(?:[a-z0-9_]|%[0-9a-f]{2})+)*(?::[1-9]\d{0,3}|\*)?)*\})*$`).MatchString,
+	"uri":                       lazy(`(?i)` + uriPattern),
+	"uri-reference":             lazy(`(?i)` + uriReferencePattern),
+	"uri-template":              lazy(`(?i)^(?:(?:[^\x00-\x20"<>%\\^` + "`" + `{|}\x7f]|%[0-9a-f]{2})|\{[+#./;?&=,!@|]?(?:[a-z0-9_]|%[0-9a-f]{2})+(?:\.(?:[a-z0-9_]|%[0-9a-f]{2})+)*(?::[1-9]\d{0,3}|\*)?(?:,(?:[a-z0-9_]|%[0-9a-f]{2})+(?:\.(?:[a-z0-9_]|%[0-9a-f]{2})+)*(?::[1-9]\d{0,3}|\*)?)*\})*$`),
 	"url":                       func(value string) bool { return urlParses(value, false) },
-	"uuid":                      regexp.MustCompile(`(?i)^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$`).MatchString,
+	"uuid":                      lazy(`(?i)^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$`),
+}
+
+// lazy compiles a pattern when first matched: most processes check no format, and compiling
+// them all cost every process milliseconds and over a megabyte as it started.
+func lazy(pattern string) func(string) bool {
+	compiled := sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(pattern) })
+	return func(value string) bool { return compiled().MatchString(value) }
 }
 
 const ipv4Octet = `(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)`

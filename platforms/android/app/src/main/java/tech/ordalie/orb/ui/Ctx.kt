@@ -12,7 +12,7 @@ import tech.ordalie.orb.core.*
 /** What every screen needs, passed as one value, and the app's actions on conversations. */
 class Ctx(
     val rt: Runtime, val nav: Nav, val cites: SnapshotStateList<String>, val onCite: () -> Unit, val context: Context, val fresh: Tab?,
-    val deck: (String) -> Unit, val rename: (Rename) -> Unit, val pick: (Picker) -> Unit, val view: (ref: String, tab: String) -> Unit,
+    val deck: (Tab) -> Unit, val rename: (Rename) -> Unit, val pick: (Picker) -> Unit, val view: (ref: String, tab: String) -> Unit,
 ) {
     val v get() = rt.view
 
@@ -62,7 +62,7 @@ class Ctx(
      *  Providers, where one is connected. */
     fun chooseModel(t: Tab?) {
         val on = t ?: fresh
-        if (on == null || on.models.isEmpty()) nav.go(Screen.Providers(on?.peer ?: v.state.self)) else deck(on.id)
+        if (on == null || on.models.isEmpty()) nav.go(Screen.Providers(on?.peer ?: v.state.self)) else deck(on)
     }
 
     /** A Home row held down: what its tab's menu offers, plus deleting a thread no Orb has open,
@@ -107,9 +107,4 @@ class Ctx(
         pick(Picker(listOf(t.model.substringBefore('/'), u.plan, "read " + ago(u.at)).filter(String::isNotEmpty).joinToString(" · "),
             u.windows.map { "${it.name} · ${it.left.roundToInt()}% left" + if (it.resets > 0) " · resets ${time.format(it.resets)}" else "" }) {})
     }
-
-    fun menu() = pick(Picker("orb", listOf("terminal", "providers", "bridge", "plugins")) {
-        val open = nav.open
-        nav.go(when (it) { "terminal" -> Screen.Terminal(open); "bridge" -> Screen.Bridge; "plugins" -> Screen.Plugins(open?.peer ?: v.state.self); else -> Screen.Providers(open?.peer ?: v.state.self) })
-    })
 }

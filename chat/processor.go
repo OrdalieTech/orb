@@ -16,7 +16,7 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/chat/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/internal/ctxsleep"
 )
 
 // AllowAll is an explicit opt-out authorizer accepting every message.

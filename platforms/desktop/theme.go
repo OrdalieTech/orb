@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,13 @@ import (
 	"github.com/go-text/typesetting/font"
 	ot "github.com/go-text/typesetting/font/opentype"
 )
+
+// ordalie is the maker's mark, kept small and faint where the app waits on you, as the TUI's
+// empty chat shows it.
+//
+//go:embed ordalie.svg
+var ordalieSVG []byte
+var ordalie = ui.MustParseSVG(ordalieSVG)
 
 // Ordalie tokens, as on Android (ui/Theme.kt): soft ink on sage paper, one rupture, a blue kept for
 // remote Orbs acting here.

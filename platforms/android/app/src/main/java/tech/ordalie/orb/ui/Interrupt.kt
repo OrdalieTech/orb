@@ -15,9 +15,9 @@ import tech.ordalie.orb.core.*
 @Composable
 fun Interrupt(a: Ask, answer: (String?) -> Unit) {
     val (word, caption) = when (a.owner) {
-        "permissions" -> "APPROVAL" to "承認要求 · approval required"
-        "bridge" -> "PAIR" to "接続要求 · pairing request"
-        else -> "QUESTION" to "質問 · a question for you"
+        "permissions" -> "APPROVAL" to "approval required"
+        "bridge" -> "PAIR" to "pairing request"
+        else -> "QUESTION" to "a question for you"
     }
     var text by remember(a.id) { mutableStateOf("") }
     val ink = Ink.Charcoal

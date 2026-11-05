@@ -49,6 +49,8 @@ fun ColumnScope.ProvidersScreen(c: Ctx, peer: String) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(peer) { c.reload(peer) }
     LaunchedEffect(peer) { c.v.ask("accounts", "machine" to peer).array?.let { accountListings[peer] = accounts(it) } }
+    LaunchedEffect(peer) { c.v.readDefault(peer) }
+    val def = c.v.defaults[peer]?.takeIf { it.models.isNotEmpty() }
     val known = known(peer)
     val accounts = accountListings[peer].orEmpty().filter { query.isBlank() || it.name.contains(query.trim(), true) || it.providerName.contains(query.trim(), true) }
     val shown = known.filter { query.isBlank() || it.name.contains(query.trim(), true) || it.id.contains(query.trim(), true) }
@@ -56,6 +58,9 @@ fun ColumnScope.ProvidersScreen(c: Ctx, peer: String) {
     Header("Providers", sub = listOfNotNull(device, if (known.isEmpty()) "reading Orb's providers…" else "${known.count { it.ready }} ready · ${known.size} to choose from").joinToString(" · "), back = c.nav::back)
     Field(query, "Anthropic, OpenAI, Groq…", Modifier.padding(horizontal = Margin).padding(bottom = 4.dp).fillMaxWidth()) { query = it }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
+        if (def != null) item(key = "default") {
+            Line("default model", listOf(def.model.substringAfter('/'), def.thinking).filter(String::isNotEmpty).joinToString(" · "), "change ›", true, Modifier.animateItem()) { c.deck(def) }
+        }
         if (accounts.isNotEmpty()) {
             item(key = "s:accounts") { T("accounts · quota left", Modifier.padding(top = 22.dp, bottom = 4.dp).animateItem(), label = true, color = p.meta) }
             if (note.isNotEmpty()) item(key = "note") { T(note, Modifier.padding(vertical = 6.dp), size = 13.sp, color = Ink.Rupture) }

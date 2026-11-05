@@ -149,12 +149,16 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 	if press(e) {
 		a.show(t.ID)
 	}
+	if e.DoubleClicked() {
+		a.renameTab(t)
+	}
 }
 
 func (a *app) threadRow(c *ui.Context, e Entry) {
 	pal := p(c)
 	row := sideRow(c, false, func() {
-		where(c, a.o.hue(e.Machine), e.Live, e.Asks, pal.mute)
+		opening := a.opening == e.Key
+		where(c, a.o.hue(e.Machine), e.Live || opening, e.Asks, pal.mute)
 		ink := pal.mute
 		if e.Live {
 			ink = pal.fg
@@ -164,6 +168,8 @@ func (a *app) threadRow(c *ui.Context, e Entry) {
 		switch {
 		case e.Asks:
 			state, sink = "asks", rupture
+		case opening:
+			state = "opening"
 		case e.Live:
 			state = "live"
 		case e.Unstored:
@@ -180,6 +186,9 @@ func (a *app) threadRow(c *ui.Context, e Entry) {
 	})
 	if press(row) {
 		a.open(e.Key)
+	}
+	if row.DoubleClicked() {
+		a.renameThread(e)
 	}
 }
 

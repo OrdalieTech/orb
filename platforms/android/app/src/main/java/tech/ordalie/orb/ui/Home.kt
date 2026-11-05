@@ -19,22 +19,13 @@ import tech.ordalie.orb.core.*
 fun ColumnScope.Home(c: Ctx) {
     val v = c.v
     Notice(c)
-    Magi(c)
+    var device by rememberSaveable { mutableStateOf("") }
+    Magi(c, device) { device = if (device == it) "" else it }
     // What runs, as the desktop's sidebar says it under the same cards: "2 working · …", "needs you · …".
     T(v.state.summary, Modifier.padding(horizontal = Margin + 2.dp, vertical = 2.dp), size = 13.sp, color = if (v.state.summary.startsWith("needs")) Ink.Rupture else p.meta, lines = 1)
     // Every thread on every machine in one list, newest first: where it lives is a detail of the row.
-    // Machines narrow the list: all of them or one (whose folders open from here). New
-    // conversations start from the prompt box, which also chooses where.
-    var device by rememberSaveable { mutableStateOf("") }
-    val devices = v.home.machines.filter { m -> v.home.entries.any { it.machine == m.id } }
-    if (devices.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        (listOf<Machine?>(null) + devices).forEach { d ->
-            val on = device == d?.id.orEmpty()
-            Box(Modifier.press { device = d?.id.orEmpty() }.clip(Soft).background(if (on) p.fg else Color.Transparent).padding(horizontal = 10.dp, vertical = 5.dp)) {
-                T(d?.name ?: "all", size = 14.sp, weight = if (on) Strong else Medium, color = if (on) p.bg else p.mute)
-            }
-        }
-    }
+    // A machine's card narrows the list to it (and its folders open from here). New conversations
+    // start from the prompt box, which also chooses where.
     val shown = if (device.isEmpty()) v.home.entries else v.home.entries.filter { it.machine == device }
     val browsable = v.machine(device)?.takeIf { !it.self && it.launch }
     // Newer threads arriving from other machines land above; a reader at the top stays at the top.
@@ -57,12 +48,15 @@ fun ColumnScope.Home(c: Ctx) {
             SessionRow(named(e.title), m?.name.takeIf { device.isEmpty() }.orEmpty(), v.tab(e.tab)?.let(v::word).orEmpty().ifEmpty { if (e.unstored) "open" else ago(e.modified) },
                 e.live, e.asks, e.open, Modifier.animateItem(), hue = v.hue(e.machine), rename = { c.threadMenu(e) }) { c.open(e.key) }
         }
-        if (v.home.machines.size < 2) item(key = "pair") {
+        // Until the view sends Home (its Bridge starting), a loader rather than an empty list.
+        if (v.home.machines.isEmpty()) item(key = "loading") {
+            Row(Modifier.padding(vertical = 22.dp), verticalAlignment = Alignment.CenterVertically) { Dot(p.mute, pulse = true); Spacer(Modifier.width(10.dp)); T("reading conversations…", color = p.mute) }
+        } else if (v.home.machines.size < 2) item(key = "pair") {
             Row(Modifier.fillMaxWidth().press { c.nav.go(Screen.Bridge) }.padding(vertical = 22.dp)) { T("No paired devices", Modifier.weight(1f), color = p.mute); T("Pair ›", weight = Medium) }
         }
         item { Spacer(Modifier.height(12.dp)) }
     }
-    TitleCard(v.home.entries.size + 1, v.state.up)
+    TitleCard()
     // Sent here from the overview's new-session card: the box takes the keyboard once the page settles.
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -73,45 +67,43 @@ fun ColumnScope.Home(c: Ctx) {
     PromptBox(null, c, c.palette(null), placeholder = "What should we work on?", focus = focus) { c.send(null, it) }
 }
 
-/** An Evangelion title card over the prompt box, as on the desktop: the episode over a rule, the
- *  title stretched tall, its name in Japanese closing the line. */
+/** An Evangelion title card over the prompt box, as on the desktop: a rule, the title stretched tall. */
 @Composable
-private fun TitleCard(episode: Int, up: Boolean) = Column(Modifier.fillMaxWidth().padding(start = Margin + 4.dp, end = Margin, top = 6.dp, bottom = 10.dp)) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        T(if (up) "第%03d話".format(episode) else "第———話", size = 12.sp, weight = Strong, color = Ink.Rupture)
-        Box(Modifier.weight(1f).height(1.dp).background(p.rule))
-    }
+private fun TitleCard() = Column(Modifier.fillMaxWidth().padding(start = Margin + 4.dp, end = Margin, top = 6.dp, bottom = 10.dp)) {
+    Rule()
     Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Stretch("NEW SESSION", 36.dp, p.fg)
         Box(Modifier.padding(bottom = 2.dp).size(7.dp).background(Ink.Rupture))
-        Spacer(Modifier.weight(1f))
-        T("新規セッション", size = 12.sp, color = p.meta, lines = 1)
     }
 }
 
 /**
- * This phone's state put to three votes, as NERV's MAGI put each decision to their three
- * computers: its Bridge is up, its paired machines are connected, its Orb is current. Each says
- * 承認 (approved) or, in red, 否決 (refused); Bridge's open its screen.
+ * Every machine of the Bridge put to the vote, as NERV's MAGI put each decision to their three
+ * computers: this phone first, up and on a current Orb, then each paired one, connected. Each says
+ * 承認 (approved) or, in red, 否決 (refused), and how many Orbs run there. A card narrows the list
+ * to its machine, and back.
  */
 @Composable
-private fun Magi(c: Ctx) {
+private fun Magi(c: Ctx, device: String, pick: (String) -> Unit) {
     val v = c.v
-    val peers = v.home.machines.filter { !it.self }
-    val connected = peers.count { it.connected }
+    val machines = v.home.machines.sortedByDescending { it.self }.ifEmpty { listOf(Machine(v.state.self, "", true, false, "", false, 0, emptyList(), emptyList())) }
     // A development build is the newest there is, whatever its number.
     val current = v.state.latest.isEmpty() || !Release.newer(v.state.latest, c.rt.version) || c.rt.version.endsWith("-dev")
-    Row(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 10.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        listOf(
-            Triple("bridge", if (v.state.up) "up" else "…", v.state.up),
-            Triple("peers", "$connected/${peers.size}", connected == peers.size),
-            Triple("orb", c.rt.version, current),
-        ).forEach { (name, value, yes) ->
+    val fit = machines.size <= 3
+    Row(Modifier.fillMaxWidth().then(if (fit) Modifier else Modifier.horizontalScroll(rememberScrollState())).padding(start = Margin, end = Margin, top = 10.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        machines.forEach { m ->
+            val up = if (m.self) v.state.up else m.connected
+            val yes = up && (!m.self || current)
             val ink = if (yes) p.mute else Ink.Rupture
-            Column(Modifier.weight(1f).border(1.dp, p.rule.copy(alpha = 0.8f), RoundedCornerShape(4.dp)).press(enabled = name != "orb") { c.nav.go(Screen.Bridge) }.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                T(name, label = true, color = p.mute)
+            val on = device == m.id
+            Column(Modifier.then(if (fit) Modifier.weight(1f) else Modifier.width(128.dp)).clip(RoundedCornerShape(4.dp)).background(if (on) p.raised else Color.Transparent)
+                .border(1.dp, if (on) p.fg else p.rule.copy(alpha = 0.8f), RoundedCornerShape(4.dp)).press { pick(m.id) }.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Where(v.hue(m.id))
+                    T(if (m.self) "this phone" else m.name, label = true, color = if (on) p.fg else p.mute, lines = 1)
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    T(value, Modifier.weight(1f), size = 12.sp, color = ink, lines = 1)
+                    T(if (!up) (if (m.self) "starting…" else "offline") else if (!yes) "update" else "${m.running.size} running", Modifier.weight(1f), size = 12.sp, color = ink, lines = 1)
                     T(if (yes) "承認" else "否決", size = Size.Label, weight = Strong, color = ink)
                 }
             }

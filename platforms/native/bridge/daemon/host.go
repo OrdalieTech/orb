@@ -177,7 +177,13 @@ func lines(name string, output []byte) json.RawMessage {
 	return bridge.JSON(map[string]any{name: rows})
 }
 
-var settingName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9]{0,63}$`)
+// lazyRegexp compiles when first used: counted repetitions make large programs, which every orb
+// process (this package is in all of them) paid for as it started.
+func lazyRegexp(pattern string) func() *regexp.Regexp {
+	return sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(pattern) })
+}
+
+var settingName = lazyRegexp(`^[a-zA-Z][a-zA-Z0-9]{0,63}$`)
 
 // cli is what a peer reads and changes of this machine's Orb through its CLI here: its accounts
 // with their plan limits and the switch between them, its plugins and their choices, a provider's
@@ -195,6 +201,7 @@ func (s *Service) cli(ctx context.Context, method string, params json.RawMessage
 		Value    string `json:"value,omitempty"`
 		Provider string `json:"provider,omitempty"`
 		ID       string `json:"id,omitempty"`
+		Level    string `json:"level,omitempty"`
 	}
 	if err := protocol.Decode(params, &q); err != nil {
 		return nil, err
@@ -205,18 +212,18 @@ func (s *Service) cli(ctx context.Context, method string, params json.RawMessage
 		args = []string{"accounts", "--json"}
 	case method == "host.plugins":
 		args = []string{"plugins", "list", "--json"}
-	case method == "host.accounts.use" && providerName.MatchString(q.Provider) && providerName.MatchString(q.ID):
+	case method == "host.accounts.use" && providerName().MatchString(q.Provider) && providerName().MatchString(q.ID):
 		args = []string{"accounts", "use", q.Provider, q.ID}
 	case method == "host.models":
 		args = []string{"models", "--json"}
-	case method == "host.models.use" && providerName.MatchString(q.Provider) && modelName.MatchString(q.ID):
-		args = []string{"models", "use", q.Provider, q.ID}
-	case method == "host.logout" && providerName.MatchString(q.Provider):
+	case method == "host.models.use" && providerName().MatchString(q.Provider) && modelName().MatchString(q.ID) && (q.Level == "" || settingName().MatchString(q.Level)):
+		args = append([]string{"models", "use", q.Provider, q.ID}, strings.Fields(q.Level)...)
+	case method == "host.logout" && providerName().MatchString(q.Provider):
 		args = []string{"logout", q.Provider}
-	case method != "host.plugins.set" || !providerName.MatchString(q.Name):
+	case method != "host.plugins.set" || !providerName().MatchString(q.Name):
 	case q.On != nil:
 		args = []string{"plugins", map[bool]string{true: "enable", false: "disable"}[*q.On], q.Name}
-	case settingName.MatchString(q.Key):
+	case settingName().MatchString(q.Key):
 		value, _ := json.Marshal(q.Value)
 		args = []string{"plugins", "set", q.Name, q.Key, string(value)}
 	}
@@ -272,10 +279,10 @@ func (l *hostLogin) add(line json.RawMessage, done bool) {
 	l.wake = make(chan struct{})
 }
 
-var providerName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+var providerName = lazyRegexp(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 // modelName is a model id as providers write them (claude-opus-4-5, openai/gpt-5:free, Qwen/Qwen3…).
-var modelName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$`)
+var modelName = lazyRegexp(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$`)
 
 func (s *Service) login(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	exe, err := s.loginExecutable()
@@ -301,7 +308,7 @@ func (s *Service) login(ctx context.Context, method string, params json.RawMessa
 		if err := protocol.Decode(params, &q); err != nil {
 			return nil, err
 		}
-		if !providerName.MatchString(q.Provider) || q.Method != "oauth" && q.Method != "api_key" {
+		if !providerName().MatchString(q.Provider) || q.Method != "oauth" && q.Method != "api_key" {
 			return nil, bridge.Fail("invalid_params")
 		}
 		return s.startLogin(exe, q.Provider, q.Method)
@@ -622,7 +629,15 @@ func (s *Service) launch(ctx context.Context, p bridge.Principal, cwd, session s
 		if session != "" && l.session == session {
 			alias := l.alias
 			s.mu.Unlock()
-			return s.launchedInstance(ctx, p, alias)
+			open, err := s.launchedInstance(ctx, p, alias)
+			s.mu.Lock()
+			ended := s.launched[alias] == nil
+			s.mu.Unlock()
+			if err != nil && ended {
+				// It was ending (put to sleep): the thread opens in a new one.
+				return s.launch(ctx, p, cwd, session)
+			}
+			return open, err
 		}
 	}
 	if len(s.launched) >= maxLaunched {
@@ -794,7 +809,7 @@ func (s *Service) launchedInstance(ctx context.Context, p bridge.Principal, alia
 		select {
 		case <-ctx.Done():
 			return nil, bridge.Fail("unavailable")
-		case <-time.After(200 * time.Millisecond):
+		case <-time.After(20 * time.Millisecond):
 		}
 	}
 }

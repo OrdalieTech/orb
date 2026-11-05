@@ -52,11 +52,15 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
         snapshotFlow { list.canScrollForward to list.layoutInfo.totalItemsCount }.collect { (more, n) -> if (follow && more && n > 0) list.requestScrollToItem(n - 1, Int.MAX_VALUE) }
     }
     Box(Modifier.weight(1f).fillMaxWidth()) {
-        // Shown only once the rows had time to come: a thread opening shows nothing, not "ready".
+        // A thread still coming shows its loader at once; a loaded one only once its rows had time
+        // to come, so an opening thread never flashes "ready".
         var waited by remember(t.id) { mutableStateOf(false) }
         LaunchedEffect(t.id) { delay(700); waited = true }
-        val ghost by animateFloatAsState(if (turns.isEmpty() && waited) 1f else 0f, tween(400), label = "standby")
-        if (ghost > 0f) Box(Modifier.fillMaxSize().alpha(ghost), contentAlignment = Alignment.Center) { T(t.empty, label = true, color = p.meta) }
+        val ghost by animateFloatAsState(if (turns.isEmpty() && (waited || !t.loaded)) 1f else 0f, tween(400), label = "standby")
+        if (ghost > 0f && turns.isEmpty()) Column(Modifier.fillMaxSize().alpha(ghost), Arrangement.spacedBy(10.dp, Alignment.CenterVertically), Alignment.CenterHorizontally) {
+            if (!t.loaded) Dot(p.mute, pulse = true) else if (!t.asleep) Ordalie()
+            T(t.empty, label = true, color = p.meta)
+        }
         // Items never slide: a streamed line would set every row around it moving.
         LazyColumn(Modifier.fillMaxSize(), list) {
             if (t.earlier) item(key = "earlier") {

@@ -20,6 +20,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.input.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.drawscope.*
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import tech.ordalie.orb.R
 import kotlin.math.roundToInt
 import kotlinx.coroutines.*
@@ -93,19 +95,31 @@ fun AnimatedVisibilityScope.Sheet(dismiss: () -> Unit, modifier: Modifier = Modi
 
 @Composable
 fun Dot(color: Color = Ink.Rupture, size: Dp = 8.dp, pulse: Boolean = false, square: Boolean = false) {
-    val a = if (pulse) rememberInfiniteTransition("dot").animateFloat(1f, 0.25f, infiniteRepeatable(tween(700), RepeatMode.Reverse), "a").value else 1f
-    Box(Modifier.size(size).alpha(a).background(color, if (square) RoundedCornerShape(0) else CircleShape))
+    val on = if (pulse) blink(700) else null
+    Box(Modifier.size(size).graphicsLayer { alpha = if (on?.value == false) 0.25f else 1f }.background(color, if (square) RoundedCornerShape(0) else CircleShape))
 }
 
 @Composable
 fun Caret(color: Color = p.fg, width: Dp = 8.dp, height: Dp = 16.dp) {
-    val on = rememberInfiniteTransition("caret").animateFloat(1f, 0f, infiniteRepeatable(tween(530, delayMillis = 400), RepeatMode.Reverse), "c").value
-    Box(Modifier.width(width).height(height).alpha(if (on > 0.5f) 1f else 0f).background(color))
+    val on = blink(530)
+    Box(Modifier.width(width).height(height).graphicsLayer { alpha = if (on.value) 1f else 0f }.background(color))
 }
+
+/** Flips every [ms], every blink in step and read as it draws: a frame per flip, not sixty a second. */
+@Composable
+private fun blink(ms: Long): State<Boolean> {
+    val on = remember { mutableStateOf(true) }
+    LaunchedEffect(ms) { while (true) { delay(ms - System.currentTimeMillis() % ms); on.value = System.currentTimeMillis() / ms % 2 == 0L } }
+    return on
+}
+
+/** The maker's mark, small and faint where the app waits on you, as the TUI's empty chat shows it. */
+@Composable
+fun Ordalie(size: Dp = 26.dp, color: Color = p.rule) = Image(painterResource(R.drawable.ic_ordalie), null, Modifier.size(size), colorFilter = ColorFilter.tint(color))
 
 /** Three hairlines: the menu. */
 @Composable
-fun MenuMark(onClick: () -> Unit) = Box(Modifier.press(onClick = onClick).padding(10.dp)) {
+fun MenuMark(onClick: () -> Unit) = Box(Modifier.press(onClick = onClick).semantics { contentDescription = "menu" }.padding(10.dp)) {
     val ink = p.fg
     Canvas(Modifier.size(16.dp, 11.dp)) {
         listOf(0f, 0.5f, 1f).forEach { f -> drawLine(ink, Offset(0f, size.height * f), Offset(size.width, size.height * f), 1.4.dp.toPx(), StrokeCap.Round) }

@@ -338,6 +338,29 @@ func TestAPluginChangeReachesTheOrbsThisBridgeStarted(t *testing.T) {
 	}
 }
 
+func TestADefaultModelTakesItsLevelAlong(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell stand-in")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "orb")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$@\" >> "+filepath.Join(dir, "calls")+"\necho '{\"type\":\"done\"}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{loginExecutable: func() (string, error) { return script, nil }, ctx: t.Context()}
+	for _, params := range []map[string]string{{"provider": "anthropic", "id": "claude-opus-4-5"}, {"provider": "anthropic", "id": "claude-opus-4-5", "level": "high"}} {
+		if _, err := s.cli(t.Context(), "host.models.use", bridge.JSON(params)); err != nil {
+			t.Fatalf("%v: %v", params, err)
+		}
+	}
+	if _, err := s.cli(t.Context(), "host.models.use", bridge.JSON(map[string]string{"provider": "anthropic", "id": "claude-opus-4-5", "level": "--all"})); bridge.Code(err) != "invalid_params" {
+		t.Fatalf("a flag for a level: %v", err)
+	}
+	if calls, _ := os.ReadFile(filepath.Join(dir, "calls")); string(calls) != "models use anthropic claude-opus-4-5\nmodels use anthropic claude-opus-4-5 high\n" {
+		t.Fatalf("calls:\n%s", calls)
+	}
+}
+
 // An Orb updated in place brings Bridge along: once its binary is another file that runs,
 // Bridge restarts into it, but only with no turn running for a peer.
 func TestBridgeFollowsItsBinaryBetweenTurns(t *testing.T) {

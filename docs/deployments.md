@@ -215,8 +215,8 @@ explicitly and in two separate kinds:
   headless Orb is signed in from the phone, with copy-code login or a pasted redirect URL. The
   machine's accounts and their plan limits come the same way (`host.accounts`, `orb accounts
   --json` there), and `host.accounts.use` switches the account a provider uses; `host.models`
-  (`orb models --json`) lists the models a new session there can use with its default, and
-  `host.models.use` changes that default. It
+  (`orb models --json`) lists the models a new session there can use with their reasoning levels
+  and its default, and `host.models.use` changes that default and the level it starts at. It
   also opens a terminal there (`host.terminal.*`, `orb bridge shell <peer> [folder]`): the
   owner's login shell in a pseudo-terminal, which the Android app shows for a device's
   conversation. Nothing is reachable through it that starting Orb there could not already run.

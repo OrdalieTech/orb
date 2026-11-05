@@ -27,7 +27,7 @@ class OrbService : Service() {
     }
 
     private fun note(text: String): Notification = Notification.Builder(this, CHANNEL)
-        .setSmallIcon(R.drawable.ic_orb_mark).setContentTitle("Orb · " + runtime.orb.device).setContentText(text)
+        .setSmallIcon(R.drawable.ic_ordalie).setContentTitle("Orb · " + runtime.orb.device).setContentText(text)
         .setOngoing(true).setOnlyAlertOnce(true).setCategory(Notification.CATEGORY_SERVICE)
         .setContentIntent(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
         .build()
@@ -37,7 +37,7 @@ class OrbService : Service() {
         val open = PendingIntent.getActivity(this, tab.hashCode(), Intent(this, MainActivity::class.java).putExtra(TAB, tab)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         getSystemService(NotificationManager::class.java).notify(tab.hashCode(), Notification.Builder(this, ALERTS)
-            .setSmallIcon(R.drawable.ic_orb_mark).setContentTitle(title).setContentText(text)
+            .setSmallIcon(R.drawable.ic_ordalie).setContentTitle(title).setContentText(text)
             .setAutoCancel(true).setCategory(Notification.CATEGORY_MESSAGE).setContentIntent(open).build())
     }
 

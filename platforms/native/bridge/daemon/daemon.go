@@ -143,7 +143,7 @@ func Start(ctx context.Context, state *native.State, profile string, explicit bo
 	go func() { _ = cmd.Wait() }()
 	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
@@ -244,13 +244,6 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 		return err
 	}
 	defer func() { _ = node.Close() }()
-	startup, cancel := context.WithTimeout(ctx, 25*time.Second)
-	listener, err := node.Listen(startup)
-	cancel()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = listener.Close() }()
 	serviceCtx, stop := context.WithCancel(ctx)
 	defer stop()
 	if web.Listen != "" {
@@ -304,7 +297,26 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 	// (a device pairing) get a small pool of their own, and only for an invitation's lifetime:
 	// throwaway identities can fill that pool, never the slots of paired peers.
 	slots, strangers := make(chan struct{}, 64), make(chan struct{}, 8)
+	// The relay comes up behind the local sockets: this machine's apps and Orbs wait on no network
+	// to start (its map and region take a round trip or more), and keep working while it is
+	// unreachable, offline say, as it is tried again every 30 s.
 	go func() {
+		var listener net.Listener
+		for {
+			startup, cancel := context.WithTimeout(serviceCtx, 25*time.Second)
+			var err error
+			listener, err = node.Listen(startup)
+			cancel()
+			if err == nil {
+				break
+			}
+			select {
+			case <-serviceCtx.Done():
+				return
+			case <-time.After(30 * time.Second):
+			}
+		}
+		context.AfterFunc(serviceCtx, func() { _ = listener.Close() })
 		for {
 			stream, err := listener.Accept()
 			if err != nil {

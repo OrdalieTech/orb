@@ -203,15 +203,15 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 					}
 					ui.Text(c, name).FontSize(small).FontWeight(medium).TextColor(pal.mute).SingleLine().Shrink(1)
 					// Reasoning as a small meter: one bar per level the model takes, lit up to the current one.
-					if t != nil && len(t.Levels) > 0 {
+					if on != nil && len(on.Levels) > 0 {
 						now := -1
-						for i, l := range t.Levels {
-							if l == t.Thinking {
+						for i, l := range on.Levels {
+							if l == on.Thinking {
 								now = i
 							}
 						}
 						ui.Row(c).Gap(2).AlignItems(ui.End).MarginStart(2).Children(func() {
-							for i, l := range t.Levels {
+							for i, l := range on.Levels {
 								ink := pal.rule
 								if i <= now && l != "off" {
 									ink = pal.mute

@@ -422,6 +422,10 @@ func (a *app) layout(c *ui.Context, x *tile, corner bool) {
 			a.terminal(c, t, x)
 		case t != nil:
 			a.chat(c, t)
+		case x.tab != "":
+			// A conversation the view has not listed yet: `orb app` is starting, or it just opened.
+			a.titleBar(c, func() {})
+			ui.Column(c).Grow(1).FillWidth().Children(func() { a.pending(c) })
 		default:
 			a.homeScreen(c)
 		}

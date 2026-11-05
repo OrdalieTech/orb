@@ -94,15 +94,17 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 				})
 			}
 		}).Grow(1).Basis(0).FillWidth().Justify(ui.End)
-		if len(tt) == 0 {
-			word := "standby"
-			switch {
-			case t.Asleep:
-				word = "asleep · a message wakes it"
-			case t.Loaded:
-				word = "ready"
-			}
-			label(c, word).TextColor(pal.meta).Attach(ui.AnchorCenter, ui.AnchorCenter)
+		switch {
+		case len(tt) > 0:
+		case !t.Loaded:
+			a.pending(c)
+		case t.Asleep:
+			label(c, "asleep · a message wakes it").TextColor(pal.meta).Attach(ui.AnchorCenter, ui.AnchorCenter)
+		default:
+			ui.Column(c).AlignItems(ui.Center).Gap(10).Attach(ui.AnchorCenter, ui.AnchorCenter).Children(func() {
+				ui.Icon(c, ordalie).Size(26, 26).TextColor(pal.rule)
+				label(c, "ready").TextColor(pal.meta)
+			})
 		}
 		reading(c).Children(func() {
 			if t.Status != "" {
@@ -251,6 +253,20 @@ func caret(c *ui.Context) {
 			at -= half
 		}
 		p.After(half - at)
+	})
+}
+
+// pending says what the tile shows is on its way: a dot breathing in its middle, once the tile has
+// waited 150 ms, so what comes at once never flashes it.
+func (a *app) pending(c *ui.Context) {
+	if wait := 150*time.Millisecond - time.Since(a.building.since); wait > 0 {
+		c.After(wait)
+		return
+	}
+	pal := p(c)
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Attach(ui.AnchorCenter, ui.AnchorCenter).Children(func() {
+		dot(c, pal.meta, 6, true, false)
+		label(c, "loading").TextColor(pal.meta)
 	})
 }
 
@@ -617,12 +633,12 @@ func table(c *ui.Context, rows [][][]Span, size, indent float32) {
 // interrupt is a plugin stopping the world: the only place red fills space. The word names who is
 // asking; answer gets nil to dismiss it.
 func (a *app) interrupt(c *ui.Context, ask Ask, answer func(*string)) {
-	word, caption := "QUESTION", "質問 · A QUESTION FOR YOU"
+	word, caption := "QUESTION", "A QUESTION FOR YOU"
 	switch ask.Owner {
 	case "permissions":
-		word, caption = "APPROVAL", "承認要求 · APPROVAL REQUIRED"
+		word, caption = "APPROVAL", "APPROVAL REQUIRED"
 	case "bridge":
-		word, caption = "PAIR", "接続要求 · PAIRING REQUEST"
+		word, caption = "PAIR", "PAIRING REQUEST"
 	}
 	ink := charcoal
 	open := true
@@ -730,12 +746,14 @@ func hotkey(panel ui.Element, key string) bool {
 // reasoning says each level in words.
 var reasoning = map[string]string{"off": "no thinking", "minimal": "barely", "low": "light", "medium": "balanced", "high": "thorough", "xhigh": "very thorough", "max": "as long as it takes"}
 
-// modelSheet: the model and its reasoning on top, every model below, grouped by provider and
-// narrowed by search; the accounts of its provider on the machine it runs on. Choices are
-// remembered for the sessions that follow.
+// modelSheet: the model and its reasoning on top, every model below, those in use first, then
+// grouped by provider and narrowed by search; the accounts of its provider on the machine it runs
+// on. With no conversation (Home, Providers) it chooses the default new conversations start on,
+// on its machine.
 func (a *app) modelSheet(c *ui.Context, t *Tab) {
 	o, pal := a.o, p(c)
 	open := true
+	home, def := t.ID == "", a.defaults[t.Peer]
 	provider, name, _ := strings.Cut(t.Model, "/")
 	if a.accountsOf != t.Peer {
 		a.accountsOf, a.accounts = t.Peer, nil
@@ -746,45 +764,62 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 			}
 		}, "accounts", "machine", peer)
 	}
-	popover(c, &a.active.modelAt, &open, 400, a.keyed, func() {
+	body := func() {
 		ui.Row(c).FillWidth().Padding(14, 16, 0).AlignItems(ui.End).Children(func() {
 			ui.Column(c).Grow(1).Basis(0).Gap(2).Children(func() {
-				label(c, "model").TextColor(pal.meta)
+				label(c, map[bool]string{true: "default · " + t.Where, false: "model"}[home]).TextColor(pal.meta)
 				ui.Text(c, cmp.Or(name, "none")).FontSize(16).FontWeight(strong).SingleLine()
 			})
-			ui.Text(c, strings.Join(slices.DeleteFunc([]string{provider, t.Where}, func(s string) bool { return s == "" }), " · ")).
+			if !home && def != nil && t.Model != "" && t.Model != def.Model {
+				if btn(c, "make default", false, pal.fg, pal.bg) {
+					a.makeDefault(t.Peer, t.Model, t.Thinking)
+				}
+				return
+			}
+			ui.Text(c, strings.Join(slices.DeleteFunc([]string{provider, map[bool]string{false: t.Where}[home]}, func(s string) bool { return s == "" }), " · ")).
 				Margin(0, 0, 2, 12).FontSize(12).TextColor(pal.meta).SingleLine()
 		})
 		field(c, &a.query, "Search models", false).Margin(10, 12, 6).AutoFocus()
 		ui.Scroll(c).FillWidth().MaxHeight(300).Shrink(1).Padding(0, 4, 4).Children(func() {
 			q := strings.ToLower(strings.TrimSpace(a.query))
+			// The default and what the machine's open conversations run on, above the rest.
+			var used []string
+			use := func(id string) {
+				if slices.Contains(t.Models, id) && !slices.Contains(used, id) {
+					used = append(used, id)
+				}
+			}
+			if def != nil {
+				use(def.Model)
+			}
+			for _, x := range o.state.Tabs {
+				if x.Peer == t.Peer {
+					use(x.Model)
+				}
+			}
 			var last string
-			for _, id := range t.Models {
+			for i, id := range append(used, t.Models...) {
 				if q != "" && !strings.Contains(strings.ToLower(id), q) {
 					continue
 				}
 				group, short, _ := strings.Cut(id, "/")
+				if i < len(used) {
+					group, short = "in use", id
+				}
 				if group != last {
 					last = group
 					label(c.Key("h:"+group), group).TextColor(pal.meta).Padding(10, 12, 2)
 				}
-				on := id == t.Model
-				row := menuRow(c.Key(id), short, on)
-				if on && a.query == "" {
-					row.ScrollIntoView()
-				}
-				if press(row) {
-					if t.ID == "" {
-						// Home's sheet sets the default new conversations start on, there.
-						o.send("default", "machine", t.Peer, "name", id)
-						t.Model = id
+				if press(menuRow(c.Key(group+":"+id), short, map[bool]string{true: "default"}[def != nil && id == def.Model], id == t.Model)) {
+					if home {
+						a.makeDefault(t.Peer, id, "")
 					} else {
 						o.send("model", "tab", t.ID, "name", id)
 					}
 					a.model, a.query = "", ""
 				}
 			}
-			if press(menuRow(c, "+ connect a provider", false).TextColor(pal.mute)) {
+			if press(menuRow(c, "+ connect a provider", "", false).TextColor(pal.mute)) {
 				a.model = ""
 				a.push(screen{kind: "providers", peer: t.Peer})
 			}
@@ -810,14 +845,24 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 						seg.Children(func() {
 							ui.Text(c, strings.NewReplacer("minimal", "min", "medium", "med").Replace(l)).FontSize(small).FontWeight(medium).TextColor(ink).SingleLine()
 						})
-						if press(seg) {
+						switch {
+						case !press(seg):
+						case home:
+							a.makeDefault(t.Peer, t.Model, l)
+						default:
 							o.send("thinking", "tab", t.ID, "name", l)
 						}
 					}
 				})
 			})
 		}
-	})
+	}
+	// Over a screen (Providers) no prompt box shows to open out of: the sheet is a dialog there.
+	if len(a.stack) > 0 {
+		modal(c, &open, 420, body)
+	} else {
+		popover(c, &a.active.modelAt, &open, 400, a.keyed, body)
+	}
 	if !open {
 		a.model, a.query = "", ""
 	}

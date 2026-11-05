@@ -224,6 +224,15 @@ func UnmarshalString(data []byte) (string, error) {
 			if character < 0x20 || character == '"' {
 				return "", fmt.Errorf("jsonwire: invalid character in JSON string")
 			}
+			// A run of plain ASCII is copied at once: tool output is mostly that, between escapes.
+			if end := index; character < utf8.RuneSelf {
+				for end < len(data)-1 && data[end] >= 0x20 && data[end] < utf8.RuneSelf && data[end] != '"' && data[end] != '\\' {
+					end++
+				}
+				output.Write(data[index:end])
+				index = end
+				continue
+			}
 			runeValue, size := utf8.DecodeRune(data[index : len(data)-1])
 			if runeValue == utf8.RuneError && size == 1 {
 				output.WriteRune(utf8.RuneError)

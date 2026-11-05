@@ -43,6 +43,9 @@ class Runtime(context: Context) {
 
 class OrbApp : Application() {
     val runtime by lazy { Runtime(this) }
+
+    // The Orb starts with the process, beside the first frame rather than after it.
+    override fun onCreate() { super.onCreate(); Thread { runtime.view }.start() }
 }
 
 val Context.runtime get() = (applicationContext as OrbApp).runtime
