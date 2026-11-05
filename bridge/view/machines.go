@@ -523,6 +523,17 @@ func (a *App) open(key string) (any, error) {
 	}
 	if t == nil && m != nil && running != "" {
 		t = a.newTab(peer, running, a.name(m), session)
+		// Titled from the start, as start does, so it never shows its folder's name meanwhile.
+		for _, i := range m.instances {
+			if i.id == running {
+				t.Title = i.title
+			}
+		}
+		for _, th := range m.threads {
+			if th.id == session && t.Title == "" {
+				t.Title = th.title
+			}
+		}
 		a.balance()
 	}
 	a.mu.Unlock()

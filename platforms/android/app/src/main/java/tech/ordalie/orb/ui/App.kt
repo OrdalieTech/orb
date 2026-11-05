@@ -65,6 +65,8 @@ class Nav(private val rt: Runtime, private val scope: CoroutineScope) {
     var unsent by mutableStateOf<Pair<String, String>?>(null)
     /** Home's prompt box takes the keyboard when it next shows (the overview's new-session card). */
     var compose by mutableStateOf(false)
+    /** The page on screen was opened from the overview, which Back returns to. */
+    var fromOverview by mutableStateOf(false)
     /** The conversation just closed, by name, and what opens it again, while its undo shows. */
     var closed by mutableStateOf<Pair<String, () -> Unit>?>(null)
     fun go(s: Screen) { forward = true; stack += s }
@@ -74,6 +76,7 @@ class Nav(private val rt: Runtime, private val scope: CoroutineScope) {
      *  just opened slides in once the view lists it. */
     fun show(tab: String?) {
         forward = false
+        fromOverview = false
         while (stack.size > 1) stack.removeAt(stack.lastIndex)
         scope.launch {
             val page = if (tab == null) 0 else withTimeoutOrNull(5000) { snapshotFlow { rt.view.state.tabs.indexOfFirst { it.id == tab } }.first { it >= 0 } }?.plus(1) ?: return@launch
@@ -109,7 +112,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     }
     BackHandler(nav.stack.size > 1 || nav.pager.currentPage > 0 || picker != null || deck != null || renaming != null || viewing != null || overview) {
         if (viewing != null) viewing = null else if (renaming != null) renaming = null else if (picker != null) picker = null else if (deck != null) deck = null
-        else if (nav.stack.size > 1) nav.back() else if (overview) overview = false else nav.home()
+        else if (nav.stack.size > 1) nav.back() else if (overview) overview = false else if (nav.fromOverview) overview = true else nav.home()
     }
     // A notification asked for a conversation: show its tab.
     LaunchedEffect(rt.show) { rt.show?.let { nav.show(it); rt.show = null } }
@@ -164,7 +167,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
             }
         }
         // A conversation just closed can come back for a few seconds, as a mail app's undo.
-        LaunchedEffect(nav.closed) { if (nav.closed != null) { delay(5000); nav.closed = null } }
+        LaunchedEffect(nav.closed) { if (nav.closed != null) { delay(8000); nav.closed = null } }
         Overlay(nav.closed) { (name, undo) ->
             Box(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 52.dp), contentAlignment = Alignment.TopCenter) {
                 Row(Modifier.clip(Soft).background(p.fg).press { nav.closed = null; undo() }.padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {

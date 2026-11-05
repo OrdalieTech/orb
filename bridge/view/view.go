@@ -261,6 +261,9 @@ func (a *App) now(in intent) (any, error) {
 		args := t.execution(map[string]any{"text": t.invoking(in.Text)})
 		go t.call("steer", args)
 	case "abort":
+		if t.info.Target.Execution == "" {
+			return nil, nil // no run to stop: the Orb would answer stale_target
+		}
 		args := t.execution(map[string]any{})
 		go t.call("cancel", args)
 	case "answer":

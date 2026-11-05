@@ -100,8 +100,9 @@ type descriptor struct {
 	}
 	Commands []struct{ Name, Description string }
 	Stats    *struct {
-		Cost         float64
-		ContextUsage *struct{ Percent float64 } `json:"contextUsage"`
+		Cost              float64
+		ContextUsage      *struct{ Percent float64 } `json:"contextUsage"`
+		AssistantMessages int                        `json:"assistantMessages"`
 	}
 	Usage *struct {
 		Plan    string
@@ -140,6 +141,7 @@ type tab struct {
 	from                   int // the first message shown, once known: reloads keep the window, so rows keep their keys
 	stale, gone, reopening bool
 	threadRead             bool // its thread was read while no Orb ran it
+	said                   int  // the answers its Orb counted, as last described
 	wakes                  bool // on screen and among the last seen: it starts its Orb when none runs
 	ended                  bool // a turn ended since the last flush, as the stream said
 	watched, follows       bool
@@ -274,7 +276,7 @@ func (t *tab) describe() bool {
 		t.Online = false
 		// Unreachable is a network matter; not found means the Orb itself ended over there.
 		t.gone = bridge.Code(err) == "not_found" && t.info.Target.Session != ""
-		t.Status = map[bool]string{true: ended, false: "offline · read-only · reconnecting"}[t.gone]
+		t.Status = map[bool]string{true: ended, false: "offline · read-only · reconnecting"}[t.gone || t.Peer == a.self]
 		return false
 	}
 	if d.Target.Session != t.info.Target.Session {
@@ -284,6 +286,7 @@ func (t *tab) describe() bool {
 	if d.Catalog == t.info.Catalog && d.Models == nil {
 		d.Models, d.Commands = t.info.Models, t.info.Commands
 	}
+	same := d.Target.Session == t.info.Target.Session
 	t.info, t.Online, t.gone = d, true, false
 	// The next long poll waits for a change since what this describes, not since the last page:
 	// a turn begun and ended in between would otherwise leave the tab working.
@@ -307,6 +310,13 @@ func (t *tab) describe() bool {
 		t.Thinking = *d.Thinking // an Orb before 0.15 keeps it to itself: the last choice stands
 	}
 	t.Busy = d.Target.Execution != "" || strings.Contains(strings.ToLower(d.Status), "stream")
+	// Followed, the stream says when a turn ends; unfollowed (the app out of sight), a describe
+	// finding new answers at rest does.
+	said := t.said
+	if d.Stats != nil {
+		t.said = d.Stats.AssistantMessages
+	}
+	t.ended = t.ended || same && t.said > said && !t.Busy && !t.watched && !t.follows
 	t.Cost, t.Context = 0, 0
 	if d.Stats != nil {
 		t.Cost = d.Stats.Cost

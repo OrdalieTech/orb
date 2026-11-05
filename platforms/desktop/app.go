@@ -275,7 +275,7 @@ func (a *app) titleBar(c *ui.Context, body func()) {
 	}
 	bar := ui.Row(c).FillWidth().Height(max(tb.Height, 48)).Padding(0, right, 0, margin).Gap(14).BorderWidth(0, 0, 1, 0).BorderColor(p(c).rule).Clip().DragWindow()
 	if x := a.building; x != nil {
-		bar.OnClick(func() { a.activate(x) })
+		bar.OnClick(func() { a.focus++; a.activate(x) })
 	}
 	hovered := bar.Hovered()
 	bar.Children(func() {
@@ -290,10 +290,10 @@ func (a *app) titleBar(c *ui.Context, body func()) {
 // Among tiles, its tiles close.
 func (a *app) close(id string) {
 	tabs := a.o.state.Tabs
-	// A closed conversation can come back for a moment: its thread reopens in the focused tile.
+	// A closed conversation can come back for a moment: its thread reopens where New session would show.
 	for _, e := range a.o.home.Entries {
 		if e.Tab == id {
-			a.offer("closed “"+cmp.Or(e.Title, "new session")+"”", func() { a.open(e.Key) })
+			a.offer("closed “"+cmp.Or(e.Title, "new session")+"”", func() { a.newSession(); a.open(e.Key) })
 		}
 	}
 	for _, t := range a.root.tiles(nil) {
@@ -466,14 +466,8 @@ func (a *app) shortcuts(c *ui.Context) {
 	}
 	c.OnShortcut(cmd, ui.KeyN, a.newSession)
 	c.OnShortcut(cmd, ui.KeyK, func() { a.sideHidden = false; a.seek++ })
-	// Among tiles ⌘W closes the tile, its conversation staying open in the sidebar.
-	c.OnShortcut(cmd, ui.KeyW, func() {
-		if !a.root.leaf() {
-			a.unsplit(a.active)
-		} else if a.tab != "" {
-			a.close(a.tab)
-		}
-	})
+	// ⌘W closes the tile, its conversation staying open in the sidebar; the last tile turns Home.
+	c.OnShortcut(cmd, ui.KeyW, func() { a.unsplit(a.active) })
 	c.OnShortcut(cmd, ui.KeyD, func() { a.split(a.active, "right", &tile{}) })
 	c.OnShortcut(cmd|ui.Shift, ui.KeyD, func() { a.split(a.active, "bottom", &tile{}) })
 	c.OnShortcut(cmd, ui.KeyBracketLeft, func() { a.cycle(-1) })

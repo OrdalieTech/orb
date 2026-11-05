@@ -45,12 +45,15 @@ fun Modifier.morph(key: String): Modifier {
 @Composable
 fun Overview(c: Ctx, done: () -> Unit) {
     val tabs = c.v.state.tabs
-    LazyVerticalGrid(GridCells.Adaptive(168.dp), Modifier.fillMaxSize().background(p.bg), contentPadding = PaddingValues(Margin - 4.dp, 12.dp),
+    LaunchedEffect(Unit) { c.nav.fromOverview = false }
+    // It opens on the conversation that was on screen.
+    val grid = rememberLazyGridState(tabs.indexOfFirst { it.id == c.nav.open?.id }.coerceAtLeast(0))
+    LazyVerticalGrid(GridCells.Adaptive(168.dp), Modifier.fillMaxSize().background(p.bg), grid, contentPadding = PaddingValues(Margin - 4.dp, 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(tabs, key = { it.id }) { t ->
             // Its page shows before the overview goes, so the card grows into it.
             val scope = rememberCoroutineScope()
-            Card(t, c, Modifier.animateItem()) { scope.launch { c.nav.pager.scrollToPage(1 + c.v.state.tabs.indexOfFirst { it.id == t.id }); done() } }
+            Card(t, c, Modifier.animateItem()) { scope.launch { c.nav.pager.scrollToPage(1 + c.v.state.tabs.indexOfFirst { it.id == t.id }); done(); c.nav.fromOverview = true } }
         }
         item(key = "new") {
             Box(Modifier.height(72.dp).border(1.dp, p.rule, Soft).press { done(); c.nav.home(); c.nav.compose = true }, contentAlignment = Alignment.Center) {
