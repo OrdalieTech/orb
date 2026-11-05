@@ -139,6 +139,7 @@ type tab struct {
 	cursor, pulse          string
 	from                   int // the first message shown, once known: reloads keep the window, so rows keep their keys
 	stale, gone, reopening bool
+	threadRead             bool // its thread was read while no Orb ran it
 	wakes                  bool // on screen and among the last seen: it starts its Orb when none runs
 	ended                  bool // a turn ended since the last flush, as the stream said
 	watched, follows       bool
@@ -197,11 +198,15 @@ func (t *tab) step() time.Duration {
 	idle := t.instance == "" || t.gone
 	live, waits := t.watched || t.follows, t.info.Waits
 	describe := t.stale || !waits || !live
+	unread := idle && !reopen && live && !t.threadRead && len(t.tr.items) == 0 && t.session != ""
 	a.mu.Unlock()
-	// A tab whose Orb is not running (restored, or ended there) starts one once shown.
+	// A tab whose Orb is not running (restored, or ended there) starts one once shown; one left
+	// asleep shows its thread as it was.
 	if idle {
 		if reopen {
 			t.reopen("")
+		} else if unread {
+			t.readThread()
 		}
 		return time.Second
 	}
@@ -431,6 +436,24 @@ func (t *tab) snapshot() {
 		t.tr.apply(json.RawMessage(`{"type":"message_update","message":` + string(partial) + `}`))
 	}
 	t.cursor, t.Loaded = cursor, true
+}
+
+// readThread reads the thread's last messages from its machine, which keeps them (host.read).
+func (t *tab) readThread() {
+	var r struct {
+		Messages []json.RawMessage `json:"messages"`
+		From     int               `json:"from"`
+	}
+	err := t.remote("host.read", map[string]any{"session_id": t.session, "tail": tail}, &r)
+	a := t.a
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	t.threadRead = true
+	if err == nil && len(t.tr.items) == 0 && (t.instance == "" || t.gone) {
+		t.tr.load(r.Messages, r.From)
+		t.Loaded, t.Status = true, ended
+		a.flush()
+	}
 }
 
 func (t *tab) events(waits bool) {

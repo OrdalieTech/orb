@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
@@ -84,19 +85,14 @@ private fun Card(t: Tab, c: Ctx, modifier: Modifier, open: () -> Unit) {
                 onDragCancel = { scope.launch { swipe.animateTo(0f, spring(0.7f, 600f)) } },
             ) { change, dx -> change.consume(); scope.launch { swipe.snapTo(swipe.value + dx) } }
         }
-    Column(modifier.then(away).morph("tab-${t.id}").height(Tall).clip(Soft).background(p.raised).border(1.dp, ink, Soft).press(onLong = { c.tabMenu(t) }, onClick = open).padding(10.dp)) {
+    Column(modifier.then(away).morph("tab-${t.id}").alpha(if (t.asleep) 0.6f else 1f).height(Tall).clip(Soft).background(p.raised).border(1.dp, ink, Soft).press(onLong = { c.tabMenu(t) }, onClick = open).padding(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Where(c.v.hue(t.peer), t.busy, t.ask != null, p.fg)
             Spacer(Modifier.width(7.dp))
-            T(t.title.ifEmpty { "new session" }, Modifier.weight(1f), size = 13.sp, weight = Strong, lines = 1)
+            T(t.name, Modifier.weight(1f), size = 13.sp, weight = Strong, lines = 1)
             if (t.unread > 0) T("${t.unread}", Modifier.padding(start = 6.dp), size = Size.Label, weight = Strong)
         }
-        val state = when {
-            t.ask != null -> "asks · " + t.ask.title.ifEmpty { "approval" }
-            t.busy -> "working"
-            !t.online -> t.idleWord
-            else -> t.model.substringAfter('/')
-        }
+        val state = if (t.ask != null) "asks · " + t.ask.title.ifEmpty { "approval" } else c.v.word(t).ifEmpty { t.model.substringAfter('/') }
         // Where it runs, named as its prompt box names it, then its state; a new state rises into the last one's place.
         AnimatedContent(listOf(t.where.takeIf { t.remote } ?: "phone", state).filter(String::isNotEmpty).joinToString(" · "), Modifier.padding(top = 2.dp),
             transitionSpec = { (fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 }) togetherWith fadeOut(tween(120)) }, label = "state") { line ->

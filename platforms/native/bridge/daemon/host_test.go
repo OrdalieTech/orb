@@ -25,7 +25,7 @@ import (
 	"github.com/OrdalieTech/orb/platforms/native"
 )
 
-func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
+func TestHostListsAndReadsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
 	root := t.TempDir()
 	agentDir := filepath.Join(root, "agent")
 	t.Setenv(config.EnvAgentDir, agentDir)
@@ -65,6 +65,14 @@ func TestHostListsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testing.T) {
 	}
 	if err != nil || json.Unmarshal(raw, &page) != nil || len(page.Items) != 1 || page.Items[0].CWD != root || len([]rune(page.Items[0].First)) != 160 {
 		t.Fatalf("sessions: %s %v", raw, err)
+	}
+	raw, err = s.host(t.Context(), p, "host.read", bridge.JSON(map[string]any{"session_id": page.Items[0].ID, "tail": 1}))
+	var read struct {
+		Messages []json.RawMessage
+		From     int
+	}
+	if err != nil || json.Unmarshal(raw, &read) != nil || len(read.Messages) != 1 || read.From < 0 {
+		t.Fatalf("read: %s %v", raw, err)
 	}
 	for _, bad := range []string{"relative/dir", filepath.Join(root, "missing"), jsonl} {
 		if _, err := s.host(t.Context(), p, "host.launch", bridge.JSON(map[string]string{"cwd": bad})); err == nil {

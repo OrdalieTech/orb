@@ -32,6 +32,7 @@ type Running struct {
 	Instance string `json:"instance"`
 	Label    string `json:"label"`
 	Busy     bool   `json:"busy,omitempty"`
+	Open     bool   `json:"open,omitempty"` // a conversation follows it: a picker leaves it to its tab
 }
 
 // Folder is where some of a machine's threads live, most recently worked in first.
@@ -53,6 +54,7 @@ type Entry struct {
 	Live      bool   `json:"live,omitempty"`
 	Asks      bool   `json:"asks,omitempty"`
 	Open      bool   `json:"open,omitempty"`     // a tab follows it
+	Tab       string `json:"tab,omitempty"`      // that tab's id
 	Unstored  bool   `json:"unstored,omitempty"` // its Orb has not stored the thread yet
 	Deletable bool   `json:"deletable,omitempty"`
 }
@@ -357,7 +359,7 @@ func (a *App) machinesState() ([]Machine, []Entry) {
 			for slices.ContainsFunc(out.Running, func(r Running) bool { return r.Label == label }) {
 				label += " ·"
 			}
-			out.Running = append(out.Running, Running{Instance: i.id, Label: label, Busy: i.busy})
+			out.Running = append(out.Running, Running{Instance: i.id, Label: label, Busy: i.busy, Open: a.instanceTab(i.id) != nil})
 		}
 		for _, th := range m.threads {
 			at := slices.IndexFunc(out.Folders, func(f Folder) bool { return f.CWD == th.cwd })
@@ -379,7 +381,7 @@ func (a *App) machinesState() ([]Machine, []Entry) {
 				t = a.instanceTab(m.instances[at].id)
 			}
 			if t != nil {
-				e.Live, e.Asks, e.Open = t.Busy, t.Ask != nil, true
+				e.Live, e.Asks, e.Open, e.Tab = t.Busy, t.Ask != nil, true, t.ID
 			}
 			if e.Live {
 				e.Modified = now
@@ -392,7 +394,7 @@ func (a *App) machinesState() ([]Machine, []Entry) {
 			}
 			e := Entry{Key: "i:" + i.id, Title: cmp.Or(a.tabTitle(i.id), i.title, base(i.cwd), "new thread"), Machine: m.id, CWD: i.cwd, Modified: now, Live: i.busy, Unstored: true}
 			if t := a.instanceTab(i.id); t != nil {
-				e.Live, e.Asks, e.Open = t.Busy, t.Ask != nil, true
+				e.Live, e.Asks, e.Open, e.Tab = t.Busy, t.Ask != nil, true, t.ID
 			}
 			home = append(home, e)
 		}

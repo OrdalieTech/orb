@@ -158,14 +158,16 @@ fun Stretch(text: String, height: Dp, color: Color = p.fg, squeeze: Float = 1f, 
  * on, what came of it. Live actions get the dot; ones that open show › or ⌄. Every action aligns.
  */
 @Composable
-fun ActionLine(verb: String, target: String, result: String, live: Boolean = false, failed: Boolean = false, open: Boolean? = null) =
-    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+fun ActionLine(verb: String, target: String, result: String, live: Boolean = false, failed: Boolean = false, open: Boolean? = null) = Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.width(16.dp)) { if (live) Dot(pulse = true, size = 6.dp) else if (open != null) T(if (open) "⌄" else "›", size = 14.sp, color = p.meta) }
         T(verb, Modifier.width(72.dp), size = 14.sp, weight = Medium, color = if (live) p.fg else p.mute, lines = 1)
         T(target, Modifier.weight(1f), size = 14.sp, color = if (live) p.fg else p.mute, lines = 1)
-        Spacer(Modifier.width(8.dp))
-        T(result, Modifier.fillMaxWidth(0.3f), size = 13.sp, color = if (failed) Ink.Rupture else p.meta, lines = 1)
+        if (!failed) { Spacer(Modifier.width(8.dp)); T(result, Modifier.fillMaxWidth(0.3f), size = 13.sp, color = p.meta, lines = 1) }
     }
+    // Why it failed gets a line of its own, readable without opening it.
+    if (failed && result.isNotEmpty()) T(result, Modifier.padding(start = 88.dp), size = 13.sp, color = Ink.Rupture, lines = 2)
+}
 
 
 /** A labelled region of a screen: a rule, its name, its state at right. */

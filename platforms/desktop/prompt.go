@@ -112,14 +112,14 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 			}
 			hint := placeholder
 			if busy {
-				hint = "steer or queue a message"
+				hint = map[bool]string{true: "steer or queue", false: "steer or queue a message"}[a.narrow]
 			}
 			in := ui.TextAreaBase(c.Key("prompt"+id), &draft).Lines(3, 14).FillWidth().Padding(20, inset, 12)
 			if short {
 				in.Lines(1, 4).Padding(10, inset, 4)
 			}
 			in = in.FontSize(size).LineHeight(1.5).
-				Placeholder(hint).PlaceholderColor(pal.meta).AutoFocus()
+				Placeholder(hint).PlaceholderColor(pal.meta)
 			for _, m := range promptPattern.FindAllStringSubmatchIndex(draft, -1) {
 				start, end := m[0], m[1]
 				if m[4] >= 0 {

@@ -17,6 +17,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.*
 import androidx.compose.ui.focus.*
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -64,6 +65,8 @@ class Nav(private val rt: Runtime, private val scope: CoroutineScope) {
     var unsent by mutableStateOf<Pair<String, String>?>(null)
     /** Home's prompt box takes the keyboard when it next shows (the overview's new-session card). */
     var compose by mutableStateOf(false)
+    /** The conversation just closed, by name, and what opens it again, while its undo shows. */
+    var closed by mutableStateOf<Pair<String, () -> Unit>?>(null)
     fun go(s: Screen) { forward = true; stack += s }
     fun back() { if (stack.size > 1) { forward = false; stack.removeAt(stack.lastIndex) } }
     fun home() = show(null)
@@ -83,7 +86,7 @@ class Nav(private val rt: Runtime, private val scope: CoroutineScope) {
 }
 
 /** A name to change, rising from the bottom with the current one ready to edit. */
-class Rename(val title: String, val delete: (() -> Unit)? = null, val apply: (String) -> Unit)
+class Rename(val title: String, val apply: (String) -> Unit)
 
 /** A choice list rising from the bottom — places, menus, confirmations all use it. */
 class Picker(val title: String, val options: List<String>, val selected: String = "", val pick: (String) -> Unit)
@@ -157,6 +160,16 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
                         is Screen.Folder -> FolderScreen(ctx, s.peer, s.cwd)
                         is Screen.Terminal -> TerminalScreen(ctx, s.on)
                     }
+                }
+            }
+        }
+        // A conversation just closed can come back for a few seconds, as a mail app's undo.
+        LaunchedEffect(nav.closed) { if (nav.closed != null) { delay(5000); nav.closed = null } }
+        Overlay(nav.closed) { (name, undo) ->
+            Box(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 52.dp), contentAlignment = Alignment.TopCenter) {
+                Row(Modifier.clip(Soft).background(p.fg).press { nav.closed = null; undo() }.padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    T("closed · " + name, Modifier.widthIn(max = 220.dp), size = 14.sp, color = p.bg, lines = 1)
+                    T("  undo", size = 14.sp, weight = Strong, color = p.bg)
                 }
             }
         }
@@ -282,7 +295,7 @@ private fun TopBar(c: Ctx, overview: Boolean, toggle: () -> Unit) = Column(Modif
                         },
                     )
                 }
-                TabMark(t, c.v.hue(t.peer), pager.currentPage == page, { (1f - abs(pager.getOffsetDistanceInPages(page))).coerceIn(0f, 1f) }, drag, hold, { c.close(t) }) { c.nav.show(id) }
+                TabMark(t, c.v.word(t), c.v.hue(t.peer), pager.currentPage == page, { (1f - abs(pager.getOffsetDistanceInPages(page))).coerceIn(0f, 1f) }, drag, hold, { c.close(t) }) { c.nav.show(id) }
             }
         }
         GridMark(overview, toggle)
@@ -293,14 +306,16 @@ private fun TopBar(c: Ctx, overview: Boolean, toggle: () -> Unit) = Column(Modif
 
 /** [near] is how close the pager is to this tab's page, read at draw time so a swipe redraws only the line. */
 @Composable
-private fun TabMark(s: Tab, hue: Int, on: Boolean, near: () -> Float, modifier: Modifier, hold: Modifier, close: () -> Unit, open: () -> Unit) {
+private fun TabMark(s: Tab, word: String, hue: Int, on: Boolean, near: () -> Float, modifier: Modifier, hold: Modifier, close: () -> Unit, open: () -> Unit) {
     Column(modifier.fillMaxHeight().width(IntrinsicSize.Max).press(onClick = open).then(hold).padding(horizontal = 8.dp)) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             Where(hue, s.busy, s.ask != null, if (on) p.fg else p.mute)
             Spacer(Modifier.width(7.dp))
-            T(s.title.ifEmpty { "new session" }, Modifier.widthIn(max = 150.dp), size = 14.sp, weight = if (on || s.unread > 0) Strong else Regular, color = if (on) p.fg else if (s.online) p.mute else p.meta, lines = 1)
+            T(s.name, Modifier.widthIn(max = 150.dp), size = 14.sp, weight = if (on || s.unread > 0) Strong else Regular, color = if (on) p.fg else if (s.online) p.mute else p.meta, lines = 1)
             // Answers that came while it was out of sight, until it shows.
             if (s.unread > 0) T("${s.unread}", Modifier.padding(start = 6.dp), size = Size.Label, weight = Strong, color = p.fg)
+            // A run stopped short says so until the next one (on screen, its page does); working and asking show in its square.
+            else if (word == "stopped" && !on) T(word, Modifier.padding(start = 6.dp), size = Size.Label, color = p.meta)
             // The tab on screen closes from its own ×; any tab from its menu, held down.
             if (on) Box(Modifier.press(onClick = close).padding(start = 8.dp, end = 2.dp, top = 6.dp, bottom = 6.dp)) { T("×", size = 16.sp, color = p.meta) }
         }
@@ -324,10 +339,11 @@ fun AnimatedVisibilityScope.PickerSheet(pk: Picker, dismiss: () -> Unit) = Sheet
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) { keyboard?.hide() }
     T(pk.title, Modifier.padding(start = Margin, end = Margin, top = 18.dp, bottom = 6.dp), label = true, color = p.meta, lines = 1)
+    // Closed before its choice runs, so a choice may open the next sheet (a confirmation).
     LazyColumn(Modifier.heightIn(max = 440.dp), state = rememberLazyListState((pk.options.indexOf(pk.selected) - 2).coerceAtLeast(0))) {
         itemsIndexed(pk.options) { n, o ->
             val sel = o == pk.selected
-            Row(Modifier.animateEnterExit(enter = fadeIn(tween(240, 60 + n * 25)) + slideInVertically(tween(300, 40 + n * 25)) { it / 2 }).fillMaxWidth().press { pk.pick(o); dismiss() }.padding(horizontal = Margin, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.animateEnterExit(enter = fadeIn(tween(240, 60 + n * 25)) + slideInVertically(tween(300, 40 + n * 25)) { it / 2 }).fillMaxWidth().press { dismiss(); pk.pick(o) }.padding(horizontal = Margin, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 T(o, Modifier.weight(1f), size = 16.sp, weight = if (sel) Strong else Regular, lines = 1)
                 if (sel) Dot(p.fg)
             }
@@ -347,7 +363,6 @@ fun AnimatedVisibilityScope.RenameSheet(r: Rename, dismiss: () -> Unit) = Sheet(
     Row(Modifier.padding(start = Margin, end = 12.dp, top = 10.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         BasicTextField(value, { value = it }, Modifier.weight(1f).focusRequester(focus), textStyle = type(18.sp, p.fg, Medium), singleLine = true, cursorBrush = SolidColor(p.fg),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { done() }))
-        r.delete?.let { Spacer(Modifier.width(8.dp)); Btn("delete", color = Ink.Rupture) { it(); dismiss() } }
         Spacer(Modifier.width(8.dp)); Btn("save", inverted = true) { done() }
     }
 }

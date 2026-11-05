@@ -21,11 +21,13 @@ data class Tab(
     val unread: Int = 0, val commands: List<Command> = emptyList(), val models: List<String> = emptyList(), val slots: List<PluginSlot> = emptyList(),
     val asleep: Boolean = false,
 ) {
-    /** What a conversation whose Orb is not reachable is: asleep when its Orb ended (a message wakes it), else offline. */
-    val idleWord: String get() = if (asleep) "asleep" else "offline"
+    val name: String get() = named(title)
     /** What its page says before anything shows. */
-    val empty: String get() = if (asleep) "asleep · a message wakes it" else if (loaded) "ready" else "standby"
+    val empty: String get() = if (asleep) "asleep · a message wakes it" else if (loaded) "ready" else "loading…"
 }
+/** A conversation's title as every list shows it, capitalised as its titles plugin will. */
+fun named(title: String) = title.ifEmpty { "new session" }.replaceFirstChar(Char::uppercaseChar)
+
 data class Claim(val invitation: String, val claimant: String)
 data class Invitation(val code: String, val expires: Long)
 data class Prompt(val kind: String, val message: String, val placeholder: String, val options: List<Pair<String, String>>)
@@ -35,10 +37,10 @@ data class State(
     val joining: String = "", val launching: String = "", val login: Login? = null, val acting: Boolean = false, val summary: String = "starting",
     val latest: String = "", val commands: List<Command> = emptyList(),
 )
-data class Running(val instance: String, val label: String, val busy: Boolean)
+data class Running(val instance: String, val label: String, val busy: Boolean, val open: Boolean)
 data class Folder(val cwd: String, val threads: Int, val modified: Long, val live: Boolean)
 data class Machine(val id: String, val name: String, val self: Boolean, val connected: Boolean, val version: String, val launch: Boolean, val hue: Int, val running: List<Running>, val folders: List<Folder>)
-data class Entry(val key: String, val title: String, val machine: String, val cwd: String, val modified: Long, val live: Boolean, val asks: Boolean, val open: Boolean, val unstored: Boolean, val deletable: Boolean)
+data class Entry(val key: String, val title: String, val machine: String, val cwd: String, val modified: Long, val live: Boolean, val asks: Boolean, val open: Boolean, val tab: String, val unstored: Boolean, val deletable: Boolean)
 data class Home(val machines: List<Machine> = emptyList(), val entries: List<Entry> = emptyList())
 data class Span(val text: String, val bold: Boolean, val italic: Boolean, val code: Boolean, val strike: Boolean, val href: String)
 data class Block(val type: String, val level: Int, val mark: String, val depth: Int, val spans: List<Span>, val lang: String, val text: String, val blocks: List<Block>, val rows: List<List<List<Span>>>)
@@ -82,12 +84,12 @@ private fun state(o: JSONObject) = State(
 private fun home(o: JSONObject) = Home(
     o.list("machines") { m ->
         Machine(m.optString("id"), m.optString("name"), m.optBoolean("self"), m.optBoolean("connected"), m.optString("version"), m.optBoolean("launch"), m.optInt("hue"),
-            m.list("running") { Running(it.optString("instance"), it.optString("label"), it.optBoolean("busy")) },
+            m.list("running") { Running(it.optString("instance"), it.optString("label"), it.optBoolean("busy"), it.optBoolean("open")) },
             m.list("folders") { Folder(it.optString("cwd"), it.optInt("threads"), it.optLong("modified"), it.optBoolean("live")) })
     },
     o.list("entries") { e ->
         Entry(e.optString("key"), e.optString("title"), e.optString("machine"), e.optString("cwd"), e.optLong("modified"), e.optBoolean("live"), e.optBoolean("asks"),
-            e.optBoolean("open"), e.optBoolean("unstored"), e.optBoolean("deletable"))
+            e.optBoolean("open"), e.optString("tab"), e.optBoolean("unstored"), e.optBoolean("deletable"))
     },
 )
 private fun spans(a: JSONArray?) = a.map { Span(it.optString("t"), it.optBoolean("b"), it.optBoolean("i"), it.optBoolean("c"), it.optBoolean("s"), it.optString("h")) }
@@ -170,6 +172,16 @@ class View(private val scope: CoroutineScope, orb: Orb, private val budget: Int,
     fun visible(on: Boolean) { visible = on; send("visible", "on" to on) }
     fun show(tabs: List<String>) { if (tabs != shown) { shown = tabs; send("show", "tabs" to JSONArray(tabs)) } }
     fun tab(id: String?) = state.tabs.firstOrNull { it.id == id }
+    /** A conversation's state in a word, as the desktop's sidebar says it; empty awake and at rest. Its
+     *  Orb unreachable, it is asleep (a message wakes it), waking, or, on a peer, offline. */
+    fun word(t: Tab) = when {
+        t.ask != null -> "asks"
+        t.busy -> "working"
+        t.asleep -> "asleep"
+        !t.online -> if (t.remote) "offline" else "waking…"
+        rows[t.id]?.lastOrNull()?.let { it.kind == "note" && it.text == "stopped" } == true -> "stopped"
+        else -> ""
+    }
     val self get() = home.machines.firstOrNull { it.self }
     fun machine(id: String) = home.machines.firstOrNull { it.id == id }
     /** The hue a machine's sessions are told apart by: 0 for this phone, 1 to 6 for a peer, as the view assigns them. */
