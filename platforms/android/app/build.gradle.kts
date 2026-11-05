@@ -16,7 +16,7 @@ android {
         versionName = orbVersion
         versionCode = orbVersion.substringBefore('-').split('.').mapNotNull { it.toIntOrNull() }.let { (it + listOf(0, 0, 0)).take(3) }
             .fold(0) { code, part -> code * 1000 + part }.coerceAtLeast(1)
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") } // UXLAB-LOCAL
+        ndk { abiFilters += "arm64-v8a" }
     }
     // Development builds are signed with the release key when this machine has it, so they install
     // over a released app (and it over them) without losing its data. See release.sh.
