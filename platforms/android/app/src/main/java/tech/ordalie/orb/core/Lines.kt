@@ -17,8 +17,6 @@ class Lines(
     private val heard: (JSONObject) -> Unit = {}, private val started: () -> Unit = {},
 ) {
     @Volatile private var process = spawn()
-    @Volatile private var closed = false
-    @Volatile private var soon = false // an asked-for restart comes back at once
     private val pending = ConcurrentHashMap<String, CompletableDeferred<JSONObject>>()
     private val ids = AtomicLong()
 
@@ -38,11 +36,8 @@ class Lines(
                 }
                 runCatching { p.waitFor() }
                 pending.values.forEach { it.complete(failure("unavailable", "orb exited")) }
-                if (closed) break
                 if (System.currentTimeMillis() - began > 60_000) backoff = 1000L
-                if (!soon) delay(backoff).also { backoff = (backoff * 2).coerceAtMost(30_000) }
-                soon = false
-                if (closed) break
+                delay(backoff).also { backoff = (backoff * 2).coerceAtMost(30_000) }
                 runCatching { spawn() }.onSuccess { process = it; started() }
                     .onFailure { Log.w(tag, "restart failed", it) }
             }
@@ -62,16 +57,6 @@ class Lines(
             if (!send(message.put("id", id))) failure("unavailable", "orb is not running")
             else withTimeoutOrNull(timeoutMs) { reply.await() } ?: failure("timeout", "no answer in ${timeoutMs / 1000} s")
         } finally { pending.remove(id) }
-    }
-
-    /** Ends this process now; the supervisor starts it again right away, with the current [env] and [dir]. */
-    fun restart() { soon = true; process.destroy() }
-
-    /** Ends the process for good and waits for it, so a successor never overlaps it. */
-    suspend fun close() = withContext(Dispatchers.IO) {
-        closed = true
-        process.destroy()
-        if (!process.waitFor(3, TimeUnit.SECONDS)) process.destroyForcibly()
     }
 
     companion object {

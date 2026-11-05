@@ -6,7 +6,6 @@ import java.io.File
 import java.net.*
 import java.security.MessageDigest
 import kotlinx.coroutines.*
-import org.json.JSONObject
 
 /**
  * The app is Orb, so it updates from Orb's GitHub releases like `orb update` does: the release
@@ -14,13 +13,7 @@ import org.json.JSONObject
  * signed with the same key, so a tampered APK fails twice.
  */
 object Release {
-    private const val LATEST = "https://api.github.com/repos/OrdalieTech/orb/releases/latest"
     private const val DOWNLOAD = "https://github.com/OrdalieTech/orb/releases/download"
-
-    /** The latest released version ("0.13.1"), or null when GitHub cannot be reached. */
-    suspend fun latest(): String? = withContext(Dispatchers.IO) {
-        runCatching { JSONObject(fetch(LATEST).decodeToString()).optString("tag_name").removePrefix("v").ifEmpty { null } }.getOrNull()
-    }
 
     /** Whether [candidate] is a later release than [current] (plain x.y.z; a dev build is always older). */
     fun newer(candidate: String, current: String): Boolean {

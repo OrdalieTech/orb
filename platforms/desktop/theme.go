@@ -58,8 +58,7 @@ const (
 // Motion, in Emil Kowalski's terms: strong curves rather than the built-in ones, and UI under 300 ms.
 // Entering and pressing ease out; what moves on screen eases in and out. Nothing a key does animates.
 var (
-	easeOut   = ui.CubicBezier(0.23, 1, 0.32, 1)
-	easeInOut = ui.CubicBezier(0.77, 0, 0.175, 1)
+	easeOut = ui.CubicBezier(0.23, 1, 0.32, 1)
 
 	pressing = ui.Animation{Duration: 120 * time.Millisecond, Ease: easeOut} // a press gives way
 	hovering = ui.Animation{Duration: 120 * time.Millisecond, Ease: ui.EaseOut}
@@ -379,14 +378,6 @@ func ago(ms int64) string {
 		return at.Format("Jan 2")
 	}
 	return at.Format("Jan 2006")
-}
-
-// count says how many, singular for one: "1 thread", "3 threads".
-func count(n int, one string) string {
-	if n == 1 {
-		return "1 " + one
-	}
-	return strconv.Itoa(n) + " " + one + "s"
 }
 
 func abs(x float32) float32 { return max(x, -x) }

@@ -200,7 +200,6 @@ class View(private val scope: CoroutineScope, orb: Orb, private val budget: Int,
         rows[t.id]?.lastOrNull()?.let { it.kind == "note" && it.text == "stopped" } == true -> "stopped"
         else -> ""
     }
-    val self get() = home.machines.firstOrNull { it.self }
     fun machine(id: String) = home.machines.firstOrNull { it.id == id }
     /** The hue a machine's sessions are told apart by: 0 for this phone, 1 to 6 for a peer, as the view assigns them. */
     fun hue(peer: String?) = if (peer == null || peer == state.self) 0 else machine(peer)?.hue?.coerceAtLeast(1) ?: 1
