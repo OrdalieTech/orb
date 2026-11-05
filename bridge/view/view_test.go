@@ -267,6 +267,61 @@ func TestAModelIsKnownByItsProvider(t *testing.T) {
 	}
 }
 
+// An app starting has Home read before it says it shows, so Home is there as it does.
+func TestHomeIsReadBeforeTheAppShows(t *testing.T) {
+	c := newClient()
+	New(t.Context(), Options{Name: "this phone", Emit: func(m any) { c.out <- bridge.JSON(m) }, Call: func(_ context.Context, method string, params, result any) error {
+		reply := `{"peer_id":"me"}`
+		if method == "remote" {
+			reply = `{}`
+			if params.(map[string]any)["method"] == "host.sessions" {
+				reply = `{"items":[{"session_id":"s","name":"tides","cwd":"/w","modified":1}]}`
+			}
+		}
+		return json.Unmarshal([]byte(reply), result)
+	}})
+	c.until(t, "Home", func() bool { return len(c.home) == 1 && c.home[0].Title == "tides" })
+}
+
+// A conversation shown asleep reads as it was while its Orb starts, is not said asleep, and keeps
+// its rows until the Orb has sent its own.
+func TestAnAsleepTabShowsItsThreadWhileItsOrbStarts(t *testing.T) {
+	c := newClient()
+	started := make(chan struct{})
+	message := `{"role":"user","content":"tides?","timestamp":1}`
+	a := New(t.Context(), Options{Name: "this phone", Tabs: []byte(`[{"ID":"x","Peer":"me","Session":"s"}]`), Emit: func(m any) { c.out <- bridge.JSON(m) }, Call: func(ctx context.Context, method string, params, result any) error {
+		reply := `{"peer_id":"me"}`
+		if method == "remote" {
+			reply = `{}`
+			switch params.(map[string]any)["method"] {
+			case "host.launch":
+				<-started
+				reply = `{"instance_id":"i"}`
+			case "instances.describe":
+				reply = `{"target":{"session_id":"s"}}`
+			case "host.read":
+				reply = `{"messages":[` + message + `],"from":0}`
+			case "events.subscribe":
+				reply = `{"messages":[` + message + `,` + message + `],"from":0,"cursor":"c"}`
+			}
+		}
+		return json.Unmarshal([]byte(reply), result)
+	}})
+	a.Do([]byte(`{"do":"hello","budget":4}`))
+	a.Do([]byte(`{"do":"visible","on":true}`))
+	a.Do([]byte(`{"do":"show","tabs":["x"]}`))
+	c.until(t, "the thread while its Orb starts", func() bool {
+		return len(c.rows["x"]) == 1 && c.tab("x").Status == "opening the thread…" && c.tab("x").Asleep
+	})
+	close(started)
+	c.until(t, "the Orb's own rows", func() bool { return len(c.rows["x"]) == 2 && !c.tab("x").Asleep })
+	for _, p := range c.patches["x"] {
+		if p[1] == 0 {
+			t.Fatalf("the rows went blank as its Orb started: %v", c.patches["x"])
+		}
+	}
+}
+
 // Earlier messages loaded above keep the keys of the rows already drawn, so an app keeps its place.
 func TestEarlierMessagesKeepTheRowsKeys(t *testing.T) {
 	var msgs []json.RawMessage
