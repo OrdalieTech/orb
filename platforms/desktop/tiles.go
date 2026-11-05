@@ -126,7 +126,7 @@ func (a *app) replace(x, n *tile) {
 func (a *app) split(x *tile, side string, n *tile) {
 	below := side == "top" || side == "bottom"
 	if !a.fits(x, below) {
-		a.say("No room for another tile " + map[bool]string{true: "here", false: "in this row"}[below] + " · close one, or split the other way")
+		a.say("No room for another tile · close one, or split the other way")
 		return
 	}
 	s := &tile{a: x, b: n, below: below, share: 50}
@@ -207,6 +207,11 @@ func (a *app) newSession() {
 
 // unsplit takes x out of the layout, its sibling taking its room; the last tile turns Home.
 func (a *app) unsplit(x *tile) {
+	if x.shell && a.showing(x.tab) == nil {
+		x.shell = false // a terminal shown in its conversation's place gives it back
+		a.activate(x)
+		return
+	}
 	p := a.parent(x)
 	if p == nil {
 		x.tab, x.shell = "", false
@@ -300,6 +305,7 @@ func (a *app) terminalOf(tab string) {
 	if !a.fits(x, true) {
 		x.tab, x.shell = tab, true
 		a.activate(x)
+		a.say("The terminal shows in its conversation's place · " + keys("J") + " brings it back")
 		return
 	}
 	s := &tile{a: x, b: &tile{tab: tab, shell: true}, below: true, share: 65}
@@ -322,6 +328,7 @@ func (a *app) cycle(by int) {
 	all := a.root.tiles(nil)
 	for i, t := range all {
 		if t == a.active {
+			a.focus++ // its prompt box takes the keys
 			a.activate(all[(i+by+len(all))%len(all)])
 			return
 		}
@@ -345,6 +352,10 @@ func (a *app) dropped(x *tile, side string, v carried) {
 	case v.tab != "":
 		a.place(x, side, v.tab, false)
 	case v.key != "":
+		if below := side == "top" || side == "bottom"; side != "middle" && !a.fits(x, below) {
+			a.split(x, side, nil)
+			return
+		}
 		then(a.o, func(r struct{ Tab string }, err error) {
 			if err != nil {
 				a.say(err.Error())

@@ -132,6 +132,8 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 			// A first click focuses its tile; on the focused tile it renames.
 			if a.active == x {
 				a.renameTab(*t)
+			} else {
+				a.focus++
 			}
 			a.activate(x)
 		}).Tooltip("Rename")
