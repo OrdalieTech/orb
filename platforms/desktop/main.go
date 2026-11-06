@@ -46,9 +46,8 @@ func main() {
 	})
 	mygo.App.WhenReady(func() {
 		loadFont()
-		// No File menu: its Close would take ⌘W, which closes a tile.
 		if runtime.GOOS == "darwin" {
-			mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{{Role: mygo.RoleAppMenu}, {Role: mygo.RoleEditMenu}, {Role: mygo.RoleWindowMenu}}))
+			mygo.App.SetMenu(a.menu())
 		}
 		win := mygo.NewWindow(mygo.WindowOptions{
 			Title: "Orb", Width: 1080, Height: 760, StateKey: "main",

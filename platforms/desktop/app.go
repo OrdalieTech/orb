@@ -26,10 +26,12 @@ type picker struct {
 	at       *ui.Handle // the trigger it opens out of; none, a dialog
 }
 
-// renaming is a name to change, with the current one ready to edit.
+// renaming is a name to change, with the current one ready to edit: in its sidebar row (row,
+// a tab's id or a thread's key), else in a sheet.
 type renaming struct {
-	name  string
-	apply func(string)
+	name, row string
+	apply     func(string)
+	took      bool // its field took the keys: losing them saves it
 }
 
 // app is everything the window shows that the view does not say: where it is, each conversation's
@@ -350,11 +352,11 @@ func (a *app) close(id string) {
 }
 
 func (a *app) renameTab(t Tab) {
-	a.rename = &renaming{name: t.Title, apply: func(name string) { a.o.send("rename", "tab", t.ID, "name", name) }}
+	a.rename = &renaming{name: t.Title, row: t.ID, apply: func(name string) { a.o.send("rename", "tab", t.ID, "name", name) }}
 }
 
 func (a *app) renameThread(e Entry) {
-	a.rename = &renaming{name: e.Title, apply: func(name string) { a.o.send("rename", "key", e.Key, "name", name) }}
+	a.rename = &renaming{name: e.Title, row: e.Key, apply: func(name string) { a.o.send("rename", "key", e.Key, "name", name) }}
 }
 
 // threadMenu is a thread's menu, as the phone's: rename it through the Orb that has it open, or
@@ -436,38 +438,21 @@ func (a *app) opened(tab string, err error) {
 	}
 }
 
-// chooseWhere chooses where the next message goes: a new conversation on this computer, an Orb
-// running somewhere, or a folder of a machine.
+// chooseWhere chooses where the next message goes: a new conversation on this computer, or in a
+// folder of a machine. Orbs already running are in the sidebar, live.
 func (a *app) chooseWhere() {
 	a.keyed = false
-	var running []Running
-	var hosts []Machine
+	options, hosts := []string{"new on " + device}, []string{}
 	for _, m := range a.o.home.Machines {
-		for _, r := range m.Running {
-			if !r.Open {
-				running = append(running, r)
-			}
+		if m.Launch {
+			options, hosts = append(options, "a folder on "+m.Name+"…"), append(hosts, m.ID)
 		}
-		if !m.Self && m.Launch {
-			hosts = append(hosts, m)
-		}
-	}
-	options := []string{"new on " + device}
-	for _, r := range running {
-		options = append(options, r.Label)
-	}
-	for _, m := range hosts {
-		options = append(options, "a folder on "+m.Name+"…")
 	}
 	a.picker = &picker{title: "run on", options: options, at: &a.active.whereAt, pick: func(s string) {
-		at := slices.Index(options, s)
-		switch {
-		case at == 0:
+		if at := slices.Index(options, s); at == 0 {
 			a.start(a.o.state.Self, "")
-		case at <= len(running):
-			a.open("i:" + running[at-1].Instance)
-		default:
-			a.push(screen{kind: "device", peer: hosts[at-1-len(running)].ID})
+		} else {
+			a.push(screen{kind: "device", peer: hosts[at-1]})
 		}
 	}}
 }
@@ -485,6 +470,45 @@ func (a *app) chooseModel(t *Tab, keyed bool) {
 	}
 	// Asked as it opens: a conversation elsewhere may have changed it.
 	a.readDefault(t.Peer, nil)
+}
+
+// closeTile closes a screen, else the tile, its conversation staying open in the sidebar; the
+// last tile turns Home.
+func (a *app) closeTile() {
+	if len(a.stack) > 0 {
+		a.back()
+	} else {
+		a.unsplit(a.active)
+	}
+}
+
+// menu is the macOS menu bar, as Ghostty's: the tile keys are its items, which macOS gives the
+// keys to before the view. It has no Close Window, which would take ⌘W.
+func (a *app) menu() *mygo.Menu {
+	do := func(f func()) func(*mygo.MenuItem, *mygo.Window) {
+		return func(*mygo.MenuItem, *mygo.Window) { a.o.win.Update(f) }
+	}
+	return mygo.NewMenu([]*mygo.MenuItem{
+		{Role: mygo.RoleAppMenu},
+		{Label: "File", Submenu: []*mygo.MenuItem{
+			{Label: "New Session", Accelerator: "Cmd+N", Click: do(a.newSession)},
+			{Label: "Close Tile", Accelerator: "Cmd+W", Click: do(a.closeTile)},
+		}},
+		{Role: mygo.RoleEditMenu},
+		{Label: "View", Submenu: []*mygo.MenuItem{
+			{Label: "Split Right", Accelerator: "Cmd+D", Click: do(func() { a.split(a.active, "right", &tile{}) })},
+			{Label: "Split Down", Accelerator: "Shift+Cmd+D", Click: do(func() { a.split(a.active, "bottom", &tile{}) })},
+			{Label: "Terminal", Accelerator: "Cmd+J", Click: do(func() {
+				if a.tab != "" {
+					a.terminalOf(a.tab)
+				}
+			})},
+			mygo.Separator(),
+			{Label: "Models", Accelerator: "Ctrl+M", Click: do(func() { a.chooseModel(a.o.tab(a.tab), true) })},
+			{Label: "Search Threads", Accelerator: "Cmd+K", Click: do(func() { a.sideHidden = false; a.seek++ })},
+		}},
+		{Role: mygo.RoleWindowMenu},
+	})
 }
 
 // shortcuts are the menu's keys, as the Mac app had them.
@@ -509,15 +533,7 @@ func (a *app) shortcuts(c *ui.Context) {
 	}
 	c.OnShortcut(cmd, ui.KeyN, a.newSession)
 	c.OnShortcut(cmd, ui.KeyK, func() { a.sideHidden = false; a.seek++ })
-	// ⌘W closes a screen, else the tile, its conversation staying open in the sidebar; the last
-	// tile turns Home.
-	c.OnShortcut(cmd, ui.KeyW, func() {
-		if len(a.stack) > 0 {
-			a.back()
-		} else {
-			a.unsplit(a.active)
-		}
-	})
+	c.OnShortcut(cmd, ui.KeyW, a.closeTile)
 	c.OnShortcut(cmd, ui.KeyD, func() { a.split(a.active, "right", &tile{}) })
 	c.OnShortcut(cmd|ui.Shift, ui.KeyD, func() { a.split(a.active, "bottom", &tile{}) })
 	c.OnShortcut(cmd, ui.KeyBracketLeft, func() { a.cycle(-1) })
@@ -603,7 +619,7 @@ func (a *app) overlays(c *ui.Context) {
 	} else {
 		a.model = ""
 	}
-	if a.rename != nil {
+	if a.rename != nil && (a.rename.row == "" || a.sideHidden) {
 		a.renameSheet(c)
 	}
 	if a.viewing[0] != "" {
@@ -681,7 +697,7 @@ func (a *app) pickerSheet(c *ui.Context) {
 	open := true
 	list := func() {
 		label(c, pk.title).Padding(12, 16, 6)
-		ui.Scroll(c).MaxHeight(420).Padding(0, 4, 6).Children(func() {
+		ui.Scroll(c).MaxHeight(420).Shrink(1).Padding(0, 4, 6).Children(func() {
 			for _, o := range pk.options {
 				if press(menuRow(c.Key(o), o, "", o == pk.selected)) {
 					a.picker = nil
@@ -691,7 +707,7 @@ func (a *app) pickerSheet(c *ui.Context) {
 		})
 	}
 	if pk.at != nil {
-		popover(c, pk.at, &open, 300, a.keyed, list)
+		popover(c, pk.at, &open, 340, a.keyed, list)
 	} else {
 		modal(c, &open, 420, list)
 	}

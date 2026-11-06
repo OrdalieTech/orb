@@ -59,7 +59,7 @@ func (a *app) sidebar(c *ui.Context) {
 				threads := make([]*Entry, 0, 60)
 				for i := range o.home.Entries {
 					e := &o.home.Entries[i]
-					if len(threads) < cap(threads) && e.Machine == m.ID && !e.Open && match(e.Title) {
+					if len(threads) < cap(threads) && e.Machine == m.ID && match(e.Title) {
 						threads = append(threads, e)
 					}
 				}
@@ -102,6 +102,36 @@ func sideRow(c *ui.Context, on bool, body func()) ui.Element {
 	return hover(e, pal.bg.Alpha(0.6)).Children(body)
 }
 
+// renameField edits a row's name in place, the whole of it, when it is the one renamed: Return or
+// leaving the field saves it, Escape leaves it as it was.
+func (a *app) renameField(c *ui.Context, row string) bool {
+	r := a.rename
+	if r == nil || r.row != row || a.sideHidden {
+		return false
+	}
+	in := ui.TextInputBase(c, &r.name).Grow(1).Basis(0).MinWidth(0).TextColor(p(c).fg).AutoFocus()
+	if in.Submitted() || r.took && !in.Focused() {
+		if name := strings.TrimSpace(r.name); name != "" {
+			r.apply(name)
+		}
+		a.rename = nil
+	}
+	r.took = r.took || in.Focused()
+	c.OnShortcut(0, ui.KeyEscape, func() { a.rename = nil })
+	return true
+}
+
+// sideTip is a row's tip, at its right: above it, it would hide the rows around.
+func sideTip(c *ui.Context, row ui.Element, s string) {
+	pal := p(c)
+	row.Description(s)
+	ui.TooltipBase(c, row, func(tip ui.Element) {
+		tip.AttachTo(row, ui.AnchorEnd, ui.AnchorStart).MarginStart(8).MaxWidth(360).Padding(5, 8).Radius(5).
+			Background(pal.fg).TextColor(pal.bg).FontSize(12).Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.2))
+		tip.Children(func() { ui.Text(c, s) })
+	})
+}
+
 func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 	o, pal := a.o, p(c)
 	on := t.ID == a.tab && a.top().kind == ""
@@ -116,7 +146,9 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 		if on || t.Unread > 0 {
 			w = strong
 		}
-		ui.Text(c, cmp.Or(t.Title, "new session")).Grow(1).Basis(0).FontWeight(w).TextColor(ink).SingleLine()
+		if !a.renameField(c, t.ID) {
+			ui.Text(c, cmp.Or(t.Title, "new session")).Grow(1).Basis(0).FontWeight(w).TextColor(ink).SingleLine()
+		}
 		// Answers that came while it was out of sight, until it shows.
 		if t.Ask != nil {
 			ui.Text(c, "asks").FontSize(12).TextColor(rupture)
@@ -129,7 +161,8 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 		} else if t.Remote {
 			ui.Text(c, t.Where).MaxWidth(90).FontSize(12).TextColor(pal.meta).SingleLine()
 		}
-	}).Tooltip(strings.Join(nonEmpty(t.Title, strings.Join(nonEmpty(t.Where, tidy(t.CWD)), " · ")), "\n"))
+	})
+	sideTip(c, e, strings.Join(nonEmpty(t.Title, strings.Join(nonEmpty(t.Where, tidy(t.CWD)), " · ")), "\n"))
 	a.carry(e, carried{tab: t.ID})
 	e.ContextMenu(func(m *ui.Menu) {
 		if m.Item("Open to the right").Chosen() {
@@ -163,7 +196,9 @@ func (a *app) threadRow(c *ui.Context, e Entry) {
 		if e.Live {
 			ink = pal.fg
 		}
-		ui.Text(c, e.Title).Grow(1).Basis(0).TextColor(ink).SingleLine()
+		if !a.renameField(c, e.Key) {
+			ui.Text(c, e.Title).Grow(1).Basis(0).TextColor(ink).SingleLine()
+		}
 		state, sink := ago(e.Modified), pal.meta
 		switch {
 		case e.Asks:
@@ -172,11 +207,12 @@ func (a *app) threadRow(c *ui.Context, e Entry) {
 			state = "opening"
 		case e.Live:
 			state = "live"
-		case e.Unstored:
+		case e.Open, e.Unstored:
 			state = "open"
 		}
 		ui.Text(c, state).FontSize(12).TextColor(sink)
-	}).Tooltip(strings.Join(nonEmpty(e.Title, tidy(e.CWD)), "\n"))
+	})
+	sideTip(c, row, strings.Join(nonEmpty(e.Title, tidy(e.CWD)), "\n"))
 	a.carry(row, carried{key: e.Key})
 	row.ContextMenu(func(m *ui.Menu) {
 		if m.Item("Open to the right").Chosen() {
