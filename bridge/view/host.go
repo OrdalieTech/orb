@@ -139,6 +139,12 @@ func (a *App) slow(in intent) func() (any, error) {
 			}
 			return r.Items, t.read("complete", map[string]string{"query": in.Text}, &r)
 		})
+	case "dirs":
+		// The folders in cwd on the machine (its home when none), to pick where to start.
+		return call(func() (any, error) {
+			var r json.RawMessage
+			return r, host("host.dirs", "list its folders", map[string]string{"path": in.CWD}, &r)
+		})
 	case "providers":
 		return call(func() (any, error) {
 			var r struct{ Providers []json.RawMessage }
