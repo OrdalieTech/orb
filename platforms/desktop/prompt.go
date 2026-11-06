@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"regexp"
+	"runtime"
 	"strings"
 	"unicode"
 
@@ -230,7 +231,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 					}
 					caretDown(c)
 				}).Shrink(1).Bind(&a.building.modelAt)
-				if press(model.Tooltip("Model and reasoning  " + keys("⇧M"))) {
+				if press(model.Tooltip("Model and reasoning  " + map[bool]string{true: "⌃M", false: "Ctrl+M"}[runtime.GOOS == "darwin"])) {
 					a.activate(a.building)
 					a.chooseModel(t, false)
 				}

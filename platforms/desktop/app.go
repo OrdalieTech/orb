@@ -303,10 +303,8 @@ func (a *app) titleBar(c *ui.Context, body func()) {
 	if a.corner {
 		right = tb.Right + 12
 	}
+	// Not clickable: a click target does not drag the window. Its title focuses the tile.
 	bar := ui.Row(c).FillWidth().Height(max(tb.Height, 48)).Padding(0, right, 0, margin).Gap(14).BorderWidth(0, 0, 1, 0).BorderColor(p(c).rule).Clip().DragWindow()
-	if x := a.building; x != nil {
-		bar.OnClick(func() { a.focus++; a.activate(x) })
-	}
 	hovered := bar.Hovered()
 	bar.Children(func() {
 		a.tools, a.barHover = false, hovered
@@ -475,19 +473,11 @@ func (a *app) chooseWhere() {
 }
 
 // chooseModel opens the model sheet of a conversation, or with no id of a machine's default (t
-// nil: this computer's); with no model to choose, Providers, where one is connected.
+// nil: this computer's), at once: models not read yet fill it as they come.
 func (a *app) chooseModel(t *Tab, keyed bool) {
 	a.keyed = keyed
 	if t == nil {
-		t = a.starts()
-	}
-	if t == nil || len(t.Models) == 0 {
-		peer := a.o.state.Self
-		if t != nil {
-			peer = t.Peer
-		}
-		a.push(screen{kind: "providers", peer: peer})
-		return
+		t = cmp.Or(a.starts(), a.defaults[a.o.state.Self], &Tab{Peer: a.o.state.Self, Where: device})
 	}
 	a.model, a.defaultOf = cmp.Or(t.ID, next), t.Peer
 	if t.ID == "" {
@@ -509,13 +499,25 @@ func (a *app) shortcuts(c *ui.Context) {
 			a.zoom(a.active)
 		}
 	})
-	if runtime.GOOS != "darwin" && a.active.shell && c.FocusWithin(a.active.at) {
-		return
+	if a.active.shell && c.FocusWithin(a.active.at) {
+		if runtime.GOOS != "darwin" {
+			return
+		}
+	} else {
+		// ⌃M: Return to a shell, so not in one.
+		c.OnShortcut(ui.Ctrl, ui.KeyM, func() { a.chooseModel(o.tab(a.tab), true) })
 	}
 	c.OnShortcut(cmd, ui.KeyN, a.newSession)
 	c.OnShortcut(cmd, ui.KeyK, func() { a.sideHidden = false; a.seek++ })
-	// ⌘W closes the tile, its conversation staying open in the sidebar; the last tile turns Home.
-	c.OnShortcut(cmd, ui.KeyW, func() { a.unsplit(a.active) })
+	// ⌘W closes a screen, else the tile, its conversation staying open in the sidebar; the last
+	// tile turns Home.
+	c.OnShortcut(cmd, ui.KeyW, func() {
+		if len(a.stack) > 0 {
+			a.back()
+		} else {
+			a.unsplit(a.active)
+		}
+	})
 	c.OnShortcut(cmd, ui.KeyD, func() { a.split(a.active, "right", &tile{}) })
 	c.OnShortcut(cmd|ui.Shift, ui.KeyD, func() { a.split(a.active, "bottom", &tile{}) })
 	c.OnShortcut(cmd, ui.KeyBracketLeft, func() { a.cycle(-1) })

@@ -774,10 +774,14 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 				if btn(c, "make default", false, pal.fg, pal.bg) {
 					a.makeDefault(t.Peer, t.Model, t.Thinking)
 				}
-				return
+			} else {
+				ui.Text(c, strings.Join(slices.DeleteFunc([]string{provider, map[bool]string{false: t.Where}[home]}, func(s string) bool { return s == "" }), " · ")).
+					Margin(0, 0, 2, 12).FontSize(12).TextColor(pal.meta).SingleLine()
 			}
-			ui.Text(c, strings.Join(slices.DeleteFunc([]string{provider, map[bool]string{false: t.Where}[home]}, func(s string) bool { return s == "" }), " · ")).
-				Margin(0, 0, 2, 12).FontSize(12).TextColor(pal.meta).SingleLine()
+			if press(control(c, func() { ui.Text(c, "providers ›").FontSize(small).FontWeight(medium).TextColor(pal.mute) }).MarginStart(8).Tooltip("Connect and edit providers  " + keys(","))) {
+				a.model, a.query = "", ""
+				a.push(screen{kind: "providers", peer: t.Peer})
+			}
 		})
 		field(c, &a.query, "Search models", false).Margin(10, 12, 6).AutoFocus()
 		ui.Scroll(c).FillWidth().MaxHeight(300).Shrink(1).Padding(0, 4, 4).Children(func() {
@@ -819,9 +823,8 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 					a.model, a.query = "", ""
 				}
 			}
-			if press(menuRow(c, "+ connect a provider", "", false).TextColor(pal.mute)) {
-				a.model = ""
-				a.push(screen{kind: "providers", peer: t.Peer})
+			if len(t.Models) == 0 {
+				label(c, map[bool]string{true: "no model: connect a provider", false: "reading models…"}[t.Loaded]).TextColor(pal.meta).Padding(10, 12)
 			}
 		})
 		a.accountsOn(c, t, provider)
@@ -861,7 +864,7 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 	if len(a.stack) > 0 {
 		modal(c, &open, 420, body)
 	} else {
-		popover(c, &a.active.modelAt, &open, 400, a.keyed, body)
+		popover(c, &a.active.modelAt, &open, 400, true, body)
 	}
 	if !open {
 		a.model, a.query = "", ""
