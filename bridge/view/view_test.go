@@ -147,7 +147,8 @@ func orbWith(t *testing.T, plugin extensions.Factory, speed float64, steps ...fa
 			}
 			return json.Unmarshal(raw, result)
 		},
-		SaveTabs: func(b []byte) { c.saved.Store(&b) },
+		// The view saves the tabs just after it sends their rows, so a save wakes until as well.
+		SaveTabs: func(b []byte) { c.saved.Store(&b); c.out <- json.RawMessage(`{"t":"saved"}`) },
 		Name:     "this phone",
 		Emit:     func(m any) { c.out <- bridge.JSON(m) },
 	})
