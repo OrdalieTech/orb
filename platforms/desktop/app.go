@@ -238,7 +238,7 @@ func (a *app) view(c *ui.Context) {
 	// Every conversation on screen follows at full pace.
 	var shown []string
 	if a.top().kind == "" {
-		for _, t := range a.root.tiles(nil) {
+		for _, t := range a.onScreen().tiles(nil) {
 			if t.tab != "" && !slices.Contains(shown, t.tab) {
 				shown = append(shown, t.tab)
 			}
@@ -254,10 +254,8 @@ func (a *app) view(c *ui.Context) {
 			top := a.top()
 			switch top.kind {
 			case "":
-				top := a.root
-				if a.zoomed != nil && a.contains(a.zoomed) {
-					top = a.zoomed
-				} else {
+				top := a.onScreen()
+				if top != a.zoomed {
 					a.zoomed = nil
 				}
 				a.layout(c, top, true)
