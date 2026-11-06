@@ -128,44 +128,13 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 	})
 }
 
-// strip is the conversation's title bar: its name, where it runs and its state; at right how full
-// its context is, its plan's window nearest the limit (all of them a click away), what it cost,
-// and the terminal where it runs.
+// strip is the conversation's title bar: its tile's tabs (its own named and marked shown); at
+// right how full its context is, its plan's window nearest the limit (all of them a click away),
+// what it cost, and the terminal where it runs.
 func (a *app) strip(c *ui.Context, t *Tab) {
 	pal := p(c)
 	a.titleBar(c, func() {
-		x := a.building
-		title := ui.Text(c, cmp.Or(t.Title, "new session")).FontSize(15).FontWeight(strong).SingleLine().Shrink(1).MinWidth(48).OnClick(func() {
-			// A first click focuses its tile; on the focused tile it renames.
-			if a.active == x {
-				a.renameTab(*t)
-			} else {
-				a.focus++
-			}
-			a.activate(x)
-		}).Tooltip("Rename")
-		a.carry(title, carried{tile: a.building})
-		var parts []string
-		if t.Remote {
-			parts = append(parts, t.Where)
-		}
-		parts = append(parts, tidy(t.CWD))
-		ink := pal.meta
-		switch {
-		case t.Busy:
-			parts, ink = append(parts, "working"), pal.fg
-		case !t.Online && !t.Asleep:
-			parts = append(parts, "offline")
-		}
-		if a.zoomed == x && x != nil {
-			parts = append(parts, "zoomed")
-		}
-		// A narrow tile keeps its bar to the title and the readings.
-		if a.narrow {
-			ui.Spacer(c)
-		} else {
-			ui.Text(c, strings.Join(nonEmpty(parts...), " · ")).Grow(1).Basis(0).MinWidth(0).FontSize(small).TextColor(ink).SingleLine()
-		}
+		ui.Spacer(c)
 		a.tileTools(c)
 		// A tight tile under the window's controls has room for its title and its terminal only.
 		if t.Context > 0 && !(a.tight && a.corner) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -21,8 +22,9 @@ type tile struct {
 	share float32 // a's percentage of the room
 	room  float32 // that room's width (height below), as last drawn
 
-	tab     string // a tile's conversation, "" for Home
-	shell   bool   // the tile shows tab's terminal
+	tab     string   // a tile's conversation, "" for Home
+	tabs    []string // the conversations open in it, as its tabs, in order
+	shell   bool     // the tile shows tab's terminal
 	at      ui.Handle
 	modelAt ui.Handle // its prompt box's model and place, which their popovers open out of
 	whereAt ui.Handle
@@ -181,34 +183,100 @@ func (a *app) inLine(y, x *tile, below bool) bool {
 	return false
 }
 
-// newSession shows Home: in the tile already showing it, else among tiles in a new one beside the
-// focused tile (or under it), so the conversations watched stay in sight; else in the lone tile.
-func (a *app) newSession() {
-	a.focus++
-	switch x := a.showing(""); {
-	case x != nil:
-		a.stack, a.fresh = nil, nil
-		a.activate(x)
-	case !a.root.leaf() && a.fits(a.active, false):
-		a.stack, a.fresh = nil, nil
-		a.split(a.active, "right", &tile{})
-	case !a.root.leaf() && a.fits(a.active, true):
-		a.stack, a.fresh = nil, nil
-		a.split(a.active, "bottom", &tile{})
-	default:
-		// No room for another tile: Home takes one whose conversation is not working, so none
-		// working goes out of sight.
-		for _, t := range a.root.tiles(nil) {
-			if c := a.o.tab(a.active.tab); c == nil || !c.Busy {
-				break
-			}
-			if c := a.o.tab(t.tab); c == nil || !c.Busy {
-				a.activate(t)
-				break
+// newSession shows Home in the focused tile, as a browser's new tab: its tabs stay open.
+func (a *app) newSession() { a.show("") }
+
+// tabsTile is the tile that takes a conversation opened without one: the focused tile, or the
+// first that is not a terminal.
+func (a *app) tabsTile() *tile {
+	if !a.active.shell {
+		return a.active
+	}
+	for _, t := range a.root.tiles(nil) {
+		if !t.shell {
+			return t
+		}
+	}
+	return a.active
+}
+
+// own makes tab one of x's tabs, and the one it shows; a tab is in one tile only, and a tile it
+// leaves without tabs goes, as a group whose last tab is dragged out.
+func (a *app) own(x *tile, tab string) {
+	for _, t := range a.root.tiles(nil) {
+		if t == x || t.shell || t.tab != tab && !slices.Contains(t.tabs, tab) {
+			continue
+		}
+		a.drop(t, tab)
+		if t.tab == tab {
+			t.tab = ""
+		}
+		if len(t.tabs) == 0 && !a.root.leaf() {
+			a.remove(t)
+		}
+	}
+	if !slices.Contains(x.tabs, tab) {
+		x.tabs = append(x.tabs, tab)
+	}
+	x.tab = tab
+}
+
+// drop takes tab out of x's tabs; showing it, x shows its neighbour, Home after the last.
+func (a *app) drop(x *tile, tab string) {
+	at := slices.Index(x.tabs, tab)
+	if at < 0 {
+		return
+	}
+	x.tabs = slices.Delete(x.tabs, at, at+1)
+	if x.tab == tab {
+		x.tab = ""
+		if len(x.tabs) > 0 {
+			x.tab = x.tabs[min(at, len(x.tabs)-1)]
+		}
+	}
+}
+
+// syncTabs keeps the tiles' tabs to the conversations the view has open: one closed elsewhere
+// goes, one opened elsewhere (the phone, a thread opened) joins the focused tile.
+func (a *app) syncTabs() {
+	listed := map[string]bool{}
+	for _, t := range a.o.state.Tabs {
+		listed[t.ID] = true
+	}
+	wait := time.Now().Before(a.listing) // a tab just opened shows before the view lists it
+	held := map[string]bool{}
+	for _, x := range a.root.tiles(nil) {
+		if x.shell {
+			continue
+		}
+		for _, id := range slices.Clone(x.tabs) {
+			if held[id] || !listed[id] && !wait {
+				a.drop(x, id)
 			}
 		}
-		a.show("")
+		if x.tab != "" && !slices.Contains(x.tabs, x.tab) {
+			if held[x.tab] || !listed[x.tab] && !wait {
+				x.tab = ""
+			} else {
+				x.tabs = append(x.tabs, x.tab)
+			}
+		}
+		for _, id := range x.tabs {
+			held[id] = true
+		}
 	}
+	for id := range a.gone {
+		if !listed[id] {
+			delete(a.gone, id) // the view closed it too
+		}
+	}
+	for _, t := range a.o.state.Tabs {
+		if !held[t.ID] && !a.gone[t.ID] {
+			x := a.tabsTile()
+			x.tabs = append(x.tabs, t.ID)
+		}
+	}
+	a.tab = a.active.tab
 }
 
 // unsplit closes x: a terminal shown in its conversation's place gives it back, any other tile goes.
@@ -248,7 +316,7 @@ func (a *app) remove(x *tile) {
 	}
 }
 
-// activate makes x the tile the keys and the sidebar act on; a zoom moves to it.
+// activate makes x the tile the keys act on; a zoom moves to it.
 func (a *app) activate(x *tile) {
 	a.active = x
 	a.tab = x.tab
@@ -271,8 +339,8 @@ func (a *app) showing(tab string) *tile {
 // place shows tab in x, or (side not "middle") in a new tile on that side of x. A conversation
 // shows once: a tile already showing it gives way.
 func (a *app) place(x *tile, side, tab string, shell bool) {
-	if x.tab == tab && x.shell == shell && tab != "" {
-		a.activate(x) // dropped beside the tile showing it: it is there already
+	if x.tab == tab && x.shell == shell && tab != "" && len(x.tabs) < 2 {
+		a.activate(x) // dropped beside the tile showing it alone: it is there already
 		return
 	}
 	if below := side == "top" || side == "bottom"; side != "middle" && !a.fits(x, below) {
@@ -283,7 +351,7 @@ func (a *app) place(x *tile, side, tab string, shell bool) {
 		// A tab just opened shows before the view lists it, as show waits for it.
 		a.listing = time.Now().Add(5 * time.Second)
 		for _, t := range a.root.tiles(nil) {
-			if t != x && t.tab == tab && t.shell == shell {
+			if t != x && t.tab == tab && t.shell && shell {
 				a.unsplit(t)
 			}
 		}
@@ -292,13 +360,18 @@ func (a *app) place(x *tile, side, tab string, shell bool) {
 		a.activate(x)
 		if shell {
 			x.tab, x.shell = tab, true
-		} else {
-			a.show(tab)
+		} else if tab != "" {
+			a.own(x, tab)
 		}
+		a.activate(x)
 		a.reshape()
 		return
 	}
-	a.split(x, side, &tile{tab: tab, shell: shell})
+	n := &tile{tab: tab, shell: shell}
+	a.split(x, side, n)
+	if a.contains(n) && !shell && tab != "" {
+		a.own(n, tab)
+	}
 }
 
 // terminalOf toggles the tile of tab's terminal, under the tile showing it (⌘J, >_).
@@ -366,10 +439,11 @@ func (a *app) dropped(x *tile, side string, v carried) {
 		}
 		a.remove(v.tile)
 		if side == "middle" {
+			x.tabs = append(x.tabs, v.tile.tabs...) // its tabs join this tile's
 			a.place(x, side, v.tile.tab, v.tile.shell)
 		} else {
 			// The room was there before it left; the widths say so again only next frame.
-			a.insert(x, side, &tile{tab: v.tile.tab, shell: v.tile.shell})
+			a.insert(x, side, &tile{tab: v.tile.tab, shell: v.tile.shell, tabs: v.tile.tabs})
 		}
 	case v.tab != "":
 		a.place(x, side, v.tab, false)
@@ -407,14 +481,14 @@ func (a *app) contains(x *tile) bool {
 
 // layout draws x, splits as dividers the pointer drags; corner is whether x reaches the window's
 // top right, where its controls are.
-func (a *app) layout(c *ui.Context, x *tile, corner bool) {
+func (a *app) layout(c *ui.Context, x *tile, corner, left bool) {
 	if !x.leaf() {
 		// No tile gets smaller than least while the room allows.
 		if lo, hi := 100*least[x.below]*float32(x.a.count(x.below))/x.room, 100-100*least[x.below]*float32(x.b.count(x.below))/x.room; x.room > 0 && lo < hi {
 			x.share = min(max(x.share, lo), hi)
 		}
-		first := func() { a.layout(c, x.a, corner && x.below) }
-		second := func() { a.layout(c, x.b, corner && !x.below) }
+		first := func() { a.layout(c, x.a, corner && x.below, left) }
+		second := func() { a.layout(c, x.b, corner && !x.below, left && x.below) }
 		split := ui.SplitPercent
 		if x.below {
 			split = ui.SplitVerticalPercent
@@ -422,7 +496,7 @@ func (a *app) layout(c *ui.Context, x *tile, corner bool) {
 		split(c, &x.share, first, second).Fill().DrawOver(func(_ *ui.Painter, r ui.Rect) { x.room = map[bool]float32{true: r.H, false: r.W}[x.below] })
 		return
 	}
-	a.building, a.corner = x, corner
+	a.building, a.corner, a.left = x, corner, left
 	a.narrow, a.tight = x.width > 0 && x.width < 560, x.width > 0 && x.width < 400
 	// A click into a tile focuses it; until a focus asked for is taken, the keys are still elsewhere.
 	if c.FocusWithin(x.at) && a.active != x && a.focus == a.focused {
@@ -471,7 +545,7 @@ func (a *app) layout(c *ui.Context, x *tile, corner bool) {
 	x.over = ""
 	e.DrawOver(func(pt *ui.Painter, r ui.Rect) {
 		x.width, x.height = r.W, r.H
-		// The focused tile's top edge in the rupture, as the sidebar marks the conversation shown.
+		// The focused tile's top edge in the rupture.
 		if focus > 0 {
 			pt.Fill(ui.Rect{X: r.X, Y: r.Y, W: r.W, H: 2}, rupture.Alpha(focus), 0)
 		}
@@ -616,24 +690,25 @@ func (a *app) carry(e ui.Element, v carried) {
 // kept is a tile as the next launch brings it back: conversations by their tab ids, which the view
 // keeps across launches.
 type kept struct {
-	A, B   *kept   `json:",omitempty"`
-	Below  bool    `json:",omitempty"`
-	Share  float32 `json:",omitempty"`
-	Tab    string  `json:",omitempty"`
-	Shell  bool    `json:",omitempty"`
-	Active bool    `json:",omitempty"`
+	A, B   *kept    `json:",omitempty"`
+	Below  bool     `json:",omitempty"`
+	Share  float32  `json:",omitempty"`
+	Tab    string   `json:",omitempty"`
+	Tabs   []string `json:",omitempty"`
+	Shell  bool     `json:",omitempty"`
+	Active bool     `json:",omitempty"`
 }
 
 func (a *app) keep(x *tile) *kept {
 	if x.leaf() {
-		return &kept{Tab: x.tab, Shell: x.shell, Active: x == a.active}
+		return &kept{Tab: x.tab, Tabs: x.tabs, Shell: x.shell, Active: x == a.active}
 	}
 	return &kept{A: a.keep(x.a), B: a.keep(x.b), Below: x.below, Share: x.share}
 }
 
 func (a *app) bringBack(k *kept) *tile {
 	if k.A == nil || k.B == nil {
-		x := &tile{tab: k.Tab, shell: k.Shell}
+		x := &tile{tab: k.Tab, tabs: k.Tabs, shell: k.Shell}
 		if k.Active {
 			a.active = x
 		}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"path"
 	"strings"
@@ -10,16 +11,10 @@ import (
 )
 
 // homeScreen starts a session: the prompt box in the middle of the window, where it runs a click
-// away, the latest threads under it. Every thread is in the sidebar.
+// away, the latest threads under it. Every thread is a ⌘K away.
 func (a *app) homeScreen(c *ui.Context) {
 	o, pal := a.o, p(c)
-	// Among tiles, its bar names it as the others name their conversation.
-	a.titleBar(c, func() {
-		if !a.root.leaf() {
-			ui.Text(c, "new session").FontSize(15).FontWeight(strong).TextColor(p(c).mute).SingleLine()
-		}
-		ui.Spacer(c)
-	})
+	a.titleBar(c, func() { ui.Spacer(c) })
 	// A small tile keeps Home to its prompt box.
 	small := a.narrow || a.building != nil && a.building.height > 0 && a.building.height < 480
 	ui.Column(c).Grow(1).Basis(0).FillWidth().Justify(ui.Center).Padding(0, margin, 48).Children(func() {
@@ -46,14 +41,19 @@ func (a *app) homeScreen(c *ui.Context) {
 		ui.Column(c).FillWidth().MaxWidth(680+2*overhang+2*margin).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
 		var recent []Entry
 		for _, e := range o.home.Entries {
-			if !e.Open && len(recent) < 5 {
+			if !e.Open && len(recent) < 8 {
 				recent = append(recent, e)
 			}
 		}
 		a.boot(c)
 		if len(recent) > 0 && o.state.Up && !small {
 			reading(c).MaxWidth(680).Margin(18, ui.Auto, 0).PaddingX(margin).Children(func() {
-				label(c, "latest").TextColor(pal.meta).Margin(0, 0, 4)
+				ui.Row(c).FillWidth().Margin(0, 0, 4).Children(func() {
+					label(c, "latest").TextColor(pal.meta).Grow(1)
+					if press(ui.Row(c).Children(func() { label(c, "all threads  "+keys("K")).TextColor(pal.mute) })) {
+						a.openPalette()
+					}
+				})
 				for _, e := range recent {
 					meta := ""
 					if m := o.machine(e.Machine); m != nil && !m.Self {
@@ -63,6 +63,21 @@ func (a *app) homeScreen(c *ui.Context) {
 						a.open(e.Key)
 					}
 				}
+			})
+		}
+		if !small {
+			reading(c).MaxWidth(680).Margin(14, ui.Auto, 0).PaddingX(margin).Children(func() {
+				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+					ink := pal.meta
+					if strings.HasPrefix(o.state.Summary, "needs you") {
+						ink = rupture
+					}
+					dot(c, map[bool]ui.Color{true: pal.fg, false: pal.rule}[o.state.Up], 6, !o.state.Up, false)
+					ui.Text(c, cmp.Or(o.state.Summary, "starting Bridge…")).Grow(1).Basis(0).FontSize(12).TextColor(ink).SingleLine()
+					if press(ui.Row(c).Children(func() { label(c, "settings  "+keys(",")).TextColor(pal.mute) })) {
+						a.settings()
+					}
+				})
 			})
 		}
 		if len(o.home.Machines) < 2 && o.state.Up && !small {

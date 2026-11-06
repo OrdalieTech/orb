@@ -26,8 +26,8 @@ type picker struct {
 	at       *ui.Handle // the trigger it opens out of; none, a dialog
 }
 
-// renaming is a name to change, with the current one ready to edit: in its sidebar row (row,
-// a tab's id or a thread's key), else in a sheet.
+// renaming is a name to change, with the current one ready to edit: in its tab (row, the tab's
+// id), else in a sheet.
 type renaming struct {
 	name, row string
 	apply     func(string)
@@ -45,9 +45,10 @@ type app struct {
 	picker     *picker
 	rename     *renaming
 	root       *tile     // the window's tiles
-	active     *tile     // the tile the keys and the sidebar act on; a.tab is its conversation
+	active     *tile     // the tile the keys act on; a.tab is its conversation
 	building   *tile     // the tile being built
 	corner     bool      // it reaches the window's top right, where the window's controls are
+	left       bool      // or its top left, where the traffic lights are
 	narrow     bool      // it is too narrow for its bar's details
 	tight      bool      // and for its gauges: a column among four or five
 	barHover   bool      // the pointer is on its bar, which shows its controls
@@ -82,18 +83,16 @@ type app struct {
 	foundFor   map[string]string       // the @ token they were asked for
 	focused    int                     // the last focus request the prompt box took
 	path       string                  // a folder typed on a device's screen
-	side       float32                 // the sidebar's width
-	sideHidden bool
-	search     string // the sidebar's search
-	seek       int    // search asked for (⌘K), which its field takes once
-	sought     int
-	fold       map[string]bool      // the machines whose threads the sidebar folds
-	listing    time.Time            // until when a tab shown waits for the view to list it
-	answered   string               // the pairing claim answered, until the view drops it
-	asked      map[string]time.Time // when each question showed: its keys arm a moment later
-	keyed      bool                 // what shows now was opened by a key, so it shows at once
-	carded     bool                 // the start screen's title has wiped in, once a launch
-	opening    string               // the thread being opened, until its Orb answers
+	gone       map[string]bool         // tabs closed here, until the view says so too
+	palette    bool                    // Go to (⌘K) shows
+	search     string                  // what it looks for
+	pick       int                     // the line ↩ chooses
+	listing    time.Time               // until when a tab shown waits for the view to list it
+	answered   string                  // the pairing claim answered, until the view drops it
+	asked      map[string]time.Time    // when each question showed: its keys arm a moment later
+	keyed      bool                    // what shows now was opened by a key, so it shows at once
+	carded     bool                    // the start screen's title has wiped in, once a launch
+	opening    string                  // the thread being opened, until its Orb answers
 }
 
 // cmd is the key that goes with the app's shortcuts: Command on macOS, Control elsewhere.
@@ -173,28 +172,25 @@ func (a *app) makeDefault(peer, model, level string) {
 	}, "default", "machine", peer, "name", model, "level", level)
 }
 
-// show shows a conversation by its tab id, Home for "", closing any screen above them.
-// In tiles, it focuses the tile already showing it, else shows it in the focused one.
+// show shows a conversation by its tab id, Home for "", closing any screen above them: in the
+// tile that has it as a tab, else as a new tab of the focused tile.
 func (a *app) show(tab string) {
 	a.stack, a.fresh = nil, nil
 	a.listing = time.Now().Add(5 * time.Second)
 	a.focus++ // its prompt box takes the keys, and with them its tile
-	if x := a.showing(tab); x != nil && tab != "" {
-		a.activate(x)
-		return
-	}
-	x := a.active
-	// Among tiles, the conversation shown here goes out of sight: say where it still is.
-	if was := a.o.tab(x.tab); was != nil && x.tab != tab && !a.root.leaf() && !x.shell {
-		a.say("“" + cmp.Or(was.Title, "new session") + "” is still open in the sidebar")
-	}
-	if x.shell {
-		if s := a.showing(x.tab); s != nil {
-			x = s
+	for _, x := range a.root.tiles(nil) {
+		if tab != "" && !x.shell && slices.Contains(x.tabs, tab) {
+			x.tab = tab
+			a.activate(x)
+			return
 		}
-		x.shell = false
 	}
-	x.tab = tab
+	x := a.tabsTile()
+	if tab == "" {
+		x.tab = ""
+	} else {
+		a.own(x, tab)
+	}
 	a.activate(x)
 }
 
@@ -216,13 +212,8 @@ func (a *app) offer(s string, undo func()) {
 func (a *app) view(c *ui.Context) {
 	theme(c)
 	o, pal := a.o, p(c)
-	// A tab just opened is shown before the view lists it; one it no longer lists was closed elsewhere.
-	if o.state.Up && time.Now().After(a.listing) {
-		for _, t := range a.root.tiles(nil) {
-			if t.tab != "" && o.tab(t.tab) == nil {
-				a.unsplit(t)
-			}
-		}
+	if o.state.Up {
+		a.syncTabs()
 	}
 	if a.dragNow {
 		a.linger = 3
@@ -260,14 +251,19 @@ func (a *app) view(c *ui.Context) {
 				if top != a.zoomed {
 					a.zoomed = nil
 				}
-				a.layout(c, top, true)
+				a.layout(c, top, true, true)
 				a.building = nil
 				a.saveTiles()
 				return
 			}
 			// The window's controls keep their room above every other screen.
 			ui.Box(c).FillWidth().Height(c.TitleBar().Height).DragWindow()
+			if slices.ContainsFunc(settingsKinds, func(s struct{ kind, name string }) bool { return s.kind == top.kind }) {
+				a.settingsTabs(c)
+			}
 			switch top.kind {
+			case "general":
+				a.generalScreen(c)
 			case "bridge":
 				a.bridgeScreen(c)
 			case "invite":
@@ -287,13 +283,7 @@ func (a *app) view(c *ui.Context) {
 			}
 		})
 	}
-	ui.Column(c).Fill().Background(pal.bg).LineHeight(1.45).Children(func() {
-		if a.sideHidden {
-			main()
-			return
-		}
-		ui.Split(c, &a.side, func() { a.sidebar(c) }, main).Fill()
-	})
+	ui.Column(c).Fill().Background(pal.bg).LineHeight(1.45).Children(main)
 	a.overlays(c)
 }
 
@@ -301,25 +291,34 @@ func (a *app) view(c *ui.Context) {
 // the corner, and holds the tile's own controls while the pointer is on it.
 func (a *app) titleBar(c *ui.Context, body func()) {
 	tb := c.TitleBar()
-	right := float32(margin)
+	left, right := float32(8), float32(margin)
+	if a.left {
+		left = tb.Left + 12
+	}
 	if a.corner {
 		right = tb.Right + 12
 	}
 	// Not clickable: a click target does not drag the window. Its title focuses the tile.
-	bar := ui.Row(c).FillWidth().Height(max(tb.Height, 48)).Padding(0, right, 0, margin).Gap(14).BorderWidth(0, 0, 1, 0).BorderColor(p(c).rule).Clip().DragWindow()
+	bar := ui.Row(c).FillWidth().Height(max(tb.Height, 48)).Padding(0, right, 0, left).Gap(10).BorderWidth(0, 0, 1, 0).BorderColor(p(c).rule).Clip().DragWindow()
 	hovered := bar.Hovered()
 	bar.Children(func() {
 		a.tools, a.barHover = false, hovered
+		if x := a.building; x != nil && !x.shell {
+			a.tabChips(c, x)
+		}
 		body()
 		a.tileTools(c)
 	})
 	a.tileMenu(bar)
 }
 
-// close stops following a conversation; the one after it shows in its place, Home after the last.
-// Among tiles, its tiles close.
+// close stops following a conversation, its Orb running on: its tab goes, its neighbour shows in
+// its place, Home after the last; its terminal closes.
 func (a *app) close(id string) {
-	tabs := a.o.state.Tabs
+	if a.gone == nil {
+		a.gone = map[string]bool{}
+	}
+	a.gone[id] = true
 	// A closed conversation can come back for a moment: its thread reopens where New session would show.
 	for _, e := range a.o.home.Entries {
 		if e.Tab == id {
@@ -327,20 +326,13 @@ func (a *app) close(id string) {
 		}
 	}
 	for _, t := range a.root.tiles(nil) {
-		if t.tab != id {
-			continue
-		}
-		if t.shell || !a.root.leaf() {
+		if t.shell && t.tab == id {
 			a.unsplit(t)
-			continue
+		} else if !t.shell {
+			a.drop(t, id)
 		}
-		t.tab = ""
-		if at := slices.IndexFunc(tabs, func(t Tab) bool { return t.ID == id }); at >= 0 && len(tabs) > 1 {
-			rest := slices.Delete(slices.Clone(tabs), at, at+1)
-			t.tab = rest[min(at, len(rest)-1)].ID
-		}
-		a.activate(t)
 	}
+	a.activate(a.active)
 	if s := a.shells[id]; s != nil {
 		s.close()
 		delete(a.shells, id)
@@ -356,7 +348,7 @@ func (a *app) renameTab(t Tab) {
 }
 
 func (a *app) renameThread(e Entry) {
-	a.rename = &renaming{name: e.Title, row: e.Key, apply: func(name string) { a.o.send("rename", "key", e.Key, "name", name) }}
+	a.rename = &renaming{name: e.Title, apply: func(name string) { a.o.send("rename", "key", e.Key, "name", name) }}
 }
 
 // threadMenu is a thread's menu, as the phone's: rename it through the Orb that has it open, or
@@ -439,7 +431,7 @@ func (a *app) opened(tab string, err error) {
 }
 
 // chooseWhere chooses where the next message goes: a new conversation on this computer, or in a
-// folder of a machine. Orbs already running are in the sidebar, live.
+// folder of a machine. Orbs already running are a thread away (⌘K), live.
 func (a *app) chooseWhere() {
 	a.keyed = false
 	options, hosts := []string{"new on " + device}, []string{}
@@ -472,20 +464,15 @@ func (a *app) chooseModel(t *Tab, keyed bool) {
 	a.readDefault(t.Peer, nil)
 }
 
-// closeTile closes a screen, else the tile, its conversation staying open in the sidebar; the
-// last tile turns Home.
-func (a *app) closeTile() {
-	if len(a.stack) > 0 {
-		a.back()
-	} else {
-		a.unsplit(a.active)
-	}
-}
-
-// closeTab closes the conversation shown: it no longer follows it, and its Orb runs on.
+// closeTab closes a screen, else the tab shown (its Orb runs on), else the tile it leaves empty.
 func (a *app) closeTab() {
-	if a.tab != "" {
-		a.close(a.tab)
+	switch x := a.active; {
+	case len(a.stack) > 0:
+		a.back()
+	case x.tab != "" && !x.shell:
+		a.close(x.tab)
+	case !a.root.leaf() || x.shell:
+		a.unsplit(x)
 	}
 }
 
@@ -498,9 +485,12 @@ func (a *app) menu() *mygo.Menu {
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Role: mygo.RoleAppMenu},
 		{Label: "File", Submenu: []*mygo.MenuItem{
+			{Label: "New Tab", Accelerator: "Cmd+T", Click: do(a.newSession)},
 			{Label: "New Session", Accelerator: "Cmd+N", Click: do(a.newSession)},
-			{Label: "Close Tile", Accelerator: "Cmd+W", Click: do(a.closeTile)},
-			{Label: "Close Conversation", Accelerator: "Shift+Cmd+W", Click: do(a.closeTab)},
+			{Label: "Close Tab", Accelerator: "Cmd+W", Click: do(a.closeTab)},
+			{Label: "Close Tile", Accelerator: "Shift+Cmd+W", Click: do(func() { a.unsplit(a.active) })},
+			mygo.Separator(),
+			{Label: "Settings…", Accelerator: "Cmd+,", Click: do(a.settings)},
 		}},
 		{Role: mygo.RoleEditMenu},
 		{Label: "View", Submenu: []*mygo.MenuItem{
@@ -513,7 +503,7 @@ func (a *app) menu() *mygo.Menu {
 			})},
 			mygo.Separator(),
 			{Label: "Models", Accelerator: "Ctrl+M", Click: do(func() { a.chooseModel(a.o.tab(a.tab), true) })},
-			{Label: "Search Threads", Accelerator: "Cmd+K", Click: do(func() { a.sideHidden = false; a.seek++ })},
+			{Label: "Go to…", Accelerator: "Cmd+K", Click: do(a.openPalette)},
 		}},
 		{Role: mygo.RoleWindowMenu},
 	})
@@ -540,9 +530,10 @@ func (a *app) shortcuts(c *ui.Context) {
 		c.OnShortcut(ui.Ctrl, ui.KeyM, func() { a.chooseModel(o.tab(a.tab), true) })
 	}
 	c.OnShortcut(cmd, ui.KeyN, a.newSession)
-	c.OnShortcut(cmd, ui.KeyK, func() { a.sideHidden = false; a.seek++ })
-	c.OnShortcut(cmd, ui.KeyW, a.closeTile)
-	c.OnShortcut(cmd|ui.Shift, ui.KeyW, a.closeTab)
+	c.OnShortcut(cmd, ui.KeyK, a.openPalette)
+	c.OnShortcut(cmd, ui.KeyT, a.newSession)
+	c.OnShortcut(cmd, ui.KeyW, a.closeTab)
+	c.OnShortcut(cmd|ui.Shift, ui.KeyW, func() { a.unsplit(a.active) })
 	c.OnShortcut(cmd, ui.KeyD, func() { a.split(a.active, "right", &tile{}) })
 	c.OnShortcut(cmd|ui.Shift, ui.KeyD, func() { a.split(a.active, "bottom", &tile{}) })
 	c.OnShortcut(cmd, ui.KeyBracketLeft, func() { a.cycle(-1) })
@@ -565,29 +556,29 @@ func (a *app) shortcuts(c *ui.Context) {
 			a.send(t, "/copy")
 		}
 	})
-	c.OnShortcut(cmd, ui.KeyComma, func() { a.push(screen{kind: "providers", peer: o.state.Self}) })
-	c.OnShortcut(cmd, ui.KeyBackslash, func() { a.sideHidden = !a.sideHidden })
+	c.OnShortcut(cmd, ui.KeyComma, a.settings)
 	c.OnShortcut(cmd|ui.Shift, ui.KeyBracketLeft, func() { a.move(-1) })
 	c.OnShortcut(cmd|ui.Shift, ui.KeyBracketRight, func() { a.move(1) })
 	for i := range 9 {
 		c.OnShortcut(cmd, ui.Key1+ui.Key(i), func() {
-			if i < len(o.state.Tabs) {
-				a.show(o.state.Tabs[i].ID)
+			if x := a.tabsTile(); i < len(x.tabs) {
+				a.show(x.tabs[i])
 			}
 		})
 	}
 }
 
+// move shows the focused tile's next tab, or the previous one (⇧⌘] ⇧⌘[).
 func (a *app) move(by int) {
-	tabs := a.o.state.Tabs
+	tabs := a.tabsTile().tabs
 	if len(tabs) == 0 {
 		return
 	}
-	at := slices.IndexFunc(tabs, func(t Tab) bool { return t.ID == a.tab })
+	at := slices.Index(tabs, a.tab)
 	if at < 0 && by < 0 {
 		at = 0 // from Home, back to the last
 	}
-	a.show(tabs[(at+by+len(tabs))%len(tabs)].ID)
+	a.show(tabs[(at+by+len(tabs))%len(tabs)])
 }
 
 // keys names a shortcut as the platform writes it.
@@ -619,6 +610,9 @@ func (a *app) overlays(c *ui.Context) {
 	if a.picker != nil {
 		a.pickerSheet(c)
 	}
+	if a.palette {
+		a.paletteSheet(c)
+	}
 	t := o.tab(a.model)
 	if a.model == next {
 		t = a.defaults[a.defaultOf]
@@ -628,7 +622,7 @@ func (a *app) overlays(c *ui.Context) {
 	} else {
 		a.model = ""
 	}
-	if a.rename != nil && (a.rename.row == "" || a.sideHidden) {
+	if a.rename != nil && a.rename.row == "" {
 		a.renameSheet(c)
 	}
 	if a.viewing[0] != "" {

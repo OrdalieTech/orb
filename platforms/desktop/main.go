@@ -21,7 +21,7 @@ func main() {
 	a := &app{
 		drafts: map[string]string{}, found: map[string][]Completion{}, foundFor: map[string]string{}, lists: map[string]*ui.ListState{}, shells: map[string]*shell{},
 		answer: map[string]string{}, expanded: map[string]bool{}, details: map[string]map[string]string{},
-		pics: map[string]*ui.Bitmap{}, loading: map[string]bool{}, fold: map[string]bool{}, side: 272, asked: map[string]time.Time{},
+		pics: map[string]*ui.Bitmap{}, loading: map[string]bool{}, asked: map[string]time.Time{},
 		defaults: map[string]*Tab{},
 	}
 	a.loadTiles()
