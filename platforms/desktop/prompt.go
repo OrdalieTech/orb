@@ -73,10 +73,14 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 			at, citing := strings.CutPrefix(word, "@")
 			if !citing || t == nil {
 				a.found, a.foundFor = nil, ""
-			} else if word != a.foundFor {
-				a.foundFor = word
+			} else if key := t.ID + "\n" + word; key != a.foundFor {
+				// Another conversation's completions name another folder or machine's files.
+				if !strings.HasPrefix(a.foundFor, t.ID+"\n") {
+					a.found = nil
+				}
+				a.foundFor = key
 				then(o, func(items []Completion, err error) {
-					if a.foundFor == word {
+					if a.foundFor == key {
 						a.found = items
 					}
 				}, "complete", "tab", t.ID, "text", at)

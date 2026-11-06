@@ -77,7 +77,7 @@ type app struct {
 	accounts   []Account // the accounts of the machine the model sheet shows
 	accountsOf string    // that machine
 	found      []Completion
-	foundFor   string  // the @ token completions were asked for
+	foundFor   string  // the tab and @ token completions were asked for
 	focused    int     // the last focus request the prompt box took
 	path       string  // a folder typed on a device's screen
 	side       float32 // the sidebar's width
