@@ -55,10 +55,15 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 			patternBlue(c, func() { o.send("abort", "tab", t.ID) })
 		}
 		tt := turns(o.rows[t.ID])
-		ls := a.lists[t.ID]
+		// A List takes one state: a second tile showing it (a layout saved so) scrolls on its own.
+		key := t.ID
+		if x := a.building; x != nil && a.showing(t.ID) != x {
+			key += fmt.Sprintf("@%p", x)
+		}
+		ls := a.lists[key]
 		if ls == nil {
 			ls = &ui.ListState{FollowEnd: true, FollowAnimation: &ui.Smooth}
-			a.lists[t.ID] = ls
+			a.lists[key] = ls
 		}
 		// Older messages load above; the ones read so far stay where they are.
 		head := 0

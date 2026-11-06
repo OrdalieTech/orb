@@ -271,6 +271,10 @@ func (a *app) showing(tab string) *tile {
 // place shows tab in x, or (side not "middle") in a new tile on that side of x. A conversation
 // shows once: a tile already showing it gives way.
 func (a *app) place(x *tile, side, tab string, shell bool) {
+	if x.tab == tab && x.shell == shell && tab != "" {
+		a.activate(x) // dropped beside the tile showing it: it is there already
+		return
+	}
 	if below := side == "top" || side == "bottom"; side != "middle" && !a.fits(x, below) {
 		a.split(x, side, nil) // says there is no room, and changes nothing
 		return
