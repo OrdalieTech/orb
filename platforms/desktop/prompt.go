@@ -71,22 +71,21 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 			// An @ token asks the Orb what it completes to, as the TUI does: skills, then files.
 			word := draft[strings.LastIndexFunc(draft, unicode.IsSpace)+1:]
 			at, citing := strings.CutPrefix(word, "@")
+			// Each conversation keeps its own: tiles draw several prompt boxes at once, and
+			// another's completions name another folder or machine's files.
 			if !citing || t == nil {
-				a.found, a.foundFor = nil, ""
-			} else if key := t.ID + "\n" + word; key != a.foundFor {
-				// Another conversation's completions name another folder or machine's files.
-				if !strings.HasPrefix(a.foundFor, t.ID+"\n") {
-					a.found = nil
-				}
-				a.foundFor = key
+				delete(a.found, id)
+				delete(a.foundFor, id)
+			} else if word != a.foundFor[id] {
+				a.foundFor[id] = word
 				then(o, func(items []Completion, err error) {
-					if a.foundFor == key {
-						a.found = items
+					if a.foundFor[id] == word {
+						a.found[id] = items
 					}
 				}, "complete", "tab", t.ID, "text", at)
 			}
 			if len(choices) == 0 {
-				for _, f := range a.found {
+				for _, f := range a.found[id] {
 					name := f.Label
 					if strings.HasPrefix(f.Text, "/skill:") {
 						name = "◆ " + name
