@@ -18,7 +18,7 @@ func main() {
 		return
 	}
 	a := &app{
-		drafts: map[string]string{}, lists: map[string]*ui.ListState{}, shells: map[string]*shell{},
+		drafts: map[string]string{}, found: map[string][]Completion{}, foundFor: map[string]string{}, lists: map[string]*ui.ListState{}, shells: map[string]*shell{},
 		answer: map[string]string{}, expanded: map[string]bool{}, details: map[string]map[string]string{},
 		pics: map[string]*ui.Bitmap{}, loading: map[string]bool{}, fold: map[string]bool{}, side: 272, asked: map[string]time.Time{},
 		defaults: map[string]*Tab{},

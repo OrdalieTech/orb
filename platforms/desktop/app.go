@@ -73,14 +73,14 @@ type app struct {
 	pics     map[string]*ui.Bitmap        // pictures by reference and size
 	loading  map[string]bool              // pictures asked for
 
-	query      string    // the model sheet's search
-	accounts   []Account // the accounts of the machine the model sheet shows
-	accountsOf string    // that machine
-	found      []Completion
-	foundFor   string  // the tab and @ token completions were asked for
-	focused    int     // the last focus request the prompt box took
-	path       string  // a folder typed on a device's screen
-	side       float32 // the sidebar's width
+	query      string                  // the model sheet's search
+	accounts   []Account               // the accounts of the machine the model sheet shows
+	accountsOf string                  // that machine
+	found      map[string][]Completion // each conversation's @ completions
+	foundFor   map[string]string       // the @ token they were asked for
+	focused    int                     // the last focus request the prompt box took
+	path       string                  // a folder typed on a device's screen
+	side       float32                 // the sidebar's width
 	sideHidden bool
 	search     string // the sidebar's search
 	seek       int    // search asked for (⌘K), which its field takes once
@@ -348,6 +348,8 @@ func (a *app) close(id string) {
 		delete(a.shells, id)
 	}
 	delete(a.drafts, id)
+	delete(a.found, id)
+	delete(a.foundFor, id)
 	a.o.send("close", "tab", id)
 }
 
