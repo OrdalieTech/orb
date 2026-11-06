@@ -2,7 +2,7 @@ UPSTREAM_REPO := $(shell sed -n 's/.*"repo": "\([^"]*\)".*/\1/p' UPSTREAM.lock)
 UPSTREAM_COMMIT := $(shell sed -n 's/.*"commit": "\([^"]*\)".*/\1/p' UPSTREAM.lock)
 UPSTREAM_DIR ?= $(CURDIR)/.upstream
 UPSTREAM_READONLY ?= 0
-GOLANGCI_LINT_VERSION ?= v2.13.2
+GOLANGCI_LINT_VERSION ?= v2.14.0
 GOLANGCI_LINT := $(CURDIR)/.tools/bin/golangci-lint
 # Use Go's shared caches instead of duplicating artifacts and modules per worktree.
 GO_ENV ?=
