@@ -183,6 +183,8 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 		ink := pal.mute
 		if x := a.showing(t.ID); x != nil && (a.zoomed == nil || a.zoomed == x) {
 			ink = pal.fg
+		} else if t.Asleep {
+			ink = pal.meta // dimmed, as the phone's cards asleep
 		}
 		where(c, o.hue(t.Peer), t.Busy, t.Ask != nil, ink)
 		w := 400
@@ -203,15 +205,16 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 			ui.Text(c, map[bool]string{true: "99+", false: strconv.Itoa(t.Unread)}[t.Unread > 99]).Padding(0, 6).Radius(8).Background(pal.fg).TextColor(pal.bg).FontSize(labelSize + 1).FontWeight(strong).Tooltip("Answers since you last looked")
 		} else if t.Busy {
 			ui.Text(c, "working").FontSize(12).TextColor(pal.meta)
+		} else if strings.TrimSpace(t.Status) != "" {
+			// What it waits on, in a word (opening, offline); its tip says it whole.
+			ui.Text(c, strings.TrimRight(strings.Fields(t.Status)[0], "…")).FontSize(12).TextColor(pal.meta).SingleLine()
 		} else if t.Asleep {
 			ui.Text(c, "asleep").FontSize(12).TextColor(pal.meta)
-		} else if !t.Loaded {
-			ui.Text(c, "opening").FontSize(12).TextColor(pal.meta)
 		} else if t.Remote {
 			ui.Text(c, t.Where).MaxWidth(90).FontSize(12).TextColor(pal.meta).SingleLine()
 		}
 	})
-	sideTip(c, e, strings.Join(nonEmpty(t.Title, strings.Join(nonEmpty(t.Where, tidy(t.CWD)), " · ")), "\n"))
+	sideTip(c, e, strings.Join(nonEmpty(t.Title, strings.Join(nonEmpty(t.Where, tidy(t.CWD)), " · "), t.Status), "\n"))
 	a.carry(e, carried{tab: t.ID})
 	e.ContextMenu(func(m *ui.Menu) {
 		if m.Item("Open to the right").Chosen() {
