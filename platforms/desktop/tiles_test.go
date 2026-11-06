@@ -39,6 +39,14 @@ func TestTiles(t *testing.T) {
 	if got := layoutOf(a); len(got) != 3 || got[0] != "a" || got[1] != "c" || got[2] != "b" {
 		t.Fatalf("c under a: %v", got)
 	}
+	// A terminal shown in its conversation's place moves as a terminal, its tile going.
+	b := a.showing("b")
+	b.shell = true
+	a.dropped(a.showing("a"), "right", carried{tile: b})
+	if got := layoutOf(a); len(got) != 3 || got[0] != "a" || got[1] != "b>_" || got[2] != "c" {
+		t.Fatalf("b's terminal dragged right of a: %v", got)
+	}
+	a.terminalOf("b")
 	// Closing tiles down to the last turns it Home.
 	for !a.root.leaf() {
 		a.unsplit(a.active)
