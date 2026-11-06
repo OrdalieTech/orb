@@ -129,6 +129,12 @@ func (a *app) split(x *tile, side string, n *tile) {
 		a.say("No room for another tile · close one, or split the other way")
 		return
 	}
+	a.insert(x, side, n)
+}
+
+// insert is split once the room is known to be there.
+func (a *app) insert(x *tile, side string, n *tile) {
+	below := side == "top" || side == "bottom"
 	s := &tile{a: x, b: n, below: below, share: 50}
 	if side == "left" || side == "top" {
 		s.a, s.b = n, x
@@ -270,6 +276,8 @@ func (a *app) place(x *tile, side, tab string, shell bool) {
 		return
 	}
 	if tab != "" {
+		// A tab just opened shows before the view lists it, as show waits for it.
+		a.listing = time.Now().Add(5 * time.Second)
 		for _, t := range a.root.tiles(nil) {
 			if t != x && t.tab == tab && t.shell == shell {
 				a.unsplit(t)
@@ -353,7 +361,12 @@ func (a *app) dropped(x *tile, side string, v carried) {
 			return
 		}
 		a.remove(v.tile)
-		a.place(x, side, v.tile.tab, v.tile.shell)
+		if side == "middle" {
+			a.place(x, side, v.tile.tab, v.tile.shell)
+		} else {
+			// The room was there before it left; the widths say so again only next frame.
+			a.insert(x, side, &tile{tab: v.tile.tab, shell: v.tile.shell})
+		}
 	case v.tab != "":
 		a.place(x, side, v.tab, false)
 	case v.key != "":
