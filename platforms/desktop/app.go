@@ -82,7 +82,10 @@ type app struct {
 	found      map[string][]Completion // each conversation's @ completions
 	foundFor   map[string]string       // the @ token they were asked for
 	focused    int                     // the last focus request the prompt box took
-	path       string                  // a folder typed on a device's screen
+	path       string                  // what filters the explorer, or a path typed into it
+	dir        Dirs                    // the folder it shows
+	dirOf      string                  // on that machine
+	dirErr     string                  // why it could not list it
 	gone       map[string]bool         // tabs closed here, until the view says so too
 	palette    bool                    // Go to (⌘K) shows
 	search     string                  // what it looks for

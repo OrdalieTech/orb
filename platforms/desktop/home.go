@@ -156,45 +156,147 @@ func tidy(p string) string {
 	return p
 }
 
-// deviceScreen is one machine: its folders, most recently worked in first, and any other folder by path.
+// deviceScreen is one machine as an explorer: where it is (each folder of the path a click
+// back), the folders in it (git ones marked; a click goes in, start begins a session there), a
+// filter that ↩ follows, or a path typed whole; its recent folders under.
 func (a *app) deviceScreen(c *ui.Context, peer string) {
-	m := a.o.machine(peer)
+	o, pal := a.o, p(c)
+	m := o.machine(peer)
 	if m == nil {
 		a.back()
 		return
 	}
-	threads := 0
-	for _, f := range m.Folders {
-		threads += f.Threads
+	if a.dirOf != peer {
+		a.readDirs(peer, "")
 	}
-	sub := fmt.Sprintf("%d folders · %d threads", len(m.Folders), threads)
-	if m.Version != "" {
-		sub += " · orb " + m.Version
+	d := a.dir
+	q := strings.ToLower(strings.TrimSpace(a.path))
+	var shown []string
+	for _, x := range d.Dirs {
+		if q == "" || strings.Contains(strings.ToLower(x.Name), q) {
+			shown = append(shown, x.Name)
+		}
 	}
 	page(c, func() {
-		header(c, m.Name, sub, a.back, func() {
-			if btn(c, "providers", false, p(c).fg, p(c).bg) {
-				a.push(screen{kind: "providers", peer: m.ID})
+		header(c, m.Name, strings.Join(nonEmpty(map[bool]string{true: "orb " + m.Version}[m.Version != ""], "choose where the session starts"), " · "), a.back, func() {
+			if d.Path != "" && btn(c, "start here", true, pal.fg, pal.bg) {
+				a.start(peer, d.Path)
 			}
 		})
-	}, func() {
-		ui.Row(c).FillWidth().Gap(8).Children(func() {
-			if field(c, &a.path, "another folder · ~/code/project", false).Grow(1).Submitted() || btn(c, "open", true, p(c).fg, p(c).bg) {
-				if dir := strings.TrimSpace(a.path); dir != "" {
-					a.path = ""
-					a.push(screen{kind: "folder", peer: m.ID, arg: dir})
+		// The path, each of its folders a click back.
+		ui.Row(c).FillWidth().Padding(0, margin, 6).Gap(2).Children(func() {
+			for _, cr := range crumbs(d.Path) {
+				if press(ui.Row(c.Key(cr[1])).Padding(3, 6).Radius(5).Children(func() { ui.Text(c, cr[0]).FontSize(small).FontWeight(medium).TextColor(pal.mute) })) {
+					a.readDirs(peer, cr[1])
+				}
+				if cr[0] != "/" {
+					ui.Text(c.Key("/"+cr[1]), "/").FontSize(small).TextColor(pal.rule)
 				}
 			}
 		})
+		in := field(c, &a.path, "filter · or a path, ↩", false).Margin(0, margin, 4).AutoFocus()
+		if in.Submitted() {
+			switch t := strings.TrimSpace(a.path); {
+			case strings.HasPrefix(t, "/") || strings.HasPrefix(t, "~"):
+				a.readDirs(peer, t)
+			case len(shown) > 0:
+				a.readDirs(peer, path.Join(d.Path, shown[0]))
+			}
+		}
+	}, func() {
 		a.launching(c)
-		label(c, "folders").Margin(18, 0, 4)
-		for _, f := range m.Folders {
-			name := path.Base(f.CWD)
-			if press(sessionRow(c.Key(f.CWD), name, fmt.Sprint(f.Threads), ago(f.Modified), f.Live, false, false, a.o.hue(peer)).Tooltip(tidy(f.CWD))) {
-				a.push(screen{kind: "folder", peer: m.ID, arg: f.CWD})
+		if a.dirErr != "" {
+			ui.Text(c, a.dirErr).FontSize(small).TextColor(rupture).PaddingY(6)
+		}
+		ui.Column(c).FillWidth().Children(func() {
+			if d.Parent != "" && q == "" {
+				if press(dirRow(c.Key(".."), "..", false, "")) {
+					a.readDirs(peer, d.Parent)
+				}
+			}
+			for _, x := range d.Dirs {
+				if q != "" && !strings.Contains(strings.ToLower(x.Name), q) {
+					continue
+				}
+				at := path.Join(d.Path, x.Name)
+				row := dirRow(c.Key(x.Name), x.Name, x.Git, "start ›")
+				if row.DoubleClicked() {
+					a.start(peer, at)
+				} else if press(row) {
+					a.readDirs(peer, at)
+				}
+			}
+		})
+		if len(m.Folders) > 0 && q == "" {
+			label(c, "recent").Margin(18, 0, 4).TextColor(pal.meta)
+			for i, f := range m.Folders {
+				if i == 6 {
+					break
+				}
+				if press(sessionRow(c.Key("r:"+f.CWD), path.Base(f.CWD), fmt.Sprint(f.Threads), ago(f.Modified), f.Live, false, false, o.hue(peer)).Tooltip(tidy(f.CWD))) {
+					a.push(screen{kind: "folder", peer: m.ID, arg: f.CWD})
+				}
 			}
 		}
 	})
+}
+
+// readDirs lists a folder of a machine, its home for "", into the explorer.
+func (a *app) readDirs(peer, dir string) {
+	a.dirOf, a.path, a.dirErr = peer, "", ""
+	then(a.o, func(r Dirs, err error) {
+		if a.dirOf != peer {
+			return
+		}
+		if err != nil {
+			a.dirErr = err.Error()
+			return
+		}
+		a.dir = r
+	}, "dirs", "machine", peer, "cwd", dir)
+}
+
+// dirRow is a folder in the explorer, a line tight: its name, git when it is a repository, and
+// under the pointer what a double click does.
+func dirRow(c *ui.Context, name string, git bool, hint string) ui.Element {
+	pal := p(c)
+	e := ui.Row(c).FillWidth().Height(30).Padding(0, 8).Margin(0, -8).Gap(10).Radius(6).AlignItems(ui.Center)
+	hovered := e.Hovered()
+	if hovered {
+		e.Background(pal.raised)
+	}
+	return e.Children(func() {
+		ui.Text(c, name).Grow(1).Basis(0).FontSize(small).SingleLine()
+		if git {
+			label(c, "git").TextColor(pal.meta)
+		}
+		if hovered && hint != "" {
+			ui.Text(c, "double click · "+hint).FontSize(12).TextColor(pal.meta)
+		}
+	})
+}
+
+// crumbs are a path's folders, as their names (the home as ~) and their paths.
+func crumbs(p string) [][2]string {
+	if p == "" {
+		return nil
+	}
+	out := [][2]string{{"/", "/"}}
+	rest := strings.Trim(p, "/")
+	at := ""
+	if t := tidy(p); strings.HasPrefix(t, "~") {
+		at = p[:len(p)-len(t)+1]
+		out = [][2]string{{"~", at}}
+		rest = strings.Trim(t[1:], "/")
+	}
+	if rest == "" {
+		return out
+	}
+	for _, name := range strings.Split(rest, "/") {
+		at += "/" + name
+		out = append(out, [2]string{name, at})
+	}
+	return out
 }
 
 // folderScreen is one folder on a machine: start a thread here, or open one of its threads.

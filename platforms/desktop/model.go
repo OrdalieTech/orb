@@ -134,6 +134,16 @@ type Running struct {
 	Open     bool   `json:"open"`
 }
 
+// Dirs is a folder of a machine and the folders in it, as host.dirs lists them.
+type Dirs struct {
+	Path   string `json:"path"`
+	Parent string `json:"parent"`
+	Dirs   []struct {
+		Name string `json:"name"`
+		Git  bool   `json:"git"`
+	} `json:"dirs"`
+}
+
 type Folder struct {
 	CWD      string `json:"cwd"`
 	Threads  int    `json:"threads"`
