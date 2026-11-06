@@ -482,6 +482,13 @@ func (a *app) closeTile() {
 	}
 }
 
+// closeTab closes the conversation shown: it no longer follows it, and its Orb runs on.
+func (a *app) closeTab() {
+	if a.tab != "" {
+		a.close(a.tab)
+	}
+}
+
 // menu is the macOS menu bar, as Ghostty's: the tile keys are its items, which macOS gives the
 // keys to before the view. It has no Close Window, which would take ⌘W.
 func (a *app) menu() *mygo.Menu {
@@ -493,6 +500,7 @@ func (a *app) menu() *mygo.Menu {
 		{Label: "File", Submenu: []*mygo.MenuItem{
 			{Label: "New Session", Accelerator: "Cmd+N", Click: do(a.newSession)},
 			{Label: "Close Tile", Accelerator: "Cmd+W", Click: do(a.closeTile)},
+			{Label: "Close Conversation", Accelerator: "Shift+Cmd+W", Click: do(a.closeTab)},
 		}},
 		{Role: mygo.RoleEditMenu},
 		{Label: "View", Submenu: []*mygo.MenuItem{
@@ -534,6 +542,7 @@ func (a *app) shortcuts(c *ui.Context) {
 	c.OnShortcut(cmd, ui.KeyN, a.newSession)
 	c.OnShortcut(cmd, ui.KeyK, func() { a.sideHidden = false; a.seek++ })
 	c.OnShortcut(cmd, ui.KeyW, a.closeTile)
+	c.OnShortcut(cmd|ui.Shift, ui.KeyW, a.closeTab)
 	c.OnShortcut(cmd, ui.KeyD, func() { a.split(a.active, "right", &tile{}) })
 	c.OnShortcut(cmd|ui.Shift, ui.KeyD, func() { a.split(a.active, "bottom", &tile{}) })
 	c.OnShortcut(cmd, ui.KeyBracketLeft, func() { a.cycle(-1) })

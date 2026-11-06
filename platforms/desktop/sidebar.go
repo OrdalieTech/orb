@@ -50,7 +50,7 @@ func (a *app) sidebar(c *ui.Context) {
 				}
 				if section == 0 {
 					section++
-					hudLabel(c, section, "open", "").Padding(14, 8, 4)
+					a.openHeader(c, section)
 				}
 				a.tabRow(c.Key(t.ID), t, i)
 			}
@@ -84,9 +84,10 @@ func (a *app) sidebar(c *ui.Context) {
 }
 
 // sideRow is one line of the sidebar: where it runs, its name, what it says at right.
-func sideRow(c *ui.Context, on bool, body func()) ui.Element {
+func sideRow(c *ui.Context, on bool, body func(hovered bool)) ui.Element {
 	pal := p(c)
 	e := ui.Row(c).FillWidth().Padding(6, 8).Gap(9).Radius(8)
+	hovered := e.Hovered()
 	// A red tick at its left edge marks the row shown in the active tile: a HUD's target marker. It
 	// grows from the middle in 120 ms.
 	tick := e.AnimateTo("tick", map[bool]float32{true: 1, false: 0}[on], hovering)
@@ -97,9 +98,51 @@ func sideRow(c *ui.Context, on bool, body func()) ui.Element {
 		})
 	}
 	if on {
-		return e.Background(pal.bg).Children(body)
+		return e.Background(pal.bg).Children(func() { body(hovered) })
 	}
-	return hover(e, pal.bg.Alpha(0.6)).Children(body)
+	return hover(e, pal.bg.Alpha(0.6)).Children(func() { body(hovered) })
+}
+
+// openHeader heads the conversations open: how many work, ask, sleep, and a click closes those
+// asleep out of sight. Closing follows a conversation no more; its Orb runs on.
+func (a *app) openHeader(c *ui.Context, index int) {
+	pal := p(c)
+	working, asks, asleep := 0, 0, []string{}
+	for _, t := range a.o.state.Tabs {
+		switch {
+		case t.Ask != nil:
+			asks++
+		case t.Busy:
+			working++
+		case t.Asleep && a.showing(t.ID) == nil:
+			asleep = append(asleep, t.ID)
+		}
+	}
+	var parts []string
+	for _, x := range []struct {
+		n    int
+		what string
+	}{{asks, "asking"}, {working, "working"}, {len(asleep), "asleep"}} {
+		if x.n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", x.n, x.what))
+		}
+	}
+	// Under the pointer, the counts give way to closing those asleep.
+	row := ui.Row(c).FillWidth().Padding(14, 8, 4).Gap(8).AlignItems(ui.Center)
+	closing := row.Hovered() && len(asleep) > 1
+	row.Children(func() {
+		if !closing {
+			hudLabel(c, index, "open", strings.Join(parts, " · ")).Grow(1).Basis(0)
+			return
+		}
+		hudLabel(c, index, "open", "").Grow(1).Basis(0)
+		if press(ui.Row(c).Children(func() { label(c, fmt.Sprintf("close %d asleep", len(asleep))).TextColor(pal.fg) }).Tooltip("Their threads stay below")) {
+			for _, id := range asleep {
+				a.close(id)
+			}
+			a.say(fmt.Sprintf("closed %d conversations asleep", len(asleep)))
+		}
+	})
 }
 
 // renameField edits a row's name in place, the whole of it, when it is the one renamed: Return or
@@ -135,7 +178,7 @@ func sideTip(c *ui.Context, row ui.Element, s string) {
 func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 	o, pal := a.o, p(c)
 	on := t.ID == a.tab && a.top().kind == ""
-	e := sideRow(c, on, func() {
+	e := sideRow(c, on, func(hovered bool) {
 		// A conversation in a tile reads in full ink, one out of sight muted, as threads are.
 		ink := pal.mute
 		if x := a.showing(t.ID); x != nil && (a.zoomed == nil || a.zoomed == x) {
@@ -149,8 +192,12 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 		if !a.renameField(c, t.ID) {
 			ui.Text(c, cmp.Or(t.Title, "new session")).Grow(1).Basis(0).FontWeight(w).TextColor(ink).SingleLine()
 		}
-		// Answers that came while it was out of sight, until it shows.
-		if t.Ask != nil {
+		// Answers that came while it was out of sight, until it shows. Under the pointer, it closes.
+		if hovered && t.Ask == nil {
+			if press(ui.Row(c).Padding(0, 5).Radius(4).Children(func() { ui.Text(c, "×").FontSize(15).TextColor(pal.mute) }).Tooltip("Close  " + keys("⇧W") + " · it runs on")) {
+				a.close(t.ID)
+			}
+		} else if t.Ask != nil {
 			ui.Text(c, "asks").FontSize(12).TextColor(rupture)
 		} else if t.Unread > 0 {
 			ui.Text(c, map[bool]string{true: "99+", false: strconv.Itoa(t.Unread)}[t.Unread > 99]).Padding(0, 6).Radius(8).Background(pal.fg).TextColor(pal.bg).FontSize(labelSize + 1).FontWeight(strong).Tooltip("Answers since you last looked")
@@ -158,6 +205,8 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 			ui.Text(c, "working").FontSize(12).TextColor(pal.meta)
 		} else if t.Asleep {
 			ui.Text(c, "asleep").FontSize(12).TextColor(pal.meta)
+		} else if !t.Loaded {
+			ui.Text(c, "opening").FontSize(12).TextColor(pal.meta)
 		} else if t.Remote {
 			ui.Text(c, t.Where).MaxWidth(90).FontSize(12).TextColor(pal.meta).SingleLine()
 		}
@@ -189,7 +238,7 @@ func (a *app) tabRow(c *ui.Context, t Tab, at int) {
 
 func (a *app) threadRow(c *ui.Context, e Entry) {
 	pal := p(c)
-	row := sideRow(c, false, func() {
+	row := sideRow(c, false, func(bool) {
 		opening := a.opening == e.Key
 		where(c, a.o.hue(e.Machine), e.Live || opening, e.Asks, pal.mute)
 		ink := pal.mute
