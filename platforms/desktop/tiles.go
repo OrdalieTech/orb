@@ -205,13 +205,18 @@ func (a *app) newSession() {
 	}
 }
 
-// unsplit takes x out of the layout, its sibling taking its room; the last tile turns Home.
+// unsplit closes x: a terminal shown in its conversation's place gives it back, any other tile goes.
 func (a *app) unsplit(x *tile) {
 	if x.shell && a.showing(x.tab) == nil {
 		x.shell = false // a terminal shown in its conversation's place gives it back
 		a.activate(x)
 		return
 	}
+	a.remove(x)
+}
+
+// remove takes x out of the layout, its sibling taking its room; the last tile turns Home.
+func (a *app) remove(x *tile) {
 	p := a.parent(x)
 	if p == nil {
 		x.tab, x.shell = "", false
@@ -347,7 +352,7 @@ func (a *app) dropped(x *tile, side string, v carried) {
 			a.split(x, side, nil)
 			return
 		}
-		a.unsplit(v.tile)
+		a.remove(v.tile)
 		a.place(x, side, v.tile.tab, v.tile.shell)
 	case v.tab != "":
 		a.place(x, side, v.tab, false)
