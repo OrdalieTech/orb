@@ -271,7 +271,13 @@ func (d *Driver) settle() {
 func (h *host) close() {
 	_ = h.mcp.Close()
 	_ = h.input.Close()
-	time.AfterFunc(5*time.Second, func() { _ = h.kill() })
+	time.AfterFunc(5*time.Second, func() {
+		select {
+		case <-h.exited:
+		default:
+			_ = h.kill()
+		}
+	})
 }
 
 func (d *Driver) spawn(start map[string]any, env []string) (*host, error) {

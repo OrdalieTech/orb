@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -380,10 +381,12 @@ type modelInfo struct {
 }
 
 // isolate makes cmd the root of its own process tree and returns the tree's kill.
+// Windows gives a waited process's PID to the next process at once, so there the
+// kill stops once cmd was waited for instead of ending a stranger's tree.
 func isolate(cmd *exec.Cmd) func() error {
 	proctree.Isolate(cmd)
 	return func() error {
-		if cmd.Process != nil {
+		if cmd.Process != nil && (runtime.GOOS != "windows" || cmd.ProcessState == nil) {
 			_ = proctree.Kill(cmd.Process.Pid)
 		}
 		return nil

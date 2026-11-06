@@ -51,6 +51,8 @@ Orb follows pi 1.5.0, and the apps grow: Orb for the desktop replaces the SwiftU
 
 - Tool arguments are validated as pi 1.5 does with pi-schema, for Orb's tools and MCP tools alike: TypeBox's conversions run before Ajv-style coercion (a single value becomes a one-item array, `"3.5"` the integer 3, `"TRUE"` true, `null` for a required string `"null"`), standard formats such as `uri`, `date-time` and `email` are checked, a `$ref` that names nothing rejects only the values at its place, a `$ref` cycle that never consumes the value fails the call with `Maximum call stack size exceeded` instead of crashing the process, and errors read `- edits.0.oldText: missing` or `- limit: expected number, got string`.
 
+- Orb builds with Go 1.27.3, which MyGo, under the desktop app, requires. On Windows, Claude Sessions no longer end whatever process took the PID of a Claude host that had already exited.
+
 ## [0.20.0] - 2026-11-01
 
 Orb follows pi 1.4.0, and strict tool sampling keeps schemas built from `$ref` and `$defs`: messages, tool results and settled runs record their duration and outcome as pi 1.4 writes them, the Azure OpenAI provider is now `azure`, and a Claude session's native tools get the environment Orb's own tools get.
