@@ -366,6 +366,14 @@ func (a *app) dropped(x *tile, side string, v carried) {
 	}
 }
 
+// onScreen is what the conversations draw: the zoomed tile alone, or the whole layout.
+func (a *app) onScreen() *tile {
+	if a.zoomed != nil && a.contains(a.zoomed) {
+		return a.zoomed
+	}
+	return a.root
+}
+
 func (a *app) contains(x *tile) bool {
 	for _, t := range a.root.tiles(nil) {
 		if t == x {
