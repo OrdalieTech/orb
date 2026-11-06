@@ -466,8 +466,8 @@ func (a *app) picture(c *ui.Context, ref, tab string, px int) ui.Element {
 			if err == nil {
 				a.pics[key] = r.b
 			}
-			if a.pics[key] == nil {
-				delete(a.loading, key) // asked again when it next shows
+			if a.pics[key] == nil { // asked again a while later, not each frame: an evicted image stays not found
+				time.AfterFunc(10*time.Second, func() { a.o.win.Update(func() { delete(a.loading, key) }) })
 			}
 		}, "image", "tab", tab, "ref", ref, "px", px)
 	}

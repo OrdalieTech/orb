@@ -186,7 +186,16 @@ type Service struct {
 // WebSocket; webURL, when set, is the address invitations give.
 func New(ctx context.Context, state *native.State, profile, version string, b *bridge.Bridge, node *transport.Node, webURL string) *Service {
 	peers := bridge.NewPeers(ctx, b)
-	peers.WebURL, peers.Locator = webURL, node.Locator
+	peers.WebURL = webURL
+	// The relay comes up behind the local sockets: an invitation or a join asked as Bridge starts
+	// waits a while for the address it gives.
+	peers.Locator = func() (string, error) {
+		for deadline := time.Now().Add(25 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+			if l, err := node.Locator(); err == nil || time.Now().After(deadline) {
+				return l, err
+			}
+		}
+	}
 	peers.Dial = func(ctx context.Context, id, locator string) (net.Conn, error) {
 		if strings.HasPrefix(locator, "ws://") || strings.HasPrefix(locator, "wss://") {
 			return webtransport.Dial(ctx, locator)
