@@ -14,6 +14,7 @@ import androidx.compose.foundation.pager.*
 import androidx.compose.foundation.text.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.*
 import androidx.compose.ui.focus.*
@@ -103,6 +104,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     var renaming by remember { mutableStateOf<Rename?>(null) }
     var viewing by remember { mutableStateOf<Pair<String, String>?>(null) }
     var overview by rememberSaveable { mutableStateOf(false) } // every conversation at once, in place of the deck
+    val kept = rememberSaveableStateHolder() // the deck's pages and drafts, while the overview or another screen shows
     // Shared text is either a Bridge invitation or something to cite.
     LaunchedEffect(shared.value) {
         val text = shared.value ?: return@LaunchedEffect
@@ -146,7 +148,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
                         // The overview and the deck trade places as a zoom: a card grows into its page, a page shrinks into its card.
                         Screen.Home -> SharedTransitionLayout {
                             AnimatedContent(overview, transitionSpec = { fadeIn(tween(220, 60)) togetherWith fadeOut(tween(160)) }, label = "overview") { on ->
-                                CompositionLocalProvider(LocalMorph provides Morph(this@SharedTransitionLayout, this)) { if (on) Overview(ctx) { overview = false } else Deck(ctx) }
+                                CompositionLocalProvider(LocalMorph provides Morph(this@SharedTransitionLayout, this)) { if (on) Overview(ctx) { overview = false } else kept.SaveableStateProvider("deck") { Deck(ctx) } }
                             }
                         }
                         Screen.Bridge -> BridgeScreen(ctx)
