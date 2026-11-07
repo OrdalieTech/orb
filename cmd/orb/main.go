@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/acp"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
@@ -31,6 +32,7 @@ import (
 	"github.com/OrdalieTech/orb/chat/platforms"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/internal/mermaid"
 	"github.com/OrdalieTech/orb/internal/semver"
@@ -40,6 +42,7 @@ import (
 	"github.com/OrdalieTech/orb/platforms/native/selfupdate"
 	"github.com/OrdalieTech/orb/platforms/native/teamenv"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
+	"github.com/OrdalieTech/orb/plugins/schedule"
 	"github.com/OrdalieTech/orb/plugins/usage"
 	"golang.org/x/term"
 )
@@ -805,6 +808,9 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 		return reportCLIError(streams.Stderr, errors.New("usage: orb chat <platform>... [--tools]"))
 	}
 	agents := teamAgent(ctx, dependencies, streams)
+	if err := startSchedule(ctx, &agents, streams); err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
 	var fronts []func(context.Context) error
 	var chats []string
 	for _, name := range selected {
@@ -876,6 +882,80 @@ func agentWorkspace(agents acpHost, cwd string, adapters []chat.Adapter) chat.Lo
 		}
 		return runtime.Session(), close, nil
 	})
+}
+
+// startSchedule fires the agent's schedule from this process, when its plugin
+// is on: a run opens its session as the agent's ACP sessions are opened, and
+// every session gets this scheduler's tool.
+func startSchedule(ctx context.Context, agents *acpHost, streams cliStreams) error {
+	agentDir, err := config.GetAgentDir()
+	if err != nil {
+		return err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	settings, err := agents.args.native.Settings(cwd, agentDir)
+	if err != nil || !settings.GetPlugins()["schedule"] {
+		return err
+	}
+	options, err := scheduleOptions(agents.args.native, agentDir, settings)
+	if err != nil {
+		return err
+	}
+	options.Name = "orb chat"
+	options.Open = func(ctx context.Context, session, cwd string) (*agent.AgentSession, func(), error) {
+		runtime, closeSession, err := agents.Open(ctx, acp.Options{ID: session, CWD: cwd})
+		if err != nil {
+			return nil, nil, err
+		}
+		return runtime.Session(), closeSession, nil
+	}
+	agents.args.schedule = schedule.New(options)
+	go func() {
+		if err := agents.args.schedule.Run(ctx); err != nil {
+			_, _ = fmt.Fprintln(streams.Stderr, "Error: "+err.Error())
+		}
+	}()
+	return nil
+}
+
+// sessionScheduler is the scheduler a session's schedule tool works with: this
+// process's when it fires the schedule, else one that only writes it.
+func sessionScheduler(args CLIArgs, agentDir string, settings *config.SettingsManager) *schedule.Scheduler {
+	if args.schedule != nil {
+		return args.schedule
+	}
+	options, _ := scheduleOptions(args.native, agentDir, settings)
+	return schedule.New(options)
+}
+
+// scheduleOptions reads plugins.schedule (zone, activeHours, timeout); the
+// schedule is schedule.json in the agent dir, in the native state when there is one.
+func scheduleOptions(state *native.State, agentDir string, settings *config.SettingsManager) (schedule.Options, error) {
+	path := filepath.Join(agentDir, "schedule.json")
+	options := schedule.Options{Store: filelock.File{Path: path, Perm: 0o600, Atomic: true}, Zone: time.Local}
+	if state != nil {
+		options.Store = state.Document(path)
+	}
+	configured := settings.GetPluginSettings("schedule")
+	options.ActiveHours, _ = configured["activeHours"].(string)
+	if zone, _ := configured["zone"].(string); zone != "" {
+		location, err := time.LoadLocation(zone)
+		if err != nil {
+			return options, fmt.Errorf("plugins.schedule.zone: %w", err)
+		}
+		options.Zone = location
+	}
+	if timeout, _ := configured["timeout"].(string); timeout != "" {
+		duration, err := time.ParseDuration(timeout)
+		if err != nil {
+			return options, fmt.Errorf("plugins.schedule.timeout: %w", err)
+		}
+		options.Timeout = duration
+	}
+	return options, nil
 }
 
 // runLocalChat runs the gateway on dataDir, its sessions and spool in the

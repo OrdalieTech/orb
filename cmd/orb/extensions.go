@@ -85,6 +85,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		BridgeAgentCalls: bridgeagents.Extension(ownerBridge{args: args, settings: settings}),
 		ClaudeSessions:   claudesessions.Management(settings, agentDir, os.Environ()),
 		CodexSessions:    codexsessions.Extension(os.Environ()),
+		Schedule:         sessionScheduler(args, agentDir, settings).Extension(),
 		// Background jobs run through the same bash as the built-in: sandbox, shell and prefix.
 		Bash: func(cwd string) (engine.AgentTool, error) {
 			mode, err := permissions.SandboxMode(settings)
