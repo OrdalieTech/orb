@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -120,6 +121,10 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 			}
 			// What its plugins show beside it: the task list, a status, the last notice.
 			for _, s := range t.Slots {
+				// A status that is only a coloured mark in the terminal (a •) says nothing here.
+				if !strings.ContainsFunc(ansi.ReplaceAllString(strings.Join(s.Lines, ""), ""), func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+					continue
+				}
 				ink := pal.meta
 				if s.Alarm {
 					ink = rupture

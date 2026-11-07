@@ -122,9 +122,9 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 			if busy {
 				hint = map[bool]string{true: "steer or queue", false: "steer or queue a message"}[a.narrow]
 			}
-			in := ui.TextAreaBase(c.Key("prompt"+id), &draft).Lines(3, 14).FillWidth().Padding(20, inset, 12)
+			in := ui.TextAreaBase(c.Key("prompt"+id), &draft).Lines(2, 14).FillWidth().Padding(14, inset, 4)
 			if short {
-				in.Lines(1, 4).Padding(10, inset, 4)
+				in.Lines(1, 4).Padding(8, inset, 2)
 			}
 			in = in.FontSize(size).LineHeight(1.5).
 				Placeholder(hint).PlaceholderColor(pal.meta)
@@ -175,7 +175,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 			}
 			// Below the text, on one line: where it runs and its model, as quiet controls that open out of
 			// themselves, and at right the one action, round, filled when there is something to send.
-			ui.Row(c).FillWidth().Padding(0, 12, 12, inset-9).Gap(2).Children(func() {
+			ui.Row(c).FillWidth().Padding(0, 10, 10, inset-9).Gap(2).Children(func() {
 				peer, name, full := cmp.Or(a.target[0], o.state.Self), device, "Where it runs"
 				if t != nil {
 					peer = t.Peer
@@ -293,7 +293,7 @@ func quotePath(p string) string {
 
 // The box reaches past the reading column by overhang a side, and sets its text at inset, so the
 // text lines up with the column's and the controls' marks with the text.
-const overhang, inset = 16, overhang + margin
+const overhang, inset = 8, overhang + margin
 
 // control is a quiet button in the prompt box: its content on no ground until the pointer is over it.
 func control(c *ui.Context, body func()) ui.Element {

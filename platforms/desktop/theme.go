@@ -207,7 +207,7 @@ func field(c *ui.Context, value *string, hint string, secret bool) ui.Element {
 	if *value != "" {
 		edge = pal.fg
 	}
-	in := ui.TextInputBase(c, value).Placeholder(hint).PlaceholderColor(pal.meta).Padding(8, 12).Radius(soft).Border(1, edge).FontSize(body)
+	in := ui.TextInputBase(c, value).Placeholder(hint).PlaceholderColor(pal.meta).Padding(6, 10).Radius(soft).Border(1, edge).FontSize(body)
 	if secret {
 		in.Password()
 	}
