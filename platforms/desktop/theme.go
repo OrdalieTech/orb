@@ -324,8 +324,9 @@ func actionLine(c *ui.Context, verb, target, result string, live, failed bool, o
 // shows, actions at right.
 func header(c *ui.Context, name, sub string, back func(), right func()) {
 	pal := p(c)
-	ui.Row(c).FillWidth().Padding(6, 12, 10, 4).Gap(4).Children(func() {
-		if press(ui.Row(c).PaddingX(10).Children(func() { ui.Text(c, "‹").FontSize(26).TextColor(pal.fg) })) {
+	// Without a way back, the name starts on the body's edge.
+	ui.Row(c).FillWidth().Padding(6, 12, 10, map[bool]float32{true: 4, false: margin}[back != nil]).Gap(4).Children(func() {
+		if back != nil && press(ui.Row(c).PaddingX(10).Children(func() { ui.Text(c, "‹").FontSize(26).TextColor(pal.fg) })) {
 			back()
 		}
 		ui.Column(c).Grow(1).Basis(0).Children(func() {

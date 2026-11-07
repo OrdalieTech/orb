@@ -40,6 +40,7 @@ type app struct {
 	o          *Orb
 	stack      []screen
 	tab        string            // the conversation shown, "" for Home
+	allOpen    bool              // Home shows every open conversation, not the first few
 	drafts     map[string]string // each conversation's draft, "" for Home's
 	focus      int               // asked to focus the prompt box, each time it grows
 	picker     *picker
@@ -260,31 +261,38 @@ func (a *app) view(c *ui.Context) {
 				a.saveTiles()
 				return
 			}
-			// The window's controls keep their room above every other screen, in a bar that drags
-			// it; Settings has its tabs there, level with the traffic lights.
-			ui.Row(c).FillWidth().Height(max(c.TitleBar().Height, 48)).Justify(ui.Center).AlignItems(ui.Center).DragWindow().Children(func() {
-				if slices.ContainsFunc(settingsKinds, func(s struct{ kind, name string }) bool { return s.kind == top.kind }) {
-					a.settingsTabs(c)
+			// The window's controls keep their room above every other screen, in a bar that drags it.
+			ui.Row(c).FillWidth().Height(max(c.TitleBar().Height, 48)).DragWindow()
+			screen := func() {
+				switch top.kind {
+				case "general":
+					a.generalScreen(c)
+				case "bridge":
+					a.bridgeScreen(c)
+				case "invite":
+					a.inviteScreen(c)
+				case "join":
+					a.joinScreen(c, top.arg)
+				case "providers":
+					a.providersScreen(c, top.peer)
+				case "vendor":
+					a.vendorScreen(c, top.arg, top.peer)
+				case "plugins":
+					a.pluginsScreen(c, top.peer)
+				case "folder":
+					a.folderScreen(c, top.peer, top.arg)
 				}
-			})
-			switch top.kind {
-			case "general":
-				a.generalScreen(c)
-			case "bridge":
-				a.bridgeScreen(c)
-			case "invite":
-				a.inviteScreen(c)
-			case "join":
-				a.joinScreen(c, top.arg)
-			case "providers":
-				a.providersScreen(c, top.peer)
-			case "vendor":
-				a.vendorScreen(c, top.arg, top.peer)
-			case "plugins":
-				a.pluginsScreen(c, top.peer)
-			case "folder":
-				a.folderScreen(c, top.peer, top.arg)
 			}
+			// Settings is a menu at left and its page beside it; a page opened from one (a provider,
+			// pairing) stays under its entry.
+			if slices.ContainsFunc(settingsKinds, func(s struct{ kind, name string }) bool { return s.kind == a.stack[0].kind }) {
+				ui.Row(c).Grow(1).Basis(0).FillWidth().AlignItems(ui.Stretch).Children(func() {
+					a.settingsMenu(c)
+					ui.Column(c).Grow(1).Basis(0).MaxWidth(840).PaddingX(16).Children(screen)
+				})
+				return
+			}
+			screen()
 		})
 	}
 	ui.Column(c).Fill().Background(pal.bg).LineHeight(1.45).Children(main)

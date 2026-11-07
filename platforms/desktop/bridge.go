@@ -63,7 +63,7 @@ func (a *app) bridgeScreen(c *ui.Context) {
 	if o.state.Up {
 		sub = "on · peer to peer"
 	}
-	page(c, func() { header(c, "Bridge", sub, a.back, nil) }, func() {
+	page(c, func() { header(c, "Bridge", sub, a.up(), nil) }, func() {
 		// One code pairs two devices: the other shows it, this one takes it, the other says yes.
 		ui.Column(c).FillWidth().Padding(16).Radius(pane).Border(1, pal.fg).Gap(8).Children(func() {
 			ui.Text(c, "Pair a device").FontSize(title).FontWeight(strong)

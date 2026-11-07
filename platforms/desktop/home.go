@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,7 +19,7 @@ func (a *app) homeScreen(c *ui.Context) {
 	small := a.narrow || a.building != nil && a.building.height > 0 && a.building.height < 480
 	// Centred while it fits; with many cards open, it scrolls from the top.
 	ui.Scroll(c).Grow(1).Basis(0).FillWidth().Children(func() {
-		ui.Column(c).FillWidth().MinHeightPercent(100).Justify(ui.Center).Padding(24, margin, 48).Children(func() { a.homeBody(c, small) })
+		ui.Column(c).FillWidth().MinHeightPercent(100).Justify(ui.Center).Padding(56, margin, 64).Children(func() { a.homeBody(c, small) })
 	})
 }
 
@@ -44,7 +45,7 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 			})
 			a.launching(c)
 		})
-		ui.Box(c).Height(18)
+		ui.Box(c).Height(22)
 		// The box on the column, as the title and the cards: its own padding sets its text in.
 		ui.Column(c).FillWidth().MaxWidth(680).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
 		var recent []Entry
@@ -58,8 +59,8 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 			a.openCards(c)
 		}
 		if len(recent) > 0 && o.state.Up && !small {
-			reading(c).MaxWidth(680).Margin(18, ui.Auto, 0).PaddingX(margin).Children(func() {
-				ui.Row(c).FillWidth().Margin(0, 0, 4).Children(func() {
+			reading(c).MaxWidth(680).Margin(36, ui.Auto, 0).PaddingX(margin).Children(func() {
+				ui.Row(c).FillWidth().Margin(0, 0, 6).Children(func() {
 					label(c, "latest").TextColor(pal.meta).Grow(1)
 					if press(ui.Row(c).Children(func() { label(c, "all threads  "+keys("K")).TextColor(pal.mute) })) {
 						a.openPalette()
@@ -77,7 +78,7 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 			})
 		}
 		if !small {
-			reading(c).MaxWidth(680).Margin(14, ui.Auto, 0).PaddingX(margin).Children(func() {
+			reading(c).MaxWidth(680).Margin(32, ui.Auto, 0).PaddingX(margin).Children(func() {
 				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 					ink := pal.meta
 					if strings.HasPrefix(o.state.Summary, "needs you") {
@@ -109,10 +110,41 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 // does and where, the last thing it said; a click shows it, × closes it (its Orb runs on).
 func (a *app) openCards(c *ui.Context) {
 	o, pal := a.o, p(c)
-	reading(c).MaxWidth(680).Margin(22, ui.Auto, 0).PaddingX(margin).Children(func() {
-		label(c, fmt.Sprintf("open · %d", len(o.state.Tabs))).TextColor(pal.meta).Margin(0, 0, 6)
+	// What needs a look first: what asks, works, has news; then what is awake. Six show, two
+	// rows, unless all are asked for.
+	tabs := slices.Clone(o.state.Tabs)
+	slices.SortStableFunc(tabs, func(x, y Tab) int {
+		rank := func(t Tab) int {
+			switch {
+			case t.Ask != nil:
+				return 0
+			case t.Busy:
+				return 1
+			case t.Unread > 0:
+				return 2
+			case !t.Asleep:
+				return 3
+			}
+			return 4
+		}
+		return rank(x) - rank(y)
+	})
+	const few = 6
+	if !a.allOpen && len(tabs) > few {
+		tabs = tabs[:few]
+	}
+	reading(c).MaxWidth(680).Margin(36, ui.Auto, 0).PaddingX(margin).Children(func() {
+		ui.Row(c).FillWidth().Margin(0, 0, 6).Children(func() {
+			label(c, fmt.Sprintf("open · %d", len(o.state.Tabs))).TextColor(pal.meta).Grow(1)
+			if len(o.state.Tabs) > few {
+				more := map[bool]string{true: "fewer", false: fmt.Sprintf("all %d", len(o.state.Tabs))}[a.allOpen]
+				if press(ui.Row(c).Children(func() { label(c, more).TextColor(pal.mute) })) {
+					a.allOpen = !a.allOpen
+				}
+			}
+		})
 		ui.Grid(c).FillWidth().Columns(map[bool]int{true: 2, false: 3}[a.narrow]).Gap(8).Children(func() {
-			for _, t := range o.state.Tabs {
+			for _, t := range tabs {
 				card := ui.Column(c.Key(t.ID)).Height(78).Padding(9, 10).Gap(3).Radius(10).Border(1, pal.rule).Clip()
 				hovered := card.Hovered()
 				hover(card, pal.raised)

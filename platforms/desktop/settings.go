@@ -115,7 +115,7 @@ func (a *app) providersScreen(c *ui.Context, peer string) {
 		sub = fmt.Sprintf("%s · %d ready · %d to choose from", a.machineName(peer), ready, len(pg.providers))
 	}
 	page(c, func() {
-		header(c, "Providers", sub, a.back, nil)
+		header(c, "Providers", sub, a.up(), nil)
 		field(c, &pg.query, "Anthropic, OpenAI, Groq…", false).Margin(0, margin, 4)
 	}, func() {
 		var accounts []Account
@@ -139,18 +139,36 @@ func (a *app) providersScreen(c *ui.Context, peer string) {
 				a.accountRow(c.Key("a:"+ac.Provider+"/"+ac.ID), peer, ac)
 			}
 		}
+		// The ready ones a line each; the rest, many and alike, in a grid of names to sign in to.
 		group := func(name string, keep func(Provider) bool) {
-			first := true
+			var in []Provider
 			for _, pr := range pg.providers {
-				if !keep(pr) || !has(pr.Name, pr.ID) {
-					continue
+				if keep(pr) && has(pr.Name, pr.ID) {
+					in = append(in, pr)
 				}
-				if first {
-					label(c, name).Padding(22, 0, 4).TextColor(pal.meta)
-					first = false
-				}
-				a.providerRow(c.Key(pr.ID), peer, pr)
 			}
+			if len(in) == 0 {
+				return
+			}
+			label(c, name).Padding(22, 0, 4).TextColor(pal.meta)
+			if in[0].Ready {
+				for _, pr := range in {
+					a.providerRow(c.Key(pr.ID), peer, pr)
+				}
+				return
+			}
+			ui.Grid(c).FillWidth().Columns(map[bool]int{true: 2, false: 3}[a.narrow]).Gap(6).Children(func() {
+				for _, pr := range in {
+					cell := ui.Row(c.Key(pr.ID)).Padding(8, 10).Gap(8).Radius(soft).Border(1, pal.rule).AlignItems(ui.Center).Children(func() {
+						ui.Text(c, pr.Name).Grow(1).Basis(0).MinWidth(0).FontSize(small).FontWeight(medium).SingleLine()
+						ui.Text(c, "›").TextColor(pal.meta)
+					})
+					hover(cell, pal.raised)
+					if press(cell) {
+						a.push(screen{kind: "vendor", peer: peer, arg: pr.ID})
+					}
+				}
+			})
 		}
 		account := func(pr Provider) bool {
 			for _, m := range pr.Methods {
@@ -161,8 +179,8 @@ func (a *app) providersScreen(c *ui.Context, peer string) {
 			return false
 		}
 		group("ready", func(pr Provider) bool { return pr.Ready })
-		group("your subscription", func(pr Provider) bool { return !pr.Ready && account(pr) })
-		group("api key", func(pr Provider) bool { return !pr.Ready && !account(pr) })
+		group("sign in with your subscription", func(pr Provider) bool { return !pr.Ready && account(pr) })
+		group("add an api key", func(pr Provider) bool { return !pr.Ready && !account(pr) })
 	})
 }
 
@@ -170,7 +188,7 @@ func (a *app) providersScreen(c *ui.Context, peer string) {
 func settingsLine(c *ui.Context, name, sub, state string, on bool) ui.Element {
 	pal := p(c)
 	e := ui.Column(c).FillWidth().Children(func() {
-		ui.Row(c).FillWidth().PaddingY(13).Gap(12).Children(func() {
+		ui.Row(c).FillWidth().PaddingY(10).Gap(12).AlignItems(ui.Center).Children(func() {
 			ink := pal.rule
 			if on {
 				ink = pal.fg
@@ -181,8 +199,8 @@ func settingsLine(c *ui.Context, name, sub, state string, on bool) ui.Element {
 				if on {
 					w = strong
 				}
-				ui.Text(c, name).FontSize(16).FontWeight(w).SingleLine()
-				ui.Text(c, sub).FontSize(small).TextColor(pal.meta).SingleLine()
+				ui.Text(c, name).FontSize(15).FontWeight(w).SingleLine()
+				ui.Text(c, sub).FontSize(12).TextColor(pal.meta).SingleLine()
 			})
 			ink = pal.mute
 			if on {
@@ -224,15 +242,15 @@ func (a *app) accountRow(c *ui.Context, peer string, ac Account) {
 	key := ac.Provider + "/" + ac.ID
 	busy := pg.switching == key
 	e := ui.Column(c).FillWidth().Children(func() {
-		ui.Column(c).FillWidth().PaddingY(13).Gap(8).Children(func() {
-			ui.Row(c).FillWidth().Gap(12).Children(func() {
+		ui.Column(c).FillWidth().PaddingY(10).Gap(8).Children(func() {
+			ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
 				ink, w := pal.rule, 400
 				if ac.Active {
 					ink, w = pal.fg, strong
 				}
 				dot(c, ink, 8, false, false)
 				ui.Column(c).Grow(1).Basis(0).Children(func() {
-					ui.Text(c, ac.Name).FontSize(16).FontWeight(w).SingleLine()
+					ui.Text(c, ac.Name).FontSize(15).FontWeight(w).SingleLine()
 					provider, _, _ := strings.Cut(ac.ProviderName, " (")
 					plan := ac.Plan
 					if plan != "" {
@@ -621,10 +639,10 @@ func (a *app) pluginsScreen(c *ui.Context, peer string) {
 	if len(pg.list) > 0 {
 		sub = fmt.Sprintf("%s · %d of %d on", a.machineName(peer), on, len(pg.list))
 	}
-	page(c, func() { header(c, "Plugins", sub, a.back, nil) }, func() {
+	page(c, func() { header(c, "Plugins", sub, a.up(), nil) }, func() {
 		for _, pl := range pg.list {
 			ui.Column(c.Key(pl.Name)).FillWidth().Children(func() {
-				row := ui.Row(c).FillWidth().Padding(16, 4).Gap(16).Children(func() {
+				row := ui.Row(c).FillWidth().Padding(11, 4).Gap(14).AlignItems(ui.Center).Children(func() {
 					box := ui.Box(c).Size(20, 20).Border(1.5, pal.fg).Center()
 					if pl.On {
 						box.Background(pal.fg).Children(func() { ui.Text(c, "x").FontSize(13).Bold().TextColor(pal.bg) })
@@ -634,7 +652,7 @@ func (a *app) pluginsScreen(c *ui.Context, peer string) {
 						if pl.On {
 							ink, w = pal.fg, strong
 						}
-						ui.Text(c, pl.Name).FontSize(16).FontWeight(w).TextColor(ink)
+						ui.Text(c, pl.Name).FontSize(15).FontWeight(w).TextColor(ink)
 						ui.Text(c, pl.About).FontSize(small).TextColor(pal.meta)
 					})
 				})
@@ -680,35 +698,55 @@ func (a *app) settings() {
 	a.stack = []screen{{kind: "general", peer: a.o.state.Self}}
 }
 
-// settingsTabs heads every tab of Settings; a click goes to another, on the same machine.
-func (a *app) settingsTabs(c *ui.Context) {
-	pal, top := p(c), a.top()
-	ui.Row(c).Gap(4).Children(func() {
+// settingsMenu is Settings' left side: its pages, the one shown lit, on the machine they show;
+// at its foot the way back to the conversations (Escape).
+func (a *app) settingsMenu(c *ui.Context) {
+	pal, root := p(c), a.stack[0]
+	ui.Column(c).Width(208).Padding(4, 12, 16).Gap(2).BorderWidth(0, 1, 0, 0).BorderColor(pal.rule).Children(func() {
+		ui.Text(c, "Settings").FontSize(title).FontWeight(strong).Padding(0, 10, 2)
+		ui.Text(c, a.machineName(cmp.Or(root.peer, a.o.state.Self))).FontSize(small).TextColor(pal.meta).Padding(0, 10, 14).SingleLine()
 		for _, s := range settingsKinds {
-			on := top.kind == s.kind
-			e := ui.Row(c.Key(s.kind)).Padding(6, 12).Radius(7).Children(func() {
-				ui.Text(c, s.name).FontSize(small).FontWeight(map[bool]int{true: strong, false: medium}[on]).TextColor(map[bool]ui.Color{true: pal.fg, false: pal.mute}[on])
+			on := root.kind == s.kind
+			e := ui.Row(c.Key(s.kind)).FillWidth().Padding(7, 10).Radius(7).Children(func() {
+				ui.Text(c, s.name).FontWeight(map[bool]int{true: strong, false: medium}[on]).TextColor(map[bool]ui.Color{true: pal.fg, false: pal.mute}[on])
 			})
 			if on {
 				e.Background(pal.raised)
 			} else {
 				hover(e, pal.raised.Alpha(0.6))
 			}
-			if press(e) && !on {
+			if press(e) && (!on || len(a.stack) > 1) {
 				reread()
-				a.stack = []screen{{kind: s.kind, peer: cmp.Or(top.peer, a.o.state.Self)}}
+				a.stack = []screen{{kind: s.kind, peer: cmp.Or(root.peer, a.o.state.Self)}}
+			}
+		}
+		ui.Box(c).Grow(1)
+		done := ui.Row(c).FillWidth().Padding(7, 10).Radius(7).Children(func() {
+			ui.Text(c, "‹  conversations").Grow(1).TextColor(pal.mute)
+			label(c, "esc").TextColor(pal.meta)
+		})
+		hover(done, pal.raised.Alpha(0.6))
+		if press(done) {
+			for len(a.stack) > 0 {
+				a.back()
 			}
 		}
 	})
+}
+
+// up is a page's way back: the page it was opened from, none for a page of Settings' menu.
+func (a *app) up() func() {
+	if len(a.stack) > 1 {
+		return a.back
+	}
+	return nil
 }
 
 // generalScreen is Settings' first tab: what new conversations start on, how the machines stand,
 // and the keys.
 func (a *app) generalScreen(c *ui.Context) {
 	pal := p(c)
-	// One column: its title, its labels, its rows all start on the same edge; Settings' tabs are
-	// in the bar above, ⌘W or Escape leaves it.
-	page(c, func() {}, func() {
+	page(c, func() { header(c, "General", "new conversations, machines, keys", nil, nil) }, func() {
 		label(c, "new conversations").Padding(14, 0, 2).TextColor(pal.meta)
 		d := a.starts()
 		if d == nil {
