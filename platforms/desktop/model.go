@@ -27,6 +27,7 @@ type Tab struct {
 	Remote    bool      `json:"remote"`
 	CWD       string    `json:"cwd"`
 	Busy      bool      `json:"busy"`
+	Acting    bool      `json:"acting"`
 	Online    bool      `json:"online"`
 	Asleep    bool      `json:"asleep"`
 	Loaded    bool      `json:"loaded"`

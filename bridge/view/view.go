@@ -411,6 +411,9 @@ func (a *App) state() State {
 		t.Streaming = n > 0 && t.tr.items[n-1].kind == "s" && t.tr.items[n-1].live
 		t.Remote = t.Peer != a.self
 		t.Asleep = t.gone || t.instance == ""
+		you := lastYou(&t.tr)
+		t.Acting = !t.Remote && t.Busy && you != nil && you.via != ""
+		s.Acting = s.Acting || t.Acting
 		s.Tabs = append(s.Tabs, t.Tab)
 		if t.Ask != nil && asking == nil {
 			asking = t
@@ -420,9 +423,6 @@ func (a *App) state() State {
 		}
 		if t.Busy {
 			busy++
-		}
-		if you := lastYou(&t.tr); !t.Remote && t.Busy && you != nil && you.via != "" {
-			s.Acting = true
 		}
 	}
 	peers := 0

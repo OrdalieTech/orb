@@ -25,6 +25,7 @@ type Tab struct {
 	Remote    bool      `json:"remote,omitempty"`
 	CWD       string    `json:"cwd,omitempty"`
 	Busy      bool      `json:"busy,omitempty"`
+	Acting    bool      `json:"acting,omitempty"` // a peer's prompt is running in it, on this machine
 	Online    bool      `json:"online"`
 	Asleep    bool      `json:"asleep,omitempty"` // its Orb ended (or never started since a restart): a message wakes it
 	Loaded    bool      `json:"loaded,omitempty"` // an empty conversation is ready, not still coming

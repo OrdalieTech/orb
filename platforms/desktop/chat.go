@@ -55,7 +55,7 @@ func (a *app) chat(c *ui.Context, t *Tab) {
 func (a *app) conversation(c *ui.Context, t *Tab) {
 	o, pal := a.o, p(c)
 	ui.Column(c.Key("in:" + t.ID)).Grow(1).Basis(0).FillWidth().Transition(a.entering).Children(func() {
-		if !t.Remote && o.state.Acting {
+		if t.Acting {
 			patternBlue(c, func() { o.send("abort", "tab", t.ID) })
 		}
 		tt := turns(o.rows[t.ID])

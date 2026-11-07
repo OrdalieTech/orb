@@ -39,7 +39,7 @@ private fun turns(rows: List<Row>): List<List<Row>> = buildList {
 fun ColumnScope.Chat(c: Ctx, t: Tab) {
     val v = c.v
     Strip(t, v.word(t), { c.usage(t) }) { c.nav.go(Screen.Terminal(t)) }
-    AnimatedVisibility(!t.remote && v.state.acting, enter = expandVertically(spring(stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) { PatternBlue { v.send("abort", "tab" to t.id) } }
+    AnimatedVisibility(t.acting, enter = expandVertically(spring(stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) { PatternBlue { v.send("abort", "tab" to t.id) } }
     val turns = turns(v.rows[t.id].orEmpty())
     // Anchored at the top, the list never moves on its own: what streams in follows only a reader at
     // the bottom. Scrolling away leaves them where they read until they come back down, or send. It

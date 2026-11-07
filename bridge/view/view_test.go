@@ -477,3 +477,18 @@ func TestAPluginsWidgetAndNoticeShowBesideTheConversation(t *testing.T) {
 	app.Do([]byte(`{"do":"send","tab":"` + opened.Tab + `","text":"again"}`))
 	c.until(t, "the notice gone, the widget current", func() bool { return slots() == "[{widget:tasks [✓ 2/2  → fix it] false}]" })
 }
+
+// Only the conversation a peer's prompt runs in says a peer acts here: the others on this
+// machine, busy with their own prompts or at rest, do not.
+func TestOnlyTheConversationAPeerDrivesSaysSo(t *testing.T) {
+	a := &App{self: "me"}
+	driven := &tab{a: a, Tab: Tab{ID: "driven", Peer: "me", Busy: true}}
+	driven.tr.add(&item{kind: "y", text: "go", via: "bridge"})
+	mine := &tab{a: a, Tab: Tab{ID: "mine", Peer: "me", Busy: true}}
+	mine.tr.add(&item{kind: "y", text: "go"})
+	a.tabs = []*tab{driven, mine, {a: a, Tab: Tab{ID: "idle", Peer: "me"}}}
+	s := a.state()
+	if !s.Acting || !s.Tabs[0].Acting || s.Tabs[1].Acting || s.Tabs[2].Acting {
+		t.Fatalf("acting: %v, tabs: %+v", s.Acting, s.Tabs)
+	}
+}

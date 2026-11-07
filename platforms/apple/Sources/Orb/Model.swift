@@ -64,6 +64,7 @@ struct Tab: Decodable, Equatable, Identifiable {
     @D var remote: Bool
     @D var cwd: String
     @D var busy: Bool
+    @D var acting: Bool
     @D var online: Bool
     @D var loaded: Bool
     @D var earlier: Bool
