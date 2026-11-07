@@ -28,9 +28,11 @@ type tile struct {
 	at      ui.Handle
 	modelAt ui.Handle // its prompt box's model and place, which their popovers open out of
 	whereAt ui.Handle
-	over    string  // the side a drag over it would drop on
-	shown   string  // the side its drop preview shows, as it fades
-	width   float32 // as last drawn
+	boxAt   ui.Handle // its prompt box
+	tabsW   float32   // the room its tabs had, as last drawn
+	over    string    // the side a drag over it would drop on
+	shown   string    // the side its drop preview shows, as it fades
+	width   float32   // as last drawn
 	height  float32
 	showing [2]any    // what it shows, conversation and terminal or not
 	since   time.Time // since when: it fades in for a moment

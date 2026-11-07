@@ -45,6 +45,9 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 		shade := map[bool]float32{true: 0.35, false: 0.07}[c.Theme().Dark]
 		box := ui.Column(c).FillWidth().MaxWidth(column+2*overhang).Margin(0, ui.Auto, map[bool]float32{true: 8, false: 16}[short]).Radius(16).Background(pal.raised).
 			Border(1, pal.rule.Alpha(0.7)).Shadow(0, 6, 24, 0, ui.RGBA(0, 0, 0, shade))
+		if a.building != nil {
+			box.Bind(&a.building.boxAt) // what the explorer floats out of
+		}
 		box.Children(func() {
 			// Typing / opens the palette: the app's commands and the core's, filtered as you type.
 			type choice struct {
@@ -212,7 +215,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 					}
 					ui.Text(c, name).FontSize(small).FontWeight(medium).TextColor(pal.mute).SingleLine().Shrink(1)
 					// Reasoning as a small meter: one bar per level the model takes, lit up to the current one.
-					if on != nil && len(on.Levels) > 0 {
+					if on != nil && len(on.Levels) > 1 { // one level is no choice: no meter
 						now := -1
 						for i, l := range on.Levels {
 							if l == on.Thinking {

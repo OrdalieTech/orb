@@ -297,7 +297,7 @@ func (a *app) titleBar(c *ui.Context, body func()) {
 	tb := c.TitleBar()
 	left, right := float32(8), float32(margin)
 	if a.left {
-		left = tb.Left + 12
+		left = tb.Left + 4 // ORB as far from the zoom button as the buttons are from each other
 	}
 	if a.corner {
 		right = tb.Right + 12

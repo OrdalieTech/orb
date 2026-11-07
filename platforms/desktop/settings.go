@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"math"
+	"runtime"
 	"strings"
 	"time"
 
@@ -705,12 +706,24 @@ func (a *app) settingsTabs(c *ui.Context) {
 // and the keys.
 func (a *app) generalScreen(c *ui.Context) {
 	pal := p(c)
-	page(c, func() {
-		header(c, "Settings", "this computer · "+a.o.state.Summary, a.back, nil)
-	}, func() {
-		if d := a.starts(); d != nil {
+	// One column: its title, its labels, its rows all start on the same edge; Settings' tabs are
+	// in the bar above, ⌘W or Escape leaves it.
+	page(c, func() {}, func() {
+		label(c, "new conversations").Padding(14, 0, 2).TextColor(pal.meta)
+		d := a.starts()
+		if d == nil {
+			d = &Tab{} // read as it shows
+		}
+		{
 			_, model, _ := strings.Cut(d.Model, "/")
-			if press(settingsLine(c.Key("default"), "default model", cmp.Or(strings.Trim(model+" · "+d.Thinking, " ·"), "none yet"), "change ›", true)) {
+			row := ui.Row(c.Key("default")).FillWidth().PaddingY(10).Gap(12).AlignItems(ui.Center).Children(func() {
+				ui.Column(c).Grow(1).Basis(0).Children(func() {
+					ui.Text(c, "default model").FontSize(15).FontWeight(strong).SingleLine()
+					ui.Text(c, cmp.Or(strings.Trim(model+" · "+d.Thinking, " ·"), map[bool]string{true: "none yet", false: "reading…"}[d.Loaded])).FontSize(small).TextColor(pal.meta).SingleLine()
+				})
+				ui.Text(c, "change ›").FontWeight(medium)
+			})
+			if press(row) {
 				a.chooseModel(nil, false)
 			}
 		}
@@ -720,11 +733,11 @@ func (a *app) generalScreen(c *ui.Context) {
 		for _, k := range [][2]string{
 			{keys("K"), "go to a conversation, a thread"}, {keys("T") + " · " + keys("N"), "new tab"}, {keys("W"), "close the tab (it runs on)"},
 			{keys("⇧W"), "close the tile"}, {keys("D") + " · " + keys("⇧D"), "split right · down"}, {keys("[") + " · " + keys("]"), "previous · next tile"},
-			{keys("⇧[") + " · " + keys("⇧]"), "previous · next tab"}, {keys("1") + "…" + keys("9"), "a tile's tabs"}, {"⌃M", "model and reasoning"},
+			{keys("⇧[") + " · " + keys("⇧]"), "previous · next tab"}, {keys("1") + "…" + keys("9"), "a tile's tabs"}, {map[bool]string{true: "⌃M", false: "Ctrl+M"}[runtime.GOOS == "darwin"], "model and reasoning"},
 			{keys("J"), "the conversation's terminal"}, {keys("."), "stop the turn"}, {keys(","), "settings"},
 		} {
 			ui.Row(c.Key(k[1])).FillWidth().PaddingY(2).Gap(12).Children(func() {
-				ui.Text(c, k[0]).Width(110).FontSize(small).FontWeight(medium).TextColor(pal.fg)
+				ui.Text(c, k[0]).Width(map[bool]float32{true: 120, false: 170}[runtime.GOOS == "darwin"]).FontSize(small).FontWeight(medium).TextColor(pal.fg)
 				ui.Text(c, k[1]).FontSize(small).TextColor(pal.mute)
 			})
 		}

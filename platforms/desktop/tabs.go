@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -16,7 +17,7 @@ import (
 func (a *app) tabChips(c *ui.Context, x *tile) {
 	o, pal := a.o, p(c)
 	chip := func(key string, on bool, body func(hovered bool)) ui.Element {
-		e := ui.Row(c.Key(key)).Height(30).Padding(0, 6, 0, 10).Gap(7).Radius(7).Shrink(1).MinWidth(96).AlignItems(ui.Center)
+		e := ui.Row(c.Key(key)).Height(30).Padding(0, 6, 0, 10).Gap(7).Radius(7).Shrink(1).MinWidth(0).AlignItems(ui.Center)
 		hovered := e.Hovered()
 		if on {
 			e.Background(pal.raised)
@@ -30,19 +31,40 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 	}
 	// ORB, first in the window's first tile as on the phone, is Home: a new session, the
 	// conversations open, every thread.
+	// Shown, it has the ground the tab shown has.
 	if a.left {
-		ink := pal.meta
-		if x.tab == "" {
-			ink = pal.fg
-		}
-		if press(ui.Row(c).Height(30).Padding(0, 8).Radius(7).Shrink(0).AlignItems(ui.Center).Children(func() { stretch(c, "ORB", 15, ink, 1) }).Tooltip("Home  " + keys("T"))) {
+		home := x.tab == ""
+		e := chip("orb", home, func(bool) {
+			stretch(c, "ORB", 15, map[bool]ui.Color{true: pal.fg, false: pal.meta}[home], 1)
+		}).Padding(0, 6).Shrink(0).Tooltip("Home  " + keys("T"))
+		if press(e) {
 			a.activate(x)
 			a.show("")
 		}
 	}
-	// Tabs past the bar's room narrow, as a browser's, their names cut; a drag takes any of them.
-	ui.Row(c).Gap(2).Shrink(1).MinWidth(0).Clip().AlignItems(ui.Center).Children(func() {
-		for i, id := range x.tabs {
+	// Tabs past the bar's room narrow, as a browser's, down to a few letters each; those that do not
+	// fit then wait behind +N, which lists them. The one shown always shows.
+	// The room is the bar's left once the readings and tools at its right have theirs, as last drawn.
+	fit := len(x.tabs)
+	if x.tabsW > 0 {
+		fit = max(int((x.tabsW-36)/100), 1) // + keeps its room
+	}
+	shown, hidden := x.tabs, []string(nil)
+	if len(x.tabs) > fit {
+		fit = max(fit-1, 1) // room for +N
+		shown = slices.Clone(x.tabs[:fit])
+		if at := slices.Index(x.tabs, x.tab); at >= fit {
+			shown[fit-1] = x.tab
+		}
+		for _, id := range x.tabs {
+			if !slices.Contains(shown, id) {
+				hidden = append(hidden, id)
+			}
+		}
+	}
+	ui.Row(c).Gap(2).Grow(1).Basis(0).MinWidth(0).Clip().AlignItems(ui.Center).DrawOver(func(_ *ui.Painter, r ui.Rect) { x.tabsW = r.W }).Children(func() {
+		for _, id := range shown {
+			i := slices.Index(x.tabs, id)
 			t := o.tab(id)
 			if t == nil {
 				continue
@@ -63,7 +85,7 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 					if on || t.Unread > 0 {
 						w = strong
 					}
-					ui.Text(c, cmp.Or(t.Title, "new session")).MaxWidth(170).Shrink(1).MinWidth(0).FontSize(small).FontWeight(w).TextColor(ink).SingleLine()
+					ui.Text(c, cmp.Or(t.Title, "new session")).MaxWidth(170).Shrink(1).MinWidth(36).FontSize(small).FontWeight(w).TextColor(ink).SingleLine()
 				}
 				switch {
 				case t.Ask != nil:
@@ -71,8 +93,13 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 				case t.Unread > 0 && !on:
 					ui.Text(c, map[bool]string{true: "99+", false: strconv.Itoa(t.Unread)}[t.Unread > 99]).Padding(0, 5).Radius(7).Background(pal.fg).TextColor(pal.bg).FontSize(labelSize + 1).FontWeight(strong)
 				}
-				if (on || hovered) && closeX("Close  "+keys("W")+" · it runs on") {
-					a.close(id)
+				// Its × has its place always, as a browser's tab: shown on it or under the pointer.
+				if on || hovered {
+					if closeX("Close  " + keys("W") + " · it runs on") {
+						a.close(id)
+					}
+				} else {
+					ui.Box(c).Size(18, 18)
 				}
 			}).Tooltip(strings.Join(nonEmpty(t.Title, strings.Join(nonEmpty(t.Where, tidy(t.CWD)), " · "), t.Status), "\n"))
 			a.carry(e, carried{tab: id})
@@ -97,6 +124,19 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 				a.renameTab(*t)
 			}
 		}
+		if len(hidden) > 0 {
+			more := ui.Row(c.Key("more")).Height(30).Padding(0, 9).Radius(7).Shrink(0).AlignItems(ui.Center).Children(func() {
+				ui.Textf(c, "+%d", len(hidden)).FontSize(small).FontWeight(medium).TextColor(pal.mute)
+			}).Tooltip("The other tabs of this tile")
+			hover(more, pal.raised.Alpha(0.6))
+			more.Menu(func(m *ui.Menu) {
+				for _, id := range hidden {
+					if t := o.tab(id); t != nil && m.Item(cmp.Or(t.Title, "new session")).Chosen() {
+						a.show(id)
+					}
+				}
+			})
+		}
 		if x.tab == "" && !a.left {
 			e := chip("home", true, func(hovered bool) {
 				ui.Text(c, "new session").FontSize(small).FontWeight(strong).TextColor(pal.fg).SingleLine()
@@ -109,11 +149,14 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 				a.focus++
 			}
 		}
+		if x.tab != "" {
+			plus := ui.Row(c.Key("+")).Size(28, 28).Radius(6).Justify(ui.Center).Shrink(0).Children(func() { ui.Text(c, "+").FontSize(18).TextColor(pal.mute) }).Tooltip("New tab  " + keys("T"))
+			if press(hover(plus, pal.raised.Alpha(0.6))) {
+				a.activate(x)
+				a.show("")
+			}
+		}
 	})
-	if x.tab != "" && !a.left && press(ui.Row(c).Size(26, 26).Radius(6).Justify(ui.Center).Shrink(0).Children(func() { ui.Text(c, "+").FontSize(18).TextColor(pal.mute) }).Tooltip("New tab  "+keys("T"))) {
-		a.activate(x)
-		a.show("")
-	}
 }
 
 // menuMark is the menu at the window's top right, as the phone's: the conversation shown, the

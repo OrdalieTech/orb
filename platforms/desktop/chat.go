@@ -39,6 +39,9 @@ func turns(rows []Row) [][]Row {
 }
 
 // reading centres what reads in a column of its own width, wherever the window is.
+// ansi is a terminal's colour and cursor codes, which a plugin's lines may carry: text drops them.
+var ansi = regexp.MustCompile("\x1b\\[[0-9;?]*[ -/]*[@-~]|\\[[0-9;]+m")
+
 func reading(c *ui.Context) ui.Element {
 	return ui.Column(c).FillWidth().MaxWidth(column).Margin(0, ui.Auto)
 }
@@ -134,7 +137,6 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 func (a *app) strip(c *ui.Context, t *Tab) {
 	pal := p(c)
 	a.titleBar(c, func() {
-		ui.Spacer(c)
 		a.tileTools(c)
 		// A tight tile under the window's controls has room for its title and its terminal only.
 		if t.Context > 0 && !(a.tight && a.corner) {
@@ -364,7 +366,7 @@ func (a *app) action(c *ui.Context, x Action, t *Tab) {
 
 // folded is a long note or error folded to three lines; a click opens it.
 func (a *app) folded(c *ui.Context, text string, ink ui.Color) ui.Element {
-	e := ui.Text(c, text).FontSize(small + 1).TextColor(ink)
+	e := ui.Text(c, ansi.ReplaceAllString(text, "")).FontSize(small + 1).TextColor(ink)
 	open := ui.Local(e, "open", func() bool { return false })
 	if !*open {
 		e.MaxLines(3)

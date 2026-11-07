@@ -13,7 +13,7 @@ import (
 // homeScreen starts a session: the prompt box in the middle of the window, where it runs a click
 // away, the latest threads under it. Every thread is a ⌘K away.
 func (a *app) homeScreen(c *ui.Context) {
-	a.titleBar(c, func() { ui.Spacer(c) })
+	a.titleBar(c, func() {})
 	// A small tile keeps Home to its prompt box.
 	small := a.narrow || a.building != nil && a.building.height > 0 && a.building.height < 480
 	// Centred while it fits; with many cards open, it scrolls from the top.
@@ -32,8 +32,7 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 				a.launching(c)
 				return
 			}
-			ui.Box(c).FillWidth().Height(1).Background(pal.rule)
-			ui.Row(c).FillWidth().Margin(12, 0, 0).Gap(10).AlignItems(ui.End).Children(func() {
+			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.End).Children(func() {
 				// The title wipes in the first time the app shows it, as a title card cuts in.
 				card := stretch(c, "NEW SESSION", 46, pal.fg, 1)
 				if !a.carded {
@@ -46,7 +45,8 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 			a.launching(c)
 		})
 		ui.Box(c).Height(18)
-		ui.Column(c).FillWidth().MaxWidth(680+2*overhang+2*margin).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
+		// The box on the column, as the title and the cards: its own padding sets its text in.
+		ui.Column(c).FillWidth().MaxWidth(680).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
 		var recent []Entry
 		for _, e := range o.home.Entries {
 			if !e.Open && len(recent) < 6 {
@@ -172,7 +172,7 @@ func lastSaid(rows []Row) string {
 // are enough.
 func sessionRow(c *ui.Context, title, meta, age string, live, asks, current bool, hueN int) ui.Element {
 	pal := p(c)
-	e := ui.Row(c).FillWidth().Padding(9, 8).Margin(0, -8).Gap(10).Radius(soft)
+	e := ui.Row(c).AlignSelf(ui.Stretch).Padding(9, 8).Margin(0, -8).Gap(10).Radius(soft)
 	if e.Hovered() {
 		e.Background(pal.raised)
 	}
@@ -253,12 +253,18 @@ func (a *app) explorer(c *ui.Context) {
 	body := func() {
 		ui.Row(c).FillWidth().Padding(12, 12, 2, 14).Gap(2).AlignItems(ui.Center).Children(func() {
 			label(c, m.Name).TextColor(pal.meta).MarginEnd(8)
-			for _, cr := range crumbs(d.Path) {
-				if press(ui.Row(c.Key(cr[1])).Padding(2, 5).Radius(5).Children(func() { ui.Text(c, cr[0]).FontSize(12).FontWeight(medium).TextColor(pal.mute) })) {
-					a.readDirs(peer, cr[1])
-				}
-				if cr[0] != "/" {
+			// Between the folders a / (none after the root, which is one); the last, where it is, in ink.
+			cs := crumbs(d.Path)
+			for i, cr := range cs {
+				if i > 0 && cs[i-1][0] != "/" {
 					ui.Text(c.Key("/"+cr[1]), "/").FontSize(12).TextColor(pal.rule)
+				}
+				ink := pal.mute
+				if i == len(cs)-1 {
+					ink = pal.fg
+				}
+				if press(ui.Row(c.Key(cr[1])).Padding(2, 4).Radius(5).Children(func() { ui.Text(c, cr[0]).FontSize(12).FontWeight(medium).TextColor(ink) })) {
+					a.readDirs(peer, cr[1])
 				}
 			}
 		})
@@ -276,7 +282,7 @@ func (a *app) explorer(c *ui.Context) {
 				ui.Text(c, a.dirErr).FontSize(12).TextColor(rupture).Padding(6, 4)
 			}
 			if d.Parent != "" && q == "" {
-				if press(dirRow(c.Key(".."), "..", false, "")) {
+				if press(dirRow(c.Key(".."), "..", false)) {
 					a.readDirs(peer, d.Parent)
 				}
 			}
@@ -285,7 +291,7 @@ func (a *app) explorer(c *ui.Context) {
 					continue
 				}
 				at := path.Join(d.Path, x.Name)
-				row := dirRow(c.Key(x.Name), x.Name, x.Git, "start ›")
+				row := dirRow(c.Key(x.Name), x.Name, x.Git)
 				if row.DoubleClicked() {
 					a.exploring = ""
 					a.start(peer, at)
@@ -299,7 +305,7 @@ func (a *app) explorer(c *ui.Context) {
 					if i == 5 {
 						break
 					}
-					if press(dirRow(c.Key("r:"+f.CWD), tidy(f.CWD), false, "")) {
+					if press(dirRow(c.Key("r:"+f.CWD), tidy(f.CWD), false)) {
 						a.readDirs(peer, f.CWD)
 					}
 				}
@@ -307,7 +313,7 @@ func (a *app) explorer(c *ui.Context) {
 		})
 		rule(c, pal.rule)
 		ui.Row(c).FillWidth().Padding(8, 10, 10, 14).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, cmp.Or(tidy(d.Path), "…")).Grow(1).Basis(0).MinWidth(0).FontSize(12).TextColor(pal.meta).SingleLine()
+			ui.Text(c, "double click a folder to start there").Grow(1).Basis(0).MinWidth(0).FontSize(12).TextColor(pal.meta).SingleLine()
 			if d.Path != "" && btn(c, "start here", true, pal.fg, pal.bg) {
 				a.exploring = ""
 				a.start(peer, d.Path)
@@ -321,7 +327,8 @@ func (a *app) explorer(c *ui.Context) {
 	if len(a.stack) > 0 || a.active == nil {
 		modal(c, &open, 440, body)
 	} else {
-		popover(c, &a.active.whereAt, &open, 440, true, body)
+		// Out of the prompt box, its left edge on the box's, clear of it.
+		popover(c, &a.active.boxAt, &open, 440, true, body)
 	}
 	if !open {
 		a.exploring = ""
@@ -346,22 +353,17 @@ func (a *app) readDirs(peer, dir string) {
 	}, "dirs", "machine", peer, "cwd", dir)
 }
 
-// dirRow is a folder in the explorer, a line tight: its name, git when it is a repository, and
-// under the pointer what a double click does.
-func dirRow(c *ui.Context, name string, git bool, hint string) ui.Element {
+// dirRow is a folder in the explorer, a line tight: its name, git when it is a repository.
+func dirRow(c *ui.Context, name string, git bool) ui.Element {
 	pal := p(c)
 	e := ui.Row(c).FillWidth().Height(28).Padding(0, 8).Gap(10).Radius(6).AlignItems(ui.Center)
-	hovered := e.Hovered()
-	if hovered {
+	if e.Hovered() {
 		e.Background(pal.raised)
 	}
 	return e.Children(func() {
 		ui.Text(c, name).Grow(1).Basis(0).FontSize(small).SingleLine()
 		if git {
 			label(c, "git").TextColor(pal.meta)
-		}
-		if hovered && hint != "" {
-			ui.Text(c, "double click · "+hint).FontSize(12).TextColor(pal.meta)
 		}
 	})
 }
