@@ -771,9 +771,12 @@ func (a *app) generalScreen(c *ui.Context) {
 		a.magi(c)
 		label(c, "keys").Padding(18, 0, 4).TextColor(pal.meta)
 		for _, k := range [][2]string{
-			{keys("K"), "go to a conversation, a thread"}, {keys("T") + " · " + keys("N"), "new tab"}, {keys("W"), "close the tab (it runs on)"},
-			{keys("⇧W"), "close the tile"}, {keys("D") + " · " + keys("⇧D"), "split right · down"}, {keys("[") + " · " + keys("]"), "previous · next tile"},
-			{keys("⇧[") + " · " + keys("⇧]"), "previous · next tab"}, {keys("1") + "…" + keys("9"), "a tile's tabs"}, {map[bool]string{true: "⌃M", false: "Ctrl+M"}[runtime.GOOS == "darwin"], "model and reasoning"},
+			{keys("K") + " · " + keys("P"), "go to a conversation, a thread"}, {keys("T") + " · " + keys("N"), "new tab"}, {keys("W"), "close the tab (it runs on)"},
+			{keys("⇧T"), "reopen the tab closed last"}, {keys("⇧W"), "close the tile"}, {keys("D") + " · " + keys("⇧D"), "split right · down"},
+			{keys("[") + " · " + keys("]"), "previous · next tile"}, {keys("⇧[") + " · " + keys("⇧]"), "previous · next tab"},
+			{map[bool]string{true: "⌃Tab · ⌃⇧Tab", false: "Ctrl+Tab · Ctrl+Shift+Tab"}[runtime.GOOS == "darwin"], "next · previous tab"},
+			{keys("1") + "…" + keys("8") + " · " + keys("9"), "a tile's tabs · its last"}, {keys("⇧↩"), "zoom the tile"},
+			{keys("=") + " · " + keys("-") + " · " + keys("0"), "zoom in · out · actual size"}, {map[bool]string{true: "⌃M", false: "Ctrl+M"}[runtime.GOOS == "darwin"], "model and reasoning"},
 			{keys("J"), "the conversation's terminal"}, {keys("."), "stop the turn"}, {keys(","), "settings"},
 		} {
 			ui.Row(c.Key(k[1])).FillWidth().PaddingY(2).Gap(12).Children(func() {

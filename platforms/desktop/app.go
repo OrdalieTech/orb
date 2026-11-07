@@ -43,6 +43,8 @@ type app struct {
 	allOpen    bool                 // Home shows every open conversation, not the first few
 	target     [2]string            // the machine and folder Home's next message starts in; none, this computer
 	instant    bool                 // a key acted: the frame shows what it did at once, nothing a key does animates
+	closed     []string             // the threads of the tabs closed, newest last, which ⌘⇧T reopens
+	scale      float32              // the window's zoom (⌘= ⌘- ⌘0), 0 for 1
 	entering   ui.ElementTransition // how the tile being built shows what it switched to
 	drafts     map[string]string    // each conversation's draft, "" for Home's
 	focus      int                  // asked to focus the prompt box, each time it grows
@@ -219,6 +221,9 @@ func (a *app) offer(s string, undo func()) {
 
 func (a *app) view(c *ui.Context) {
 	theme(c)
+	if a.scale != 0 {
+		c.SetZoom(a.scale)
+	}
 	if a.instant {
 		c.DisableAnimations()
 		a.instant = false
@@ -316,6 +321,7 @@ func (a *app) close(id string) {
 	// A closed conversation can come back for a moment: its thread reopens where New session would show.
 	for _, e := range a.o.home.Entries {
 		if e.Tab == id {
+			a.closed = append(a.closed[max(0, len(a.closed)-19):], e.Key)
 			a.offer("closed “"+cmp.Or(e.Title, "new session")+"”", func() { a.newSession(); a.open(e.Key) })
 		}
 	}
@@ -495,6 +501,7 @@ func (a *app) menu() *mygo.Menu {
 			{Label: "New Session", Accelerator: "Cmd+N", Click: do(a.newSession)},
 			{Label: "Close Tab", Accelerator: "Cmd+W", Click: do(a.closeTab)},
 			{Label: "Close Tile", Accelerator: "Shift+Cmd+W", Click: do(func() { a.unsplit(a.active) })},
+			{Label: "Reopen Closed Tab", Accelerator: "Shift+Cmd+T", Click: do(a.reopen)},
 			mygo.Separator(),
 			{Label: "Settings…", Accelerator: "Cmd+,", Click: do(a.settings)},
 		}},
@@ -507,6 +514,14 @@ func (a *app) menu() *mygo.Menu {
 					a.terminalOf(a.tab)
 				}
 			})},
+			// As Ghostty's splits; in the menu, where a text field cannot take them as word moves.
+			{Label: "Previous Tile", Accelerator: "Alt+Cmd+Left", Click: do(func() { a.cycle(-1) })},
+			{Label: "Next Tile", Accelerator: "Alt+Cmd+Right", Click: do(func() { a.cycle(1) })},
+			{Label: "Even Out Tiles", Accelerator: "Ctrl+Cmd+=", Click: do(func() { a.root.even(true); a.reshape() })},
+			mygo.Separator(),
+			{Label: "Zoom In", Accelerator: "Cmd+=", Click: do(func() { a.zoomBy(1) })},
+			{Label: "Zoom Out", Accelerator: "Cmd+-", Click: do(func() { a.zoomBy(-1) })},
+			{Label: "Actual Size", Accelerator: "Cmd+0", Click: do(func() { a.scale = 1 })},
 			mygo.Separator(),
 			{Label: "Models", Accelerator: "Ctrl+M", Click: do(func() { a.chooseModel(a.o.tab(a.tab), true) })},
 			{Label: "Go to…", Accelerator: "Cmd+K", Click: do(a.openPalette)},
@@ -523,8 +538,8 @@ func (a *app) shortcuts(c *ui.Context) {
 	}
 	// Off macOS they are Control's keys, which a shell in the terminal needs (Ctrl+W, Ctrl+L…):
 	// there only those no shell takes stay, enough to leave it.
-	on(ui.Ctrl, ui.KeyTab, func() { a.cycle(1) })
-	on(ui.Ctrl|ui.Shift, ui.KeyTab, func() { a.cycle(-1) })
+	on(ui.Ctrl, ui.KeyTab, func() { a.move(1) })
+	on(ui.Ctrl|ui.Shift, ui.KeyTab, func() { a.move(-1) })
 	on(cmd|ui.Shift, ui.KeyEnter, func() {
 		if !a.root.leaf() {
 			a.zoom(a.active)
@@ -540,14 +555,22 @@ func (a *app) shortcuts(c *ui.Context) {
 	}
 	on(cmd, ui.KeyN, a.newSession)
 	on(cmd, ui.KeyK, a.openPalette)
+	on(cmd, ui.KeyP, a.openPalette)
+	on(cmd|ui.Shift, ui.KeyP, a.openPalette)
 	on(cmd, ui.KeyT, a.newSession)
+	on(cmd|ui.Shift, ui.KeyT, a.reopen)
 	on(cmd, ui.KeyW, a.closeTab)
 	on(cmd|ui.Shift, ui.KeyW, func() { a.unsplit(a.active) })
 	on(cmd, ui.KeyD, func() { a.split(a.active, "right", &tile{}) })
 	on(cmd|ui.Shift, ui.KeyD, func() { a.split(a.active, "bottom", &tile{}) })
 	on(cmd, ui.KeyBracketLeft, func() { a.cycle(-1) })
 	on(cmd, ui.KeyBracketRight, func() { a.cycle(1) })
-	on(cmd, ui.KeyEqual, func() { a.root.even(true); a.reshape() })
+	on(cmd|ui.Ctrl, ui.KeyEqual, func() { a.root.even(true); a.reshape() })
+	on(cmd, ui.KeyEqual, func() { a.zoomBy(1) })
+	on(cmd|ui.Shift, ui.KeyEqual, func() { a.zoomBy(1) })
+	on(cmd, ui.KeyMinus, func() { a.zoomBy(-1) })
+	on(cmd, ui.Key0, func() { a.scale = 1 })
+	on(cmd|ui.Ctrl, ui.KeyF, func() { a.o.win.ToggleFullScreen() })
 	on(cmd, ui.KeyPeriod, func() {
 		if a.tab != "" {
 			o.send("abort", "tab", a.tab)
@@ -568,13 +591,39 @@ func (a *app) shortcuts(c *ui.Context) {
 	on(cmd, ui.KeyComma, a.settings)
 	on(cmd|ui.Shift, ui.KeyBracketLeft, func() { a.move(-1) })
 	on(cmd|ui.Shift, ui.KeyBracketRight, func() { a.move(1) })
+	// ⌘1…⌘8 a tile's tabs, ⌘9 its last, as a browser's.
 	for i := range 9 {
 		on(cmd, ui.Key1+ui.Key(i), func() {
-			if x := a.tabsTile(); i < len(x.tabs) {
+			x := a.tabsTile()
+			if i == 8 && len(x.tabs) > 0 {
+				a.show(x.tabs[len(x.tabs)-1])
+			} else if i < len(x.tabs) {
 				a.show(x.tabs[i])
 			}
 		})
 	}
+}
+
+// reopen opens again the thread of the tab closed last (⌘⇧T), and before it the one before.
+func (a *app) reopen() {
+	for len(a.closed) > 0 {
+		key := a.closed[len(a.closed)-1]
+		a.closed = a.closed[:len(a.closed)-1]
+		if slices.ContainsFunc(a.o.home.Entries, func(e Entry) bool { return e.Key == key }) {
+			a.open(key)
+			return
+		}
+	}
+}
+
+// zoomBy zooms the window a step in or out, as a browser does: 50% to 200%.
+func (a *app) zoomBy(step int) {
+	steps := []float32{0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2}
+	at := slices.Index(steps, cmp.Or(a.scale, 1))
+	if at < 0 {
+		at = 5
+	}
+	a.scale = steps[min(max(at+step, 0), len(steps)-1)]
 }
 
 // move shows the focused tile's next tab, or the previous one (⇧⌘] ⇧⌘[).
