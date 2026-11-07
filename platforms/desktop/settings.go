@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -163,7 +164,7 @@ func (a *app) providersScreen(c *ui.Context, peer string) {
 						ui.Text(c, pr.Name).Grow(1).Basis(0).MinWidth(0).FontSize(small).FontWeight(medium).SingleLine()
 						ui.Text(c, "›").TextColor(pal.meta)
 					})
-					hover(cell, pal.raised)
+					hover(cell, pal.hover)
 					if press(cell) {
 						a.push(screen{kind: "vendor", peer: peer, arg: pr.ID})
 					}
@@ -181,6 +182,9 @@ func (a *app) providersScreen(c *ui.Context, peer string) {
 		group("ready", func(pr Provider) bool { return pr.Ready })
 		group("sign in with your subscription", func(pr Provider) bool { return !pr.Ready && account(pr) })
 		group("add an api key", func(pr Provider) bool { return !pr.Ready && !account(pr) })
+		if q != "" && !slices.ContainsFunc(pg.providers, func(pr Provider) bool { return has(pr.Name, pr.ID) }) && len(accounts) == 0 {
+			empty(c, "no provider matches “"+pg.query+"”")
+		}
 	})
 }
 
@@ -408,15 +412,13 @@ func methodCard(c *ui.Context, m Method, ready bool) bool {
 		action = "replace key"
 	}
 	clicked := false
-	e := ui.Column(c).FillWidth().Padding(18).Radius(pane).Border(1, pal.fg).Children(func() {
+	e := ui.Column(c).FillWidth().Padding(18).Radius(pane).Border(1, pal.rule).Children(func() {
 		label(c, kind).TextColor(pal.meta)
-		ui.Text(c, m.Label).FontSize(title).FontWeight(strong).Margin(6, 0, 0)
+		ui.Text(c, m.Label).FontSize(15).FontWeight(strong).Margin(6, 0, 0)
 		ui.Text(c, m.About).TextColor(pal.meta).Margin(2, 0, 0)
 		ui.Row(c).Margin(14, 0, 0).Children(func() { clicked = btn(c, action, !ready, pal.fg, pal.bg) })
 	})
-	if e.Hovered() {
-		e.Background(pal.raised)
-	}
+	hover(e, pal.hover)
 	return press(e) || clicked
 }
 
@@ -643,9 +645,11 @@ func (a *app) pluginsScreen(c *ui.Context, peer string) {
 		for _, pl := range pg.list {
 			ui.Column(c.Key(pl.Name)).FillWidth().Children(func() {
 				row := ui.Row(c).FillWidth().Padding(11, 4).Gap(14).AlignItems(ui.Center).Children(func() {
-					box := ui.Box(c).Size(20, 20).Border(1.5, pal.fg).Center()
-					if pl.On {
-						box.Background(pal.fg).Children(func() { ui.Text(c, "x").FontSize(13).Bold().TextColor(pal.bg) })
+					box := ui.Box(c).Size(18, 18).Radius(4).Border(1.5, pal.fg)
+					if pl.On { // a check, which an x would contradict
+						box.Background(pal.fg).Draw(func(p *ui.Painter, r ui.Rect) {
+							p.StrokePolyline([][2]float32{{r.X + 4.5, r.Y + 9.5}, {r.X + 7.5, r.Y + 12.5}, {r.X + 13.5, r.Y + 5.5}}, 1.8, pal.bg)
+						})
 					}
 					ui.Column(c).Grow(1).Basis(0).Children(func() {
 						ink, w := pal.mute, 400
@@ -656,9 +660,7 @@ func (a *app) pluginsScreen(c *ui.Context, peer string) {
 						ui.Text(c, pl.About).FontSize(small).TextColor(pal.meta)
 					})
 				})
-				if row.Hovered() {
-					row.Background(pal.raised)
-				}
+				hover(row, pal.hover)
 				if press(row) {
 					change("name", pl.Name, "on", !pl.On)
 				}
@@ -713,7 +715,7 @@ func (a *app) settingsMenu(c *ui.Context) {
 			if on {
 				e.Background(pal.raised)
 			} else {
-				hover(e, pal.raised.Alpha(0.6))
+				hover(e, pal.hover)
 			}
 			if press(e) && (!on || len(a.stack) > 1) {
 				reread()
@@ -725,7 +727,7 @@ func (a *app) settingsMenu(c *ui.Context) {
 			ui.Text(c, "‹  conversations").Grow(1).TextColor(pal.mute)
 			label(c, "esc").TextColor(pal.meta)
 		})
-		hover(done, pal.raised.Alpha(0.6))
+		hover(done, pal.hover)
 		if press(done) {
 			for len(a.stack) > 0 {
 				a.back()

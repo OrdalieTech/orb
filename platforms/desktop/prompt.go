@@ -259,7 +259,8 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 					if empty {
 						ink = pal.rule
 					}
-					if press(round(c, "↑", ink, pal.bg).Tooltip("Send  ⏎ · new line  ⇧⏎")) {
+					// Nothing to send, nothing to press.
+					if e := round(c, "↑", ink, pal.bg).Tooltip("Send  ⏎ · new line  ⇧⏎"); !empty && press(e) {
 						send(take())
 					}
 				}

@@ -22,7 +22,7 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 		if on {
 			e.Background(pal.raised)
 		} else {
-			hover(e, pal.raised.Alpha(0.6))
+			hover(e, pal.hover)
 		}
 		return e.Children(func() { body(hovered) })
 	}
@@ -138,7 +138,7 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 			more := ui.Row(c.Key("more")).Height(30).Padding(0, 9).Radius(7).Shrink(0).AlignItems(ui.Center).Children(func() {
 				ui.Textf(c, "+%d", len(hidden)).FontSize(small).FontWeight(medium).TextColor(pal.mute)
 			}).Tooltip("The other tabs of this tile")
-			hover(more, pal.raised.Alpha(0.6))
+			hover(more, pal.hover)
 			more.Menu(func(m *ui.Menu) {
 				for _, id := range hidden {
 					if t := o.tab(id); t != nil && m.Item(cmp.Or(t.Title, "new session")).Chosen() {
@@ -161,7 +161,7 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 		}
 		if x.tab != "" {
 			plus := ui.Row(c.Key("+")).Size(28, 28).Radius(6).Justify(ui.Center).Shrink(0).Children(func() { ui.Text(c, "+").FontSize(18).TextColor(pal.mute) }).Tooltip("New tab  " + keys("T"))
-			if press(hover(plus, pal.raised.Alpha(0.6))) {
+			if press(hover(plus, pal.hover)) {
 				a.activate(x)
 				a.show("")
 			}
@@ -185,7 +185,7 @@ func (a *app) menuMark(c *ui.Context) {
 			}
 		})
 	}).Tooltip("Menu")
-	hover(e, pal.raised)
+	hover(e, pal.hover)
 	e.Menu(func(m *ui.Menu) {
 		if t != nil {
 			if m.Item("Rename “" + cmp.Or(t.Title, "new session") + "”").Chosen() {

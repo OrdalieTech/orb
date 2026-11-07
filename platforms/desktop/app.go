@@ -39,10 +39,12 @@ type renaming struct {
 type app struct {
 	o          *Orb
 	stack      []screen
-	tab        string            // the conversation shown, "" for Home
-	allOpen    bool              // Home shows every open conversation, not the first few
-	drafts     map[string]string // each conversation's draft, "" for Home's
-	focus      int               // asked to focus the prompt box, each time it grows
+	tab        string               // the conversation shown, "" for Home
+	allOpen    bool                 // Home shows every open conversation, not the first few
+	instant    bool                 // a key acted: the frame shows what it did at once, nothing a key does animates
+	entering   ui.ElementTransition // how the tile being built shows what it switched to
+	drafts     map[string]string    // each conversation's draft, "" for Home's
+	focus      int                  // asked to focus the prompt box, each time it grows
 	picker     *picker
 	rename     *renaming
 	root       *tile     // the window's tiles
@@ -216,6 +218,10 @@ func (a *app) offer(s string, undo func()) {
 
 func (a *app) view(c *ui.Context) {
 	theme(c)
+	if a.instant {
+		c.DisableAnimations()
+		a.instant = false
+	}
 	o, pal := a.o, p(c)
 	if o.state.Up {
 		a.syncTabs()
@@ -466,7 +472,7 @@ func (a *app) closeTab() {
 // keys to before the view. It has no Close Window, which would take ⌘W.
 func (a *app) menu() *mygo.Menu {
 	do := func(f func()) func(*mygo.MenuItem, *mygo.Window) {
-		return func(*mygo.MenuItem, *mygo.Window) { a.o.win.Update(f) }
+		return func(*mygo.MenuItem, *mygo.Window) { a.o.win.Update(func() { a.instant = true; f() }) }
 	}
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Role: mygo.RoleAppMenu},
@@ -498,11 +504,14 @@ func (a *app) menu() *mygo.Menu {
 // shortcuts are the menu's keys, as the Mac app had them.
 func (a *app) shortcuts(c *ui.Context) {
 	o := a.o
+	on := func(mods ui.Modifiers, key ui.Key, f func()) {
+		c.OnShortcut(mods, key, func() { a.instant = true; f() })
+	}
 	// Off macOS they are Control's keys, which a shell in the terminal needs (Ctrl+W, Ctrl+L…):
 	// there only those no shell takes stay, enough to leave it.
-	c.OnShortcut(ui.Ctrl, ui.KeyTab, func() { a.cycle(1) })
-	c.OnShortcut(ui.Ctrl|ui.Shift, ui.KeyTab, func() { a.cycle(-1) })
-	c.OnShortcut(cmd|ui.Shift, ui.KeyEnter, func() {
+	on(ui.Ctrl, ui.KeyTab, func() { a.cycle(1) })
+	on(ui.Ctrl|ui.Shift, ui.KeyTab, func() { a.cycle(-1) })
+	on(cmd|ui.Shift, ui.KeyEnter, func() {
 		if !a.root.leaf() {
 			a.zoom(a.active)
 		}
@@ -513,40 +522,40 @@ func (a *app) shortcuts(c *ui.Context) {
 		}
 	} else {
 		// ⌃M: Return to a shell, so not in one.
-		c.OnShortcut(ui.Ctrl, ui.KeyM, func() { a.chooseModel(o.tab(a.tab), true) })
+		on(ui.Ctrl, ui.KeyM, func() { a.chooseModel(o.tab(a.tab), true) })
 	}
-	c.OnShortcut(cmd, ui.KeyN, a.newSession)
-	c.OnShortcut(cmd, ui.KeyK, a.openPalette)
-	c.OnShortcut(cmd, ui.KeyT, a.newSession)
-	c.OnShortcut(cmd, ui.KeyW, a.closeTab)
-	c.OnShortcut(cmd|ui.Shift, ui.KeyW, func() { a.unsplit(a.active) })
-	c.OnShortcut(cmd, ui.KeyD, func() { a.split(a.active, "right", &tile{}) })
-	c.OnShortcut(cmd|ui.Shift, ui.KeyD, func() { a.split(a.active, "bottom", &tile{}) })
-	c.OnShortcut(cmd, ui.KeyBracketLeft, func() { a.cycle(-1) })
-	c.OnShortcut(cmd, ui.KeyBracketRight, func() { a.cycle(1) })
-	c.OnShortcut(cmd, ui.KeyEqual, func() { a.root.even(true); a.reshape() })
-	c.OnShortcut(cmd, ui.KeyPeriod, func() {
+	on(cmd, ui.KeyN, a.newSession)
+	on(cmd, ui.KeyK, a.openPalette)
+	on(cmd, ui.KeyT, a.newSession)
+	on(cmd, ui.KeyW, a.closeTab)
+	on(cmd|ui.Shift, ui.KeyW, func() { a.unsplit(a.active) })
+	on(cmd, ui.KeyD, func() { a.split(a.active, "right", &tile{}) })
+	on(cmd|ui.Shift, ui.KeyD, func() { a.split(a.active, "bottom", &tile{}) })
+	on(cmd, ui.KeyBracketLeft, func() { a.cycle(-1) })
+	on(cmd, ui.KeyBracketRight, func() { a.cycle(1) })
+	on(cmd, ui.KeyEqual, func() { a.root.even(true); a.reshape() })
+	on(cmd, ui.KeyPeriod, func() {
 		if a.tab != "" {
 			o.send("abort", "tab", a.tab)
 		}
 	})
-	c.OnShortcut(cmd, ui.KeyJ, func() {
+	on(cmd, ui.KeyJ, func() {
 		if a.tab != "" {
 			a.terminalOf(a.tab)
 		}
 	})
-	c.OnShortcut(cmd, ui.KeyL, func() { a.focus++ })
-	c.OnShortcut(cmd|ui.Shift, ui.KeyM, func() { a.chooseModel(o.tab(a.tab), true) })
-	c.OnShortcut(cmd|ui.Shift, ui.KeyC, func() {
+	on(cmd, ui.KeyL, func() { a.focus++ })
+	on(cmd|ui.Shift, ui.KeyM, func() { a.chooseModel(o.tab(a.tab), true) })
+	on(cmd|ui.Shift, ui.KeyC, func() {
 		if t := o.tab(a.tab); t != nil {
 			a.send(t, "/copy")
 		}
 	})
-	c.OnShortcut(cmd, ui.KeyComma, a.settings)
-	c.OnShortcut(cmd|ui.Shift, ui.KeyBracketLeft, func() { a.move(-1) })
-	c.OnShortcut(cmd|ui.Shift, ui.KeyBracketRight, func() { a.move(1) })
+	on(cmd, ui.KeyComma, a.settings)
+	on(cmd|ui.Shift, ui.KeyBracketLeft, func() { a.move(-1) })
+	on(cmd|ui.Shift, ui.KeyBracketRight, func() { a.move(1) })
 	for i := range 9 {
-		c.OnShortcut(cmd, ui.Key1+ui.Key(i), func() {
+		on(cmd, ui.Key1+ui.Key(i), func() {
 			if x := a.tabsTile(); i < len(x.tabs) {
 				a.show(x.tabs[i])
 			}
@@ -572,7 +581,7 @@ func keys(k string) string {
 	if runtime.GOOS == "darwin" {
 		return "⌘" + k
 	}
-	return "Ctrl+" + k
+	return "Ctrl+" + strings.ReplaceAll(k, "⇧", "Shift+")
 }
 
 // overlays: interrupts belong to their owner and stop the world wherever you are; then the sheets.
@@ -658,9 +667,10 @@ func modal(c *ui.Context, open *bool, width float32, body func()) {
 	pal := p(c)
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		backdrop.Background(ui.RGBA(0, 0, 0, 0.32)).Transition(ui.ElementTransition{Enter: &ui.Motion{}, Exit: &ui.Motion{}, Animation: &showing})
+		// It leaves simpler than it came: a fade, no scale.
 		panel.Width(width).MaxHeightPercent(80).Radius(14).Background(pal.bg).Border(1, pal.rule).Clip().
 			Shadow(0, 16, 48, 0, ui.RGBA(0, 0, 0, 0.25)).
-			Transition(ui.ElementTransition{Enter: &ui.Motion{Scale: 0.96}, Exit: &ui.Motion{Scale: 0.96}, Animation: &showing})
+			Transition(ui.ElementTransition{Enter: &ui.Motion{Scale: 0.96}, Exit: &ui.Motion{}, Animation: &showing})
 		body()
 	})
 }
@@ -669,7 +679,7 @@ func modal(c *ui.Context, open *bool, width float32, body func()) {
 // the one chosen.
 func menuRow(c *ui.Context, text, note string, chosen bool) ui.Element {
 	pal := p(c)
-	return hover(ui.Row(c).FillWidth().Padding(8, 12).Radius(8).Gap(10), pal.raised).Children(func() {
+	return hover(ui.Row(c).FillWidth().Padding(8, 12).Radius(8).Gap(10), pal.hover).Children(func() {
 		w := 400
 		if chosen {
 			w = strong
@@ -743,9 +753,9 @@ func (a *app) toast(c *ui.Context) {
 			if a.notice == "" {
 				return
 			}
-			slide := ui.Animation{Duration: 400 * time.Millisecond, Ease: ui.EaseInOut}
-			ui.Row(c.Key(a.notice)).Padding(8, 14).Radius(10).Background(pal.fg).Shadow(0, 8, 24, 0, ui.RGBA(0, 0, 0, 0.18)).
-				Transition(ui.ElementTransition{Enter: &ui.Motion{Y: 16}, Exit: &ui.Motion{Y: 16}, Animation: &slide}).
+			// One note at a time: a second takes the first's place instead of rising over it.
+			ui.Row(c.Key("toast")).Padding(8, 14).Radius(10).Background(pal.fg).Shadow(0, 8, 24, 0, ui.RGBA(0, 0, 0, 0.18)).
+				Transition(ui.ElementTransition{Enter: &ui.Motion{Y: 16}, Exit: &ui.Motion{Y: 16}, Animation: &passing}).
 				Gap(14).Children(func() {
 				ui.Text(c, a.notice).FontSize(small).TextColor(pal.bg).MaxWidth(520).MaxLines(3)
 				if a.undo != nil && press(ui.Text(c, "undo").FontSize(small).FontWeight(strong).TextColor(pal.bg)) {

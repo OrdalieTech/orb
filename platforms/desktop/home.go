@@ -18,7 +18,7 @@ func (a *app) homeScreen(c *ui.Context) {
 	// A small tile keeps Home to its prompt box.
 	small := a.narrow || a.building != nil && a.building.height > 0 && a.building.height < 480
 	// Centred while it fits; with many cards open, it scrolls from the top.
-	ui.Scroll(c).Grow(1).Basis(0).FillWidth().Children(func() {
+	ui.Scroll(c.Key("in:home")).Grow(1).Basis(0).FillWidth().Transition(a.entering).Children(func() {
 		ui.Column(c).FillWidth().MinHeightPercent(100).Justify(ui.Center).Padding(56, margin, 64).Children(func() { a.homeBody(c, small) })
 	})
 }
@@ -62,7 +62,7 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 			reading(c).MaxWidth(680).Margin(36, ui.Auto, 0).PaddingX(margin).Children(func() {
 				ui.Row(c).FillWidth().Margin(0, 0, 6).Children(func() {
 					label(c, "latest").TextColor(pal.meta).Grow(1)
-					if press(ui.Row(c).Children(func() { label(c, "all threads  "+keys("K")).TextColor(pal.mute) })) {
+					if link(c, "all threads", keys("K")) {
 						a.openPalette()
 					}
 				})
@@ -86,7 +86,7 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 					}
 					dot(c, map[bool]ui.Color{true: pal.fg, false: pal.rule}[o.state.Up], 6, !o.state.Up, false)
 					ui.Text(c, cmp.Or(o.state.Summary, "starting Bridge…")).Grow(1).Basis(0).FontSize(12).TextColor(ink).SingleLine()
-					if press(ui.Row(c).Children(func() { label(c, "settings  "+keys(",")).TextColor(pal.mute) })) {
+					if link(c, "settings", keys(",")) {
 						a.settings()
 					}
 				})
@@ -138,7 +138,7 @@ func (a *app) openCards(c *ui.Context) {
 			label(c, fmt.Sprintf("open · %d", len(o.state.Tabs))).TextColor(pal.meta).Grow(1)
 			if len(o.state.Tabs) > few {
 				more := map[bool]string{true: "fewer", false: fmt.Sprintf("all %d", len(o.state.Tabs))}[a.allOpen]
-				if press(ui.Row(c).Children(func() { label(c, more).TextColor(pal.mute) })) {
+				if link(c, more, "") {
 					a.allOpen = !a.allOpen
 				}
 			}
@@ -147,14 +147,12 @@ func (a *app) openCards(c *ui.Context) {
 			for _, t := range tabs {
 				card := ui.Column(c.Key(t.ID)).Height(78).Padding(9, 10).Gap(3).Radius(10).Border(1, pal.rule).Clip()
 				hovered := card.Hovered()
-				hover(card, pal.raised)
-				if t.Asleep {
-					card.Opacity(0.6) // as the phone's cards asleep
-				}
+				hover(card, pal.hover)
 				card.Children(func() {
 					ui.Row(c).FillWidth().Gap(7).AlignItems(ui.Center).Children(func() {
-						where(c, o.hue(t.Peer), t.Busy, t.Ask != nil, pal.mute)
-						ui.Text(c, cmp.Or(t.Title, "new session")).Grow(1).Basis(0).MinWidth(0).FontSize(small).FontWeight(strong).SingleLine()
+						// Asleep, it recedes as the phone's cards do, its words still legible.
+						where(c, o.hue(t.Peer), t.Busy, t.Ask != nil, map[bool]ui.Color{true: pal.rule, false: pal.mute}[t.Asleep])
+						ui.Text(c, cmp.Or(t.Title, "new session")).Grow(1).Basis(0).MinWidth(0).FontSize(small).FontWeight(map[bool]int{true: medium, false: strong}[t.Asleep]).TextColor(map[bool]ui.Color{true: pal.mute, false: pal.fg}[t.Asleep]).SingleLine().Tooltip(cmp.Or(t.Title, "new session"))
 						if hovered && press(ui.Row(c).Size(18, 18).Radius(4).Justify(ui.Center).Children(func() { ui.Text(c, "×").FontSize(14).TextColor(pal.meta) }).Tooltip("Close · it runs on")) {
 							a.close(t.ID)
 						}
@@ -204,17 +202,14 @@ func lastSaid(rows []Row) string {
 // are enough.
 func sessionRow(c *ui.Context, title, meta, age string, live, asks, current bool, hueN int) ui.Element {
 	pal := p(c)
-	e := ui.Row(c).AlignSelf(ui.Stretch).Padding(9, 8).Margin(0, -8).Gap(10).Radius(soft)
-	if e.Hovered() {
-		e.Background(pal.raised)
-	}
+	e := hover(ui.Row(c).AlignSelf(ui.Stretch).Padding(9, 8).Margin(0, -8).Gap(10).Radius(soft), pal.hover)
 	return e.Children(func() {
 		where(c, hueN, live, asks, pal.mute)
 		w := 400
 		if current || live {
 			w = strong
 		}
-		ui.Text(c, title).Grow(1).Basis(0).FontSize(15).FontWeight(w).SingleLine()
+		ui.Text(c, title).Grow(1).Basis(0).FontSize(15).FontWeight(w).SingleLine().Tooltip(title)
 		state := age
 		switch {
 		case asks:
@@ -284,9 +279,12 @@ func (a *app) explorer(c *ui.Context) {
 	}
 	body := func() {
 		ui.Row(c).FillWidth().Padding(12, 12, 2, 14).Gap(2).AlignItems(ui.Center).Children(func() {
-			label(c, m.Name).TextColor(pal.meta).MarginEnd(8)
+			label(c, m.Name).TextColor(pal.meta).MarginEnd(8).MaxWidth(120).Tooltip(m.Name)
 			// Between the folders a / (none after the root, which is one); the last, where it is, in ink.
 			cs := crumbs(d.Path)
+			if len(cs) > 4 { // a deep path keeps where it starts and where it is
+				cs = append(append(cs[:1:1], [2]string{"…", cs[len(cs)-3][1]}), cs[len(cs)-2:]...)
+			}
 			for i, cr := range cs {
 				if i > 0 && cs[i-1][0] != "/" {
 					ui.Text(c.Key("/"+cr[1]), "/").FontSize(12).TextColor(pal.rule)
@@ -330,6 +328,14 @@ func (a *app) explorer(c *ui.Context) {
 				} else if press(row) {
 					a.readDirs(peer, at)
 				}
+			}
+			switch {
+			case d.Path == "" && a.dirErr == "":
+				empty(c, "reading…").PaddingX(8)
+			case d.Path != "" && len(shown) == 0 && q != "":
+				empty(c, "no folder here matches · ↩ opens a path").PaddingX(8)
+			case d.Path != "" && len(d.Dirs) == 0:
+				empty(c, "no folders in here · start here").PaddingX(8)
 			}
 			if q == "" && d.Parent != "" && tidy(d.Path) == "~" && len(m.Folders) > 0 {
 				label(c, "recent").Padding(12, 0, 2).TextColor(pal.meta)
@@ -388,10 +394,7 @@ func (a *app) readDirs(peer, dir string) {
 // dirRow is a folder in the explorer, a line tight: its name, git when it is a repository.
 func dirRow(c *ui.Context, name string, git bool) ui.Element {
 	pal := p(c)
-	e := ui.Row(c).FillWidth().Height(28).Padding(0, 8).Gap(10).Radius(6).AlignItems(ui.Center)
-	if e.Hovered() {
-		e.Background(pal.raised)
-	}
+	e := hover(ui.Row(c).FillWidth().Height(28).Padding(0, 8).Gap(10).Radius(soft).AlignItems(ui.Center), pal.hover)
 	return e.Children(func() {
 		ui.Text(c, name).Grow(1).Basis(0).FontSize(small).SingleLine()
 		if git {

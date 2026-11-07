@@ -53,7 +53,7 @@ func (a *app) chat(c *ui.Context, t *Tab) {
 
 func (a *app) conversation(c *ui.Context, t *Tab) {
 	o, pal := a.o, p(c)
-	ui.Column(c).Grow(1).Basis(0).FillWidth().Children(func() {
+	ui.Column(c.Key("in:" + t.ID)).Grow(1).Basis(0).FillWidth().Transition(a.entering).Children(func() {
 		if !t.Remote && o.state.Acting {
 			patternBlue(c, func() { o.send("abort", "tab", t.ID) })
 		}
@@ -65,7 +65,7 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 		}
 		ls := a.lists[key]
 		if ls == nil {
-			ls = &ui.ListState{FollowEnd: true, FollowAnimation: &ui.Smooth}
+			ls = &ui.ListState{FollowEnd: true, FollowAnimation: &moving}
 			a.lists[key] = ls
 		}
 		// Older messages load above; the ones read so far stay where they are.
@@ -653,7 +653,7 @@ func (a *app) interrupt(c *ui.Context, ask Ask, answer func(*string)) {
 			detail := strings.TrimSpace(strings.Join([]string{rest, ask.Message}, "\n"))
 			if detail != "" {
 				ui.Scroll(c).MaxHeight(220).Children(func() {
-					ui.Text(c, detail).Padding(10, margin).FontSize(small + 1).TextColor(ink.Alpha(0.8)).Selectable()
+					ui.Text(c, detail).Padding(10, margin).FontSize(small + 1).FontWeight(medium).TextColor(ink).Selectable()
 				})
 			}
 			ui.Spacer(c)
@@ -816,11 +816,9 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 					for _, l := range t.Levels {
 						on := l == t.Thinking
 						seg := ui.Row(c.Key(l)).Grow(1).Basis(0).PaddingY(9).Justify(ui.Center)
-						seg.Background(seg.AnimateColor("on", map[bool]ui.Color{true: pal.fg, false: ui.Transparent}[on], ui.Smooth))
-						ink := pal.fg
-						if on {
-							ink = pal.bg
-						}
+						// Its ground and its word change together.
+						seg.Background(seg.AnimateColor("on", map[bool]ui.Color{true: pal.fg, false: ui.Transparent}[on], pressing))
+						ink := seg.AnimateColor("ink", map[bool]ui.Color{true: pal.bg, false: pal.fg}[on], pressing)
 						seg.Children(func() {
 							ui.Text(c, strings.NewReplacer("minimal", "min", "medium", "med").Replace(l)).FontSize(small).FontWeight(medium).TextColor(ink).SingleLine()
 						})
@@ -840,7 +838,7 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 	if len(a.stack) > 0 {
 		modal(c, &open, 420, body)
 	} else {
-		popover(c, &a.active.modelAt, &open, 400, true, body)
+		popover(c, &a.active.modelAt, &open, 400, a.keyed, body) // opened by a key, it shows at once
 	}
 	if !open {
 		a.model, a.query = "", ""

@@ -35,8 +35,7 @@ type tile struct {
 	width   float32   // as last drawn
 	height  float32
 	showing [2]any    // what it shows, conversation and terminal or not
-	since   time.Time // since when: it fades in for a moment
-	slide   float32   // and the side it comes from: 1 a tab to the right of the one left, -1 to its left
+	since   time.Time // since when
 }
 
 // match is a tile's identity across layouts: a tile moving between splits glides from where it was.
@@ -511,21 +510,22 @@ func (a *app) layout(c *ui.Context, x *tile, corner, left bool) {
 	// conversation.
 	glide := ui.ElementTransition{Match: match{x}, Position: true, Size: true, Duration: time.Millisecond}
 	if time.Now().Before(a.morph) {
-		glide.Animation = &opening
+		glide.Animation = &moving
 	}
 	e := ui.Column(c).Fill().Background(pal.bg).Bind(&x.at).Transition(glide)
-	// The fade is the tile's, not its element's: a tile moving to another split is a new element.
-	if now := (time.Now()); x.showing != [2]any{x.tab, x.shell} || x.since.IsZero() {
-		// Home is left of every tab; a terminal shown or hidden stays in place.
-		x.slide = 0
-		if was, _ := x.showing[0].(string); !x.since.IsZero() && was != x.tab {
-			x.slide = map[bool]float32{true: 1, false: -1}[slices.Index(x.tabs, x.tab) > slices.Index(x.tabs, was)]
+	// What it switched to comes in under its bar, which stays: from the side of the tab it leaves
+	// (Home left of every tab), a fade alone for a terminal in place. Only once it showed
+	// something, and never for a key.
+	a.entering = ui.ElementTransition{}
+	if x.showing != [2]any{x.tab, x.shell} || x.since.IsZero() {
+		slide := float32(0)
+		if was, _ := x.showing[0].(string); was != x.tab {
+			slide = map[bool]float32{true: 6, false: -6}[slices.Index(x.tabs, x.tab) > slices.Index(x.tabs, was)]
 		}
-		x.showing, x.since = [2]any{x.tab, x.shell}, now
-	}
-	if in := float32(time.Since(x.since)) / float32(260*time.Millisecond); in < 1 && !c.Preferences().ReduceMotion {
-		e.Opacity(easeOut(in)).Translate(x.slide*10*(1-easeOut(in)), 0)
-		c.After(16 * time.Millisecond)
+		if !x.since.IsZero() {
+			a.entering = ui.ElementTransition{Enter: &ui.Motion{X: slide}, Animation: &switching}
+		}
+		x.showing, x.since = [2]any{x.tab, x.shell}, time.Now()
 	}
 	e.Children(func() {
 		t := o.tab(x.tab)
@@ -614,10 +614,10 @@ func (a *app) tileTools(c *ui.Context) {
 			a.unsplit(x)
 		}
 	} else if a.barHover {
-		appear := ui.ElementTransition{Enter: &ui.Motion{Opacity: 0, X: 4}, Exit: &ui.Motion{Opacity: 0}, Animation: &hovering}
+		appear := ui.ElementTransition{Enter: &ui.Motion{}, Exit: &ui.Motion{}, Animation: &hovering} // shown on hover, often: a fade
 		icon := func(tip string, draw func(pt *ui.Painter, r ui.Rect)) bool {
 			e := ui.Box(c.Key(tip)).Size(24, 24).Radius(soft).Shrink(0).Tooltip(tip).Transition(appear)
-			hover(e, pal.raised)
+			hover(e, pal.hover)
 			e.Draw(func(pt *ui.Painter, r ui.Rect) {
 				draw(pt, ui.Rect{X: r.X + 6, Y: r.Y + 7, W: 12, H: 10})
 			})
