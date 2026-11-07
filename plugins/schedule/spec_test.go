@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -122,6 +123,7 @@ type env struct {
 	clock    *clock
 	provider *faux.Provider
 	settings *config.SettingsManager
+	skill    agent.Skill // the one skill sessions have
 
 	mu      sync.Mutex
 	prompts []string // what each model request's last user message said
@@ -141,6 +143,10 @@ func newEnv(t *testing.T, start time.Time) *env {
 		t.Fatal(err)
 	}
 	e := &env{t: t, dir: dir, settings: settings, clock: &clock{now: start}, provider: faux.New()}
+	e.skill = agent.Skill{Name: "brief", Description: "Brief the team", FilePath: filepath.Join(dir, "SKILL.md"), BaseDir: dir}
+	if err := os.WriteFile(e.skill.FilePath, []byte("---\nname: brief\ndescription: Brief the team\n---\nSummarize the day for the team.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	e.store = filelock.File{Path: filepath.Join(agentDir, "schedule.json"), Perm: 0o600, Atomic: true}
 	return e
 }
@@ -191,7 +197,7 @@ func (e *env) session(s *schedule.Scheduler) *agent.AgentSession {
 		return e.provider.StreamSimple(ctx, model, c, o)
 	}
 	created := engine.NewAgent(stream, engine.WithInitialState(engine.AgentState{SystemPrompt: "test", Model: e.provider.GetModel()}), engine.WithConvertToLLM(agent.ConvertToLLM))
-	rt, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: e.settings, StreamFn: stream, ExtensionRegistry: registry})
+	rt, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: e.settings, StreamFn: stream, ExtensionRegistry: registry, SlashResolver: &agent.SlashResolver{Skills: []agent.Skill{e.skill}}})
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -372,8 +378,24 @@ func TestFiresAtItsTimeWithTheMarkerAfterThePrompt(t *testing.T) {
 	if !strings.Contains(last, "[scheduled · brief · "+id+"]") {
 		t.Fatalf("the run's prompt lacks its marker: %s", last)
 	}
-	if strings.Index(last, "brief go") > strings.Index(last, "[scheduled") {
-		t.Fatalf("the marker comes before the prompt: %s", last)
+	if i := strings.Index(last, "Summarize the day"); i < 0 || i > strings.Index(last, "[scheduled") {
+		t.Fatalf("the skill is not expanded before the marker: %s", last)
+	}
+}
+
+func TestABareSkillStillExpands(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	e.person(s, map[string]any{"action": "create", "title": "brief", "prompt": "/skill:brief", "when": "in 20m", "target": "new"})
+	id := taskID(t, e.read(), "brief")
+	e.run(s)
+	e.answer("all good")
+	e.clock.advance(21 * time.Minute)
+	e.eventually("run done", func(f file) bool { rs := runsOf(f, id); return len(rs) == 1 && rs[0].Status == "done" })
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if last := e.prompts[len(e.prompts)-1]; !strings.Contains(last, "Summarize the day") || !strings.Contains(last, "[scheduled · brief · "+id+"]") {
+		t.Fatalf("a bare skill was not expanded with its marker: %s", last)
 	}
 }
 
@@ -791,5 +813,35 @@ func TestTrimmingRunsKeepsTheRunning(t *testing.T) {
 	}
 	if len(f.Runs) != 50 {
 		t.Fatalf("%d runs kept, want 50", len(f.Runs))
+	}
+}
+
+func TestARetriedTurnInPlaceEndsWithItsRetry(t *testing.T) {
+	e := newEnv(t, monday)
+	if err := os.WriteFile(filepath.Join(filepath.Dir(e.store.Path), "settings.json"), []byte(`{"retry":{"enabled":true,"baseDelayMs":1},"compaction":{"enabled":false}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.settings.Reload()
+	s := e.scheduler("orb chat", paris, nil)
+	rt := e.session(s)
+	t.Cleanup(rt.Dispose)
+	e.answer(map[string]any{"action": "create", "title": "check", "prompt": "x", "when": "in 10m"}, "ok")
+	if err := rt.Prompt(context.Background(), "please"); err != nil {
+		t.Fatal(err)
+	}
+	_ = rt.WaitForIdle(context.Background())
+	id := taskID(t, e.read(), "check")
+	e.run(s)
+	overloaded := "overloaded"
+	e.provider.AppendResponses([]faux.ResponseStep{faux.AssistantMessage("", faux.AssistantMessageOptions{StopReason: ai.StopReasonError, ErrorMessage: &overloaded})})
+	// The retry is still the scheduled run, so the task it creates is the agent's.
+	e.answer(map[string]any{"action": "create", "title": "again", "prompt": "y", "when": "in 1h"}, "done")
+	e.clock.advance(11 * time.Minute)
+	f := e.eventually("done", func(f file) bool { rs := runsOf(f, id); return len(rs) == 1 && rs[0].Status != "running" })
+	if rs := runsOf(f, id); rs[0].Status != "done" {
+		t.Fatalf("a run that recovered on retry ended %s: %+v", rs[0].Status, rs[0])
+	}
+	if i := slices.IndexFunc(f.Tasks, func(k task) bool { return k.Title == "again" }); i < 0 || f.Tasks[i].By != "agent" {
+		t.Fatalf("the retry did not create its task as the agent's: %+v", f.Tasks)
 	}
 }

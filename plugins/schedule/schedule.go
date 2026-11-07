@@ -76,6 +76,7 @@ type live struct {
 	api   extensions.API
 	ctx   extensions.Context
 	waits map[string]chan engine.AgentMessages // by run marker
+	ended map[string]engine.AgentMessages      // by run marker, its latest agent_end until the run settles
 }
 
 type doc struct {
@@ -157,7 +158,7 @@ func (s *Scheduler) Extension() extensions.Factory {
 		var l *live
 		api.On(extensions.EventSessionStart, func(_ context.Context, _ extensions.Event, c extensions.Context) (any, error) {
 			s.mu.Lock()
-			l = &live{api: api, ctx: c, waits: map[string]chan engine.AgentMessages{}}
+			l = &live{api: api, ctx: c, waits: map[string]chan engine.AgentMessages{}, ended: map[string]engine.AgentMessages{}}
 			s.live[c.SessionManager().GetSessionID()] = l
 			s.mu.Unlock()
 			return nil, nil
@@ -181,14 +182,30 @@ func (s *Scheduler) Extension() extensions.Factory {
 			if l == nil {
 				return nil, nil
 			}
-			for mark, wait := range l.waits {
-				if slices.ContainsFunc(end.Messages, func(m engine.AgentMessage) bool {
+			// A retry's agent_end holds only what it added, so a run's latest one stands until it settles.
+			for mark := range l.waits {
+				if _, ok := l.ended[mark]; ok || slices.ContainsFunc(end.Messages, func(m engine.AgentMessage) bool {
 					u, ok := m.(*ai.UserMessage)
 					return ok && strings.Contains(userText(u.Content), mark)
 				}) {
-					wait <- end.Messages
+					l.ended[mark] = end.Messages
+				}
+			}
+			return nil, nil
+		})
+		// A run ends once its session settles, after any retry or compaction recovery.
+		api.On(extensions.EventAgentSettled, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if l == nil {
+				return nil, nil
+			}
+			for mark, messages := range l.ended {
+				if wait, ok := l.waits[mark]; ok {
+					wait <- messages
 					delete(l.waits, mark)
 				}
+				delete(l.ended, mark)
 			}
 			return nil, nil
 		})
@@ -562,6 +579,9 @@ func (s *Scheduler) fire(ctx context.Context, k task, r run) {
 func (s *Scheduler) deliver(ctx context.Context, k task, started time.Time) (status, detail, session string) {
 	mark := fmt.Sprintf("[scheduled · %s · %s]", k.Title, k.ID)
 	text := k.Prompt + "\n\n" + mark
+	if strings.HasPrefix(k.Prompt, "/skill:") && !strings.Contains(k.Prompt, " ") {
+		text = k.Prompt + " \n\n" + mark // a skill's name ends at the first space
+	}
 	for {
 		if !s.active(s.now()) {
 			return skipped, "outside active hours", ""
@@ -665,6 +685,7 @@ func (s *Scheduler) inPlace(ctx context.Context, l *live, sid, mark, text string
 	defer func() {
 		s.mu.Lock()
 		delete(l.waits, mark)
+		delete(l.ended, mark)
 		s.mu.Unlock()
 	}()
 	defer s.mark(sid)()
