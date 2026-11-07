@@ -86,6 +86,7 @@ type app struct {
 	dir        Dirs                    // the folder it shows
 	dirOf      string                  // on that machine
 	dirErr     string                  // why it could not list it
+	exploring  string                  // the machine the explorer shows, "" closed
 	gone       map[string]bool         // tabs closed here, until the view says so too
 	palette    bool                    // Go to (⌘K) shows
 	search     string                  // what it looks for
@@ -259,11 +260,13 @@ func (a *app) view(c *ui.Context) {
 				a.saveTiles()
 				return
 			}
-			// The window's controls keep their room above every other screen.
-			ui.Box(c).FillWidth().Height(c.TitleBar().Height).DragWindow()
-			if slices.ContainsFunc(settingsKinds, func(s struct{ kind, name string }) bool { return s.kind == top.kind }) {
-				a.settingsTabs(c)
-			}
+			// The window's controls keep their room above every other screen, in a bar that drags
+			// it; Settings has its tabs there, level with the traffic lights.
+			ui.Row(c).FillWidth().Height(max(c.TitleBar().Height, 48)).Justify(ui.Center).AlignItems(ui.Center).DragWindow().Children(func() {
+				if slices.ContainsFunc(settingsKinds, func(s struct{ kind, name string }) bool { return s.kind == top.kind }) {
+					a.settingsTabs(c)
+				}
+			})
 			switch top.kind {
 			case "general":
 				a.generalScreen(c)
@@ -279,8 +282,6 @@ func (a *app) view(c *ui.Context) {
 				a.vendorScreen(c, top.arg, top.peer)
 			case "plugins":
 				a.pluginsScreen(c, top.peer)
-			case "device":
-				a.deviceScreen(c, top.peer)
 			case "folder":
 				a.folderScreen(c, top.peer, top.arg)
 			}
@@ -311,6 +312,9 @@ func (a *app) titleBar(c *ui.Context, body func()) {
 		}
 		body()
 		a.tileTools(c)
+		if a.corner {
+			a.menuMark(c)
+		}
 	})
 	a.tileMenu(bar)
 }
@@ -447,7 +451,7 @@ func (a *app) chooseWhere() {
 		if at := slices.Index(options, s); at == 0 {
 			a.start(a.o.state.Self, "")
 		} else {
-			a.push(screen{kind: "device", peer: hosts[at-1]})
+			a.explore(hosts[at-1])
 		}
 	}}
 }
@@ -615,6 +619,9 @@ func (a *app) overlays(c *ui.Context) {
 	}
 	if a.palette {
 		a.paletteSheet(c)
+	}
+	if a.exploring != "" {
+		a.explorer(c)
 	}
 	t := o.tab(a.model)
 	if a.model == next {

@@ -52,7 +52,9 @@ func main() {
 		win := mygo.NewWindow(mygo.WindowOptions{
 			Title: "Orb", Width: 1080, Height: 760, StateKey: "main",
 			TitleBarStyle: mygo.TitleBarHidden,
-			Content:       ui.View(a.view),
+			// The traffic lights centred in the tiles' 48-high bars, as the tabs are.
+			TrafficLightPosition: &mygo.Point{X: 18, Y: 17},
+			Content:              ui.View(a.view),
 		})
 		a.o.open(win)
 		// The view follows what shows at full pace, and the rest at the pace of a window out of sight.

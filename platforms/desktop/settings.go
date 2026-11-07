@@ -682,7 +682,7 @@ func (a *app) settings() {
 // settingsTabs heads every tab of Settings; a click goes to another, on the same machine.
 func (a *app) settingsTabs(c *ui.Context) {
 	pal, top := p(c), a.top()
-	ui.Row(c).FillWidth().MaxWidth(760).Margin(0, ui.Auto).Padding(4, margin, 6).Gap(4).Children(func() {
+	ui.Row(c).Gap(4).Children(func() {
 		for _, s := range settingsKinds {
 			on := top.kind == s.kind
 			e := ui.Row(c.Key(s.kind)).Padding(6, 12).Radius(7).Children(func() {
@@ -723,7 +723,7 @@ func (a *app) generalScreen(c *ui.Context) {
 			{keys("⇧[") + " · " + keys("⇧]"), "previous · next tab"}, {keys("1") + "…" + keys("9"), "a tile's tabs"}, {"⌃M", "model and reasoning"},
 			{keys("J"), "the conversation's terminal"}, {keys("."), "stop the turn"}, {keys(","), "settings"},
 		} {
-			ui.Row(c.Key(k[1])).FillWidth().PaddingY(6).Gap(12).Children(func() {
+			ui.Row(c.Key(k[1])).FillWidth().PaddingY(2).Gap(12).Children(func() {
 				ui.Text(c, k[0]).Width(110).FontSize(small).FontWeight(medium).TextColor(pal.fg)
 				ui.Text(c, k[1]).FontSize(small).TextColor(pal.mute)
 			})

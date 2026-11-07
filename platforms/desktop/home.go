@@ -109,7 +109,7 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 // does and where, the last thing it said; a click shows it, × closes it (its Orb runs on).
 func (a *app) openCards(c *ui.Context) {
 	o, pal := a.o, p(c)
-	reading(c).MaxWidth(680+2*overhang).Margin(22, ui.Auto, 0).PaddingX(margin).Children(func() {
+	reading(c).MaxWidth(680).Margin(22, ui.Auto, 0).PaddingX(margin).Children(func() {
 		label(c, fmt.Sprintf("open · %d", len(o.state.Tabs))).TextColor(pal.meta).Margin(0, 0, 6)
 		ui.Grid(c).FillWidth().Columns(map[bool]int{true: 2, false: 3}[a.narrow]).Gap(8).Children(func() {
 			for _, t := range o.state.Tabs {
@@ -229,16 +229,16 @@ func tidy(p string) string {
 	return p
 }
 
-// deviceScreen is one machine as an explorer: where it is (each folder of the path a click
-// back), the folders in it (git ones marked; a click goes in, start begins a session there), a
-// filter that ↩ follows, or a path typed whole; its recent folders under.
-func (a *app) deviceScreen(c *ui.Context, peer string) {
+// explorer chooses the folder a session starts in, on a machine: floating out of the prompt box's
+// place (above or below it, as the room allows, never past the window), or a dialog over a screen.
+// At its top the path, each folder of it a click back; then a filter that ↩ follows (or a path
+// typed whole); the folders in it, git ones marked, a click going in, a double click starting
+// there; its recent folders when it shows the home; start here at its foot.
+func (a *app) explorer(c *ui.Context) {
 	o, pal := a.o, p(c)
+	peer := a.exploring
 	m := o.machine(peer)
-	if m == nil {
-		a.back()
-		return
-	}
+	open := m != nil
 	if a.dirOf != peer {
 		a.readDirs(peer, "")
 	}
@@ -250,24 +250,19 @@ func (a *app) deviceScreen(c *ui.Context, peer string) {
 			shown = append(shown, x.Name)
 		}
 	}
-	page(c, func() {
-		header(c, m.Name, strings.Join(nonEmpty(map[bool]string{true: "orb " + m.Version}[m.Version != ""], "choose where the session starts"), " · "), a.back, func() {
-			if d.Path != "" && btn(c, "start here", true, pal.fg, pal.bg) {
-				a.start(peer, d.Path)
-			}
-		})
-		// The path, each of its folders a click back.
-		ui.Row(c).FillWidth().Padding(0, margin, 6).Gap(2).Children(func() {
+	body := func() {
+		ui.Row(c).FillWidth().Padding(12, 12, 2, 14).Gap(2).AlignItems(ui.Center).Children(func() {
+			label(c, m.Name).TextColor(pal.meta).MarginEnd(8)
 			for _, cr := range crumbs(d.Path) {
-				if press(ui.Row(c.Key(cr[1])).Padding(3, 6).Radius(5).Children(func() { ui.Text(c, cr[0]).FontSize(small).FontWeight(medium).TextColor(pal.mute) })) {
+				if press(ui.Row(c.Key(cr[1])).Padding(2, 5).Radius(5).Children(func() { ui.Text(c, cr[0]).FontSize(12).FontWeight(medium).TextColor(pal.mute) })) {
 					a.readDirs(peer, cr[1])
 				}
 				if cr[0] != "/" {
-					ui.Text(c.Key("/"+cr[1]), "/").FontSize(small).TextColor(pal.rule)
+					ui.Text(c.Key("/"+cr[1]), "/").FontSize(12).TextColor(pal.rule)
 				}
 			}
 		})
-		in := field(c, &a.path, "filter · or a path, ↩", false).Margin(0, margin, 4).AutoFocus()
+		in := field(c, &a.path, "filter · or a path, ↩", false).Margin(6, 10, 4).FontSize(small).AutoFocus()
 		if in.Submitted() {
 			switch t := strings.TrimSpace(a.path); {
 			case strings.HasPrefix(t, "/") || strings.HasPrefix(t, "~"):
@@ -276,12 +271,10 @@ func (a *app) deviceScreen(c *ui.Context, peer string) {
 				a.readDirs(peer, path.Join(d.Path, shown[0]))
 			}
 		}
-	}, func() {
-		a.launching(c)
-		if a.dirErr != "" {
-			ui.Text(c, a.dirErr).FontSize(small).TextColor(rupture).PaddingY(6)
-		}
-		ui.Column(c).FillWidth().Children(func() {
+		ui.Scroll(c).FillWidth().MaxHeight(340).Shrink(1).Padding(2, 10, 4).Children(func() {
+			if a.dirErr != "" {
+				ui.Text(c, a.dirErr).FontSize(12).TextColor(rupture).Padding(6, 4)
+			}
 			if d.Parent != "" && q == "" {
 				if press(dirRow(c.Key(".."), "..", false, "")) {
 					a.readDirs(peer, d.Parent)
@@ -294,25 +287,49 @@ func (a *app) deviceScreen(c *ui.Context, peer string) {
 				at := path.Join(d.Path, x.Name)
 				row := dirRow(c.Key(x.Name), x.Name, x.Git, "start ›")
 				if row.DoubleClicked() {
+					a.exploring = ""
 					a.start(peer, at)
 				} else if press(row) {
 					a.readDirs(peer, at)
 				}
 			}
-		})
-		if len(m.Folders) > 0 && q == "" {
-			label(c, "recent").Margin(18, 0, 4).TextColor(pal.meta)
-			for i, f := range m.Folders {
-				if i == 6 {
-					break
-				}
-				if press(sessionRow(c.Key("r:"+f.CWD), path.Base(f.CWD), fmt.Sprint(f.Threads), ago(f.Modified), f.Live, false, false, o.hue(peer)).Tooltip(tidy(f.CWD))) {
-					a.push(screen{kind: "folder", peer: m.ID, arg: f.CWD})
+			if q == "" && d.Parent != "" && tidy(d.Path) == "~" && len(m.Folders) > 0 {
+				label(c, "recent").Padding(12, 0, 2).TextColor(pal.meta)
+				for i, f := range m.Folders {
+					if i == 5 {
+						break
+					}
+					if press(dirRow(c.Key("r:"+f.CWD), tidy(f.CWD), false, "")) {
+						a.readDirs(peer, f.CWD)
+					}
 				}
 			}
-		}
-	})
+		})
+		rule(c, pal.rule)
+		ui.Row(c).FillWidth().Padding(8, 10, 10, 14).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, cmp.Or(tidy(d.Path), "…")).Grow(1).Basis(0).MinWidth(0).FontSize(12).TextColor(pal.meta).SingleLine()
+			if d.Path != "" && btn(c, "start here", true, pal.fg, pal.bg) {
+				a.exploring = ""
+				a.start(peer, d.Path)
+			}
+		})
+	}
+	if !open {
+		a.exploring = ""
+		return
+	}
+	if len(a.stack) > 0 || a.active == nil {
+		modal(c, &open, 440, body)
+	} else {
+		popover(c, &a.active.whereAt, &open, 440, true, body)
+	}
+	if !open {
+		a.exploring = ""
+	}
 }
+
+// explore opens the explorer on a machine, at its home.
+func (a *app) explore(peer string) { a.exploring, a.dirOf, a.dir = peer, "", Dirs{} }
 
 // readDirs lists a folder of a machine, its home for "", into the explorer.
 func (a *app) readDirs(peer, dir string) {
@@ -333,7 +350,7 @@ func (a *app) readDirs(peer, dir string) {
 // under the pointer what a double click does.
 func dirRow(c *ui.Context, name string, git bool, hint string) ui.Element {
 	pal := p(c)
-	e := ui.Row(c).FillWidth().Height(30).Padding(0, 8).Margin(0, -8).Gap(10).Radius(6).AlignItems(ui.Center)
+	e := ui.Row(c).FillWidth().Height(28).Padding(0, 8).Gap(10).Radius(6).AlignItems(ui.Center)
 	hovered := e.Hovered()
 	if hovered {
 		e.Background(pal.raised)

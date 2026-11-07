@@ -16,7 +16,7 @@ import (
 func (a *app) tabChips(c *ui.Context, x *tile) {
 	o, pal := a.o, p(c)
 	chip := func(key string, on bool, body func(hovered bool)) ui.Element {
-		e := ui.Row(c.Key(key)).Height(30).Padding(0, 6, 0, 10).Gap(7).Radius(7).Shrink(0).AlignItems(ui.Center)
+		e := ui.Row(c.Key(key)).Height(30).Padding(0, 6, 0, 10).Gap(7).Radius(7).Shrink(1).MinWidth(96).AlignItems(ui.Center)
 		hovered := e.Hovered()
 		if on {
 			e.Background(pal.raised)
@@ -28,8 +28,20 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 	closeX := func(tip string) bool {
 		return press(ui.Row(c).Size(18, 18).Radius(4).Justify(ui.Center).Children(func() { ui.Text(c, "×").FontSize(14).TextColor(pal.meta) }).Tooltip(tip))
 	}
-	// Tabs past the bar's room scroll, each keeping its name.
-	ui.ScrollHorizontal(c).Gap(2).Shrink(1).MinWidth(0).AlignItems(ui.Center).Children(func() {
+	// ORB, first in the window's first tile as on the phone, is Home: a new session, the
+	// conversations open, every thread.
+	if a.left {
+		ink := pal.meta
+		if x.tab == "" {
+			ink = pal.fg
+		}
+		if press(ui.Row(c).Height(30).Padding(0, 8).Radius(7).Shrink(0).AlignItems(ui.Center).Children(func() { stretch(c, "ORB", 15, ink, 1) }).Tooltip("Home  " + keys("T"))) {
+			a.activate(x)
+			a.show("")
+		}
+	}
+	// Tabs past the bar's room narrow, as a browser's, their names cut; a drag takes any of them.
+	ui.Row(c).Gap(2).Shrink(1).MinWidth(0).Clip().AlignItems(ui.Center).Children(func() {
 		for i, id := range x.tabs {
 			t := o.tab(id)
 			if t == nil {
@@ -44,28 +56,23 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 				case t.Asleep:
 					ink = pal.meta
 				}
-				where(c, o.hue(t.Peer), t.Busy, t.Ask != nil, ink)
+				// Its square pulses while it works or opens (its tip says which).
+				where(c, o.hue(t.Peer), t.Busy || strings.TrimSpace(t.Status) != "", t.Ask != nil, ink)
 				if !a.renameField(c, id) {
 					w := 400
 					if on || t.Unread > 0 {
 						w = strong
 					}
-					ui.Text(c, cmp.Or(t.Title, "new session")).MaxWidth(170).FontSize(small).FontWeight(w).TextColor(ink).SingleLine()
+					ui.Text(c, cmp.Or(t.Title, "new session")).MaxWidth(170).Shrink(1).MinWidth(0).FontSize(small).FontWeight(w).TextColor(ink).SingleLine()
 				}
 				switch {
 				case t.Ask != nil:
 					ui.Text(c, "asks").FontSize(12).TextColor(rupture)
 				case t.Unread > 0 && !on:
 					ui.Text(c, map[bool]string{true: "99+", false: strconv.Itoa(t.Unread)}[t.Unread > 99]).Padding(0, 5).Radius(7).Background(pal.fg).TextColor(pal.bg).FontSize(labelSize + 1).FontWeight(strong)
-				case strings.TrimSpace(t.Status) != "":
-					// What it waits on, in a word (opening, offline); its tip says it whole.
-					ui.Text(c, strings.TrimRight(strings.Fields(t.Status)[0], "…")).FontSize(12).TextColor(pal.meta).SingleLine()
 				}
 				if (on || hovered) && closeX("Close  "+keys("W")+" · it runs on") {
 					a.close(id)
-				}
-				if !on && !hovered {
-					ui.Box(c).Size(18, 18) // the room × takes, so tabs keep their place
 				}
 			}).Tooltip(strings.Join(nonEmpty(t.Title, strings.Join(nonEmpty(t.Where, tidy(t.CWD)), " · "), t.Status), "\n"))
 			a.carry(e, carried{tab: id})
@@ -90,7 +97,7 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 				a.renameTab(*t)
 			}
 		}
-		if x.tab == "" {
+		if x.tab == "" && !a.left {
 			e := chip("home", true, func(hovered bool) {
 				ui.Text(c, "new session").FontSize(small).FontWeight(strong).TextColor(pal.fg).SingleLine()
 				if !a.root.leaf() && closeX("Close tile  "+keys("⇧W")) {
@@ -103,10 +110,62 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 			}
 		}
 	})
-	if x.tab != "" && press(ui.Row(c).Size(26, 26).Radius(6).Justify(ui.Center).Shrink(0).Children(func() { ui.Text(c, "+").FontSize(18).TextColor(pal.mute) }).Tooltip("New tab  "+keys("T"))) {
+	if x.tab != "" && !a.left && press(ui.Row(c).Size(26, 26).Radius(6).Justify(ui.Center).Shrink(0).Children(func() { ui.Text(c, "+").FontSize(18).TextColor(pal.mute) }).Tooltip("New tab  "+keys("T"))) {
 		a.activate(x)
 		a.show("")
 	}
+}
+
+// menuMark is the menu at the window's top right, as the phone's: the conversation shown, the
+// machine it runs on (this computer on Home), the Bridge, Settings.
+func (a *app) menuMark(c *ui.Context) {
+	o, pal := a.o, p(c)
+	t := o.tab(a.tab)
+	peer := o.state.Self
+	if t != nil {
+		peer = t.Peer
+	}
+	e := ui.Row(c).Size(28, 28).Radius(6).Justify(ui.Center).Shrink(0).Children(func() {
+		ui.Box(c).Size(14, 10).Draw(func(pt *ui.Painter, r ui.Rect) {
+			for i := range 3 {
+				pt.Fill(ui.Rect{X: r.X, Y: r.Y + float32(i)*4.4, W: r.W, H: 1.3}, pal.mute, 0.6)
+			}
+		})
+	}).Tooltip("Menu")
+	hover(e, pal.raised)
+	e.Menu(func(m *ui.Menu) {
+		if t != nil {
+			if m.Item("Rename “" + cmp.Or(t.Title, "new session") + "”").Chosen() {
+				a.renameTab(*t)
+			}
+			if m.Item("Terminal").Shortcut(cmd, ui.KeyJ).Chosen() {
+				a.terminalOf(t.ID)
+			}
+			if m.Item("Close conversation").Shortcut(cmd, ui.KeyW).Chosen() {
+				a.close(t.ID)
+			}
+			m.Separator()
+		}
+		if m.Item("Providers · " + a.machineName(peer)).Chosen() {
+			reread()
+			a.stack = []screen{{kind: "providers", peer: peer}}
+		}
+		if m.Item("Plugins · " + a.machineName(peer)).Chosen() {
+			reread()
+			a.stack = []screen{{kind: "plugins", peer: peer}}
+		}
+		if m.Item("A folder on " + a.machineName(peer) + "…").Chosen() {
+			a.explore(peer)
+		}
+		m.Separator()
+		if m.Item("Devices · " + o.state.Summary).Chosen() {
+			reread()
+			a.stack = []screen{{kind: "bridge", peer: o.state.Self}}
+		}
+		if m.Item("Settings").Shortcut(cmd, ui.KeyComma).Chosen() {
+			a.settings()
+		}
+	})
 }
 
 // renameField edits a row's name in place, the whole of it, when it is the one renamed: Return or

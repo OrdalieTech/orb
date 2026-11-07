@@ -181,7 +181,7 @@ func (a *app) peerRow(c *ui.Context, m Machine) {
 		case len(m.Running) > 0:
 			a.open("i:" + m.Running[0].Instance)
 		case m.Launch:
-			a.push(screen{kind: "device", peer: m.ID})
+			a.explore(m.ID)
 		}
 	}
 	rule(c, pal.rule)
