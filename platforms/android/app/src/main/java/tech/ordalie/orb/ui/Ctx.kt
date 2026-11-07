@@ -92,9 +92,11 @@ class Ctx(
         val shown = nav.open?.id == t.id
         v.send("close", "tab" to t.id)
         v.home.entries.firstOrNull { it.tab == t.id }?.let { e ->
-            nav.closed = t.name to {
+            val again: () -> Unit = {
                 rt.scope.launch { v.ask("open", "key" to e.key).obj?.optString("tab")?.takeIf(String::isNotEmpty)?.let { id -> v.send("move", "tab" to id, "to" to at); nav.show(id) } }
             }
+            nav.closed = t.name to again
+            nav.reopen += again
         }
         if (!shown) return
         val next = tabs.getOrNull(at + 1) ?: tabs.getOrNull(at - 1) ?: return nav.home()

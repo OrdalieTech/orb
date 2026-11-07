@@ -45,8 +45,16 @@ private class Tokens(val fg: Color, val bg: Color, val meta: Color) : VisualTran
 @Composable
 fun PromptBox(
     session: Tab?, c: Ctx, commands: List<Command>, placeholder: String = "What should we work on?", modifier: Modifier = Modifier,
-    focus: FocusRequester = remember { FocusRequester() }, onSend: (String) -> Unit,
+    onSend: (String) -> Unit,
 ) {
+    // Asked for (the overview's new-session card, ⌘L), the box of the page on screen takes the keyboard once the page settles.
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(c.nav.compose, c.nav.open?.id) {
+        if (!c.nav.compose || session?.id != c.nav.open?.id) return@LaunchedEffect
+        if (runCatching { focus.requestFocus() }.isFailure) { delay(400); runCatching { focus.requestFocus() } }
+        keyboard?.show(); c.nav.compose = false
+    }
     val cites = c.cites
     // Saved per page: each tab keeps its draft while you swipe away.
     var value by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }

@@ -2,6 +2,8 @@
 
 package tech.ordalie.orb.ui
 
+import android.view.KeyEvent
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -30,6 +32,9 @@ import androidx.compose.ui.platform.*
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.*
 import androidx.compose.ui.unit.*
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import kotlin.math.abs
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -37,6 +42,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import tech.ordalie.orb.Runtime
 import tech.ordalie.orb.core.Tab
+import tech.ordalie.orb.core.named
 
 sealed interface Screen {
     /** Home and the open conversations, side by side ([Nav.pager]). */
@@ -69,6 +75,8 @@ class Nav(private val rt: Runtime, private val scope: CoroutineScope) {
     var fromOverview by mutableStateOf(false)
     /** The conversation just closed, by name, and what opens it again, while its undo shows. */
     var closed by mutableStateOf<Pair<String, () -> Unit>?>(null)
+    /** What opens each conversation closed again, newest last, for ⌘⇧T. */
+    val reopen = mutableListOf<() -> Unit>()
     fun go(s: Screen) { forward = true; stack += s }
     fun back() { if (stack.size > 1) { forward = false; stack.removeAt(stack.lastIndex) } }
     fun home() = show(null)
@@ -95,7 +103,7 @@ class Rename(val title: String, val apply: (String) -> Unit)
 class Picker(val title: String, val options: List<String>, val selected: String = "", val pick: (String) -> Unit)
 
 @Composable
-fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, shared: MutableState<String?>) {
+fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, shared: MutableState<String?>, shortcuts: ((KeyEvent) -> Boolean) -> Unit) {
     val scope = rememberCoroutineScope()
     val nav = remember { Nav(rt, scope) }
     var picker by remember { mutableStateOf<Picker?>(null) }
@@ -105,6 +113,15 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     var viewing by remember { mutableStateOf<Pair<String, String>?>(null) }
     var overview by rememberSaveable { mutableStateOf(false) } // every conversation at once, in place of the deck
     val kept = rememberSaveableStateHolder() // the deck's pages and drafts, while the overview or another screen shows
+    var zoom by rememberSaveable { mutableFloatStateOf(1f) } // ⌘= and ⌘-, as a browser's
+    var full by rememberSaveable { mutableStateOf(false) } // ⌃⌘F hides the system bars
+    val activity = LocalContext.current as ComponentActivity
+    LaunchedEffect(full) {
+        WindowCompat.getInsetsController(activity.window, activity.window.decorView).run {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (full) hide(WindowInsetsCompat.Type.systemBars()) else show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
     // Shared text is either a Bridge invitation or something to cite.
     LaunchedEffect(shared.value) {
         val text = shared.value ?: return@LaunchedEffect
@@ -126,13 +143,64 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     }
     val fresh = rt.view.defaults[rt.view.state.self]
     val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, fresh, { deck = it }, { renaming = it }, { picker = it }) { ref, tab -> viewing = ref to tab }
+    // A keyboard's shortcuts, the desktop's: Ctrl or Meta is ⌘ (⌃⌘ is both; Android keeps most Meta
+    // letters for itself). In the terminal Ctrl and Esc are the shell's (^W, ^D, vim), so ⌘ is
+    // Ctrl+Shift there, as in a Linux terminal.
+    SideEffect {
+        shortcuts { e ->
+            val top = nav.stack.last()
+            val shell = top is Screen.Terminal
+            val cmd = e.isMetaPressed || e.isCtrlPressed && (!shell || e.isShiftPressed)
+            val shift = e.isShiftPressed && !(shell && !e.isMetaPressed)
+            if (e.keyCode == KeyEvent.KEYCODE_ESCAPE && !shell) {
+                // Back, but never out of the app, as Android's own Esc does on Home.
+                if (e.action == KeyEvent.ACTION_DOWN && activity.onBackPressedDispatcher.hasEnabledCallbacks()) activity.onBackPressedDispatcher.onBackPressed()
+                return@shortcuts true
+            }
+            // F11 too, since Android takes ⌃⌘F before the app sees it.
+            if (e.keyCode == KeyEvent.KEYCODE_F11) { if (e.action == KeyEvent.ACTION_DOWN) full = !full; return@shortcuts true }
+            if (!cmd || e.action != KeyEvent.ACTION_DOWN) return@shortcuts false
+            val tabs = rt.view.state.tabs
+            // What a shortcut opens takes the place of any sheet up.
+            fun calm() { picker = null; menu = false; deck = null; renaming = null; viewing = null }
+            fun show(tab: String?) { calm(); overview = false; nav.show(tab) }
+            fun step(by: Int) = (tabs.size + 1).let { n -> show(tabs.getOrNull(((nav.pager.currentPage + by) % n + n) % n - 1)?.id) }
+            when (e.keyCode) {
+                KeyEvent.KEYCODE_T -> if (!shift) { show(null); nav.compose = true } else nav.reopen.removeLastOrNull()?.let { if (nav.closed?.second == it) nav.closed = null; calm(); overview = false; it() }
+                KeyEvent.KEYCODE_W -> { calm(); if (top !is Screen.Home) nav.back() else nav.open?.let(ctx::close) }
+                in KeyEvent.KEYCODE_1..KeyEvent.KEYCODE_8 -> tabs.getOrNull(e.keyCode - KeyEvent.KEYCODE_1)?.let { show(it.id) }
+                KeyEvent.KEYCODE_9 -> tabs.lastOrNull()?.let { show(it.id) }
+                KeyEvent.KEYCODE_TAB -> step(if (shift) -1 else 1)
+                KeyEvent.KEYCODE_RIGHT_BRACKET, KeyEvent.KEYCODE_LEFT_BRACKET -> if (shift) step(if (e.keyCode == KeyEvent.KEYCODE_RIGHT_BRACKET) 1 else -1) else return@shortcuts false
+                KeyEvent.KEYCODE_EQUALS, KeyEvent.KEYCODE_PLUS, KeyEvent.KEYCODE_NUMPAD_ADD -> zoom = (zoom * 1.1f).coerceAtMost(2f)
+                KeyEvent.KEYCODE_MINUS, KeyEvent.KEYCODE_NUMPAD_SUBTRACT -> zoom = (zoom / 1.1f).coerceAtLeast(0.5f)
+                KeyEvent.KEYCODE_0 -> zoom = 1f
+                KeyEvent.KEYCODE_F -> if (e.isMetaPressed && e.isCtrlPressed) full = !full else return@shortcuts false
+                // Go to: Home, the conversations open, then the threads that are not.
+                KeyEvent.KEYCODE_K, KeyEvent.KEYCODE_P -> {
+                    val to = listOf<Pair<String, () -> Unit>>("home" to { show(null) }) + tabs.map { t -> t.name to { show(t.id) } } +
+                        rt.view.home.entries.filterNot { it.open }.map { en -> named(en.title) to { overview = false; ctx.open(en.key); Unit } }
+                    calm()
+                    picker = Picker("go to", to.map { it.first }, nav.open?.name ?: "home") { name -> to.first { it.first == name }.second() }
+                }
+                KeyEvent.KEYCODE_L -> { show(nav.open?.id); nav.compose = true }
+                KeyEvent.KEYCODE_COMMA -> { calm(); menu = true }
+                KeyEvent.KEYCODE_M -> { calm(); ctx.chooseModel(nav.open) }
+                KeyEvent.KEYCODE_J -> { calm(); if (shell) nav.back() else nav.go(Screen.Terminal(nav.open)) }
+                KeyEvent.KEYCODE_PERIOD -> nav.open?.takeIf { it.busy || it.acting }?.let { rt.view.send("abort", "tab" to it.id) }
+                else -> return@shortcuts false
+            }
+            true
+        }
+    }
     // The view follows the conversation a page shows at full pace, and all of them in the overview.
     LaunchedEffect(nav) {
         snapshotFlow {
             if (nav.stack.last() !is Screen.Home) emptyList() else if (overview) rt.view.state.tabs.map { it.id } else listOfNotNull(nav.open?.id)
         }.collect { rt.view.show(it) }
     }
-    Box(Modifier.fillMaxSize().background(p.bg)) {
+    val density = LocalDensity.current
+    CompositionLocalProvider(LocalDensity provides Density(density.density * zoom, density.fontScale)) { Box(Modifier.fillMaxSize().background(p.bg)) {
         val top = nav.stack.last()
         Column(Modifier.fillMaxSize()) {
             // Home and every conversation share one bar: switching sessions never leaves it.
@@ -168,7 +236,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
         LaunchedEffect(nav.closed) { if (nav.closed != null) { delay(8000); nav.closed = null } }
         Overlay(nav.closed) { (name, undo) ->
             Box(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 52.dp), contentAlignment = Alignment.TopCenter) {
-                Row(Modifier.clip(Soft).background(p.fg).press { nav.closed = null; undo() }.padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.clip(Soft).background(p.fg).press { nav.closed = null; nav.reopen.remove(undo); undo() }.padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                     T("closed · " + name, Modifier.widthIn(max = 220.dp), size = 14.sp, color = p.bg, lines = 1)
                     T("  undo", size = 14.sp, weight = Strong, color = p.bg)
                 }
@@ -184,7 +252,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
         Overlay(deck?.let { if (it.id.isEmpty()) it else rt.view.tab(it.id) }) { t -> ModelSheet(t, ctx) { deck = null } }
         Overlay(renaming) { r -> RenameSheet(r) { renaming = null } }
         Overlay(viewing) { (ref, tab) -> Viewer(ref, tab, ctx) { viewing = null } }
-    }
+    } }
 }
 
 /** Four squares, the overview: filled while it shows. */
