@@ -46,8 +46,9 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 			a.launching(c)
 		})
 		ui.Box(c).Height(22)
-		// The box on the column, as the title and the cards: its own padding sets its text in.
-		ui.Column(c).FillWidth().MaxWidth(680).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
+		// The box a little past the column (8 a side, 2.5% of it), so it stands out of the page
+		// without leaving it; its own padding sets its text in.
+		ui.Column(c).FillWidth().MaxWidth(680+16).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
 		var recent []Entry
 		for _, e := range o.home.Entries {
 			if !e.Open && len(recent) < 6 {
