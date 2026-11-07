@@ -1,0 +1,671 @@
+package schedule_test
+
+// The plugin's contract, tested from outside: only New, Extension, Run and schedule.json. A scripted
+// model drives real sessions, a hand-moved clock drives the timer.
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
+	sessionstore "github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/ai/providers/faux"
+	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/filelock"
+	"github.com/OrdalieTech/orb/plugins/schedule"
+)
+
+// clock is the timer's time: After waits until advance passes its deadline.
+type clock struct {
+	mu    sync.Mutex
+	now   time.Time
+	waits []wait
+}
+
+type wait struct {
+	at time.Time
+	ch chan time.Time
+}
+
+func (c *clock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
+
+func (c *clock) After(d time.Duration) <-chan time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ch := make(chan time.Time, 1)
+	if d <= 0 {
+		ch <- c.now
+		return ch
+	}
+	c.waits = append(c.waits, wait{c.now.Add(d), ch})
+	return ch
+}
+
+// advance moves time on by d in one-minute steps, firing what falls due, as a minute's sleep would.
+func (c *clock) advance(d time.Duration) {
+	for step := min(d, time.Minute); d > 0; d -= step {
+		step = min(d, time.Minute)
+		c.mu.Lock()
+		c.now = c.now.Add(step)
+		var kept []wait
+		for _, w := range c.waits {
+			if !w.at.After(c.now) {
+				w.ch <- c.now
+			} else {
+				kept = append(kept, w)
+			}
+		}
+		c.waits = kept
+		c.mu.Unlock()
+		time.Sleep(5 * time.Millisecond) // the timer's goroutine takes it
+	}
+}
+
+// file is schedule.json as the API announces it.
+type file struct {
+	Version   int                    `json:"version"`
+	Tasks     []task                 `json:"tasks"`
+	Runs      []run                  `json:"runs"`
+	Holders   map[string]holder      `json:"holders"`
+	AgentRuns []string               `json:"agentRuns"`
+	Extra     map[string]interface{} `json:"-"`
+}
+
+type task struct {
+	ID, Title, Prompt, When, Zone, Target, Session, Cwd, Model, By string
+	Enabled                                                        bool
+	Next                                                           time.Time
+	Failures                                                       int
+}
+
+type run struct {
+	Task, Holder, Status, Session, Detail string
+	At                                    time.Time
+}
+
+type holder struct {
+	Name string
+	Seen time.Time
+}
+
+// env is one agent: its store, its sessions on a scripted model, its scheduler.
+type env struct {
+	t        *testing.T
+	dir      string
+	store    filelock.File
+	clock    *clock
+	provider *faux.Provider
+	settings *config.SettingsManager
+
+	mu      sync.Mutex
+	prompts []string // what each model request's last user message said
+	opens   []string // the sessions Open was asked for ("" = new)
+	openErr error
+	reply   func(prompt string) []faux.ResponseStep // a turn's answers for its prompt; default "done"
+}
+
+func newEnv(t *testing.T, start time.Time) *env {
+	t.Helper()
+	dir := t.TempDir()
+	agentDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(agentDir, "settings.json"), []byte(`{"retry":{"enabled":false},"compaction":{"enabled":false}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := config.NewSettingsManager(dir, config.WithAgentDir(agentDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := &env{t: t, dir: dir, settings: settings, clock: &clock{now: start}, provider: faux.New()}
+	e.store = filelock.File{Path: filepath.Join(agentDir, "schedule.json"), Perm: 0o600, Atomic: true}
+	return e
+}
+
+// scheduler is a holder of the store: a process with Run, or (open nil) one that only has the tool.
+func (e *env) scheduler(name string, zone *time.Location, mod func(*schedule.Options)) *schedule.Scheduler {
+	o := schedule.Options{Store: e.store, Zone: zone, Now: e.clock.Now, After: e.clock.After, Name: name}
+	var s *schedule.Scheduler
+	o.Open = func(ctx context.Context, session, cwd string) (*agent.AgentSession, func(), error) {
+		e.mu.Lock()
+		e.opens = append(e.opens, session)
+		err := e.openErr
+		e.mu.Unlock()
+		if err != nil {
+			return nil, nil, err
+		}
+		rt := e.session(s)
+		return rt, rt.Dispose, nil
+	}
+	if mod != nil {
+		mod(&o)
+	}
+	s = schedule.New(o)
+	return s
+}
+
+func (e *env) run(s *schedule.Scheduler) context.CancelFunc {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); _ = s.Run(ctx) }()
+	time.Sleep(10 * time.Millisecond)
+	e.t.Cleanup(func() { cancel(); <-done })
+	return cancel
+}
+
+// session is a conversation on the scripted model with the plugin loaded, as a host opens one.
+func (e *env) session(s *schedule.Scheduler) *agent.AgentSession {
+	e.t.Helper()
+	manager, err := sessionstore.InMemory(e.dir)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	registry := extensions.NewRegistry(e.dir)
+	if err := registry.Register("schedule", s.Extension()); err != nil {
+		e.t.Fatal(err)
+	}
+	stream := func(ctx context.Context, model *ai.Model, c ai.Context, o *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		return e.provider.StreamSimple(ctx, model, c, o)
+	}
+	created := engine.NewAgent(stream, engine.WithInitialState(engine.AgentState{SystemPrompt: "test", Model: e.provider.GetModel()}), engine.WithConvertToLLM(agent.ConvertToLLM))
+	rt, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: e.settings, StreamFn: stream, ExtensionRegistry: registry})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	rt.RefreshContext()
+	return rt
+}
+
+// answer queues what the model says next: each step is text, or a call of the schedule tool.
+func (e *env) answer(steps ...any) {
+	for _, s := range steps {
+		switch v := s.(type) {
+		case string:
+			e.provider.AppendResponses([]faux.ResponseStep{e.capture(faux.AssistantMessage(v))})
+		case map[string]any:
+			e.provider.AppendResponses([]faux.ResponseStep{e.capture(faux.AssistantMessage(faux.ToolCall("schedule", v), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}))})
+		}
+	}
+}
+
+func (e *env) capture(m *ai.AssistantMessage) faux.ResponseStep {
+	return faux.Factory(func(_ context.Context, c ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+		e.mu.Lock()
+		e.prompts = append(e.prompts, lastUser(c))
+		e.mu.Unlock()
+		return m, nil
+	})
+}
+
+func lastUser(c ai.Context) string {
+	b, _ := json.Marshal(c.Messages)
+	s := string(b)
+	i := strings.LastIndex(s, `"role":"user"`)
+	if i < 0 {
+		return ""
+	}
+	return s[i:]
+}
+
+// person has someone ask, in a session of its own, for the tool calls given; returns the tool's results.
+func (e *env) person(s *schedule.Scheduler, calls ...map[string]any) []string {
+	e.t.Helper()
+	rt := e.session(s)
+	defer rt.Dispose()
+	for _, c := range calls {
+		e.answer(c)
+	}
+	e.answer("ok")
+	if err := rt.Prompt(context.Background(), "please"); err != nil {
+		e.t.Fatal(err)
+	}
+	_ = rt.WaitForIdle(context.Background())
+	var out []string
+	for _, m := range rt.State().Messages {
+		if r, ok := m.(*ai.ToolResultMessage); ok {
+			b, _ := json.Marshal(r)
+			out = append(out, string(b))
+		}
+	}
+	return out
+}
+
+func (e *env) read() file {
+	e.t.Helper()
+	b, err := e.store.Read(context.Background())
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	var f file
+	if len(b) > 0 {
+		if err := json.Unmarshal(b, &f); err != nil {
+			e.t.Fatalf("schedule.json: %v\n%s", err, b)
+		}
+	}
+	return f
+}
+
+// eventually waits (real time) for the store to satisfy ok.
+func (e *env) eventually(what string, ok func(file) bool) file {
+	e.t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		f := e.read()
+		if ok(f) {
+			return f
+		}
+		if time.Now().After(deadline) {
+			b, _ := json.MarshalIndent(f, "", " ")
+			e.t.Fatalf("%s: never\n%s", what, b)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func runsOf(f file, id string) []run {
+	var out []run
+	for _, r := range f.Runs {
+		if r.Task == id {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func taskID(t *testing.T, f file, title string) string {
+	for _, k := range f.Tasks {
+		if k.Title == title {
+			return k.ID
+		}
+	}
+	t.Fatalf("no task %q in %+v", title, f.Tasks)
+	return ""
+}
+
+func refused(results []string) bool {
+	return len(results) > 0 && strings.Contains(results[len(results)-1], `"isError":true`)
+}
+
+var paris, _ = time.LoadLocation("Europe/Paris")
+
+// 2026-11-09 is a Monday; Paris is UTC+1 then.
+var monday = time.Date(2026, 11, 9, 7, 0, 0, 0, time.UTC)
+
+func TestCreateByPersonIsStoredWithItsNextRun(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	e.person(s, map[string]any{"action": "create", "title": "Sales recap", "prompt": "/skill:sales-recap", "when": "cron 0 20 * * *"})
+	f := e.read()
+	if len(f.Tasks) != 1 {
+		t.Fatalf("tasks %+v", f.Tasks)
+	}
+	k := f.Tasks[0]
+	if k.By != "person" || !k.Enabled || k.Zone != "Europe/Paris" || k.Target != "new" {
+		t.Fatalf("task %+v", k)
+	}
+	if want := time.Date(2026, 11, 9, 19, 0, 0, 0, time.UTC); !k.Next.Equal(want) {
+		t.Fatalf("next %v, want %v", k.Next, want)
+	}
+}
+
+func TestOneShotDefaultsToThisAndRecurringToNew(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	e.person(s,
+		map[string]any{"action": "create", "title": "once", "prompt": "check", "when": "in 20m"},
+		map[string]any{"action": "create", "title": "often", "prompt": "check", "when": "every 2h"})
+	f := e.read()
+	for _, k := range f.Tasks {
+		if want := map[string]string{"once": "this", "often": "new"}[k.Title]; k.Target != want {
+			t.Fatalf("%s target %q, want %q", k.Title, k.Target, want)
+		}
+	}
+	if k := f.Tasks[0]; k.Title == "once" && k.Session == "" {
+		t.Fatalf("a one-shot on this names its session: %+v", k)
+	}
+}
+
+func TestFiresAtItsTimeWithTheMarkerAfterThePrompt(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	e.person(s, map[string]any{"action": "create", "title": "brief", "prompt": "/skill:brief go", "when": "in 20m", "target": "new"})
+	id := taskID(t, e.read(), "brief")
+	e.run(s)
+	e.answer("all good")
+	e.clock.advance(19 * time.Minute)
+	if rs := runsOf(e.read(), id); len(rs) != 0 {
+		t.Fatalf("fired early: %+v", rs)
+	}
+	e.clock.advance(2 * time.Minute)
+	f := e.eventually("run done", func(f file) bool { rs := runsOf(f, id); return len(rs) == 1 && rs[0].Status == "done" })
+	for _, k := range f.Tasks {
+		if k.ID == id {
+			t.Fatalf("a one-shot that fired stays in tasks: %+v", k)
+		}
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	last := e.prompts[len(e.prompts)-1]
+	if !strings.Contains(last, "[scheduled · brief · "+id+"]") {
+		t.Fatalf("the run's prompt lacks its marker: %s", last)
+	}
+	if strings.Index(last, "brief go") > strings.Index(last, "[scheduled") {
+		t.Fatalf("the marker comes before the prompt: %s", last)
+	}
+}
+
+func TestNoReplyIsQuiet(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	e.person(s, map[string]any{"action": "create", "title": "watch", "prompt": "look, say NO_REPLY if nothing", "when": "every 1h"})
+	id := taskID(t, e.read(), "watch")
+	e.run(s)
+	e.answer("  NO_REPLY \n")
+	e.clock.advance(61 * time.Minute)
+	e.eventually("quiet", func(f file) bool { rs := runsOf(f, id); return len(rs) == 1 && rs[0].Status == "quiet" })
+}
+
+func TestTwoHoldersFireAnOccurrenceOnce(t *testing.T) {
+	e := newEnv(t, monday)
+	a := e.scheduler("orb chat", paris, nil)
+	b := e.scheduler("bridge", paris, nil)
+	e.person(a, map[string]any{"action": "create", "title": "dup", "prompt": "x", "when": "every 1h"})
+	id := taskID(t, e.read(), "dup")
+	e.run(a)
+	e.run(b)
+	e.answer("one", "two")
+	e.clock.advance(61 * time.Minute)
+	time.Sleep(200 * time.Millisecond)
+	f := e.eventually("one run", func(f file) bool { return len(runsOf(f, id)) >= 1 })
+	if rs := runsOf(f, id); len(rs) != 1 {
+		t.Fatalf("one occurrence fired %d times: %+v", len(rs), rs)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.opens) != 1 {
+		t.Fatalf("opened %d sessions for one occurrence", len(e.opens))
+	}
+}
+
+func TestACrashedRunIsInterruptedNeverReplayed(t *testing.T) {
+	e := newEnv(t, monday)
+	seed := fmt.Sprintf(`{"version":1,"tasks":[{"id":"t1","title":"x","prompt":"x","when":"every 1h","zone":"Europe/Paris","target":"new","by":"person","enabled":true,"created":%q,"next":%q,"failures":0}],
+ "runs":[{"task":"t1","at":%q,"holder":"orb chat#dead","status":"running","started":%q}],
+ "holders":{"dead":{"name":"orb chat","seen":%q}}}`,
+		monday.Add(-2*time.Hour).Format(time.RFC3339), monday.Add(30*time.Minute).Format(time.RFC3339),
+		monday.Add(-30*time.Minute).Format(time.RFC3339), monday.Add(-30*time.Minute).Format(time.RFC3339), monday.Add(-4*time.Minute).Format(time.RFC3339))
+	if err := filelock.File(e.store).Update(context.Background(), func([]byte) ([]byte, error) { return []byte(seed), nil }); err != nil {
+		t.Fatal(err)
+	}
+	s := e.scheduler("orb chat", paris, nil)
+	e.run(s)
+	e.clock.advance(time.Minute)
+	f := e.eventually("interrupted", func(f file) bool { rs := runsOf(f, "t1"); return len(rs) == 1 && rs[0].Status == "interrupted" })
+	if rs := runsOf(f, "t1"); len(rs) != 1 {
+		t.Fatalf("replayed: %+v", rs)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.opens) != 0 {
+		t.Fatalf("an interrupted run was replayed")
+	}
+}
+
+func TestOnlyTheLatestMissedOccurrenceFires(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	e.person(s, map[string]any{"action": "create", "title": "daily", "prompt": "x", "when": "cron 30 8 * * *"})
+	id := taskID(t, e.read(), "daily")
+	// Three days down, then back.
+	e.clock.advance(0)
+	e.clock.mu.Lock()
+	e.clock.now = e.clock.now.Add(72 * time.Hour)
+	e.clock.mu.Unlock()
+	e.answer("caught up")
+	e.run(s)
+	e.clock.advance(time.Minute)
+	f := e.eventually("one run", func(f file) bool { rs := runsOf(f, id); return len(rs) == 1 && rs[0].Status == "done" })
+	time.Sleep(100 * time.Millisecond)
+	f = e.read()
+	if rs := runsOf(f, id); len(rs) != 1 {
+		t.Fatalf("backlog replayed: %+v", rs)
+	}
+	for _, k := range f.Tasks {
+		if k.ID == id && !k.Next.After(e.clock.Now()) {
+			t.Fatalf("next %v is not in the future", k.Next)
+		}
+	}
+}
+
+func TestCronFollowsTheZoneAcrossDaylightSaving(t *testing.T) {
+	// Paris leaves summer time on 2026-10-25: 08:30 is 06:30Z before, 07:30Z after.
+	e := newEnv(t, time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC))
+	s := e.scheduler("orb chat", paris, nil)
+	e.person(s,
+		map[string]any{"action": "create", "title": "cron", "prompt": "x", "when": "cron 30 8 * * *"},
+		map[string]any{"action": "create", "title": "every", "prompt": "x", "when": "every 24h"})
+	f := e.read()
+	var cron, every task
+	for _, k := range f.Tasks {
+		if k.Title == "cron" {
+			cron = k
+		} else {
+			every = k
+		}
+	}
+	if want := time.Date(2026, 10, 25, 7, 30, 0, 0, time.UTC); !cron.Next.Equal(want) {
+		t.Fatalf("cron next %v, want %v (08:30 Paris, winter time)", cron.Next, want)
+	}
+	if want := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC); !every.Next.Equal(want) {
+		t.Fatalf("every next %v, want %v (24 h of elapsed time)", every.Next, want)
+	}
+}
+
+func TestInputsRefusedWriteNothing(t *testing.T) {
+	cases := map[string]map[string]any{
+		"past at":        {"when": "at 2026-11-01 08:00"},
+		"unknown zone":   {"when": "in 20m", "zone": "Mars/Olympus"},
+		"every under 5m": {"when": "every 4m"},
+		"invalid cron":   {"when": "cron 61 * * * *"},
+		"never cron":     {"when": "cron 0 0 31 2 *"},
+		"dense cron":     {"when": "cron */2 * * * *"},
+		"empty prompt":   {"when": "in 20m", "prompt": ""},
+		"empty title":    {"when": "in 20m", "title": ""},
+		"model on this":  {"when": "in 20m", "target": "this", "model": "cheap"},
+		"garbage when":   {"when": "tomorrow-ish"},
+	}
+	for name, over := range cases {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t, monday)
+			s := e.scheduler("orb chat", paris, nil)
+			call := map[string]any{"action": "create", "title": "t", "prompt": "p"}
+			for k, v := range over {
+				call[k] = v
+			}
+			if !refused(e.person(s, call)) {
+				t.Fatalf("%s accepted", name)
+			}
+			if f := e.read(); len(f.Tasks) != 0 {
+				t.Fatalf("%s wrote %+v", name, f.Tasks)
+			}
+		})
+	}
+	t.Run("unknown id", func(t *testing.T) {
+		e := newEnv(t, monday)
+		s := e.scheduler("orb chat", paris, nil)
+		if !refused(e.person(s, map[string]any{"action": "delete", "id": "nope"})) || !refused(e.person(s, map[string]any{"action": "update", "id": "nope", "enabled": false})) {
+			t.Fatal("an unknown id is not refused")
+		}
+	})
+}
+
+func TestTwentyEnabledTasksAtMost(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	var calls []map[string]any
+	for i := range 21 {
+		calls = append(calls, map[string]any{"action": "create", "title": fmt.Sprint("t", i), "prompt": "p", "when": "every 1h"})
+	}
+	results := e.person(s, calls...)
+	if !refused(results) {
+		t.Fatal("the 21st task was accepted")
+	}
+	if f := e.read(); len(f.Tasks) != 20 {
+		t.Fatalf("%d tasks", len(f.Tasks))
+	}
+}
+
+// agentRun has a scheduled run create tasks: the plugin, not the model, marks them by:"agent".
+func agentRun(t *testing.T, e *env, s *schedule.Scheduler, calls ...map[string]any) file {
+	e.person(s, map[string]any{"action": "create", "title": "self", "prompt": "plan", "when": "in 10m", "target": "new"})
+	id := taskID(t, e.read(), "self")
+	e.run(s)
+	steps := []any{}
+	for _, c := range calls {
+		steps = append(steps, c)
+	}
+	e.answer(append(steps, "planned")...)
+	e.clock.advance(11 * time.Minute)
+	return e.eventually("the scheduled run ends", func(f file) bool { rs := runsOf(f, id); return len(rs) == 1 && rs[0].Status != "running" })
+}
+
+func TestTasksCreatedInAScheduledRunAreTheAgents(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	f := agentRun(t, e, s, map[string]any{"action": "create", "title": "follow up", "prompt": "check", "when": "in 30m", "by": "person"})
+	for _, k := range f.Tasks {
+		if k.Title == "follow up" && k.By != "agent" {
+			t.Fatalf("a task created in a scheduled run is %q, and the model chose it", k.By)
+		}
+	}
+}
+
+func TestTheAgentHasFiveTasksAtMost(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	var calls []map[string]any
+	for i := range 6 {
+		calls = append(calls, map[string]any{"action": "create", "title": fmt.Sprint("a", i), "prompt": "p", "when": "every 1h"})
+	}
+	f := agentRun(t, e, s, calls...)
+	n := 0
+	for _, k := range f.Tasks {
+		if k.By == "agent" {
+			n++
+		}
+	}
+	if n != 5 {
+		t.Fatalf("the agent has %d tasks", n)
+	}
+}
+
+func TestTheAgentCannotWakeItselfWithinFiveMinutes(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	f := agentRun(t, e, s, map[string]any{"action": "create", "title": "soon", "prompt": "again", "when": "in 1m"})
+	for _, k := range f.Tasks {
+		if k.Title == "soon" {
+			t.Fatalf("the agent woke itself in 1 min: %+v", k)
+		}
+	}
+}
+
+func TestFiveFailuresInARowPause(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	e.person(s, map[string]any{"action": "create", "title": "flaky", "prompt": "x", "when": "every 10m"})
+	id := taskID(t, e.read(), "flaky")
+	e.mu.Lock()
+	e.openErr = errors.New("no session")
+	e.mu.Unlock()
+	e.run(s)
+	for range 6 {
+		e.clock.advance(10 * time.Minute)
+	}
+	f := e.eventually("paused", func(f file) bool {
+		for _, k := range f.Tasks {
+			if k.ID == id {
+				return !k.Enabled
+			}
+		}
+		return false
+	})
+	if rs := runsOf(f, id); len(rs) != 5 {
+		t.Fatalf("%d runs before the pause, want 5: %+v", len(rs), rs)
+	}
+}
+
+func TestOutsideActiveHoursIsSkipped(t *testing.T) {
+	e := newEnv(t, time.Date(2026, 11, 9, 22, 0, 0, 0, time.UTC)) // 23:00 Paris
+	s := e.scheduler("orb chat", paris, func(o *schedule.Options) { o.ActiveHours = "08:00-22:00" })
+	e.person(s, map[string]any{"action": "create", "title": "night", "prompt": "x", "when": "every 1h"})
+	id := taskID(t, e.read(), "night")
+	e.run(s)
+	e.clock.advance(61 * time.Minute)
+	e.eventually("skipped", func(f file) bool {
+		rs := runsOf(f, id)
+		return len(rs) == 1 && rs[0].Status == "skipped" && strings.Contains(rs[0].Detail, "active hours")
+	})
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.opens) != 0 {
+		t.Fatal("a skipped run opened a session")
+	}
+}
+
+func TestATurnPastTheTimeoutFails(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, func(o *schedule.Options) { o.Timeout = 2 * time.Minute })
+	e.person(s, map[string]any{"action": "create", "title": "slow", "prompt": "x", "when": "in 10m", "target": "new"})
+	id := taskID(t, e.read(), "slow")
+	e.run(s)
+	// The model never answers until its turn is aborted.
+	e.provider.AppendResponses([]faux.ResponseStep{faux.Factory(func(ctx context.Context, _ ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})})
+	e.clock.advance(11 * time.Minute)
+	e.clock.advance(3 * time.Minute)
+	e.eventually("timeout", func(f file) bool {
+		rs := runsOf(f, id)
+		return len(rs) == 1 && rs[0].Status == "failed" && strings.Contains(rs[0].Detail, "timeout")
+	})
+}
+
+func TestBusyThisIsSkippedAfterAnHour(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	e.person(s, map[string]any{"action": "create", "title": "later", "prompt": "x", "when": "in 10m"}) // target this, its session gone
+	id := taskID(t, e.read(), "later")
+	e.mu.Lock()
+	e.openErr = errors.New("held by another process")
+	e.mu.Unlock()
+	e.run(s)
+	e.clock.advance(11 * time.Minute)
+	if rs := runsOf(e.read(), id); len(rs) == 1 && rs[0].Status == "failed" {
+		t.Fatalf("a busy this failed at once instead of waiting: %+v", rs)
+	}
+	e.clock.advance(61 * time.Minute)
+	e.eventually("skipped busy", func(f file) bool {
+		rs := runsOf(f, id)
+		return len(rs) == 1 && rs[0].Status == "skipped" && strings.Contains(rs[0].Detail, "busy")
+	})
+}
+
+func TestToolWithoutAHolderSaysNothingFires(t *testing.T) {
+	e := newEnv(t, monday)
+	s := schedule.New(schedule.Options{Store: e.store, Zone: paris, Now: e.clock.Now})
+	results := e.person(s, map[string]any{"action": "create", "title": "t", "prompt": "p", "when": "in 20m"})
+	if len(results) == 0 || !strings.Contains(strings.ToLower(results[0]), "fire") {
+		t.Fatalf("a tool with no holder does not say nothing fires here: %v", results)
+	}
+}
