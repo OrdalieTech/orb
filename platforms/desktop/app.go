@@ -235,7 +235,7 @@ func (a *app) view(c *ui.Context) {
 	}
 	// Every conversation on screen follows at full pace.
 	var shown []string
-	if a.top().kind == "" {
+	if a.top().kind == "" || a.settingsOpen() {
 		for _, t := range a.onScreen().tiles(nil) {
 			if t.tab != "" && !slices.Contains(shown, t.tab) {
 				shown = append(shown, t.tab)
@@ -250,8 +250,8 @@ func (a *app) view(c *ui.Context) {
 	main := func() {
 		ui.Column(c).Fill().Background(pal.bg).Children(func() {
 			top := a.top()
-			switch top.kind {
-			case "":
+			// Settings opens in the tile the keys act on, its tabs above it, as Home does.
+			if top.kind == "" || a.settingsOpen() {
 				top := a.onScreen()
 				if top != a.zoomed {
 					a.zoomed = nil
@@ -263,36 +263,7 @@ func (a *app) view(c *ui.Context) {
 			}
 			// The window's controls keep their room above every other screen, in a bar that drags it.
 			ui.Row(c).FillWidth().Height(max(c.TitleBar().Height, 48)).DragWindow()
-			screen := func() {
-				switch top.kind {
-				case "general":
-					a.generalScreen(c)
-				case "bridge":
-					a.bridgeScreen(c)
-				case "invite":
-					a.inviteScreen(c)
-				case "join":
-					a.joinScreen(c, top.arg)
-				case "providers":
-					a.providersScreen(c, top.peer)
-				case "vendor":
-					a.vendorScreen(c, top.arg, top.peer)
-				case "plugins":
-					a.pluginsScreen(c, top.peer)
-				case "folder":
-					a.folderScreen(c, top.peer, top.arg)
-				}
-			}
-			// Settings is a menu at left and its page beside it; a page opened from one (a provider,
-			// pairing) stays under its entry.
-			if slices.ContainsFunc(settingsKinds, func(s struct{ kind, name string }) bool { return s.kind == a.stack[0].kind }) {
-				ui.Row(c).Grow(1).Basis(0).FillWidth().AlignItems(ui.Stretch).Children(func() {
-					a.settingsMenu(c)
-					ui.Column(c).Grow(1).Basis(0).MaxWidth(840).PaddingX(16).Children(screen)
-				})
-				return
-			}
-			screen()
+			a.screen(c, top)
 		})
 	}
 	ui.Column(c).Fill().Background(pal.bg).LineHeight(1.45).Children(main)
@@ -304,8 +275,8 @@ func (a *app) view(c *ui.Context) {
 func (a *app) titleBar(c *ui.Context, body func()) {
 	tb := c.TitleBar()
 	left, right := float32(8), float32(margin)
-	if a.left {
-		left = tb.Left + 4 // ORB as far from the zoom button as the buttons are from each other
+	if a.left && tb.Left > 0 {
+		left = tb.Left + 18 // ORB further from the traffic lights than from the tabs
 	}
 	if a.corner {
 		right = tb.Right + 12
@@ -783,5 +754,40 @@ func (a *app) toast(c *ui.Context) {
 				}
 			})
 		})
+	})
+}
+
+// screen draws a screen of the stack: a page of Settings, one opened from it, a folder.
+func (a *app) screen(c *ui.Context, top screen) {
+	switch top.kind {
+	case "general":
+		a.generalScreen(c)
+	case "bridge":
+		a.bridgeScreen(c)
+	case "invite":
+		a.inviteScreen(c)
+	case "join":
+		a.joinScreen(c, top.arg)
+	case "providers":
+		a.providersScreen(c, top.peer)
+	case "vendor":
+		a.vendorScreen(c, top.arg, top.peer)
+	case "plugins":
+		a.pluginsScreen(c, top.peer)
+	case "folder":
+		a.folderScreen(c, top.peer, top.arg)
+	}
+}
+
+// settingsOpen reports whether Settings shows: in the tile the keys act on.
+func (a *app) settingsOpen() bool {
+	return len(a.stack) > 0 && a.active != nil && slices.ContainsFunc(settingsKinds, func(s struct{ kind, name string }) bool { return s.kind == a.stack[0].kind })
+}
+
+// settingsPage is Settings in its tile: the menu at left, the page shown beside it.
+func (a *app) settingsPage(c *ui.Context) {
+	ui.Row(c).Grow(1).Basis(0).FillWidth().AlignItems(ui.Stretch).Children(func() {
+		a.settingsMenu(c)
+		ui.Column(c).Grow(1).Basis(0).MaxWidth(840).PaddingX(16).Children(func() { a.screen(c, a.top()) })
 	})
 }

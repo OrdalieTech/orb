@@ -36,6 +36,7 @@ type tile struct {
 	height  float32
 	showing [2]any    // what it shows, conversation and terminal or not
 	since   time.Time // since when: it fades in for a moment
+	slide   float32   // and the side it comes from: 1 a tab to the right of the one left, -1 to its left
 }
 
 // match is a tile's identity across layouts: a tile moving between splits glides from where it was.
@@ -515,15 +516,25 @@ func (a *app) layout(c *ui.Context, x *tile, corner, left bool) {
 	e := ui.Column(c).Fill().Background(pal.bg).Bind(&x.at).Transition(glide)
 	// The fade is the tile's, not its element's: a tile moving to another split is a new element.
 	if now := (time.Now()); x.showing != [2]any{x.tab, x.shell} || x.since.IsZero() {
+		// Home is left of every tab; a terminal shown or hidden stays in place.
+		x.slide = 0
+		if was, _ := x.showing[0].(string); !x.since.IsZero() && was != x.tab {
+			x.slide = map[bool]float32{true: 1, false: -1}[slices.Index(x.tabs, x.tab) > slices.Index(x.tabs, was)]
+		}
 		x.showing, x.since = [2]any{x.tab, x.shell}, now
 	}
 	if in := float32(time.Since(x.since)) / float32(260*time.Millisecond); in < 1 && !c.Preferences().ReduceMotion {
-		e.Opacity(easeOut(in))
+		e.Opacity(easeOut(in)).Translate(x.slide*10*(1-easeOut(in)), 0)
 		c.After(16 * time.Millisecond)
 	}
 	e.Children(func() {
 		t := o.tab(x.tab)
 		switch {
+		case x == a.active && a.settingsOpen():
+			a.titleBar(c, func() {})
+			if a.settingsOpen() { // a tab clicked in the bar just closed it
+				a.settingsPage(c)
+			}
 		case t != nil && x.shell:
 			a.terminal(c, t, x)
 		case t != nil:

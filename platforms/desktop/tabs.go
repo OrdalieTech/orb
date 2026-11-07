@@ -32,22 +32,14 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 	// ORB, first in the window's first tile as on the phone, is Home: a new session, the
 	// conversations open, every thread.
 	// Shown, it has the ground the tab shown has.
-	if a.left {
-		home := x.tab == ""
-		e := chip("orb", home, func(bool) {
-			stretch(c, "ORB", 15, map[bool]ui.Color{true: pal.fg, false: pal.meta}[home], 1)
-		}).Padding(0, 6).Shrink(0).Tooltip("Home  " + keys("T"))
-		if press(e) {
-			a.activate(x)
-			a.show("")
-		}
-	}
+	settings := x == a.active && a.settingsOpen() // shown over the tab, which then is not lit
+	home := x.tab == "" && !settings
 	// Tabs past the bar's room narrow, as a browser's, down to a few letters each; those that do not
 	// fit then wait behind +N, which lists them. The one shown always shows.
 	// The room is the bar's left once the readings and tools at its right have theirs, as last drawn.
 	fit := len(x.tabs)
 	if x.tabsW > 0 {
-		fit = max(int((x.tabsW-36)/100), 1) // + keeps its room
+		fit = max(int((x.tabsW-36-map[bool]float32{true: 44}[a.left])/100), 1) // + and ORB keep their room
 	}
 	shown, hidden := x.tabs, []string(nil)
 	if len(x.tabs) > fit {
@@ -62,14 +54,24 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 			}
 		}
 	}
+	// ORB sits with the tabs, closer to them than to the traffic lights.
 	ui.Row(c).Gap(2).Grow(1).Basis(0).MinWidth(0).Clip().AlignItems(ui.Center).DrawOver(func(_ *ui.Painter, r ui.Rect) { x.tabsW = r.W }).Children(func() {
+		if a.left {
+			e := chip("orb", home, func(bool) {
+				stretch(c, "ORB", 15, map[bool]ui.Color{true: pal.fg, false: pal.meta}[home], 1)
+			}).Padding(0, 2, 0, 6).Shrink(0).Tooltip("Home  " + keys("T"))
+			if press(e) {
+				a.activate(x)
+				a.show("")
+			}
+		}
 		for _, id := range shown {
 			i := slices.Index(x.tabs, id)
 			t := o.tab(id)
 			if t == nil {
 				continue
 			}
-			on := x.tab == id
+			on := x.tab == id && !settings
 			e := chip(id, on, func(hovered bool) {
 				ink := pal.mute
 				switch {
@@ -123,6 +125,14 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 			if e.DoubleClicked() {
 				a.renameTab(*t)
 			}
+		}
+		if settings {
+			chip("settings", true, func(bool) {
+				ui.Text(c, "Settings").FontSize(small).FontWeight(strong)
+				if closeX("Close  esc") {
+					a.stack = nil
+				}
+			}).Shrink(0)
 		}
 		if len(hidden) > 0 {
 			more := ui.Row(c.Key("more")).Height(30).Padding(0, 9).Radius(7).Shrink(0).AlignItems(ui.Center).Children(func() {
