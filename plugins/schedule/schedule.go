@@ -451,7 +451,15 @@ func (s *Scheduler) tick(ctx context.Context) time.Duration {
 				wait = min(wait, k.Next.Sub(now))
 			}
 		}
-		d.Runs = d.Runs[max(0, len(d.Runs)-maxRuns):]
+		// The oldest finished runs go first; a running one is how claim merges its next occurrence.
+		drop := len(d.Runs) - maxRuns
+		d.Runs = slices.DeleteFunc(d.Runs, func(r *run) bool {
+			if drop > 0 && r.Status != running {
+				drop--
+				return true
+			}
+			return false
+		})
 		return encode(d)
 	})
 	if err != nil {
@@ -483,7 +491,7 @@ func (s *Scheduler) claim(d *doc, k *task, now time.Time) *run {
 	}
 	r := &run{Task: k.ID, At: due, Holder: s.holder(), Status: running, Started: now}
 	switch {
-	case !s.active(due):
+	case !s.active(now):
 		r.Status, r.Ended, r.Detail = skipped, now, "outside active hours"
 	case k.By == "agent" && len(d.AgentRuns) >= maxAgentRuns:
 		r.Status, r.Ended, r.Detail = skipped, now, "agent daily limit"
@@ -555,6 +563,9 @@ func (s *Scheduler) deliver(ctx context.Context, k task, started time.Time) (sta
 	mark := fmt.Sprintf("[scheduled · %s · %s]", k.Title, k.ID)
 	text := k.Prompt + "\n\n" + mark
 	for {
+		if !s.active(s.now()) {
+			return skipped, "outside active hours", ""
+		}
 		if k.Target == "this" {
 			s.mu.Lock()
 			l := s.live[k.Session]
@@ -640,6 +651,9 @@ func (s *Scheduler) inPlace(ctx context.Context, l *live, sid, mark, text string
 		case <-s.o.After(time.Minute):
 		}
 	}
+	if !s.active(s.now()) {
+		return skipped, "outside active hours"
+	}
 	wait := make(chan engine.AgentMessages, 1)
 	s.mu.Lock()
 	if l.waits == nil {
@@ -654,20 +668,33 @@ func (s *Scheduler) inPlace(ctx context.Context, l *live, sid, mark, text string
 		s.mu.Unlock()
 	}()
 	defer s.mark(sid)()
-	if err := l.api.SendUserMessage(ctx, ai.NewUserText(text), &extensions.SendUserMessageOptions{DeliverAs: extensions.DeliverFollowUp, ExpandPromptTemplates: true}); err != nil {
-		return failed, err.Error()
-	}
-	select {
-	case messages, ok := <-wait:
-		if !ok {
-			return interrupted, "the session closed"
+	// An idle session runs the turn inside SendUserMessage, so the timeout runs alongside it.
+	sent := make(chan error, 1)
+	go func() {
+		sent <- l.api.SendUserMessage(ctx, ai.NewUserText(text), &extensions.SendUserMessageOptions{DeliverAs: extensions.DeliverFollowUp, ExpandPromptTemplates: true})
+	}()
+	timeout := s.o.After(s.o.Timeout)
+	for {
+		select {
+		case err := <-sent:
+			if err != nil {
+				return failed, err.Error()
+			}
+			sent = nil
+		case messages, ok := <-wait:
+			if !ok {
+				return interrupted, "the session closed"
+			}
+			return outcome(messages)
+		case <-timeout:
+			l.ctx.Abort()
+			if sent != nil {
+				<-sent
+			}
+			return failed, "timeout"
+		case <-ctx.Done():
+			return interrupted, "its holder stopped"
 		}
-		return outcome(messages)
-	case <-s.o.After(s.o.Timeout):
-		l.ctx.Abort()
-		return failed, "timeout"
-	case <-ctx.Done():
-		return interrupted, "its holder stopped"
 	}
 }
 

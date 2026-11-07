@@ -716,3 +716,80 @@ func TestTheAgentMayPauseAPersonsTask(t *testing.T) {
 		}
 	}
 }
+
+func TestATurnPastTheTimeoutFailsInPlace(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, func(o *schedule.Options) { o.Timeout = 2 * time.Minute })
+	// The person's session stays open, so the run is delivered in place.
+	rt := e.session(s)
+	t.Cleanup(rt.Dispose)
+	e.answer(map[string]any{"action": "create", "title": "slow", "prompt": "x", "when": "in 10m"}, "ok")
+	if err := rt.Prompt(context.Background(), "please"); err != nil {
+		t.Fatal(err)
+	}
+	_ = rt.WaitForIdle(context.Background())
+	id := taskID(t, e.read(), "slow")
+	e.run(s)
+	e.provider.AppendResponses([]faux.ResponseStep{faux.Factory(func(ctx context.Context, _ ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})})
+	e.clock.advance(11 * time.Minute)
+	e.eventually("running", func(f file) bool { rs := runsOf(f, id); return len(rs) == 1 && rs[0].Status == "running" })
+	time.Sleep(100 * time.Millisecond)
+	e.clock.advance(3 * time.Minute)
+	e.eventually("timeout", func(f file) bool {
+		rs := runsOf(f, id)
+		return len(rs) == 1 && rs[0].Status == "failed" && strings.Contains(rs[0].Detail, "timeout")
+	})
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.opens) != 0 {
+		t.Fatalf("the run opened a session instead of running in place: %v", e.opens)
+	}
+}
+
+func TestACatchUpOutsideActiveHoursIsSkipped(t *testing.T) {
+	e := newEnv(t, monday) // 08:00 Paris
+	s := e.scheduler("orb chat", paris, func(o *schedule.Options) { o.ActiveHours = "08:00-22:00" })
+	e.person(s, map[string]any{"action": "create", "title": "morning", "prompt": "x", "when": "in 30m", "target": "new"})
+	id := taskID(t, e.read(), "morning")
+	// The holder was down all day and restarts at 23:00 Paris.
+	e.clock.mu.Lock()
+	e.clock.now = e.clock.now.Add(15 * time.Hour)
+	e.clock.mu.Unlock()
+	e.run(s)
+	e.eventually("skipped", func(f file) bool {
+		rs := runsOf(f, id)
+		return len(rs) == 1 && rs[0].Status == "skipped" && strings.Contains(rs[0].Detail, "active hours")
+	})
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.opens) != 0 {
+		t.Fatal("a run caught up outside active hours opened a session")
+	}
+}
+
+func TestTrimmingRunsKeepsTheRunning(t *testing.T) {
+	e := newEnv(t, monday)
+	runs := []map[string]any{{"task": "long", "at": monday, "holder": "other#h", "status": "running", "started": monday}}
+	for i := range 60 {
+		at := monday.Add(time.Duration(i) * time.Second)
+		runs = append(runs, map[string]any{"task": "short", "at": at, "holder": "other#h", "status": "done", "started": at, "ended": at})
+	}
+	b, err := json.Marshal(map[string]any{"version": 1, "runs": runs, "holders": map[string]any{"h": map[string]any{"name": "other", "seen": monday}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(e.store.Path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e.run(e.scheduler("orb chat", paris, nil))
+	f := e.eventually("trimmed", func(f file) bool { return len(f.Runs) < len(runs) })
+	if rs := runsOf(f, "long"); len(rs) != 1 || rs[0].Status != "running" {
+		t.Fatalf("trimming dropped a running run: %+v", rs)
+	}
+	if len(f.Runs) != 50 {
+		t.Fatalf("%d runs kept, want 50", len(f.Runs))
+	}
+}
