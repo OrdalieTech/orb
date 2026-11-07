@@ -150,6 +150,50 @@ func (s *Service) host(ctx context.Context, p bridge.Principal, method string, p
 			return nil, err
 		}
 		return s.launch(ctx, p, cwd, q.SessionID)
+	case "host.dirs":
+		// The folders in a folder (the home when none), for a peer picking where to launch: hidden
+		// ones left out, sorted as Finder sorts, each marked when it is a git checkout.
+		var q struct {
+			Path string `json:"path,omitempty"`
+		}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		dir, err := launchFolder(cmp.Or(q.Path, "~"))
+		if err != nil {
+			return nil, err
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return nil, bridge.Fail("not_found")
+		}
+		type folder struct {
+			Name string `json:"name"`
+			Git  bool   `json:"git"`
+		}
+		out := struct {
+			Path   string   `json:"path"`
+			Parent string   `json:"parent,omitempty"`
+			Dirs   []folder `json:"dirs"`
+		}{Path: dir, Dirs: []folder{}}
+		if parent := filepath.Dir(dir); parent != dir {
+			out.Parent = parent
+		}
+		for _, e := range entries {
+			path := filepath.Join(dir, e.Name())
+			if strings.HasPrefix(e.Name(), ".") {
+				continue
+			}
+			if info, err := os.Stat(path); err != nil || !info.IsDir() { // follows links to folders
+				continue
+			}
+			_, err := os.Stat(filepath.Join(path, ".git")) // a folder in a checkout, a file in a linked worktree
+			out.Dirs = append(out.Dirs, folder{e.Name(), err == nil})
+		}
+		slices.SortFunc(out.Dirs, func(a, b folder) int {
+			return cmp.Or(cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), cmp.Compare(a.Name, b.Name))
+		})
+		return bridge.JSON(out), nil
 	case "host.update":
 		var q struct{}
 		if err := protocol.Decode(params, &q); err != nil {
