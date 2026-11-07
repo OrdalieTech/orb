@@ -335,12 +335,15 @@ Each holds until changed by owner-signed decision.
   image's relay (`nc`), socket path and the `agent`/`sidecar` users are the harness's; and Buzz's
   section takes a chosen set of buzz-acp settings, the rest staying `BUZZ_ACP_*` environment.
   Owner, 2026-10-06.
-- **Orb has no scheduler.** A timer outside Orb (systemd on the host) starts a turn in a running
-  agent through its ACP socket (`orb chat connect`), in a session of its own, with the agent's
-  memory, tools and identity: it posts on Buzz with the shim, and the timer delivers the printed
-  reply elsewhere, such as Telegram with the bot's token; missed runs are systemd's
-  `Persistent=true`. Not `docker exec orb -p`: a second Orb whose tools inherit the container's
-  secrets. Owner, 2026-10-06.
+- **The host process that stays up holds the one timer; the Orb of a conversation never keeps a
+  clock.** The `schedule` plugin keeps an agent's tasks, which its model creates and changes
+  itself, in one document every holder shares; `orb chat` fires them (the Bridge daemon and a
+  Durable Object later), claiming each occurrence there so two holders never fire it twice. A run
+  is an ordinary turn, with the agent's memory, tools and permissions. A systemd timer that starts
+  a turn through the agent's ACP socket (`orb chat connect`) remains possible for the host's own
+  jobs, no longer the normal way. Not `docker exec orb -p`: a second Orb whose tools inherit the
+  container's secrets. Owner, 2026-10-06; revised 2026-11-07 (« Orb has no scheduler » left the
+  agent unable to set or see its own wake-ups).
 - **A browser is a capability of the agent's image, not of Orb.** The `browser` image adds
   agent-browser, which the agent drives from its shell with its skill, and Lightpanda, its default
   engine (small, no rendering, partial Web APIs); built with `CHROMIUM=1` it adds headless

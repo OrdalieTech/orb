@@ -11,6 +11,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/jstrim"
 	"github.com/OrdalieTech/orb/platforms/native"
 	"github.com/OrdalieTech/orb/plugins/mcp"
+	"github.com/OrdalieTech/orb/plugins/schedule"
 	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
@@ -86,7 +87,9 @@ type CLIArgs struct {
 	extensionRegistry *extensions.Registry
 	// compiled are extensions the session's assembly adds, such as a chat
 	// conversation's tools.
-	compiled          []extensions.CompiledExtension
+	compiled []extensions.CompiledExtension
+	// schedule is the scheduler this process fires (orb chat's); nil gives sessions the tool alone.
+	schedule          *schedule.Scheduler
 	extensionWarnings []modes.StartupDiagnostic
 	// resolvedProjectTrust carries the trust decision loadStartupExtensions
 	// already made in this process, so the runtime neither re-fires the
