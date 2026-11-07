@@ -31,6 +31,7 @@ type clock struct {
 	mu    sync.Mutex
 	now   time.Time
 	waits []wait
+	calls int // After calls so far: a woken timer arms its next wait
 }
 
 type wait struct {
@@ -43,6 +44,7 @@ func (c *clock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now
 func (c *clock) After(d time.Duration) <-chan time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.calls++
 	ch := make(chan time.Time, 1)
 	if d <= 0 {
 		ch <- c.now
@@ -54,21 +56,34 @@ func (c *clock) After(d time.Duration) <-chan time.Time {
 
 // advance moves time on by d in one-minute steps, firing what falls due, as a minute's sleep would.
 func (c *clock) advance(d time.Duration) {
-	for step := min(d, time.Minute); d > 0; d -= step {
-		step = min(d, time.Minute)
+	for d > 0 {
+		step := min(d, time.Minute)
+		d -= step
 		c.mu.Lock()
 		c.now = c.now.Add(step)
 		var kept []wait
+		fired := 0
 		for _, w := range c.waits {
 			if !w.at.After(c.now) {
 				w.ch <- c.now
+				fired++
 			} else {
 				kept = append(kept, w)
 			}
 		}
 		c.waits = kept
+		calls := c.calls
 		c.mu.Unlock()
-		time.Sleep(5 * time.Millisecond) // the timer's goroutine takes it
+		// Time moves on only once what woke has armed its next wait, as it would in a minute of sleep.
+		for deadline := time.Now().Add(2 * time.Second); fired > 0 && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+			c.mu.Lock()
+			armed := c.calls > calls
+			c.mu.Unlock()
+			if armed {
+				break
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -112,7 +127,6 @@ type env struct {
 	prompts []string // what each model request's last user message said
 	opens   []string // the sessions Open was asked for ("" = new)
 	openErr error
-	reply   func(prompt string) []faux.ResponseStep // a turn's answers for its prompt; default "done"
 }
 
 func newEnv(t *testing.T, start time.Time) *env {
@@ -433,9 +447,9 @@ func TestOnlyTheLatestMissedOccurrenceFires(t *testing.T) {
 	e.answer("caught up")
 	e.run(s)
 	e.clock.advance(time.Minute)
-	f := e.eventually("one run", func(f file) bool { rs := runsOf(f, id); return len(rs) == 1 && rs[0].Status == "done" })
+	e.eventually("one run", func(f file) bool { rs := runsOf(f, id); return len(rs) == 1 && rs[0].Status == "done" })
 	time.Sleep(100 * time.Millisecond)
-	f = e.read()
+	f := e.read()
 	if rs := runsOf(f, id); len(rs) != 1 {
 		t.Fatalf("backlog replayed: %+v", rs)
 	}
@@ -543,10 +557,14 @@ func TestTasksCreatedInAScheduledRunAreTheAgents(t *testing.T) {
 	s := e.scheduler("orb chat", paris, nil)
 	f := agentRun(t, e, s, map[string]any{"action": "create", "title": "follow up", "prompt": "check", "when": "in 30m", "by": "person"})
 	for _, k := range f.Tasks {
-		if k.Title == "follow up" && k.By != "agent" {
-			t.Fatalf("a task created in a scheduled run is %q, and the model chose it", k.By)
+		if k.Title == "follow up" {
+			if k.By != "agent" {
+				t.Fatalf("a task created in a scheduled run is %q, and the model chose it", k.By)
+			}
+			return
 		}
 	}
+	t.Fatalf("the task the scheduled run created is missing: %+v", f.Tasks)
 }
 
 func TestTheAgentHasFiveTasksAtMost(t *testing.T) {
@@ -634,6 +652,8 @@ func TestATurnPastTheTimeoutFails(t *testing.T) {
 		return nil, ctx.Err()
 	})})
 	e.clock.advance(11 * time.Minute)
+	e.eventually("running", func(f file) bool { rs := runsOf(f, id); return len(rs) == 1 && rs[0].Status == "running" })
+	time.Sleep(100 * time.Millisecond) // the turn has begun and armed its timeout
 	e.clock.advance(3 * time.Minute)
 	e.eventually("timeout", func(f file) bool {
 		rs := runsOf(f, id)
