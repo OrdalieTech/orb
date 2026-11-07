@@ -689,3 +689,30 @@ func TestToolWithoutAHolderSaysNothingFires(t *testing.T) {
 		t.Fatalf("a tool with no holder does not say nothing fires here: %v", results)
 	}
 }
+
+func TestTheAgentCannotLoosenAPersonsTask(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	e.person(s, map[string]any{"action": "create", "title": "daily", "prompt": "x", "when": "cron 0 9 * * *"})
+	id := taskID(t, e.read(), "daily")
+	// A scheduled run tries to make the person's daily task fire every 5 min, outside the agent's caps.
+	f := agentRun(t, e, s, map[string]any{"action": "update", "id": id, "when": "every 5m"})
+	for _, k := range f.Tasks {
+		if k.ID == id && k.When != "cron 0 9 * * *" {
+			t.Fatalf("a scheduled run rewrote a person's task: %+v", k)
+		}
+	}
+}
+
+func TestTheAgentMayPauseAPersonsTask(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	e.person(s, map[string]any{"action": "create", "title": "daily", "prompt": "x", "when": "cron 0 9 * * *"})
+	id := taskID(t, e.read(), "daily")
+	f := agentRun(t, e, s, map[string]any{"action": "update", "id": id, "enabled": false})
+	for _, k := range f.Tasks {
+		if k.ID == id && k.Enabled {
+			t.Fatalf("a scheduled run could not pause a task: %+v", k)
+		}
+	}
+}
