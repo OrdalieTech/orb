@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -90,6 +91,9 @@ type Completion struct {
 
 var upper = regexp.MustCompile(`^[A-Z0-9_, ]+$`)
 
+// attachPiece is how much of a file one host.attach carries: base64, it stays within a frame.
+const attachPiece = 512 << 10
+
 // slow returns the work of an intent that waits on a machine, nil for one that does not.
 func (a *App) slow(in intent) func() (any, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, time.Minute)
@@ -123,6 +127,28 @@ func (a *App) slow(in intent) func() (any, error) {
 		return call(func() (any, error) { return a.renameThread(in.Key, in.Name) })
 	case "delete":
 		return call(func() (any, error) { return a.delete(in.Key) })
+	case "attach":
+		// A file of this device a message cites: another machine gets a copy, in pieces a frame
+		// holds, and the message cites the copy.
+		return call(func() (any, error) {
+			if machine == self {
+				return map[string]string{"path": in.Path}, nil
+			}
+			data, err := a.o.ReadFile(in.Path)
+			if err != nil {
+				return nil, err
+			}
+			var r struct {
+				Path string `json:"path"`
+			}
+			for at := 0; at == 0 || at < len(data); at += attachPiece {
+				piece := data[at:min(at+attachPiece, len(data))]
+				if err := host("host.attach", "take a file", map[string]any{"name": filepath.Base(in.Path), "path": r.Path, "data": piece}, &r); err != nil {
+					return nil, err
+				}
+			}
+			return r, nil
+		})
 	case "complete", "image":
 		return call(func() (any, error) {
 			if t == nil {
@@ -138,6 +164,12 @@ func (a *App) slow(in intent) func() (any, error) {
 				Items []Completion `json:"items"`
 			}
 			return r.Items, t.read("complete", map[string]string{"query": in.Text}, &r)
+		})
+	case "dirs":
+		// The folders in cwd on the machine (its home when none), to pick where to start.
+		return call(func() (any, error) {
+			var r json.RawMessage
+			return r, host("host.dirs", "list its folders", map[string]string{"path": in.CWD}, &r)
 		})
 	case "providers":
 		return call(func() (any, error) {

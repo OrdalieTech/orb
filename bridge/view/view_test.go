@@ -477,3 +477,42 @@ func TestAPluginsWidgetAndNoticeShowBesideTheConversation(t *testing.T) {
 	app.Do([]byte(`{"do":"send","tab":"` + opened.Tab + `","text":"again"}`))
 	c.until(t, "the notice gone, the widget current", func() bool { return slots() == "[{widget:tasks [✓ 2/2  → fix it] false}]" })
 }
+
+// Only the conversation a peer's prompt runs in says a peer acts here: the others on this
+// machine, busy with their own prompts or at rest, do not.
+func TestOnlyTheConversationAPeerDrivesSaysSo(t *testing.T) {
+	a := &App{self: "me"}
+	driven := &tab{a: a, Tab: Tab{ID: "driven", Peer: "me", Busy: true}}
+	driven.tr.add(&item{kind: "y", text: "go", via: "bridge"})
+	mine := &tab{a: a, Tab: Tab{ID: "mine", Peer: "me", Busy: true}}
+	mine.tr.add(&item{kind: "y", text: "go"})
+	a.tabs = []*tab{driven, mine, {a: a, Tab: Tab{ID: "idle", Peer: "me"}}}
+	s := a.state()
+	if !s.Acting || !s.Tabs[0].Acting || s.Tabs[1].Acting || s.Tabs[2].Acting {
+		t.Fatalf("acting: %v, tabs: %+v", s.Acting, s.Tabs)
+	}
+}
+
+// An edit opens on what it changed, live and replayed alike.
+func TestAnEditOpensOnItsDiff(t *testing.T) {
+	diff := `  4 func add() {\n-5 \treturn a\n+5 \t// sum\n+6 \treturn a\n`
+	var tr transcript
+	for _, e := range []string{
+		`{"type":"message_start","message":{"role":"assistant","content":[]}}`,
+		`{"type":"message_end","message":{"role":"assistant","content":[{"type":"toolCall","id":"a","name":"edit","arguments":{"path":"main.go"}}]}}`,
+		`{"type":"tool_execution_end","toolCallId":"a","result":{"content":[{"type":"text","text":"ok"}],"details":{"diff":"` + diff + `"}}}`,
+	} {
+		tr.apply(json.RawMessage(e))
+	}
+	var again transcript
+	again.load([]json.RawMessage{
+		json.RawMessage(`{"role":"assistant","content":[{"type":"toolCall","id":"a","name":"edit","arguments":{"path":"main.go"}}]}`),
+		json.RawMessage(`{"role":"toolResult","toolCallId":"a","content":[{"type":"text","text":"ok"}],"details":{"diff":"` + diff + `"}}`),
+	}, 0)
+	for _, x := range []*transcript{&tr, &again} {
+		rows, _ := x.rows()
+		if d := x.detail(rows[0].Actions[0].Key); !strings.HasPrefix(d["diff"], "  4 func add()") {
+			t.Fatalf("detail: %q", d)
+		}
+	}
+}

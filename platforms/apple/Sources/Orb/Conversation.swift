@@ -27,7 +27,7 @@ struct Conversation: View {
 
     private var page: some View {
         VStack(spacing: 0) {
-            if !t.remote && orb.state.acting { PatternBlue { orb.send("abort", ["tab": t.id]) } }
+            if t.acting { PatternBlue { orb.send("abort", ["tab": t.id]) } }
             // The conversation scrolls on under the box, as in Messages.
             transcript.safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 6) {

@@ -8,8 +8,10 @@ import (
 	"math"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -39,6 +41,9 @@ func turns(rows []Row) [][]Row {
 }
 
 // reading centres what reads in a column of its own width, wherever the window is.
+// ansi is a terminal's colour and cursor codes, which a plugin's lines may carry: text drops them.
+var ansi = regexp.MustCompile("\x1b\\[[0-9;?]*[ -/]*[@-~]|\\[[0-9;]+m")
+
 func reading(c *ui.Context) ui.Element {
 	return ui.Column(c).FillWidth().MaxWidth(column).Margin(0, ui.Auto)
 }
@@ -50,15 +55,20 @@ func (a *app) chat(c *ui.Context, t *Tab) {
 
 func (a *app) conversation(c *ui.Context, t *Tab) {
 	o, pal := a.o, p(c)
-	ui.Column(c).Grow(1).Basis(0).FillWidth().Children(func() {
-		if !t.Remote && o.state.Acting {
+	ui.Column(c.Key("in:" + t.ID)).Grow(1).Basis(0).FillWidth().Transition(a.entering).Children(func() {
+		if t.Acting {
 			patternBlue(c, func() { o.send("abort", "tab", t.ID) })
 		}
 		tt := turns(o.rows[t.ID])
-		ls := a.lists[t.ID]
+		// A List takes one state: a second tile showing it (a layout saved so) scrolls on its own.
+		key := t.ID
+		if x := a.building; x != nil && a.showing(t.ID) != x {
+			key += fmt.Sprintf("@%p", x)
+		}
+		ls := a.lists[key]
 		if ls == nil {
-			ls = &ui.ListState{FollowEnd: true, FollowAnimation: &ui.Smooth}
-			a.lists[t.ID] = ls
+			ls = &ui.ListState{FollowEnd: true, FollowAnimation: &moving}
+			a.lists[key] = ls
 		}
 		// Older messages load above; the ones read so far stay where they are.
 		head := 0
@@ -112,6 +122,10 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 			}
 			// What its plugins show beside it: the task list, a status, the last notice.
 			for _, s := range t.Slots {
+				// A status that is only a coloured mark in the terminal (a •) says nothing here.
+				if !strings.ContainsFunc(ansi.ReplaceAllString(strings.Join(s.Lines, ""), ""), func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+					continue
+				}
 				ink := pal.meta
 				if s.Alarm {
 					ink = rupture
@@ -123,44 +137,12 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 	})
 }
 
-// strip is the conversation's title bar: its name, where it runs and its state; at right how full
-// its context is, its plan's window nearest the limit (all of them a click away), what it cost,
-// and the terminal where it runs.
+// strip is the conversation's title bar: its tile's tabs (its own named and marked shown); at
+// right how full its context is, its plan's window nearest the limit (all of them a click away),
+// what it cost, and the terminal where it runs.
 func (a *app) strip(c *ui.Context, t *Tab) {
 	pal := p(c)
 	a.titleBar(c, func() {
-		x := a.building
-		title := ui.Text(c, cmp.Or(t.Title, "new session")).FontSize(15).FontWeight(strong).SingleLine().Shrink(1).MinWidth(48).OnClick(func() {
-			// A first click focuses its tile; on the focused tile it renames.
-			if a.active == x {
-				a.renameTab(*t)
-			} else {
-				a.focus++
-			}
-			a.activate(x)
-		}).Tooltip("Rename")
-		a.carry(title, carried{tile: a.building})
-		var parts []string
-		if t.Remote {
-			parts = append(parts, t.Where)
-		}
-		parts = append(parts, tidy(t.CWD))
-		ink := pal.meta
-		switch {
-		case t.Busy:
-			parts, ink = append(parts, "working"), pal.fg
-		case !t.Online && !t.Asleep:
-			parts = append(parts, "offline")
-		}
-		if a.zoomed == x && x != nil {
-			parts = append(parts, "zoomed")
-		}
-		// A narrow tile keeps its bar to the title and the readings.
-		if a.narrow {
-			ui.Spacer(c)
-		} else {
-			ui.Text(c, strings.Join(nonEmpty(parts...), " · ")).Grow(1).Basis(0).MinWidth(0).FontSize(small).TextColor(ink).SingleLine()
-		}
 		a.tileTools(c)
 		// A tight tile under the window's controls has room for its title and its terminal only.
 		if t.Context > 0 && !(a.tight && a.corner) {
@@ -371,6 +353,20 @@ func (a *app) action(c *ui.Context, x Action, t *Tab) {
 				ui.Text(c, d["text"]).FontSize(size - 2).TextColor(pal.mute)
 				return
 			}
+			// An edit shows what it changed: added lines in green, removed ones in the rupture.
+			if diff := strings.TrimRight(d["diff"], "\n"); diff != "" {
+				for i, l := range strings.Split(diff, "\n") {
+					ink := pal.mute
+					switch {
+					case strings.HasPrefix(l, "+"):
+						ink = hue(c, 5, ink)
+					case strings.HasPrefix(l, "-"):
+						ink = rupture
+					}
+					ui.Text(c.Key(strconv.Itoa(i)), l).FontSize(12).TextColor(ink).Selectable()
+				}
+				return
+			}
 			if d["args"] != "" {
 				label(c, "input").TextColor(pal.meta)
 				ui.Text(c, d["args"]).FontSize(12).TextColor(pal.mute)
@@ -390,7 +386,7 @@ func (a *app) action(c *ui.Context, x Action, t *Tab) {
 
 // folded is a long note or error folded to three lines; a click opens it.
 func (a *app) folded(c *ui.Context, text string, ink ui.Color) ui.Element {
-	e := ui.Text(c, text).FontSize(small + 1).TextColor(ink)
+	e := ui.Text(c, ansi.ReplaceAllString(text, "")).FontSize(small + 1).TextColor(ink)
 	open := ui.Local(e, "open", func() bool { return false })
 	if !*open {
 		e.MaxLines(3)
@@ -677,7 +673,7 @@ func (a *app) interrupt(c *ui.Context, ask Ask, answer func(*string)) {
 			detail := strings.TrimSpace(strings.Join([]string{rest, ask.Message}, "\n"))
 			if detail != "" {
 				ui.Scroll(c).MaxHeight(220).Children(func() {
-					ui.Text(c, detail).Padding(10, margin).FontSize(small + 1).TextColor(ink.Alpha(0.8)).Selectable()
+					ui.Text(c, detail).Padding(10, margin).FontSize(small + 1).FontWeight(medium).TextColor(ink).Selectable()
 				})
 			}
 			ui.Spacer(c)
@@ -774,10 +770,14 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 				if btn(c, "make default", false, pal.fg, pal.bg) {
 					a.makeDefault(t.Peer, t.Model, t.Thinking)
 				}
-				return
+			} else {
+				ui.Text(c, strings.Join(slices.DeleteFunc([]string{provider, map[bool]string{false: t.Where}[home]}, func(s string) bool { return s == "" }), " · ")).
+					Margin(0, 0, 2, 12).FontSize(12).TextColor(pal.meta).SingleLine()
 			}
-			ui.Text(c, strings.Join(slices.DeleteFunc([]string{provider, map[bool]string{false: t.Where}[home]}, func(s string) bool { return s == "" }), " · ")).
-				Margin(0, 0, 2, 12).FontSize(12).TextColor(pal.meta).SingleLine()
+			if press(control(c, func() { ui.Text(c, "providers ›").FontSize(small).FontWeight(medium).TextColor(pal.mute) }).MarginStart(8).Tooltip("Connect and edit providers  " + keys(","))) {
+				a.model, a.query = "", ""
+				a.push(screen{kind: "providers", peer: t.Peer})
+			}
 		})
 		field(c, &a.query, "Search models", false).Margin(10, 12, 6).AutoFocus()
 		ui.Scroll(c).FillWidth().MaxHeight(300).Shrink(1).Padding(0, 4, 4).Children(func() {
@@ -819,9 +819,8 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 					a.model, a.query = "", ""
 				}
 			}
-			if press(menuRow(c, "+ connect a provider", "", false).TextColor(pal.mute)) {
-				a.model = ""
-				a.push(screen{kind: "providers", peer: t.Peer})
+			if len(t.Models) == 0 {
+				label(c, map[bool]string{true: "no model: connect a provider", false: "reading models…"}[t.Loaded]).TextColor(pal.meta).Padding(10, 12)
 			}
 		})
 		a.accountsOn(c, t, provider)
@@ -837,11 +836,9 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 					for _, l := range t.Levels {
 						on := l == t.Thinking
 						seg := ui.Row(c.Key(l)).Grow(1).Basis(0).PaddingY(9).Justify(ui.Center)
-						seg.Background(seg.AnimateColor("on", map[bool]ui.Color{true: pal.fg, false: ui.Transparent}[on], ui.Smooth))
-						ink := pal.fg
-						if on {
-							ink = pal.bg
-						}
+						// Its ground and its word change together.
+						seg.Background(seg.AnimateColor("on", map[bool]ui.Color{true: pal.fg, false: ui.Transparent}[on], pressing))
+						ink := seg.AnimateColor("ink", map[bool]ui.Color{true: pal.bg, false: pal.fg}[on], pressing)
 						seg.Children(func() {
 							ui.Text(c, strings.NewReplacer("minimal", "min", "medium", "med").Replace(l)).FontSize(small).FontWeight(medium).TextColor(ink).SingleLine()
 						})
@@ -861,7 +858,7 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 	if len(a.stack) > 0 {
 		modal(c, &open, 420, body)
 	} else {
-		popover(c, &a.active.modelAt, &open, 400, a.keyed, body)
+		popover(c, &a.active.modelAt, &open, 400, a.keyed, body) // opened by a key, it shows at once
 	}
 	if !open {
 		a.model, a.query = "", ""

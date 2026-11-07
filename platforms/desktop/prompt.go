@@ -2,7 +2,9 @@ package main
 
 import (
 	"cmp"
+	"path"
 	"regexp"
+	"runtime"
 	"strings"
 	"unicode"
 
@@ -44,6 +46,9 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 		shade := map[bool]float32{true: 0.35, false: 0.07}[c.Theme().Dark]
 		box := ui.Column(c).FillWidth().MaxWidth(column+2*overhang).Margin(0, ui.Auto, map[bool]float32{true: 8, false: 16}[short]).Radius(16).Background(pal.raised).
 			Border(1, pal.rule.Alpha(0.7)).Shadow(0, 6, 24, 0, ui.RGBA(0, 0, 0, shade))
+		if a.building != nil {
+			box.Bind(&a.building.boxAt) // what the explorer floats out of
+		}
 		box.Children(func() {
 			// Typing / opens the palette: the app's commands and the core's, filtered as you type.
 			type choice struct {
@@ -117,9 +122,9 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 			if busy {
 				hint = map[bool]string{true: "steer or queue", false: "steer or queue a message"}[a.narrow]
 			}
-			in := ui.TextAreaBase(c.Key("prompt"+id), &draft).Lines(3, 14).FillWidth().Padding(20, inset, 12)
+			in := ui.TextAreaBase(c.Key("prompt"+id), &draft).Lines(2, 14).FillWidth().Padding(14, inset, 4)
 			if short {
-				in.Lines(1, 4).Padding(10, inset, 4)
+				in.Lines(1, 4).Padding(8, inset, 2)
 			}
 			in = in.FontSize(size).LineHeight(1.5).
 				Placeholder(hint).PlaceholderColor(pal.meta)
@@ -160,9 +165,20 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 				}
 				return false
 			})
-			// Files dropped on the box are cited, as the TUI cites them with @.
+			// Files dropped on the box are cited, as the TUI cites them with @: a copy of them when
+			// the conversation runs on another machine.
+			machine := a.target[0]
+			if t != nil {
+				machine = t.Peer
+			}
 			for _, f := range in.DroppedFiles() {
-				draft = strings.TrimRight(draft, " ") + " @" + quotePath(f) + " "
+				then(a.o, func(r struct{ Path string }, err error) {
+					if err != nil {
+						a.say(err.Error())
+						return
+					}
+					a.drafts[id] = strings.TrimRight(a.drafts[id], " ") + " @" + quotePath(r.Path) + " "
+				}, "attach", "machine", machine, "path", f)
 			}
 			if a.focus != a.focused && a.building == a.active {
 				a.focused = a.focus
@@ -170,14 +186,19 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 			}
 			// Below the text, on one line: where it runs and its model, as quiet controls that open out of
 			// themselves, and at right the one action, round, filled when there is something to send.
-			ui.Row(c).FillWidth().Padding(0, 12, 12, inset-9).Gap(2).Children(func() {
-				peer := o.state.Self
+			ui.Row(c).FillWidth().Padding(0, 10, 10, inset-9).Gap(2).Children(func() {
+				peer, name, full := cmp.Or(a.target[0], o.state.Self), device, "Where it runs"
 				if t != nil {
 					peer = t.Peer
 				}
+				if m := o.machine(peer); t == nil && m != nil && !m.Self {
+					name = m.Name
+				}
+				if t == nil && a.target[1] != "" { // the folder Home starts in, and where if not here
+					name, full = strings.Join(nonEmpty(path.Base(a.target[1]), map[bool]string{true: name}[name != device]), " · "), tidy(a.target[1])
+				}
 				wh := control(c, func() {
 					where(c, o.hue(peer), false, false, pal.fg)
-					name := device
 					if t != nil && t.Remote {
 						name = t.Where
 					}
@@ -190,7 +211,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 					}
 				}).Bind(&a.building.whereAt)
 				if t == nil {
-					if press(wh.Tooltip("Where it runs")) {
+					if press(wh.Tooltip(full)) {
 						a.activate(a.building)
 						a.chooseWhere()
 					}
@@ -211,7 +232,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 					}
 					ui.Text(c, name).FontSize(small).FontWeight(medium).TextColor(pal.mute).SingleLine().Shrink(1)
 					// Reasoning as a small meter: one bar per level the model takes, lit up to the current one.
-					if on != nil && len(on.Levels) > 0 {
+					if on != nil && len(on.Levels) > 1 { // one level is no choice: no meter
 						now := -1
 						for i, l := range on.Levels {
 							if l == on.Thinking {
@@ -230,7 +251,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 					}
 					caretDown(c)
 				}).Shrink(1).Bind(&a.building.modelAt)
-				if press(model.Tooltip("Model and reasoning  " + keys("⇧M"))) {
+				if press(model.Tooltip("Model and reasoning  " + map[bool]string{true: "⌃M", false: "Ctrl+M"}[runtime.GOOS == "darwin"])) {
 					a.activate(a.building)
 					a.chooseModel(t, false)
 				}
@@ -255,7 +276,8 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 					if empty {
 						ink = pal.rule
 					}
-					if press(round(c, "↑", ink, pal.bg).Tooltip("Send  ⏎ · new line  ⇧⏎")) {
+					// Nothing to send, nothing to press.
+					if e := round(c, "↑", ink, pal.bg).Tooltip("Send  ⏎ · new line  ⇧⏎"); !empty && press(e) {
 						send(take())
 					}
 				}
@@ -282,7 +304,7 @@ func quotePath(p string) string {
 
 // The box reaches past the reading column by overhang a side, and sets its text at inset, so the
 // text lines up with the column's and the controls' marks with the text.
-const overhang, inset = 16, overhang + margin
+const overhang, inset = 8, overhang + margin
 
 // control is a quiet button in the prompt box: its content on no ground until the pointer is over it.
 func control(c *ui.Context, body func()) ui.Element {

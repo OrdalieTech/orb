@@ -25,6 +25,7 @@ type Tab struct {
 	Remote    bool      `json:"remote,omitempty"`
 	CWD       string    `json:"cwd,omitempty"`
 	Busy      bool      `json:"busy,omitempty"`
+	Acting    bool      `json:"acting,omitempty"` // a peer's prompt is running in it, on this machine
 	Online    bool      `json:"online"`
 	Asleep    bool      `json:"asleep,omitempty"` // its Orb ended (or never started since a restart): a message wakes it
 	Loaded    bool      `json:"loaded,omitempty"` // an empty conversation is ready, not still coming
@@ -350,7 +351,7 @@ func (t *tab) describe() bool {
 			t.Ask = t.question()
 		} else {
 			owner := "questions"
-			if slices.ContainsFunc(in.Choices, func(c string) bool { return strings.Contains(c, "approve") }) {
+			if p := in.Presentation; p != nil && p.Kind == "approval" { // the permissions plugin's
 				owner = "permissions"
 			}
 			t.Ask = &Ask{ID: in.ID, Owner: owner, Title: in.Title, Choices: in.Choices, Free: len(in.Choices) == 0}
