@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"path"
 	"regexp"
 	"runtime"
 	"strings"
@@ -175,13 +176,18 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 			// Below the text, on one line: where it runs and its model, as quiet controls that open out of
 			// themselves, and at right the one action, round, filled when there is something to send.
 			ui.Row(c).FillWidth().Padding(0, 12, 12, inset-9).Gap(2).Children(func() {
-				peer := o.state.Self
+				peer, name, full := cmp.Or(a.target[0], o.state.Self), device, "Where it runs"
 				if t != nil {
 					peer = t.Peer
 				}
+				if m := o.machine(peer); t == nil && m != nil && !m.Self {
+					name = m.Name
+				}
+				if t == nil && a.target[1] != "" { // the folder Home starts in, and where if not here
+					name, full = strings.Join(nonEmpty(path.Base(a.target[1]), map[bool]string{true: name}[name != device]), " · "), tidy(a.target[1])
+				}
 				wh := control(c, func() {
 					where(c, o.hue(peer), false, false, pal.fg)
-					name := device
 					if t != nil && t.Remote {
 						name = t.Where
 					}
@@ -194,7 +200,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 					}
 				}).Bind(&a.building.whereAt)
 				if t == nil {
-					if press(wh.Tooltip("Where it runs")) {
+					if press(wh.Tooltip(full)) {
 						a.activate(a.building)
 						a.chooseWhere()
 					}

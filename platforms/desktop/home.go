@@ -279,7 +279,14 @@ func (a *app) explorer(c *ui.Context) {
 		}
 	}
 	body := func() {
-		ui.Row(c).FillWidth().Padding(12, 12, 2, 14).Gap(2).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).FillWidth().Padding(12, 12, 2, 8).Gap(2).AlignItems(ui.Center).Children(func() {
+			// Back to the machines it was chosen among.
+			if press(hover(ui.Row(c).Size(22, 22).Radius(soft).Justify(ui.Center).AlignItems(ui.Center), pal.hover).Children(func() {
+				ui.Text(c, "‹").FontSize(16).TextColor(pal.mute)
+			}).Tooltip("Back")) {
+				a.exploring = ""
+				a.chooseWhere()
+			}
 			label(c, m.Name).TextColor(pal.meta).MarginEnd(8).MaxWidth(120).Tooltip(m.Name)
 			// Between the folders a / (none after the root, which is one); the last, where it is, in ink.
 			cs := crumbs(d.Path)
@@ -336,7 +343,7 @@ func (a *app) explorer(c *ui.Context) {
 			case d.Path != "" && len(shown) == 0 && q != "":
 				empty(c, "no folder here matches · ↩ opens a path").PaddingX(8)
 			case d.Path != "" && len(d.Dirs) == 0:
-				empty(c, "no folders in here · start here").PaddingX(8)
+				empty(c, "no folders in here").PaddingX(8)
 			}
 			if q == "" && d.Parent != "" && tidy(d.Path) == "~" && len(m.Folders) > 0 {
 				label(c, "recent").Padding(12, 0, 2).TextColor(pal.meta)
@@ -352,8 +359,8 @@ func (a *app) explorer(c *ui.Context) {
 		})
 		rule(c, pal.rule)
 		ui.Row(c).FillWidth().Padding(8, 10, 10, 14).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "double click a folder to start there").Grow(1).Basis(0).MinWidth(0).FontSize(12).TextColor(pal.meta).SingleLine()
-			if d.Path != "" && btn(c, "start here", true, pal.fg, pal.bg) {
+			ui.Text(c, "a click opens a folder").Grow(1).Basis(0).MinWidth(0).FontSize(12).TextColor(pal.meta).SingleLine()
+			if d.Path != "" && btn(c, "use this folder", true, pal.fg, pal.bg) {
 				a.exploring = ""
 				a.start(peer, d.Path)
 			}

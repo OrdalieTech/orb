@@ -41,6 +41,7 @@ type app struct {
 	stack      []screen
 	tab        string               // the conversation shown, "" for Home
 	allOpen    bool                 // Home shows every open conversation, not the first few
+	target     [2]string            // the machine and folder Home's next message starts in; none, this computer
 	instant    bool                 // a key acted: the frame shows what it did at once, nothing a key does animates
 	entering   ui.ElementTransition // how the tile being built shows what it switched to
 	drafts     map[string]string    // each conversation's draft, "" for Home's
@@ -366,6 +367,15 @@ func (a *app) send(t *Tab, text string) {
 	if t != nil {
 		id = t.ID
 	}
+	if t == nil && a.target != [2]string{} && !strings.HasPrefix(text, "/") {
+		then(a.o, func(r struct{ Tab string }, err error) {
+			if err != nil && a.drafts[""] == "" {
+				a.drafts[""] = text // the text goes back where it was typed
+			}
+			a.opened(r.Tab, err)
+		}, "start", "machine", a.target[0], "cwd", a.target[1], "text", text)
+		return
+	}
 	then(a.o, func(r struct{ Tab, Nav, Copy string }, err error) {
 		if err != nil {
 			a.say(err.Error())
@@ -411,8 +421,11 @@ func (a *app) open(key string) {
 }
 
 // start starts Orb on a machine, in a folder or (cwd empty) where it starts, and opens it.
+// start makes a machine's folder where Home's next message goes, and shows Home: a conversation
+// opens with its first message, never as an empty tab.
 func (a *app) start(machine, cwd string) {
-	then(a.o, func(r struct{ Tab string }, err error) { a.opened(r.Tab, err) }, "start", "machine", machine, "cwd", cwd)
+	a.target = [2]string{machine, cwd}
+	a.show("")
 }
 
 func (a *app) opened(tab string, err error) {
@@ -423,19 +436,19 @@ func (a *app) opened(tab string, err error) {
 	}
 }
 
-// chooseWhere chooses where the next message goes: a new conversation on this computer, or in a
-// folder of a machine. Orbs already running are a thread away (⌘K), live.
+// chooseWhere chooses where Home's next message starts a conversation: this computer, or a folder
+// of a machine, whose explorer leads back here. Orbs already running are a thread away (⌘K), live.
 func (a *app) chooseWhere() {
 	a.keyed = false
-	options, hosts := []string{"new on " + device}, []string{}
+	options, hosts := []string{device}, []string{}
 	for _, m := range a.o.home.Machines {
 		if m.Launch {
-			options, hosts = append(options, "a folder on "+m.Name+"…"), append(hosts, m.ID)
+			options, hosts = append(options, "a folder on "+m.Name+"  ›"), append(hosts, m.ID)
 		}
 	}
-	a.picker = &picker{title: "run on", options: options, at: &a.active.whereAt, pick: func(s string) {
+	a.picker = &picker{title: "start on", options: options, at: &a.active.whereAt, pick: func(s string) {
 		if at := slices.Index(options, s); at == 0 {
-			a.start(a.o.state.Self, "")
+			a.target = [2]string{}
 		} else {
 			a.explore(hosts[at-1])
 		}
