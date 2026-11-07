@@ -138,6 +138,22 @@ func TestHostListsAndReadsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testi
 	if _, err := s.host(t.Context(), p, "host.dirs", bridge.JSON(map[string]string{"path": "relative"})); err == nil {
 		t.Fatal("listed a relative folder")
 	}
+
+	// A cited file comes in pieces, into a folder of its own; a piece names no other file.
+	t.Setenv("TMPDIR", root)
+	var put struct{ Path string }
+	for _, piece := range []string{"hello ", "world"} {
+		raw, err = s.host(t.Context(), p, "host.attach", bridge.JSON(map[string]any{"name": "../shot.png", "path": put.Path, "data": []byte(piece)}))
+		if err != nil || json.Unmarshal(raw, &put) != nil {
+			t.Fatalf("attach: %s %v", raw, err)
+		}
+	}
+	if got, _ := os.ReadFile(put.Path); string(got) != "hello world" || filepath.Base(put.Path) != "shot.png" {
+		t.Fatalf("attached %q at %s", got, put.Path)
+	}
+	if _, err := s.host(t.Context(), p, "host.attach", bridge.JSON(map[string]any{"path": filepath.Join(root, "pick", "file"), "data": []byte("x")})); err == nil {
+		t.Fatal("appended to a file outside the attachments")
+	}
 }
 
 // An app opening a thread a terminal Orb holds off Bridge joins that Orb: asked, it comes on

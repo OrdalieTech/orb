@@ -492,3 +492,27 @@ func TestOnlyTheConversationAPeerDrivesSaysSo(t *testing.T) {
 		t.Fatalf("acting: %v, tabs: %+v", s.Acting, s.Tabs)
 	}
 }
+
+// An edit opens on what it changed, live and replayed alike.
+func TestAnEditOpensOnItsDiff(t *testing.T) {
+	diff := `  4 func add() {\n-5 \treturn a\n+5 \t// sum\n+6 \treturn a\n`
+	var tr transcript
+	for _, e := range []string{
+		`{"type":"message_start","message":{"role":"assistant","content":[]}}`,
+		`{"type":"message_end","message":{"role":"assistant","content":[{"type":"toolCall","id":"a","name":"edit","arguments":{"path":"main.go"}}]}}`,
+		`{"type":"tool_execution_end","toolCallId":"a","result":{"content":[{"type":"text","text":"ok"}],"details":{"diff":"` + diff + `"}}}`,
+	} {
+		tr.apply(json.RawMessage(e))
+	}
+	var again transcript
+	again.load([]json.RawMessage{
+		json.RawMessage(`{"role":"assistant","content":[{"type":"toolCall","id":"a","name":"edit","arguments":{"path":"main.go"}}]}`),
+		json.RawMessage(`{"role":"toolResult","toolCallId":"a","content":[{"type":"text","text":"ok"}],"details":{"diff":"` + diff + `"}}`),
+	}, 0)
+	for _, x := range []*transcript{&tr, &again} {
+		rows, _ := x.rows()
+		if d := x.detail(rows[0].Actions[0].Key); !strings.HasPrefix(d["diff"], "  4 func add()") {
+			t.Fatalf("detail: %q", d)
+		}
+	}
+}

@@ -72,7 +72,9 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 					if m := o.machine(e.Machine); m != nil && !m.Self {
 						meta = m.Name
 					}
-					if press(sessionRow(c.Key(e.Key), e.Title, meta, ago(e.Modified), e.Live, e.Asks, false, o.hue(e.Machine))) {
+					row := sessionRow(c.Key(e.Key), e.Title, meta, ago(e.Modified), e.Live, e.Asks, false, o.hue(e.Machine))
+					row.ContextMenu(func(m *ui.Menu) { a.threadMenu(m, e) })
+					if press(row) {
 						a.open(e.Key)
 					}
 				}
@@ -432,48 +434,6 @@ func crumbs(p string) [][2]string {
 		out = append(out, [2]string{name, at})
 	}
 	return out
-}
-
-// folderScreen is one folder on a machine: start a thread here, or open one of its threads.
-func (a *app) folderScreen(c *ui.Context, peer, cwd string) {
-	o, pal := a.o, p(c)
-	m := o.machine(peer)
-	if m == nil {
-		a.back()
-		return
-	}
-	var threads []Entry
-	for _, e := range o.home.Entries {
-		if e.Machine == peer && e.CWD == cwd && !e.Unstored {
-			threads = append(threads, e)
-		}
-	}
-	page(c, func() {
-		header(c, path.Base(cwd), m.Name+" · "+tidy(cwd), a.back, nil)
-	}, func() {
-		ui.Column(c).FillWidth().Children(func() {
-			if btn(c, "new thread here", true, pal.fg, pal.bg) {
-				a.start(peer, cwd)
-			}
-		})
-		a.launching(c)
-		if len(threads) == 0 {
-			label(c, "no threads here yet").TextColor(pal.meta).Margin(18, 0, 4)
-		} else {
-			label(c, "threads").Margin(18, 0, 4)
-		}
-		for _, e := range threads {
-			meta := ""
-			if e.Open {
-				meta = "open"
-			}
-			row := sessionRow(c.Key(e.Key), e.Title, meta, ago(e.Modified), e.Live, e.Asks, false, o.hue(peer))
-			row.ContextMenu(func(menu *ui.Menu) { a.threadMenu(menu, e) })
-			if press(row) {
-				a.open(e.Key)
-			}
-		}
-	})
 }
 
 func nonEmpty(s ...string) []string {

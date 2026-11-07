@@ -50,6 +50,7 @@ type item struct {
 	images                             []string
 	live, failed, alarm                bool
 	verb, target, args, result, output string
+	diff                               string // an edit's, as the TUI draws it: "+12 line", "-12 line"
 	blocks                             []Block
 	parsed                             *face // the text and state blocks were parsed for
 	drawn                              face  // what its rows showed when last sent
@@ -146,16 +147,18 @@ type wireMessage struct {
 	Command      string          `json:"command"`
 	Output       string          `json:"output"`
 	ExitCode     int             `json:"exitCode"`
+	Details      json.RawMessage `json:"details"`
 	Display      bool            `json:"display"`
 	TokensBefore int             `json:"tokensBefore"`
 	Summary      string          `json:"summary"`
 }
 
-// content is a message's or tool result's text, thinking, image references and tool calls.
+// content is a message's or tool result's text, thinking, image references and tool calls, an
+// edit's diff and a subagent's steps.
 type content struct {
-	text, thinking string
-	images         []string
-	calls          []struct {
+	text, thinking, diff, steps string
+	images                      []string
+	calls                       []struct {
 		ID, Name  string
 		Arguments json.RawMessage
 	}
@@ -191,9 +194,17 @@ func parse(raw json.RawMessage) (c content) {
 }
 
 func result(raw json.RawMessage) content {
-	var r struct{ Content json.RawMessage }
+	var r struct{ Content, Details json.RawMessage }
 	_ = json.Unmarshal(raw, &r)
-	return parse(r.Content)
+	c := parse(r.Content)
+	c.details(r.Details)
+	return c
+}
+
+func (c *content) details(raw json.RawMessage) {
+	var d struct{ Diff, Steps string }
+	_ = json.Unmarshal(raw, &d)
+	c.diff, c.steps = d.Diff, d.Steps
 }
 
 // apply folds one agent event in; false when it changes nothing drawn.
@@ -221,8 +232,7 @@ func (t *transcript) apply(raw json.RawMessage) bool {
 		}
 	case "tool_execution_end":
 		if it := t.tools[e.ToolCallID]; it != nil {
-			r := result(e.Result)
-			it.finish(r.text, e.IsError, r.images)
+			it.finish(result(e.Result), e.IsError)
 		}
 	case "agent_end":
 		if t.said != nil {
@@ -360,7 +370,7 @@ func (t *transcript) message(m wireMessage, final bool) {
 		t.note("branch summary · "+firstLine(m.Summary, 160), false)
 	case "bashExecution":
 		it := t.add(&item{kind: "t", verb: "bash", target: firstLine(m.Command, 120), args: m.Command})
-		it.finish(m.Output, m.ExitCode != 0, nil)
+		it.finish(content{text: m.Output}, m.ExitCode != 0)
 	case "custom":
 		if m.Display {
 			t.note(clip(parse(m.Content).text, 400), false)
@@ -368,15 +378,19 @@ func (t *transcript) message(m wireMessage, final bool) {
 	case "toolResult":
 		if it := t.tools[m.ToolCallID]; it != nil {
 			c := parse(m.Content)
-			it.finish(c.text, m.IsError, c.images)
+			c.details(m.Details)
+			it.finish(c, m.IsError)
 		}
 	}
 }
 
-func (it *item) finish(out string, failed bool, images []string) {
-	it.result, it.output, it.failed, it.live = summary(it.verb, out), kept(out), failed, false
-	if images != nil {
-		it.images = images
+func (it *item) finish(c content, failed bool) {
+	it.result, it.output, it.diff, it.failed, it.live = summary(it.verb, c.text), kept(c.text), c.diff, failed, false
+	if c.steps != "" {
+		it.output = kept(c.steps + "\n\n" + c.text)
+	}
+	if c.images != nil {
+		it.images = c.images
 	}
 }
 
@@ -551,7 +565,7 @@ func (t *transcript) detail(key string) map[string]string {
 			if out == "" {
 				out = map[bool]string{true: "running…", false: "no output"}[it.live]
 			}
-			return map[string]string{"args": it.args, "output": out}
+			return map[string]string{"args": it.args, "output": out, "diff": it.diff}
 		case it.kind == "s" && it.key+":t" == key:
 			return map[string]string{"text": strings.TrimSpace(it.thinking)}
 		}

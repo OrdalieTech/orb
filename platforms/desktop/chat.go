@@ -8,6 +8,7 @@ import (
 	"math"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -350,6 +351,20 @@ func (a *app) action(c *ui.Context, x Action, t *Tab) {
 		ui.Column(c).FillWidth().Margin(4, 0, 0, 16).Padding(12).Gap(8).Radius(pane).Background(pal.raised).Border(1, pal.rule).Transition(fold).Children(func() {
 			if x.Verb == "thought" {
 				ui.Text(c, d["text"]).FontSize(size - 2).TextColor(pal.mute)
+				return
+			}
+			// An edit shows what it changed: added lines in green, removed ones in the rupture.
+			if diff := strings.TrimRight(d["diff"], "\n"); diff != "" {
+				for i, l := range strings.Split(diff, "\n") {
+					ink := pal.mute
+					switch {
+					case strings.HasPrefix(l, "+"):
+						ink = hue(c, 5, ink)
+					case strings.HasPrefix(l, "-"):
+						ink = rupture
+					}
+					ui.Text(c.Key(strconv.Itoa(i)), l).FontSize(12).TextColor(ink).Selectable()
+				}
 				return
 			}
 			if d["args"] != "" {

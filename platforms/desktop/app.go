@@ -13,7 +13,7 @@ import (
 
 // screen is a screen above Home and its conversations; the zero screen is them.
 type screen struct {
-	kind      string // bridge · invite · join · providers · vendor · plugins · device · folder
+	kind      string // general · bridge · invite · join · providers · vendor · plugins
 	peer, arg string // the machine it shows; a provider, a folder or a code
 }
 
@@ -647,7 +647,8 @@ func keys(k string) string {
 	return "Ctrl+" + strings.ReplaceAll(k, "⇧", "Shift+")
 }
 
-// overlays: interrupts belong to their owner and stop the world wherever you are; then the sheets.
+// overlays: an interrupt stops the world once its conversation is on screen; out of sight it waits,
+// its tab marked and Home saying it needs you. Then the sheets.
 func (a *app) overlays(c *ui.Context) {
 	o := a.o
 	var asking *Tab
@@ -655,8 +656,8 @@ func (a *app) overlays(c *ui.Context) {
 		asking = t
 	}
 	for i := range o.state.Tabs {
-		if asking == nil && o.state.Tabs[i].Ask != nil {
-			asking = &o.state.Tabs[i]
+		if t := &o.state.Tabs[i]; asking == nil && t.Ask != nil && slices.Contains(o.shown, t.ID) {
+			asking = t
 		}
 	}
 	if asking != nil {
@@ -847,8 +848,6 @@ func (a *app) screen(c *ui.Context, top screen) {
 		a.vendorScreen(c, top.arg, top.peer)
 	case "plugins":
 		a.pluginsScreen(c, top.peer)
-	case "folder":
-		a.folderScreen(c, top.peer, top.arg)
 	}
 }
 

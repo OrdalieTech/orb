@@ -69,6 +69,8 @@ class Nav(private val rt: Runtime, private val scope: CoroutineScope) {
     val open: Tab? get() = rt.view.state.tabs.getOrNull(pager.currentPage - 1)
     /** A message the view refused, for the prompt box it came from to take back: its tab ("" for Home) and text. */
     var unsent by mutableStateOf<Pair<String, String>?>(null)
+    /** Where Home's next message starts a conversation: a machine and a folder; null, this phone. */
+    var target by mutableStateOf<Pair<String, String>?>(null)
     /** Home's prompt box takes the keyboard when it next shows (the overview's new-session card). */
     var compose by mutableStateOf(false)
     /** The page on screen was opened from the overview, which Back returns to. */
@@ -242,9 +244,9 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
                 }
             }
         }
-        // Interrupts belong to their owner and stop the world wherever you are.
-        val tabs = rt.view.state.tabs
-        val asking = nav.open?.takeIf { top is Screen.Home } ?: tabs.firstOrNull { it.ask != null }
+        // An interrupt stops the world once its conversation is on screen; out of sight it waits, its
+        // tab marked and Home saying it needs you, as on the desktop.
+        val asking = nav.open?.takeIf { top is Screen.Home }
         Overlay(asking?.ask, rise = true) { Interrupt(it) { v -> asking?.let { t -> rt.view.send("answer", "tab" to t.id, "value" to v) } } }
         Overlay(rt.view.state.claim, rise = true) { PairRequest(it, ctx) }
         Overlay(picker) { pk -> PickerSheet(pk) { picker = null } }

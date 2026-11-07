@@ -351,7 +351,7 @@ func (t *tab) describe() bool {
 			t.Ask = t.question()
 		} else {
 			owner := "questions"
-			if slices.ContainsFunc(in.Choices, func(c string) bool { return strings.Contains(c, "approve") }) {
+			if p := in.Presentation; p != nil && p.Kind == "approval" { // the permissions plugin's
 				owner = "permissions"
 			}
 			t.Ask = &Ask{ID: in.ID, Owner: owner, Title: in.Title, Choices: in.Choices, Free: len(in.Choices) == 0}

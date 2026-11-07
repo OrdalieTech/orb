@@ -165,7 +165,10 @@ private fun ActionView(a: Action, t: Tab, c: Ctx) = Column(Modifier.fillMaxWidth
     Box(Modifier.press { open = !open }) { ActionLine(a.verb, a.target, a.result, a.live, a.failed, open) }
     if (open) Panel {
         val d = detail
+        val diff = d?.optString("diff").orEmpty().trimEnd('\n')
         if (a.verb == "thought") BasicText(d?.optString("text").orEmpty(), style = type((SIZE - 2).sp, p.mute))
+        // An edit shows what it changed: added lines in green, removed ones in the rupture.
+        else if (diff.isNotEmpty()) diff.lines().forEach { BasicText(it, style = type(12.sp, if (it.startsWith('+')) hue(5) else if (it.startsWith('-')) Ink.Rupture else p.mute)) }
         else {
             d?.optString("args")?.takeIf { it.isNotBlank() }?.let { T("input", label = true, color = p.meta); BasicText(it, style = type(12.sp, p.mute)) }
             T("output", label = true, color = p.meta)

@@ -249,6 +249,7 @@ type hit struct {
 	live, asks  bool
 	hue         int
 	here, right func()
+	thread      *Entry // a closed thread: its menu renames or deletes it
 }
 
 func (a *app) paletteSheet(c *ui.Context) {
@@ -279,7 +280,7 @@ func (a *app) paletteSheet(c *ui.Context) {
 				meta = m.Name + " · " + meta
 			}
 			hits = append(hits, hit{title: e.Title, meta: meta, live: e.Live, asks: e.Asks, hue: o.hue(e.Machine),
-				here: func() { a.open(e.Key) }, right: func() { a.dropped(a.active, "right", carried{key: e.Key}) }})
+				here: func() { a.open(e.Key) }, right: func() { a.dropped(a.active, "right", carried{key: e.Key}) }, thread: &e})
 		}
 	}
 	a.pick = min(max(a.pick, 0), max(len(hits)-1, 0))
@@ -323,6 +324,9 @@ func (a *app) paletteSheet(c *ui.Context) {
 				}
 				if row.Hovered() {
 					a.pick = i
+				}
+				if h.thread != nil {
+					row.ContextMenu(func(m *ui.Menu) { a.threadMenu(m, *h.thread) })
 				}
 				if press(row) {
 					choose(false)

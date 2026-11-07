@@ -150,6 +150,40 @@ func (s *Service) host(ctx context.Context, p bridge.Principal, method string, p
 			return nil, err
 		}
 		return s.launch(ctx, p, cwd, q.SessionID)
+	case "host.attach":
+		// A file a peer cites in a message, sent in pieces: the first makes it in a folder of its
+		// own in the temp directory, the next (its path given) append to it, and only there.
+		var q struct {
+			Name string `json:"name,omitempty"`
+			Path string `json:"path,omitempty"`
+			Data []byte `json:"data"`
+		}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		path := q.Path
+		if path == "" {
+			dir, err := os.MkdirTemp("", "orb-attach-")
+			if err != nil {
+				return nil, err
+			}
+			name := filepath.Base(q.Name)
+			if name == "." || name == string(filepath.Separator) {
+				name = "file"
+			}
+			path = filepath.Join(dir, name)
+		} else if dir := filepath.Dir(path); filepath.Clean(path) != path || filepath.Dir(dir) != filepath.Clean(os.TempDir()) || !strings.HasPrefix(filepath.Base(dir), "orb-attach-") {
+			return nil, bridge.Fail("invalid_params")
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			return nil, err
+		}
+		_, err = f.Write(q.Data)
+		if err = errors.Join(err, f.Close()); err != nil {
+			return nil, err
+		}
+		return bridge.JSON(map[string]string{"path": path}), nil
 	case "host.dirs":
 		// The folders in a folder (the home when none), for a peer picking where to launch: hidden
 		// ones left out, sorted as Finder sorts, each marked when it is a git checkout.

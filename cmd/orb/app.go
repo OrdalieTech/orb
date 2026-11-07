@@ -56,6 +56,7 @@ func runApp(ctx context.Context, args []string, streams cliStreams) int {
 			}
 			return string(out), err
 		},
+		ReadFile:  os.ReadFile,
 		Tabs:      saved,
 		SaveTabs:  func(b []byte) { _ = os.WriteFile(tabs, b, 0o600) },
 		Names:     named,

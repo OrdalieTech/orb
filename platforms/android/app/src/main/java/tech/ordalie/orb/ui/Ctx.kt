@@ -20,10 +20,19 @@ class Ctx(
     fun palette(t: Tab?): List<Command> = v.state.commands + t?.commands.orEmpty()
 
     /** Sends what the prompt box holds: the view runs commands and messages, and names what only the app does. */
-    fun send(t: Tab?, text: String) = rt.scope.launch {
-        val r = v.ask("send", "tab" to t?.id.orEmpty(), "text" to text)
+    fun send(t: Tab?, typed: String) = rt.scope.launch {
+        val to = nav.target.takeIf { t == null && !typed.startsWith("/") }
+        val machine = if (t != null) t.peer.takeIf { t.remote } else to?.first?.takeIf { it != v.state.self }
+        var text = typed
+        // Cited files live on this phone: another machine gets a copy, which the message cites.
+        if (machine != null) for (m in Regex("@(cites/\\S+)").findAll(typed)) {
+            val path = v.ask("attach", "machine" to machine, "path" to java.io.File(rt.orb.cwd, m.groupValues[1]).path).obj?.optString("path").orEmpty()
+            if (path.isEmpty()) { nav.unsent = t?.id.orEmpty() to typed; return@launch }
+            text = text.replace(m.value, "@$path")
+        }
+        val r = if (to != null) v.ask("start", "machine" to to.first, "cwd" to to.second, "text" to text) else v.ask("send", "tab" to t?.id.orEmpty(), "text" to text)
         // Refused (no Orb could start, say): the text goes back where it was typed.
-        if (r.error != null) nav.unsent = t?.id.orEmpty() to text
+        if (r.error != null) nav.unsent = t?.id.orEmpty() to typed
         r.obj?.optString("tab")?.takeIf { it.isNotEmpty() }?.let(nav::show)
         r.obj?.optString("copy")?.takeIf { it.isNotEmpty() }?.let { context.copy(it, "copied the last answer") }
         when (r.obj?.optString("nav")) {
@@ -38,8 +47,12 @@ class Ctx(
     /** Opens a Home row or a running Orb in its tab. */
     fun open(key: String) = rt.scope.launch { v.ask("open", "key" to key).obj?.optString("tab")?.let(nav::show) }
 
-    /** Starts Orb on a machine, in a folder or (cwd empty) where it starts, and opens it. */
-    fun start(machine: String, cwd: String = "") = rt.scope.launch { v.ask("start", "machine" to machine, "cwd" to cwd).obj?.optString("tab")?.let(nav::show) }
+    /** Makes a machine's folder where Home's next message goes, and shows Home: a conversation opens
+     *  with its first message, never as an empty tab, as on the desktop. */
+    fun start(machine: String, cwd: String = "") {
+        nav.target = (machine to cwd).takeIf { machine != v.state.self || cwd.isNotEmpty() }
+        nav.home()
+    }
 
     suspend fun image(tab: String, ref: String, px: Int): String? = v.ask("image", "tab" to tab, "ref" to ref, "px" to px).obj?.optString("data")?.ifEmpty { null }
 

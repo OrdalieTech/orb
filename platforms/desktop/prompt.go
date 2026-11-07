@@ -165,9 +165,20 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 				}
 				return false
 			})
-			// Files dropped on the box are cited, as the TUI cites them with @.
+			// Files dropped on the box are cited, as the TUI cites them with @: a copy of them when
+			// the conversation runs on another machine.
+			machine := a.target[0]
+			if t != nil {
+				machine = t.Peer
+			}
 			for _, f := range in.DroppedFiles() {
-				draft = strings.TrimRight(draft, " ") + " @" + quotePath(f) + " "
+				then(a.o, func(r struct{ Path string }, err error) {
+					if err != nil {
+						a.say(err.Error())
+						return
+					}
+					a.drafts[id] = strings.TrimRight(a.drafts[id], " ") + " @" + quotePath(r.Path) + " "
+				}, "attach", "machine", machine, "path", f)
 			}
 			if a.focus != a.focused && a.building == a.active {
 				a.focused = a.focus

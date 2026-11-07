@@ -36,6 +36,8 @@ type Options struct {
 	// Names is what SaveNames last kept: the names given to machines here, over their own.
 	Names     []byte
 	SaveNames func([]byte)
+	// ReadFile reads a file of this device, one a message cites, to copy it to another machine.
+	ReadFile func(path string) ([]byte, error)
 	// Latest is the newest Orb release, "" when unknown.
 	Latest func(ctx context.Context) string
 	// Name is what this machine is called in the app ("this phone"); CWD is where a new
@@ -149,6 +151,7 @@ type intent struct {
 	Account  string   `json:"account"`
 	Auth     string   `json:"auth"`
 	Level    string   `json:"level"`
+	Path     string   `json:"path"`
 }
 
 // Do runs one intent. Those that wait on a machine run on their own; the rest apply at once and
