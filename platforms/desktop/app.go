@@ -282,7 +282,8 @@ func (a *app) titleBar(c *ui.Context, body func()) {
 	tb := c.TitleBar()
 	left, right := float32(8), float32(margin)
 	if a.left && tb.Left > 0 {
-		left = tb.Left + 18 // ORB further from the traffic lights than from the tabs
+		// Measured against drawn lights: 23 from the green one to ORB, 19 from ORB to the first tab.
+		left = tb.Left + 16
 	}
 	if a.corner {
 		right = tb.Right + 12

@@ -59,7 +59,7 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 		if a.left {
 			e := chip("orb", home, func(bool) {
 				stretch(c, "ORB", 15, map[bool]ui.Color{true: pal.fg, false: pal.meta}[home], 1)
-			}).Padding(0, 2, 0, 6).Shrink(0).Tooltip("Home  " + keys("T"))
+			}).Padding(0, 6).Shrink(0).Tooltip("Home  " + keys("T"))
 			if press(e) {
 				a.activate(x)
 				a.show("")
