@@ -13,11 +13,19 @@ import (
 // homeScreen starts a session: the prompt box in the middle of the window, where it runs a click
 // away, the latest threads under it. Every thread is a ⌘K away.
 func (a *app) homeScreen(c *ui.Context) {
-	o, pal := a.o, p(c)
 	a.titleBar(c, func() { ui.Spacer(c) })
 	// A small tile keeps Home to its prompt box.
 	small := a.narrow || a.building != nil && a.building.height > 0 && a.building.height < 480
-	ui.Column(c).Grow(1).Basis(0).FillWidth().Justify(ui.Center).Padding(0, margin, 48).Children(func() {
+	// Centred while it fits; with many cards open, it scrolls from the top.
+	ui.Scroll(c).Grow(1).Basis(0).FillWidth().Children(func() {
+		ui.Column(c).FillWidth().MinHeightPercent(100).Justify(ui.Center).Padding(24, margin, 48).Children(func() { a.homeBody(c, small) })
+	})
+}
+
+// homeBody is Home under its bar: the title card, the prompt box, the cards open, the latest.
+func (a *app) homeBody(c *ui.Context, small bool) {
+	o, pal := a.o, p(c)
+	{
 		// An Evangelion title card: a rule, the title stretched tall.
 		reading(c).MaxWidth(680).PaddingX(margin).Children(func() {
 			if small {
@@ -41,11 +49,14 @@ func (a *app) homeScreen(c *ui.Context) {
 		ui.Column(c).FillWidth().MaxWidth(680+2*overhang+2*margin).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
 		var recent []Entry
 		for _, e := range o.home.Entries {
-			if !e.Open && len(recent) < 8 {
+			if !e.Open && len(recent) < 6 {
 				recent = append(recent, e)
 			}
 		}
 		a.boot(c)
+		if len(o.state.Tabs) > 0 && !small {
+			a.openCards(c)
+		}
 		if len(recent) > 0 && o.state.Up && !small {
 			reading(c).MaxWidth(680).Margin(18, ui.Auto, 0).PaddingX(margin).Children(func() {
 				ui.Row(c).FillWidth().Margin(0, 0, 4).Children(func() {
@@ -91,7 +102,69 @@ func (a *app) homeScreen(c *ui.Context) {
 				}
 			})
 		}
+	}
+}
+
+// openCards are the conversations open, as the phone's overview shows them: a card each, what it
+// does and where, the last thing it said; a click shows it, × closes it (its Orb runs on).
+func (a *app) openCards(c *ui.Context) {
+	o, pal := a.o, p(c)
+	reading(c).MaxWidth(680+2*overhang).Margin(22, ui.Auto, 0).PaddingX(margin).Children(func() {
+		label(c, fmt.Sprintf("open · %d", len(o.state.Tabs))).TextColor(pal.meta).Margin(0, 0, 6)
+		ui.Grid(c).FillWidth().Columns(map[bool]int{true: 2, false: 3}[a.narrow]).Gap(8).Children(func() {
+			for _, t := range o.state.Tabs {
+				card := ui.Column(c.Key(t.ID)).Height(78).Padding(9, 10).Gap(3).Radius(10).Border(1, pal.rule).Clip()
+				hovered := card.Hovered()
+				hover(card, pal.raised)
+				if t.Asleep {
+					card.Opacity(0.6) // as the phone's cards asleep
+				}
+				card.Children(func() {
+					ui.Row(c).FillWidth().Gap(7).AlignItems(ui.Center).Children(func() {
+						where(c, o.hue(t.Peer), t.Busy, t.Ask != nil, pal.mute)
+						ui.Text(c, cmp.Or(t.Title, "new session")).Grow(1).Basis(0).MinWidth(0).FontSize(small).FontWeight(strong).SingleLine()
+						if hovered && press(ui.Row(c).Size(18, 18).Radius(4).Justify(ui.Center).Children(func() { ui.Text(c, "×").FontSize(14).TextColor(pal.meta) }).Tooltip("Close · it runs on")) {
+							a.close(t.ID)
+						}
+					})
+					state, ink := "", pal.meta
+					switch {
+					case t.Ask != nil:
+						state, ink = "asks", rupture
+					case t.Busy:
+						state, ink = "working", pal.fg
+					case strings.TrimSpace(t.Status) != "":
+						state = strings.Split(t.Status, " · ")[0]
+					case t.Unread > 0:
+						state, ink = fmt.Sprintf("%d new", t.Unread), pal.fg
+					case t.Asleep:
+						state = "asleep"
+					}
+					ui.Text(c, strings.Join(nonEmpty(map[bool]string{true: t.Where}[t.Remote], tidy(t.CWD), state), " · ")).FontSize(12).TextColor(ink).SingleLine()
+					if last := lastSaid(o.rows[t.ID]); last != "" {
+						ui.Text(c, last).FontSize(12).TextColor(pal.mute).MaxLines(1)
+					}
+				})
+				a.carry(card, carried{tab: t.ID})
+				if press(card) {
+					a.show(t.ID)
+				}
+			}
+		})
 	})
+}
+
+// lastSaid is the last line a conversation's rows say, for its card.
+func lastSaid(rows []Row) string {
+	for i := len(rows) - 1; i >= 0; i-- {
+		if t := strings.TrimSpace(rows[i].Text); t != "" {
+			if j := strings.LastIndexByte(t, '\n'); j >= 0 {
+				t = t[j+1:]
+			}
+			return t
+		}
+	}
+	return ""
 }
 
 // sessionRow is one line per session: its title, then where it lives and its condition in words
