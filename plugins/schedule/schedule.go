@@ -178,6 +178,9 @@ func (s *Scheduler) Extension() extensions.Factory {
 			end, _ := event.(extensions.AgentEndEvent)
 			s.mu.Lock()
 			defer s.mu.Unlock()
+			if l == nil {
+				return nil, nil
+			}
 			for mark, wait := range l.waits {
 				if slices.ContainsFunc(end.Messages, func(m engine.AgentMessage) bool {
 					u, ok := m.(*ai.UserMessage)
@@ -264,9 +267,9 @@ func (s *Scheduler) execute(ctx context.Context, _ string, raw any, _ engine.Age
 		}
 		switch in.Action {
 		case "create":
-			k := &task{ID: randomID(5), Zone: s.o.Zone.String(), By: "person", Cwd: session.CWD(), Enabled: true, Created: now}
+			k := &task{ID: "s" + randomID(4), Zone: s.o.Zone.String(), By: "person", Cwd: session.CWD(), Enabled: true, Created: now}
 			for slices.ContainsFunc(d.Tasks, func(o *task) bool { return o.ID == k.ID }) {
-				k.ID = randomID(5)
+				k.ID = "s" + randomID(4)
 			}
 			if agentTurn {
 				k.By = "agent"
@@ -286,6 +289,11 @@ func (s *Scheduler) execute(ctx context.Context, _ string, raw any, _ engine.Age
 		case "update":
 			k := *d.Tasks[i]
 			in.set(&k, sid)
+			if paused := *d.Tasks[i]; agentTurn && paused.By == "person" {
+				if paused.Enabled = false; k != paused {
+					return nil, fmt.Errorf("a scheduled run can only pause (enabled:false) or delete a task a person created")
+				}
+			}
 			reschedule := in.When != nil || in.Zone != nil || in.Enabled != nil && *in.Enabled && !d.Tasks[i].Enabled
 			if err := check(d, &k, now, reschedule, agentTurn, models); err != nil {
 				return nil, err
@@ -594,16 +602,16 @@ func (s *Scheduler) turn(ctx context.Context, rt *agent.AgentSession, k task, te
 		}
 	}
 	defer s.mark(rt.Manager().GetSessionID())()
-	ended := make(chan error, 1)
+	var err error
+	ended := make(chan struct{})
 	go func() {
-		err := rt.Prompt(ctx, text)
-		if err == nil {
+		defer close(ended)
+		if err = rt.Prompt(ctx, text); err == nil {
 			err = rt.WaitForIdle(ctx)
 		}
-		ended <- err
 	}()
 	select {
-	case err := <-ended:
+	case <-ended:
 		if err != nil {
 			return failed, err.Error()
 		}
@@ -640,6 +648,11 @@ func (s *Scheduler) inPlace(ctx context.Context, l *live, sid, mark, text string
 	}
 	l.waits[mark] = wait
 	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(l.waits, mark)
+		s.mu.Unlock()
+	}()
 	defer s.mark(sid)()
 	if err := l.api.SendUserMessage(ctx, ai.NewUserText(text), &extensions.SendUserMessageOptions{DeliverAs: extensions.DeliverFollowUp, ExpandPromptTemplates: true}); err != nil {
 		return failed, err.Error()
@@ -714,7 +727,7 @@ func randomID(n int) string {
 	for i := range b {
 		b[i] = alphabet[rand.IntN(len(alphabet))]
 	}
-	return "s" + string(b[1:])
+	return string(b)
 }
 
 // rule is a parsed when: one instant, an interval, or a cron spec.
