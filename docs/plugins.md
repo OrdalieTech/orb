@@ -130,7 +130,9 @@ failures in a row.
 ```
 
 `zone` is the default for tasks (the machine's otherwise), runs start only within
-`activeHours`, and a run longer than `timeout` is aborted as failed. A run in place reaches
+`activeHours`, and a run longer than `timeout` is aborted as failed. `orb chat` reads these, as
+all its settings, from the agent dir's `settings.json` file (a team agent's comes from its
+`agent.yaml`), never from the native store `orb storage config import` writes. A run in place reaches
 people through what it does, such as posting on Buzz: `orb chat` delivers only replies to the
 messages it received.
 
