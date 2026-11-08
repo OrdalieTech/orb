@@ -49,9 +49,10 @@ const (
 // Options configure a Scheduler. Only Store is required.
 type Options struct {
 	Store document.Document
-	// Open opens a stored session (session != "") or a new one in cwd; close
-	// disposes it. Nil means this process fires nothing.
-	Open func(ctx context.Context, session, cwd string) (*agent.AgentSession, func(), error)
+	// Run delivers a run's turn and returns once it settles or ctx ends, with the
+	// session it ran in and its messages; Sessions is Run for AgentSession hosts.
+	// Nil means this process fires nothing.
+	Run  func(ctx context.Context, turn Turn) (session string, messages engine.AgentMessages, err error)
 	Zone *time.Location // the owner's default zone; nil is UTC
 	// ActiveHours is "08:00-22:00" in Zone; "" is always.
 	ActiveHours string
@@ -61,14 +62,31 @@ type Options struct {
 	Name        string // how this holder shows in runs, e.g. "orb chat"
 }
 
+// Turn is a run as Run delivers it.
+type Turn struct {
+	Session string // the task's session; "" is a new session in Cwd
+	Cwd     string
+	Model   string // provider/id a new session runs with; "" is the default
+	Prompt  string // the task's prompt, then the run's marker
+}
+
+// ErrBusy, wrapped in Run's error, says the task's session is held elsewhere:
+// the run retries every minute, for an hour at most.
+var ErrBusy = errors.New("busy")
+
+// scheduled marks a scheduled run's context: the tasks its tool calls create are the agent's.
+type scheduled struct{}
+
 // Scheduler is one holder's view of the schedule document.
 type Scheduler struct {
 	o  Options
 	id string // this holder's key in holders
 
-	mu        sync.Mutex
-	live      map[string]*live // sessions open in this process, by ID
-	scheduled map[string]int   // sessions in a scheduled turn
+	mu   sync.Mutex
+	live map[string]*live // sessions open in this process, by ID
+	// placed counts runs in place by session: a person's turn queued alongside one
+	// carries no marker, so every tool call there counts as the run's.
+	placed map[string]int
 }
 
 // live is a session open in this process, where runs for it are delivered.
@@ -133,7 +151,7 @@ func New(o Options) *Scheduler {
 	if o.Timeout == 0 {
 		o.Timeout = 30 * time.Minute
 	}
-	return &Scheduler{o: o, id: randomID(4), live: map[string]*live{}, scheduled: map[string]int{}}
+	return &Scheduler{o: o, id: randomID(4), live: map[string]*live{}, placed: map[string]int{}}
 }
 
 func (s *Scheduler) now() time.Time { return s.o.Now().UTC().Truncate(time.Second) }
@@ -211,16 +229,43 @@ func (s *Scheduler) Extension() extensions.Factory {
 		})
 		api.RegisterTool(extensions.ToolDefinition{
 			Name: "schedule", Label: "Schedule", PromptSnippet: "Schedule a prompt to run later or on a recurrence",
-			Description: "Create, list, update or delete scheduled tasks: a prompt that runs once or on a recurrence, in this session or in a new one. A run receives the prompt followed by its marker [scheduled · title · id]; it reaches people only through what the run itself does or says.",
-			PromptGuidelines: []string{
-				"Use schedule for reminders, follow-ups and recurring checks instead of waiting or polling.",
-				"A run whose final answer is exactly NO_REPLY is recorded as quiet: tell a recurring check to answer NO_REPLY when there is nothing to report.",
+			Description: toolDescription, PromptGuidelines: toolGuidelines, Parameters: toolSchema,
+			Execute: func(ctx context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback, c extensions.Context) (engine.AgentToolResult, error) {
+				models := func(model string) bool {
+					provider, id, _ := strings.Cut(model, "/")
+					if registry := c.ModelRegistry(); registry != nil {
+						_, ok := registry.Find(provider, id)
+						return ok
+					}
+					return false
+				}
+				return s.execute(ctx, raw, c.SessionManager().GetSessionID(), c.CWD(), models)
 			},
-			Parameters: toolSchema,
-			Execute:    s.execute,
 		})
 		return nil
 	}
+}
+
+// Tool is the schedule tool for a host without extensions, such as a bare
+// engine.Agent: session and cwd are the conversation it serves, and models
+// says whether a provider/id may run a task (nil allows any).
+func (s *Scheduler) Tool(session, cwd string, models func(string) bool) engine.AgentTool {
+	if models == nil {
+		models = func(string) bool { return true }
+	}
+	return engine.AgentToolFunc{
+		AgentToolSpec: engine.AgentToolSpec{Name: "schedule", Label: "Schedule", Description: toolDescription + " " + strings.Join(toolGuidelines, " "), Parameters: toolSchema},
+		Run: func(ctx context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback) (engine.AgentToolResult, error) {
+			return s.execute(ctx, raw, session, cwd, models)
+		},
+	}
+}
+
+const toolDescription = "Create, list, update or delete scheduled tasks: a prompt that runs once or on a recurrence, in this session or in a new one. A run receives the prompt followed by its marker [scheduled · title · id]; it reaches people only through what the run itself does or says."
+
+var toolGuidelines = []string{
+	"Use schedule for reminders, follow-ups and recurring checks instead of waiting or polling.",
+	"A run whose final answer is exactly NO_REPLY is recorded as quiet: tell a recurring check to answer NO_REPLY when there is nothing to report.",
 }
 
 func userText(content ai.UserContent) string {
@@ -242,7 +287,7 @@ type input struct {
 	Enabled *bool   `json:"enabled"`
 }
 
-func (s *Scheduler) execute(ctx context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback, session extensions.Context) (engine.AgentToolResult, error) {
+func (s *Scheduler) execute(ctx context.Context, raw any, sid, cwd string, models func(string) bool) (engine.AgentToolResult, error) {
 	var in input
 	if err := toolutil.Decode(raw, &in); err != nil {
 		return engine.AgentToolResult{}, err
@@ -260,18 +305,9 @@ func (s *Scheduler) execute(ctx context.Context, _ string, raw any, _ engine.Age
 		out, _ := json.MarshalIndent(map[string]any{"tasks": d.Tasks, "runs": d.Runs[max(0, len(d.Runs)-10):]}, "", " ")
 		return toolutil.TextResult(string(out)), nil
 	}
-	sid := session.SessionManager().GetSessionID()
 	s.mu.Lock()
-	agentTurn := s.scheduled[sid] > 0
+	agentTurn := ctx.Value(scheduled{}) != nil || s.placed[sid] > 0
 	s.mu.Unlock()
-	models := func(model string) bool {
-		provider, id, _ := strings.Cut(model, "/")
-		if registry := session.ModelRegistry(); registry != nil {
-			_, ok := registry.Find(provider, id)
-			return ok
-		}
-		return false
-	}
 	var text string
 	err := s.o.Store.Update(ctx, func(b []byte) ([]byte, error) {
 		d, err := decode(b)
@@ -284,7 +320,7 @@ func (s *Scheduler) execute(ctx context.Context, _ string, raw any, _ engine.Age
 		}
 		switch in.Action {
 		case "create":
-			k := &task{ID: "s" + randomID(4), Zone: s.o.Zone.String(), By: "person", Cwd: session.CWD(), Enabled: true, Created: now}
+			k := &task{ID: "s" + randomID(4), Zone: s.o.Zone.String(), By: "person", Cwd: cwd, Enabled: true, Created: now}
 			for slices.ContainsFunc(d.Tasks, func(o *task) bool { return o.ID == k.ID }) {
 				k.ID = "s" + randomID(4)
 			}
@@ -416,8 +452,8 @@ func countTasks(tasks []*task, ok func(*task) bool) int {
 
 // Run fires due occurrences until ctx ends.
 func (s *Scheduler) Run(ctx context.Context) error {
-	if s.o.Open == nil {
-		return errors.New("schedule: Run needs Open")
+	if s.o.Run == nil {
+		return errors.New("schedule: Run needs Options.Run")
 	}
 	if _, _, err := hours(s.o.ActiveHours); err != nil {
 		return err
@@ -595,21 +631,16 @@ func (s *Scheduler) deliver(ctx context.Context, k task, started time.Time) (sta
 				return status, detail, k.Session
 			}
 		}
-		id := ""
+		turn := Turn{Cwd: k.Cwd, Model: k.Model, Prompt: text}
 		if k.Target == "this" {
-			id = k.Session
+			turn.Session = k.Session
 		}
-		rt, closeSession, err := s.o.Open(ctx, id, k.Cwd)
-		if err == nil {
-			defer closeSession()
-			status, detail := s.turn(ctx, rt, k, text)
-			return status, detail, rt.Manager().GetSessionID()
-		}
-		if k.Target != "this" {
-			return failed, err.Error(), ""
+		status, detail, session, err := s.turn(ctx, turn)
+		if !errors.Is(err, ErrBusy) {
+			return status, detail, session
 		}
 		if s.now().Sub(started) >= busyFor {
-			return skipped, "busy: " + err.Error(), k.Session
+			return skipped, err.Error(), k.Session
 		}
 		select {
 		case <-ctx.Done():
@@ -619,42 +650,75 @@ func (s *Scheduler) deliver(ctx context.Context, k task, started time.Time) (sta
 	}
 }
 
-// turn runs text as a turn of a session this run opened.
-func (s *Scheduler) turn(ctx context.Context, rt *agent.AgentSession, k task, text string) (string, string) {
-	if k.Model != "" {
-		provider, id, _ := strings.Cut(k.Model, "/")
-		models := rt.AvailableModels()
-		i := slices.IndexFunc(models, func(m ai.Model) bool { return string(m.Provider) == provider && m.ID == id })
-		if i < 0 {
-			return failed, fmt.Sprintf("model %q is not available", k.Model)
-		}
-		if err := rt.SetModel(ctx, models[i]); err != nil {
-			return failed, err.Error()
-		}
-	}
-	defer s.mark(rt.Manager().GetSessionID())()
-	var err error
-	ended := make(chan struct{})
+// turn delivers t through Run, whose context ends at the timeout.
+func (s *Scheduler) turn(ctx context.Context, t Turn) (status, detail, session string, err error) {
+	runCtx, cancel := context.WithCancel(context.WithValue(ctx, scheduled{}, true))
+	defer cancel()
+	timedOut := make(chan struct{})
 	go func() {
-		defer close(ended)
-		if err = rt.Prompt(ctx, text); err == nil {
-			err = rt.WaitForIdle(ctx)
+		select {
+		case <-s.o.After(s.o.Timeout):
+			close(timedOut)
+			cancel()
+		case <-runCtx.Done():
 		}
 	}()
+	session, messages, err := s.o.Run(runCtx, t)
 	select {
-	case <-ended:
+	case <-timedOut:
+		return failed, "timeout", session, nil
+	default:
+	}
+	switch {
+	case ctx.Err() != nil:
+		return interrupted, "its holder stopped", session, nil
+	case err != nil:
+		return failed, err.Error(), session, err
+	}
+	status, detail = outcome(messages)
+	return status, detail, session, nil
+}
+
+// Sessions is Run for hosts that run AgentSessions, such as orb chat: open gives
+// a stored session (session != "") or a new one in cwd, and close disposes it.
+// An error opening a stored session counts as ErrBusy.
+func Sessions(open func(ctx context.Context, session, cwd string) (*agent.AgentSession, func(), error)) func(context.Context, Turn) (string, engine.AgentMessages, error) {
+	return func(ctx context.Context, t Turn) (string, engine.AgentMessages, error) {
+		rt, closeSession, err := open(ctx, t.Session, t.Cwd)
 		if err != nil {
-			return failed, err.Error()
+			if t.Session != "" {
+				err = fmt.Errorf("%w: %w", ErrBusy, err)
+			}
+			return t.Session, nil, err
 		}
-		return outcome(rt.State().Messages)
-	case <-s.o.After(s.o.Timeout):
-		rt.Abort()
-		<-ended
-		return failed, "timeout"
-	case <-ctx.Done():
-		rt.Abort()
-		<-ended
-		return interrupted, "its holder stopped"
+		defer closeSession()
+		sid := rt.Manager().GetSessionID()
+		if t.Model != "" {
+			provider, id, _ := strings.Cut(t.Model, "/")
+			models := rt.AvailableModels()
+			i := slices.IndexFunc(models, func(m ai.Model) bool { return string(m.Provider) == provider && m.ID == id })
+			if i < 0 {
+				return sid, nil, fmt.Errorf("model %q is not available", t.Model)
+			}
+			if err := rt.SetModel(ctx, models[i]); err != nil {
+				return sid, nil, err
+			}
+		}
+		ended := make(chan error, 1)
+		go func() {
+			err := rt.Prompt(ctx, t.Prompt)
+			if err == nil {
+				err = rt.WaitForIdle(ctx)
+			}
+			ended <- err
+		}()
+		select {
+		case err = <-ended:
+		case <-ctx.Done():
+			rt.Abort()
+			err = <-ended
+		}
+		return sid, rt.State().Messages, err
 	}
 }
 
@@ -681,14 +745,17 @@ func (s *Scheduler) inPlace(ctx context.Context, l *live, sid, mark, text string
 		return interrupted, "the session closed"
 	}
 	l.waits[mark] = wait
+	s.placed[sid]++
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
 		delete(l.waits, mark)
 		delete(l.ended, mark)
+		if s.placed[sid]--; s.placed[sid] == 0 {
+			delete(s.placed, sid)
+		}
 		s.mu.Unlock()
 	}()
-	defer s.mark(sid)()
 	// An idle session runs the turn inside SendUserMessage, so the timeout runs alongside it.
 	sent := make(chan error, 1)
 	go func() {
@@ -716,20 +783,6 @@ func (s *Scheduler) inPlace(ctx context.Context, l *live, sid, mark, text string
 		case <-ctx.Done():
 			return interrupted, "its holder stopped"
 		}
-	}
-}
-
-// mark counts sid as in a scheduled turn, where the tasks it creates are the agent's, until the returned func.
-func (s *Scheduler) mark(sid string) func() {
-	s.mu.Lock()
-	s.scheduled[sid]++
-	s.mu.Unlock()
-	return func() {
-		s.mu.Lock()
-		if s.scheduled[sid]--; s.scheduled[sid] == 0 {
-			delete(s.scheduled, sid)
-		}
-		s.mu.Unlock()
 	}
 }
 

@@ -1,6 +1,6 @@
 package schedule_test
 
-// The plugin's contract, tested from outside: only New, Extension, Run and schedule.json. A scripted
+// The plugin's contract, tested from outside: only New, Extension, Tool, Sessions, Run and schedule.json. A scripted
 // model drives real sessions, a hand-moved clock drives the timer.
 
 import (
@@ -155,7 +155,7 @@ func newEnv(t *testing.T, start time.Time) *env {
 func (e *env) scheduler(name string, zone *time.Location, mod func(*schedule.Options)) *schedule.Scheduler {
 	o := schedule.Options{Store: e.store, Zone: zone, Now: e.clock.Now, After: e.clock.After, Name: name}
 	var s *schedule.Scheduler
-	o.Open = func(ctx context.Context, session, cwd string) (*agent.AgentSession, func(), error) {
+	o.Run = schedule.Sessions(func(ctx context.Context, session, cwd string) (*agent.AgentSession, func(), error) {
 		e.mu.Lock()
 		e.opens = append(e.opens, session)
 		err := e.openErr
@@ -165,7 +165,7 @@ func (e *env) scheduler(name string, zone *time.Location, mod func(*schedule.Opt
 		}
 		rt := e.session(s)
 		return rt, rt.Dispose, nil
-	}
+	})
 	if mod != nil {
 		mod(&o)
 	}
@@ -843,5 +843,77 @@ func TestARetriedTurnInPlaceEndsWithItsRetry(t *testing.T) {
 	}
 	if i := slices.IndexFunc(f.Tasks, func(k task) bool { return k.Title == "again" }); i < 0 || f.Tasks[i].By != "agent" {
 		t.Fatalf("the retry did not create its task as the agent's: %+v", f.Tasks)
+	}
+}
+
+func TestTasksCreatedInAnInPlaceRunAreTheAgents(t *testing.T) {
+	e := newEnv(t, monday)
+	s := e.scheduler("orb chat", paris, nil)
+	rt := e.session(s)
+	t.Cleanup(rt.Dispose)
+	e.answer(map[string]any{"action": "create", "title": "self", "prompt": "plan", "when": "in 10m"}, "ok")
+	if err := rt.Prompt(context.Background(), "please"); err != nil {
+		t.Fatal(err)
+	}
+	_ = rt.WaitForIdle(context.Background())
+	id := taskID(t, e.read(), "self")
+	e.run(s)
+	e.answer(map[string]any{"action": "create", "title": "follow up", "prompt": "check", "when": "in 30m"}, "planned")
+	e.clock.advance(11 * time.Minute)
+	f := e.eventually("the run ends", func(f file) bool { rs := runsOf(f, id); return len(rs) == 1 && rs[0].Status == "done" })
+	if k := f.Tasks[slices.IndexFunc(f.Tasks, func(k task) bool { return k.Title == "follow up" })]; k.By != "agent" {
+		t.Fatalf("a task created in a run in place is %q", k.By)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.opens) != 0 {
+		t.Fatalf("the run opened a session instead of running in place: %v", e.opens)
+	}
+}
+
+// A host without AgentSessions, such as a product on engine.Agent, has the tool and fires through Run alone.
+func TestABareEngineAgentSchedulesAndFires(t *testing.T) {
+	e := newEnv(t, monday)
+	var s *schedule.Scheduler
+	stream := func(ctx context.Context, model *ai.Model, c ai.Context, o *ai.SimpleStreamOptions) (ai.AssistantMessageEventStream, error) {
+		return e.provider.StreamSimple(ctx, model, c, o)
+	}
+	var conversation *engine.Agent
+	s = schedule.New(schedule.Options{Store: e.store, Zone: paris, Now: e.clock.Now, After: e.clock.After, Name: "product",
+		Run: func(ctx context.Context, turn schedule.Turn) (string, engine.AgentMessages, error) {
+			if turn.Session != "conv-1" {
+				return "", nil, fmt.Errorf("run for session %q", turn.Session)
+			}
+			err := conversation.Prompt(ctx, turn.Prompt)
+			if err == nil {
+				err = conversation.WaitForIdle(ctx)
+			}
+			return turn.Session, conversation.State().Messages, err
+		}})
+	conversation = engine.NewAgent(stream, engine.WithInitialState(engine.AgentState{SystemPrompt: "test", Model: e.provider.GetModel(), Tools: []engine.AgentTool{s.Tool("conv-1", e.dir, nil)}}))
+	e.answer(map[string]any{"action": "create", "title": "nudge", "prompt": "anything new?", "when": "in 20m"}, "ok")
+	if err := conversation.Prompt(context.Background(), "nudge me in 20 minutes"); err != nil {
+		t.Fatal(err)
+	}
+	_ = conversation.WaitForIdle(context.Background())
+	f := e.read()
+	if len(f.Tasks) != 1 || f.Tasks[0].Session != "conv-1" || f.Tasks[0].Target != "this" || f.Tasks[0].Cwd != e.dir || f.Tasks[0].By != "person" {
+		t.Fatalf("tasks %+v", f.Tasks)
+	}
+	id := f.Tasks[0].ID
+	e.run(s)
+	e.answer(map[string]any{"action": "create", "title": "again", "prompt": "anything new?", "when": "in 1h"}, "NO_REPLY")
+	e.clock.advance(21 * time.Minute)
+	f = e.eventually("the run is quiet", func(f file) bool { rs := runsOf(f, id); return len(rs) == 1 && rs[0].Status == "quiet" })
+	if rs := runsOf(f, id); rs[0].Session != "conv-1" {
+		t.Fatalf("run %+v", rs[0])
+	}
+	if len(f.Tasks) != 1 || f.Tasks[0].Title != "again" || f.Tasks[0].By != "agent" {
+		t.Fatalf("the task the run created: %+v", f.Tasks)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if last := e.prompts[len(e.prompts)-1]; !strings.Contains(last, "[scheduled · nudge · "+id+"]") {
+		t.Fatalf("the run's prompt lacks its marker: %s", last)
 	}
 }

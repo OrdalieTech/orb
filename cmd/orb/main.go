@@ -905,13 +905,13 @@ func startSchedule(ctx context.Context, agents *acpHost, streams cliStreams) err
 		return err
 	}
 	options.Name = "orb chat"
-	options.Open = func(ctx context.Context, session, cwd string) (*agent.AgentSession, func(), error) {
+	options.Run = schedule.Sessions(func(ctx context.Context, session, cwd string) (*agent.AgentSession, func(), error) {
 		runtime, closeSession, err := agents.Open(ctx, acp.Options{ID: session, CWD: cwd})
 		if err != nil {
 			return nil, nil, err
 		}
 		return runtime.Session(), closeSession, nil
-	}
+	})
 	agents.args.schedule = schedule.New(options)
 	go func() {
 		if err := agents.args.schedule.Run(ctx); err != nil {

@@ -123,7 +123,8 @@ create tasks but says nothing fires while no holder runs. A run ending in exactl
 is recorded as quiet, and only the most recent missed occurrence is caught up. Tasks a scheduled
 run creates are the agent's: at most 5 of the 20, 48 of their runs a day, none sooner than
 5 min, and on a person's task such a run may only pause or delete it. A task pauses after 5
-failures in a row.
+failures in a row. SDK hosts, on `AgentSession` or a bare `engine.Agent`, supply the store and the
+delivery of runs themselves (`docs/sdk.md`).
 
 ```json
 { "plugins": { "schedule": { "zone": "Europe/Paris", "activeHours": "08:00-22:00", "timeout": "30m" } } }
