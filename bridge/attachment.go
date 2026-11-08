@@ -87,7 +87,7 @@ func Code(err error) string {
 	var rpc *protocol.RPCError
 	if errors.As(err, &rpc) {
 		switch rpc.Message {
-		case "unauthorized", "not_found", "busy", "stale_target", "cursor_expired", "resource_exhausted", "operation_conflict", "identity_conflict", "unsupported_version":
+		case "unauthorized", "not_found", "busy", "stale_target", "cursor_expired", "resource_exhausted", "operation_conflict", "identity_conflict", "unsupported_version", "method_not_found":
 			return rpc.Message
 		}
 	}

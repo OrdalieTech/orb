@@ -45,8 +45,16 @@ private class Tokens(val fg: Color, val bg: Color, val meta: Color) : VisualTran
 @Composable
 fun PromptBox(
     session: Tab?, c: Ctx, commands: List<Command>, placeholder: String = "What should we work on?", modifier: Modifier = Modifier,
-    focus: FocusRequester = remember { FocusRequester() }, onSend: (String) -> Unit,
+    onSend: (String) -> Unit,
 ) {
+    // Asked for (the overview's new-session card, ⌘L), the box of the page on screen takes the keyboard once the page settles.
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(c.nav.compose, c.nav.open?.id) {
+        if (!c.nav.compose || session?.id != c.nav.open?.id) return@LaunchedEffect
+        if (runCatching { focus.requestFocus() }.isFailure) { delay(400); runCatching { focus.requestFocus() } }
+        keyboard?.show(); c.nav.compose = false
+    }
     val cites = c.cites
     // Saved per page: each tab keeps its draft while you swipe away.
     var value by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
@@ -127,9 +135,10 @@ fun PromptBox(
         ) {
             // Where it runs is chosen on Home; a conversation stays where it started, as on the desktop.
             Row(Modifier.press(enabled = session == null, onClick = c::chooseWhere).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Where(c.v.hue(session?.peer), phone = p.fg); Spacer(Modifier.width(7.dp))
+                val target = c.nav.target.takeIf { session == null }
+                Where(c.v.hue(session?.peer ?: target?.first), phone = p.fg); Spacer(Modifier.width(7.dp))
                 // The model matters more here: a long machine name gives way to it.
-                T((session?.where?.takeIf { session.remote } ?: "phone").let { if (it.length > 14) it.take(13) + "…" else it } + if (session == null) " ▾" else "", size = 14.sp, weight = Strong, lines = 1)
+                T((session?.where?.takeIf { session.remote } ?: target?.let { (m, cwd) -> cwd.substringAfterLast('/').ifEmpty { c.v.machine(m)?.name } } ?: "phone").let { if (it.length > 14) it.take(13) + "…" else it } + if (session == null) " ▾" else "", size = 14.sp, weight = Strong, lines = 1)
             }
             Row(Modifier.weight(1f).press { c.chooseModel(session) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 val on = session ?: c.fresh

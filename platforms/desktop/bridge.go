@@ -63,9 +63,9 @@ func (a *app) bridgeScreen(c *ui.Context) {
 	if o.state.Up {
 		sub = "on · peer to peer"
 	}
-	page(c, func() { header(c, "Bridge", sub, a.back, nil) }, func() {
+	page(c, func() { header(c, "Bridge", sub, a.up(), nil) }, func() {
 		// One code pairs two devices: the other shows it, this one takes it, the other says yes.
-		ui.Column(c).FillWidth().Padding(16).Radius(pane).Border(1, pal.fg).Gap(8).Children(func() {
+		ui.Column(c).FillWidth().Padding(16).Radius(pane).Border(1, pal.rule).Gap(8).Children(func() {
 			ui.Text(c, "Pair a device").FontSize(title).FontWeight(strong)
 			ui.Text(c, "On the other computer, run").TextColor(pal.mute)
 			ui.Row(c).Padding(7, 12).Radius(soft).Border(1, pal.rule).Children(func() {
@@ -181,7 +181,7 @@ func (a *app) peerRow(c *ui.Context, m Machine) {
 		case len(m.Running) > 0:
 			a.open("i:" + m.Running[0].Instance)
 		case m.Launch:
-			a.push(screen{kind: "device", peer: m.ID})
+			a.explore(m.ID)
 		}
 	}
 	rule(c, pal.rule)
@@ -233,7 +233,7 @@ func (a *app) inviteScreen(c *ui.Context) {
 		if valid {
 			qrCode(c, code, 200)
 		}
-		ui.Column(c).FillWidth().Padding(14).Radius(pane).Border(1, pal.fg).Children(func() {
+		ui.Column(c).FillWidth().Padding(14).Radius(pane).Border(1, pal.rule).Children(func() {
 			ui.Text(c, command).FontSize(12).TextColor(ink).Selectable()
 		})
 		ui.Row(c).Gap(8).Children(func() {
@@ -303,7 +303,7 @@ func (a *app) joinScreen(c *ui.Context, code string) {
 		if state == "" {
 			if !pairing.editing && pairing.inviter != "" {
 				// A valid code reads as what it is: an invitation from one device, for a while.
-				ui.Column(c).FillWidth().Padding(16).Radius(pane).Border(1, pal.fg).Children(func() {
+				ui.Column(c).FillWidth().Padding(16).Radius(pane).Border(1, pal.rule).Children(func() {
 					label(c, "invitation from")
 					ui.Text(c, fingerprint(pairing.inviter, 8)).FontSize(28).FontWeight(strong).PaddingY(8)
 					ui.Text(c, pairing.inviter).FontSize(labelSize + 1).TextColor(pal.meta).Selectable()

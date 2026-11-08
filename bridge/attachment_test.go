@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/OrdalieTech/orb/bridge/protocol"
 )
 
 type memoryStore struct {
@@ -153,5 +155,12 @@ func TestLedgerAmbiguousPersistenceNeverReexecutes(t *testing.T) {
 	receipt, duplicate, err := l.Accept(req)
 	if err != nil || !duplicate || receipt.Status != "outcome_unknown" {
 		t.Fatal(receipt, duplicate, err)
+	}
+}
+
+// A peer whose Orb predates a method says so, which the apps turn into "update it".
+func TestCodeKeepsAPeersMissingMethod(t *testing.T) {
+	if got := Code(&protocol.RPCError{Code: -32601, Message: "method_not_found"}); got != "method_not_found" {
+		t.Fatal(got)
 	}
 }

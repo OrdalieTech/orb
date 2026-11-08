@@ -246,7 +246,7 @@ func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *c
 		}
 		api.RegisterTool(extensions.ToolDefinition{
 			Name: "subagent", Label: "Subagent", Description: "Run a child agent", Parameters: schemaWithExternal(external, models),
-			Execute: func(ctx context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback, extensionContext extensions.Context) (engine.AgentToolResult, error) {
+			Execute: func(ctx context.Context, _ string, raw any, update engine.AgentToolUpdateCallback, extensionContext extensions.Context) (engine.AgentToolResult, error) {
 				var input subagentInput
 				if err := toolutil.Decode(raw, &input); err != nil {
 					return engine.AgentToolResult{}, err
@@ -312,6 +312,31 @@ func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *c
 					updateProgress(index, activity.Queued)
 				}
 
+				// What the children do, a line per tool call, streams to the call's update so an app
+				// shows each child at work, and stays in its details once they are done.
+				var stepsMu sync.Mutex
+				var steps []string
+				stepOf := func(index int) func(string) {
+					return func(step string) {
+						if mode == "parallel" {
+							step = fmt.Sprintf("[%d] %s", index+1, step)
+						}
+						stepsMu.Lock()
+						defer stepsMu.Unlock()
+						steps = append(steps, step)
+						if update != nil {
+							update(toolutil.TextResult(strings.Join(steps, "\n")))
+						}
+					}
+				}
+				withSteps := func(result engine.AgentToolResult) engine.AgentToolResult {
+					stepsMu.Lock()
+					defer stepsMu.Unlock()
+					if len(steps) > 0 {
+						result.Details = map[string]string{"steps": strings.Join(steps, "\n")}
+					}
+					return result
+				}
 				results := make([]string, len(tasks))
 				errorsByChild := make([]error, len(tasks))
 				// ponytail: Runs stay foreground-only with no detached supervisor,
@@ -331,7 +356,7 @@ func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *c
 						}
 						defer func() { <-semaphore }()
 						updateProgress(index, activity.Running)
-						results[index], errorsByChild[index] = runChildGuarded(ctx, extensionContext, injected, policy, sandboxMode, external, task)
+						results[index], errorsByChild[index] = runChildGuarded(ctx, extensionContext, injected, policy, sandboxMode, external, task, stepOf(index))
 						if ctx.Err() != nil {
 							updateProgress(index, activity.Cancelled)
 						} else if errorsByChild[index] != nil {
@@ -346,7 +371,7 @@ func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *c
 					if errorsByChild[0] != nil {
 						return engine.AgentToolResult{}, errorsByChild[0]
 					}
-					return toolutil.TextResult(results[0]), nil
+					return withSteps(toolutil.TextResult(results[0])), nil
 				}
 				sections := make([]string, len(tasks))
 				failures := 0
@@ -364,7 +389,7 @@ func Extension(injected engine.StreamFn, policy *permissions.Policy, settings *c
 					// error. The report is the message so surviving output survives.
 					return engine.AgentToolResult{}, fmt.Errorf("subagent: %d of %d children failed\n\n%s", failures, len(tasks), report)
 				}
-				return toolutil.TextResult(report), nil
+				return withSteps(toolutil.TextResult(report)), nil
 			},
 		})
 		return nil
@@ -395,7 +420,7 @@ func childOptions(parentRegistry extensions.ModelRegistry, injected engine.Strea
 // ponytail: recover because extensions.Context exposes no way to ask whether it
 // is still live; drop it once the interface can be checked before the call.
 func runChildGuarded(
-	ctx context.Context, parent extensions.Context, injected engine.StreamFn, policy *permissions.Policy, mode sandbox.Mode, external map[string]string, task subagentTask,
+	ctx context.Context, parent extensions.Context, injected engine.StreamFn, policy *permissions.Policy, mode sandbox.Mode, external map[string]string, task subagentTask, step func(string),
 ) (result string, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -406,7 +431,7 @@ func runChildGuarded(
 		// External CLIs keep their own tool policy but inherit host containment.
 		return runExternalChild(ctx, parent.CWD(), task.Agent, command, task.Task, mode)
 	}
-	return runChild(ctx, parent, injected, policy, mode, task)
+	return runChild(ctx, parent, injected, policy, mode, task, step)
 }
 
 func runExternalChild(ctx context.Context, cwd, name, command, task string, mode sandbox.Mode) (string, error) {
@@ -480,7 +505,7 @@ func excerpt(text string) string {
 	return text
 }
 
-func runChild(ctx context.Context, parent extensions.Context, injected engine.StreamFn, policy *permissions.Policy, mode sandbox.Mode, task subagentTask) (string, error) {
+func runChild(ctx context.Context, parent extensions.Context, injected engine.StreamFn, policy *permissions.Policy, mode sandbox.Mode, task subagentTask, step func(string)) (string, error) {
 	role := archetypes[task.Agent]
 	options, err := childOptions(parent.ModelRegistry(), injected, agent.AgentSessionOptions{})
 	if err != nil {
@@ -532,6 +557,11 @@ func runChild(ctx context.Context, parent extensions.Context, injected engine.St
 		return "", err
 	}
 	defer result.Session.Dispose()
+	defer result.Session.Subscribe(func(event any) {
+		if call, ok := event.(engine.ToolExecutionStartEvent); ok {
+			step(task.Agent + " · " + call.ToolName + " " + stepTarget(call.Args))
+		}
+	})()
 	if err := result.Session.PromptSync(ctx, strings.TrimSpace(task.Task)); err != nil {
 		return "", err
 	}
@@ -551,6 +581,20 @@ func runChild(ctx context.Context, parent extensions.Context, injected engine.St
 		return "", fmt.Errorf("subagent: child returned no final text")
 	}
 	return *text, nil
+}
+
+// stepTarget is what a child's tool call works on, on one short line.
+func stepTarget(args map[string]any) string {
+	for _, key := range []string{"path", "command", "pattern", "query", "url"} {
+		if value, _ := args[key].(string); strings.TrimSpace(value) != "" {
+			line, _, _ := strings.Cut(strings.TrimSpace(value), "\n")
+			if runes := []rune(line); len(runes) > 80 {
+				line = string(runes[:80]) + "…"
+			}
+			return line
+		}
+	}
+	return ""
 }
 
 // childSession forks the parent's branch in memory, cut before the newest

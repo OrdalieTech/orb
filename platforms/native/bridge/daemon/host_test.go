@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -106,6 +107,52 @@ func TestHostListsAndReadsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testi
 	}
 	if got, err := launchFolder("~"); err != nil || !filepath.IsAbs(got) {
 		t.Fatalf("~ = %q %v", got, err)
+	}
+
+	for _, d := range []string{"b/.git", "A", ".hidden", "c"} {
+		if err := os.MkdirAll(filepath.Join(root, "pick", d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "pick", "c", ".git"), []byte("gitdir: elsewhere\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "pick", "file"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = s.host(t.Context(), p, "host.dirs", bridge.JSON(map[string]string{"path": filepath.Join(root, "pick")}))
+	var dirs struct {
+		Path, Parent string
+		Dirs         []struct {
+			Name string
+			Git  bool
+		}
+	}
+	if err != nil || json.Unmarshal(raw, &dirs) != nil || dirs.Path != filepath.Join(root, "pick") || dirs.Parent != root ||
+		fmt.Sprint(dirs.Dirs) != "[{A false} {b true} {c true}]" {
+		t.Fatalf("dirs: %s %v", raw, err)
+	}
+	if raw, err = s.host(t.Context(), p, "host.dirs", bridge.JSON(struct{}{})); err != nil || !strings.Contains(string(raw), `"dirs":[`) {
+		t.Fatalf("home dirs: %s %v", raw, err)
+	}
+	if _, err := s.host(t.Context(), p, "host.dirs", bridge.JSON(map[string]string{"path": "relative"})); err == nil {
+		t.Fatal("listed a relative folder")
+	}
+
+	// A cited file comes in pieces, into a folder of its own; a piece names no other file.
+	t.Setenv("TMPDIR", root)
+	var put struct{ Path string }
+	for _, piece := range []string{"hello ", "world"} {
+		raw, err = s.host(t.Context(), p, "host.attach", bridge.JSON(map[string]any{"name": "../shot.png", "path": put.Path, "data": []byte(piece)}))
+		if err != nil || json.Unmarshal(raw, &put) != nil {
+			t.Fatalf("attach: %s %v", raw, err)
+		}
+	}
+	if got, _ := os.ReadFile(put.Path); string(got) != "hello world" || filepath.Base(put.Path) != "shot.png" {
+		t.Fatalf("attached %q at %s", got, put.Path)
+	}
+	if _, err := s.host(t.Context(), p, "host.attach", bridge.JSON(map[string]any{"path": filepath.Join(root, "pick", "file"), "data": []byte("x")})); err == nil {
+		t.Fatal("appended to a file outside the attachments")
 	}
 }
 
