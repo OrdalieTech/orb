@@ -179,6 +179,16 @@ func TestACPClientRunsAndReopensAnOrbSession(t *testing.T) {
 	if chunks := updates(notifications, "agent_message_chunk"); len(chunks) == 0 || chunks[len(chunks)-1]["content"].(map[string]any)["text"] != "Tuesday." {
 		t.Fatalf("message chunks = %v", chunks)
 	}
+	// The answer, and not the tool call before it, is announced once, right after its last chunk.
+	var answers []int
+	for i, notification := range notifications {
+		if notification["method"] == "_session/answered" && notification["params"].(map[string]any)["sessionId"] == sessionID {
+			answers = append(answers, i)
+		}
+	}
+	if len(answers) != 1 || updates(notifications[answers[0]-1:answers[0]], "agent_message_chunk") == nil {
+		t.Fatalf("_session/answered at %v in %v", answers, notifications)
+	}
 	if usage := notifications[len(notifications)-1]; usage["method"] != "_goose/unstable/session/update" {
 		t.Fatalf("last notification = %v, want the turn's usage", usage)
 	}

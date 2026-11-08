@@ -85,6 +85,7 @@ Orb as a first-class Buzz agent behind buzz-acp, and conversations that follow y
 
 - A Claude model given to `--model` by its alias or by the model it resolves to (`opus`, `claude-opus-5-5`) is the catalog's, so its reasoning levels apply and ACP clients see them from `session/new`; an ACP client also finds the current model among the model options, and selecting it again succeeds.
 
+- ACP clients learn when an answer is final before its turn ends: after an assistant message that ends without a tool call, Orb sends `_session/answered` with its `sessionId`, right after the message's last chunk. A `claude-sessions` turn stays open while Claude's background tasks run, so buzz-acp can publish the answer at once and each later one as its own message.
 - ACP clients can steer a running turn: Orb advertises `_meta.steering.supported` and answers `_session/steering`, as claude-agent-acp and codex-acp do, so buzz-acp hands a message sent mid-turn to the turn instead of cancelling it and sending both again.
 
 - A Claude conversation cancelled while Claude ran a command or waited on a background task answers its next message instead of failing it with "No message found with message.uuid": the cancelled host finishes exiting before the next one resumes, and Orb points Claude's transcript back at its own branch whenever it drifted.

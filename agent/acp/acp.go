@@ -18,6 +18,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/engine"
 )
 
 // Host opens the sessions a client drives; close disposes one.
@@ -435,6 +436,13 @@ func (s *server) prompt(session *live, text string, images []*ai.ImageContent) (
 	unsubscribe := runtime.Subscribe(func(event any) {
 		if update := translate(event, tools); update != nil {
 			s.update(session.id, update)
+		}
+		// An answer with no tool call is final even while the turn stays open on work it started
+		// (claude-sessions holds it until its background tasks end): a client may publish it now.
+		if end, ok := event.(engine.MessageEndEvent); ok {
+			if message, ok := end.Message.(*ai.AssistantMessage); ok && message.StopReason == ai.StopReasonStop {
+				s.send(map[string]any{"jsonrpc": "2.0", "method": "_session/answered", "params": map[string]string{"sessionId": session.id}})
+			}
 		}
 	})
 	before := len(runtime.State().Messages)
