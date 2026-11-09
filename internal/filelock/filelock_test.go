@@ -117,6 +117,35 @@ func TestFileUpdateKeepsSymlinkAndNarrowedMode(t *testing.T) {
 	}
 }
 
+// Read takes no lock, so it races the rename of an atomic update and must still
+// see the old file or the new one; Windows refused the open mid-rename.
+func TestFileReadDuringAtomicUpdates(t *testing.T) {
+	file := File{Path: filepath.Join(t.TempDir(), "schedule.json"), Perm: 0o600, Atomic: true}
+	done := make(chan error)
+	go func() {
+		for i := range 200 {
+			if err := file.Update(t.Context(), func([]byte) ([]byte, error) { return []byte{byte('a' + i%2)}, nil }); err != nil {
+				done <- err
+				return
+			}
+		}
+		done <- nil
+	}()
+	for {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+			return
+		default:
+		}
+		if data, err := file.Read(t.Context()); err != nil || len(data) > 1 {
+			t.Fatalf("read %q, %v", data, err)
+		}
+	}
+}
+
 // A change that ran is written even when its caller gave up meanwhile: it may
 // have rotated a credential the old file no longer redeems.
 func TestFileUpdateWritesAChangeWhoseCallerGaveUp(t *testing.T) {

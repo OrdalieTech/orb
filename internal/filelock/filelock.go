@@ -183,8 +183,14 @@ type File struct {
 	Atomic bool
 }
 
+// On Windows an open that races an atomic rename fails with a sharing
+// violation, so the read retries like the rename does.
 func (f File) Read(context.Context) ([]byte, error) {
-	data, err := os.ReadFile(f.Path)
+	var data []byte
+	err := retry(func() (err error) {
+		data, err = os.ReadFile(f.Path)
+		return err
+	})
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
