@@ -43,9 +43,11 @@ type CatalogOptions struct {
 	CodexSessions extensions.Factory
 	// Bash builds the host's bash tool, which background jobs run through.
 	Bash jobs.Bash
+	// Schedule is host-supplied: the schedule's store, and the process that fires it, are the host's.
+	Schedule extensions.Factory
 }
 
-var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "codex-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
+var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "schedule", "activity", "permissions", "memory", "memtree", "claude-sessions", "codex-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
 
 var descriptions = map[string]string{
 	"activity":           "Compact, expandable statuses for agents and background processes",
@@ -57,6 +59,7 @@ var descriptions = map[string]string{
 	"websearch":          "Web search and readable page fetching",
 	"subagents":          "Single or parallel child agents, including configured external CLIs",
 	"jobs":               "Background bash jobs that report when they end, monitored output, stop_job",
+	"schedule":           "Prompts that run later or on a recurrence, in this session or a new one",
 	"permissions":        "Tool-call permissions, explicit approvals and optional audit mode",
 	"memory":             "Bounded persistent remember, recall, replace, and forget tools",
 	"memtree":            "Experimental: zoomable summary tree of each session for lossless compaction or fresh turns",
@@ -140,6 +143,9 @@ func Catalog(options CatalogOptions) map[string]extensions.Factory {
 	if options.CodexSessions == nil {
 		options.CodexSessions = func(extensions.API) error { return fmt.Errorf("codex sessions require host assembly") }
 	}
+	if options.Schedule == nil {
+		options.Schedule = func(extensions.API) error { return fmt.Errorf("schedule requires host assembly") }
+	}
 	if options.BridgeAgentCalls == nil {
 		options.BridgeAgentCalls = func(extensions.API) error { return fmt.Errorf("bridge agent calls require host assembly") }
 	}
@@ -151,6 +157,7 @@ func Catalog(options CatalogOptions) map[string]extensions.Factory {
 		"websearch":      websearch.Extension(options.HTTPClient),
 		"subagents":      subagents.Extension(options.StreamFn, inheritPolicy, options.Settings),
 		"jobs":           jobs.Extension(options.Bash),
+		"schedule":       options.Schedule,
 		"activity":       activity.Extension(newActivityView),
 		"permissions":    permissions.Extension(policy, options.Settings, nil),
 		"memory":         memoryExtension(options.Memory, options.AgentDir),

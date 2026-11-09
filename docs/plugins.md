@@ -112,6 +112,31 @@ through the same bash as foreground commands, so the sandbox, shell, command pre
 `permissions` rules for `bash` apply unchanged. At most 8 run at once. Claude models keep
 Claude Code's own background tasks and `Monitor`.
 
+### schedule
+
+A model schedules its own turns with one `schedule` tool (`create`, `list`, `update`,
+`delete`): a prompt, or a `/skill:name`, that runs `in 20m`, `at` a time, `every` interval or on
+a `cron` spec in an IANA zone, in the session that created it or in a new session in the same
+folder each time. The tasks and their latest runs are `schedule.json` in the agent dir, which
+every holder shares; `orb chat` is the holder that fires them, and a session elsewhere can
+create tasks but says nothing fires while no holder runs. A run ending in exactly `NO_REPLY`
+is recorded as quiet, and only the most recent missed occurrence is caught up. Tasks a scheduled
+run creates are the agent's: at most 5 of the 20, 48 of their runs a day, none sooner than
+5 min, and on a person's task such a run may only pause or delete it. A task pauses after 5
+failures in a row. SDK hosts, on `AgentSession` or a bare `engine.Agent`, supply the store and the
+delivery of runs themselves (`docs/sdk.md`).
+
+```json
+{ "plugins": { "schedule": { "zone": "Europe/Paris", "activeHours": "08:00-22:00", "timeout": "30m" } } }
+```
+
+`zone` is the default for tasks (the machine's otherwise), runs start only within
+`activeHours`, and a run longer than `timeout` is aborted as failed. `orb chat` reads these, as
+all its settings, from the agent dir's `settings.json` file (a team agent's comes from its
+`agent.yaml`), never from the native store `orb storage config import` writes. A run in place reaches
+people through what it does, such as posting on Buzz: `orb chat` delivers only replies to the
+messages it received.
+
 ### activity
 
 Enable with `orb plugins enable activity` (or `/plugins`). One line above the TUI input

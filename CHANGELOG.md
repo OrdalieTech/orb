@@ -53,6 +53,8 @@ Orb follows pi 1.5.0, and the apps grow: Orb for the desktop replaces the SwiftU
 
 - Orb builds with Go 1.27.3, which MyGo, under the desktop app, requires. On Windows, Claude Sessions no longer end whatever process took the PID of a Claude host that had already exited.
 
+- The schedule plugin (`plugins.schedule`) lets a model schedule its own turns with one `schedule` tool: a prompt that runs `in 20m`, `at` a time, `every` interval or on a `cron` spec in a zone, in its session or in a new one each time. `orb chat` fires them, one holder per occurrence even with several running on the same agent, a run that ends with exactly `NO_REPLY` stays quiet, and caps keep an agent from scheduling itself into a loop (20 tasks, 5 created by scheduled runs, 48 of their runs a day, 5 min between occurrences, a pause after 5 failures in a row). `plugins.schedule.zone`, `activeHours` and `timeout` set the default zone, the hours runs may start and how long a run may take. SDK hosts get the same tool and guards on an `AgentSession` (`schedule.Sessions`) or a bare `engine.Agent` (`Scheduler.Tool`), with their own store and delivery (`Options.Run`).
+
 ## [0.20.0] - 2026-11-01
 
 Orb follows pi 1.4.0, and strict tool sampling keeps schemas built from `$ref` and `$defs`: messages, tool results and settled runs record their duration and outcome as pi 1.4 writes them, the Azure OpenAI provider is now `azure`, and a Claude session's native tools get the environment Orb's own tools get.

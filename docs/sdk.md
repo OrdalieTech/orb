@@ -342,6 +342,50 @@ loader, _ := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
 })
 ```
 
+### Schedule
+
+`plugins/schedule` lets a model schedule its own turns (`docs/plugins.md`). Orb keeps the tasks,
+the `schedule` tool, the caps and the claim that fires each occurrence once; the host supplies
+three things: the store (a `host.Document`, one per agent or tenant, shared by every process that
+holds it), how a run reaches a conversation (`Options.Run`), and the process that stays up to call
+`Run`. An `AgentSession` host loads the extension, which also delivers a run in place to a session
+it has open, and wraps its session opener in `schedule.Sessions`:
+
+```go
+s := schedule.New(schedule.Options{Store: store, Zone: paris, Run: schedule.Sessions(open)})
+loader, _ := agent.NewDefaultResourceLoader(agent.DefaultResourceLoaderOptions{
+    CWD: cwd, ExtensionFactories: []extensions.Factory{s.Extension()},
+})
+go s.Run(ctx)
+```
+
+A host on a bare `engine.Agent` gives each conversation the tool and delivers runs itself. `Turn`
+names the conversation (`""` for a new one in `Turn.Cwd`, on `Turn.Model` when set), and Run
+runs the turn under the context it receives, since that context is how the tool tells a run's
+calls from a person's (and so applies the agent's caps) and how the timeout aborts the turn. It
+returns once the turn settles, with the conversation it ran in; a final answer of exactly
+`NO_REPLY` is recorded as quiet. Wrap `schedule.ErrBusy` in the error when the conversation is
+answering someone, so the run retries:
+
+```go
+s := schedule.New(schedule.Options{Store: store, Run: func(ctx context.Context, t schedule.Turn) (string, engine.AgentMessages, error) {
+    id, conversation, err := open(t.Session, t.Cwd, t.Model) // the host's conversations
+    if err != nil {
+        return t.Session, nil, err
+    }
+    if conversation.State().IsStreaming {
+        return id, nil, fmt.Errorf("%w: %s is answering", schedule.ErrBusy, id)
+    }
+    if err = conversation.Prompt(ctx, t.Prompt); err == nil {
+        err = conversation.WaitForIdle(ctx)
+    }
+    return id, conversation.State().Messages, err
+}})
+runner := engine.NewAgent(stream, engine.WithInitialState(engine.AgentState{
+    Tools: []engine.AgentTool{s.Tool(conversationID, cwd, nil)},
+}))
+```
+
 ### MemoryStore
 
 `memory.Store` from `github.com/OrdalieTech/orb/plugins/memory` is the tenant-scoped durable seam.
