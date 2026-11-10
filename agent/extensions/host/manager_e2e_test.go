@@ -368,6 +368,10 @@ func TestRealHostRestartsAfterCrashAndReregisters(t *testing.T) {
 	if got := toolText(final); got != "final:again" {
 		t.Fatalf("final text after restart = %q", got)
 	}
+	eventResult := runner.EmitBeforeAgentStart(context.Background(), "prompt", nil, nil, "system", extensions.SystemPromptOptions{})
+	if eventResult == nil || eventResult.SystemPrompt == nil || *eventResult.SystemPrompt != "system host-event" {
+		t.Fatalf("event result after restart = %#v", eventResult)
+	}
 }
 
 func TestRealHostReloadStartsFreshProcess(t *testing.T) {

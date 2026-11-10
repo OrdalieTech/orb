@@ -3,6 +3,8 @@ package host
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -265,6 +267,21 @@ func TestStateSnapshotActionsEventBusAndToolCallVeto(t *testing.T) {
 	}
 	if execResult.ExitCode == nil || *execResult.ExitCode != 7 || streamed.String() != "printf delegated@"+cwd {
 		t.Fatalf("delegated bash = %#v, stream %q", execResult, streamed.String())
+	}
+	marker := filepath.Join(cwd, "bash-abort-marker")
+	abortContext, cancelAbort := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	_, err = bashResult.Operations.Exec(abortContext, "wait-abort "+marker, cwd, tools.BashExecOptions{})
+	cancelAbort()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("cancelled delegated bash error = %v", err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, statErr := os.Stat(marker); statErr == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("cancel_request never aborted the delegated bash signal")
+		}
 	}
 
 	runner.Emit(context.Background(), extensions.SessionBeforeTreeEvent{Signal: context.Background()})

@@ -4,11 +4,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 )
-
-var defaultSystemPromptTools = []string{"read", "bash", "edit", "write"}
 
 type toolPromptMetadata struct {
 	snippet    string
@@ -124,7 +123,7 @@ func BuildSystemPromptSections(options SystemPromptOptions) ai.SystemPromptSecti
 	promptCWD := strings.ReplaceAll(options.CWD, `\`, "/")
 	tools := options.SelectedTools
 	if tools == nil {
-		tools = defaultSystemPromptTools
+		tools = config.DefaultToolNames
 	}
 	declared := slices.DeleteFunc(slices.Clone(tools), func(name string) bool { return slices.Contains(options.HiddenTools, name) })
 	visibleTools := make([]string, 0, len(declared))

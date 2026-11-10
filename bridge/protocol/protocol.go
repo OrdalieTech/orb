@@ -3,6 +3,7 @@ package protocol
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
@@ -11,7 +12,6 @@ import (
 	"io"
 	"slices"
 	"strconv"
-	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
@@ -62,7 +62,7 @@ func Read(r io.Reader) ([]byte, error) {
 	if _, err := io.ReadFull(r, b); err != nil {
 		return nil, err
 	}
-	if _, err := Canonical(b); err != nil {
+	if err := Validate(b); err != nil {
 		return nil, err
 	}
 	return b, nil
@@ -90,7 +90,7 @@ func Write(w io.Writer, b []byte) error {
 
 // Decode rejects unknown arguments as well as JSON ambiguities before binding a schema.
 func Decode(b []byte, v any) error {
-	if _, err := Canonical(b); err != nil {
+	if err := Validate(b); err != nil {
 		return err
 	}
 	d := json.NewDecoder(bytes.NewReader(b))
@@ -101,6 +101,21 @@ func Decode(b []byte, v any) error {
 // Canonical implements RFC 8785 for object payloads. Counters remain strings;
 // numeric values use IEEE 754 binary64, as required by JCS.
 func Canonical(b []byte) ([]byte, error) {
+	v, err := parse(b)
+	if err != nil {
+		return nil, err
+	}
+	var out bytes.Buffer
+	if err = canonicalValue(&out, v); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+// Validate accepts exactly the payloads Canonical does.
+func Validate(b []byte) error { _, err := parse(b); return err }
+
+func parse(b []byte) (any, error) {
 	if len(b) > MaxFrame || !utf8.Valid(b) || !validSurrogates(b) {
 		return nil, errors.New("invalid JSON encoding")
 	}
@@ -115,11 +130,7 @@ func Canonical(b []byte) ([]byte, error) {
 	if _, err = d.Token(); err != io.EOF {
 		return nil, errors.New("trailing JSON")
 	}
-	var out bytes.Buffer
-	if err = canonicalValue(&out, v); err != nil {
-		return nil, err
-	}
-	return out.Bytes(), nil
+	return v, nil
 }
 
 func readValue(d *json.Decoder, depth int) (any, error) {
@@ -179,7 +190,7 @@ func canonicalValue(out *bytes.Buffer, v any) error {
 		for k := range v {
 			keys = append(keys, k)
 		}
-		slices.SortFunc(keys, func(a, b string) int { return slices.Compare(utf16.Encode([]rune(a)), utf16.Encode([]rune(b))) })
+		slices.SortFunc(keys, compareUTF16)
 		out.WriteByte('{')
 		for i, k := range keys {
 			if i > 0 {
@@ -212,6 +223,26 @@ func canonicalValue(out *bytes.Buffer, v any) error {
 		out.Write(b)
 	}
 	return nil
+}
+
+// compareUTF16 orders valid UTF-8 strings by their UTF-16 code units, as JCS
+// sorts keys: U+E000 to U+FFFF sort after the supplementary planes' surrogates.
+func compareUTF16(a, b string) int {
+	unit := func(r rune) rune {
+		if r >= 0xe000 && r <= 0xffff {
+			return r + utf8.MaxRune
+		}
+		return r
+	}
+	for a != "" && b != "" {
+		ra, na := utf8.DecodeRuneInString(a)
+		rb, nb := utf8.DecodeRuneInString(b)
+		if ra != rb {
+			return cmp.Compare(unit(ra), unit(rb))
+		}
+		a, b = a[na:], b[nb:]
+	}
+	return cmp.Compare(len(a), len(b))
 }
 
 func validSurrogates(b []byte) bool {

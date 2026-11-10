@@ -16,6 +16,7 @@ import (
 	aimodels "github.com/OrdalieTech/orb/ai/models"
 	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/host"
+	"github.com/OrdalieTech/orb/internal/ptr"
 )
 
 func normalizeProviderConfig(config extensions.ProviderConfig) extensions.ProviderConfig {
@@ -85,7 +86,7 @@ func mergeProviderConfig(previous, incoming extensions.ProviderConfig) extension
 		case "headers":
 			result.Headers = maps.Clone(incoming.Headers)
 		case "authHeader":
-			result.AuthHeader = cloneBool(incoming.AuthHeader)
+			result.AuthHeader = ptr.Clone(incoming.AuthHeader)
 		case "models":
 			result.Models = cloneProviderModels(incoming.Models)
 		case "refreshModels":
@@ -357,7 +358,7 @@ func configLoadErrors(config *ModelConfig) []string {
 
 func cloneProviderConfig(config extensions.ProviderConfig) extensions.ProviderConfig {
 	config.Headers = maps.Clone(config.Headers)
-	config.AuthHeader = cloneBool(config.AuthHeader)
+	config.AuthHeader = ptr.Clone(config.AuthHeader)
 	config.Models = cloneProviderModels(config.Models)
 	config.Defined = maps.Clone(config.Defined)
 	config.RegistrationValues = maps.Clone(config.RegistrationValues)
@@ -394,17 +395,9 @@ func cloneCredentials(source map[string]*aiauth.Credential) map[string]*aiauth.C
 	return result
 }
 
-func cloneBool(value *bool) *bool {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
-}
-
 func configuredProviderAPIKey(config *ModelConfig, registered func(string) (extensions.ProviderConfig, bool), id string, env map[string]string) bool {
 	if runtimeConfig, ok := registered(id); ok && runtimeConfig.Defined["apiKey"] {
-		return runtimeConfig.APIKey != "" && (runtimeConfig.APIKey[0] == '!' || len(missingConfigEnv(runtimeConfig.APIKey, env)) == 0)
+		return runtimeConfig.APIKey != "" && (runtimeConfig.APIKey[0] == '!' || len(GetMissingConfigValueEnvVarNames(runtimeConfig.APIKey, env)) == 0)
 	}
 	return config.HasConfiguredAPIKey(id, env)
 }

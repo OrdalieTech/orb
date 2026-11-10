@@ -17,7 +17,6 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/session/exporthtml"
-	"github.com/OrdalieTech/orb/agent/tools"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
@@ -173,19 +172,52 @@ func (runtime *SessionRuntime) compactBeforeRun(ctx context.Context) {
 	}
 }
 
-func (runtime *SessionRuntime) hasProviderAuth(ctx context.Context, provider ai.ProviderID) (bool, error) {
+// providerAuth resolves the request auth the runtime would send for provider;
+// resolvable is false when the runtime has no auth source at all.
+func (runtime *SessionRuntime) providerAuth(ctx context.Context, provider ai.ProviderID) (auth *engine.RequestAuth, resolvable bool, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if runtime.getRequestAuth != nil {
-		resolved, err := runtime.getRequestAuth(ctx, provider)
-		return resolved != nil, err
+		auth, err = runtime.getRequestAuth(ctx, provider)
+		return auth, true, err
 	}
 	if runtime.getAPIKey != nil {
 		key, err := runtime.getAPIKey(ctx, provider)
-		return key != nil && *key != "", err
+		if key == nil || *key == "" {
+			return nil, true, err
+		}
+		return &engine.RequestAuth{APIKey: key}, true, err
 	}
-	return true, nil
+	return nil, false, nil
+}
+
+func (runtime *SessionRuntime) hasProviderAuth(ctx context.Context, provider ai.ProviderID) (bool, error) {
+	auth, resolvable, err := runtime.providerAuth(ctx, provider)
+	return auth != nil || !resolvable, err
+}
+
+// ProviderAPIKey resolves the API key the runtime would send for provider, for
+// the TUI's Anthropic subscription-auth warning (upstream
+// modelRuntime.getAuth(...)?.auth.apiKey).
+func (runtime *SessionRuntime) ProviderAPIKey(ctx context.Context, provider ai.ProviderID) (string, error) {
+	if runtime == nil {
+		return "", nil
+	}
+	auth, _, err := runtime.providerAuth(ctx, provider)
+	if err != nil || auth == nil || auth.APIKey == nil {
+		return "", err
+	}
+	return *auth.APIKey, nil
+}
+
+// WarnAnthropicExtraUsage reads the warnings.anthropicExtraUsage settings gate
+// for the Anthropic subscription-auth warning (default true).
+func (runtime *SessionRuntime) WarnAnthropicExtraUsage() bool {
+	if runtime == nil || runtime.settings == nil {
+		return true
+	}
+	return runtime.settings.GetWarningAnthropicExtraUsage()
 }
 
 func (runtime *SessionRuntime) AvailableModels() []ai.Model {
@@ -564,7 +596,7 @@ func (runtime *SessionRuntime) setModel(
 		return errors.New("agent: nil session runtime")
 	}
 	if runtime.agent.SessionLoopExclusive() {
-		current := runtime.agent.State().Model
+		current := runtime.agent.StateWithoutMessages().Model
 		if current == nil || current.Provider != model.Provider {
 			return errors.New("changing session executor requires a new conversation")
 		}
@@ -633,7 +665,7 @@ func (runtime *SessionRuntime) cycleModel(ctx context.Context, step int) (*Model
 		if len(models) <= 1 {
 			return nil, nil
 		}
-		state := runtime.agent.State()
+		state := runtime.agent.StateWithoutMessages()
 		index := slices.IndexFunc(models, func(scoped ScopedModel) bool {
 			return state.Model != nil && scoped.Model.Provider == state.Model.Provider && scoped.Model.ID == state.Model.ID
 		})
@@ -645,14 +677,14 @@ func (runtime *SessionRuntime) cycleModel(ctx context.Context, step int) (*Model
 			return nil, err
 		}
 		return &ModelCycleResult{
-			Model: next.Model, ThinkingLevel: runtime.agent.State().ThinkingLevel, IsScoped: true,
+			Model: next.Model, ThinkingLevel: runtime.agent.StateWithoutMessages().ThinkingLevel, IsScoped: true,
 		}, nil
 	}
 	models := runtime.AvailableModels()
 	if len(models) <= 1 {
 		return nil, nil
 	}
-	state := runtime.agent.State()
+	state := runtime.agent.StateWithoutMessages()
 	index := slices.IndexFunc(models, func(model ai.Model) bool {
 		return state.Model != nil && model.Provider == state.Model.Provider && model.ID == state.Model.ID
 	})
@@ -663,7 +695,7 @@ func (runtime *SessionRuntime) cycleModel(ctx context.Context, step int) (*Model
 	if err := runtime.setModel(ctx, next, nil, true, extensions.ModelSelectCycle); err != nil {
 		return nil, err
 	}
-	return &ModelCycleResult{Model: next, ThinkingLevel: runtime.agent.State().ThinkingLevel}, nil
+	return &ModelCycleResult{Model: next, ThinkingLevel: runtime.agent.StateWithoutMessages().ThinkingLevel}, nil
 }
 
 func (runtime *SessionRuntime) ScopedModels() []ScopedModel {
@@ -715,7 +747,7 @@ func (runtime *SessionRuntime) SetThinkingLevelWithOptions(level ai.ModelThinkin
 	if runtime == nil {
 		return errors.New("agent: nil session runtime")
 	}
-	state := runtime.agent.State()
+	state := runtime.agent.StateWithoutMessages()
 	effective := ai.ClampThinkingLevel(state.Model, level)
 	if options.Persist {
 		runtime.settings.SetDefaultThinkingLevel(level)
@@ -735,7 +767,7 @@ func (runtime *SessionRuntime) SetThinkingLevelWithOptions(level ai.ModelThinkin
 }
 
 func (runtime *SessionRuntime) CycleThinkingLevel() (*ai.ModelThinkingLevel, error) {
-	state := runtime.agent.State()
+	state := runtime.agent.StateWithoutMessages()
 	levels := ai.SupportedThinkingLevels(state.Model)
 	if state.Model == nil || !state.Model.Reasoning {
 		return nil, nil
@@ -858,33 +890,6 @@ func (runtime *SessionRuntime) AbortRetry() {
 	}
 }
 
-// ExecuteBash executes a direct bash command.
-func (runtime *SessionRuntime) ExecuteBash(ctx context.Context, command string, excludeFromContext *bool) (tools.BashResult, error) {
-	return runtime.executeBash(ctx, command, excludeFromContext, nil)
-}
-
-func (runtime *SessionRuntime) executeBash(ctx context.Context, command string, excludeFromContext *bool, id *string) (tools.BashResult, error) {
-	if runtime == nil {
-		return tools.BashResult{}, errors.New("agent: nil session runtime")
-	}
-	bashContext, finish := runtime.startBash(ctx)
-	defer finish()
-	shellPath, err := runtime.settings.GetShellPath()
-	if err != nil {
-		return tools.BashResult{}, err
-	}
-	result, err := tools.ExecuteBash(
-		bashContext, command, runtime.manager.GetCWD(), runtime.settings.GetShellCommandPrefix(), shellPath,
-		func(delta string) {
-			runtime.emit(BashExecutionUpdateEvent{ID: id, Delta: delta})
-		},
-	)
-	if err != nil {
-		return result, err
-	}
-	return result, runtime.recordBash(command, result, excludeFromContext)
-}
-
 func (runtime *SessionRuntime) AbortBash() {
 	runtime.mu.Lock()
 	cancels := make([]context.CancelFunc, 0, len(runtime.bashCancels))
@@ -897,38 +902,10 @@ func (runtime *SessionRuntime) AbortBash() {
 	}
 }
 
-func (runtime *SessionRuntime) IsBashRunning() bool {
-	if runtime == nil {
-		return false
-	}
-	runtime.mu.Lock()
-	defer runtime.mu.Unlock()
-	return len(runtime.bashCancels) > 0
-}
-
-func (runtime *SessionRuntime) recordBash(command string, result tools.BashResult, exclude *bool) error {
-	var fullOutputPath *string
-	if result.FullOutputPath != "" {
-		path := result.FullOutputPath
-		fullOutputPath = &path
-	}
-	var excludeFromContext *bool
-	if exclude != nil {
-		value := *exclude
-		excludeFromContext = &value
-	}
-	message := harness.BashExecutionMessage{
-		Role: "bashExecution", Command: command, Output: result.Output, ExitCode: result.ExitCode,
-		Cancelled: result.Cancelled, Truncated: result.Truncated, FullOutputPath: fullOutputPath,
-		ExcludeFromContext: excludeFromContext, Timestamp: runtime.clock(),
-	}
-	return runtime.recordBashMessage(message)
-}
-
 func (runtime *SessionRuntime) recordBashMessage(message harness.BashExecutionMessage) error {
 	runtime.bashRecordMu.Lock()
 	defer runtime.bashRecordMu.Unlock()
-	if runtime.agent.State().IsStreaming {
+	if runtime.agent.StateWithoutMessages().IsStreaming {
 		runtime.mu.Lock()
 		runtime.pendingBash = append(runtime.pendingBash, message)
 		runtime.mu.Unlock()

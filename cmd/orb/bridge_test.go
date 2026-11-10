@@ -665,7 +665,7 @@ func fakeBridgeOwner(t *testing.T, handle func(method string, params json.RawMes
 
 func TestAStopMarkerNeverKeepsOrbFromARunningBridge(t *testing.T) {
 	fakeBridgeOwner(t, func(method string, _ json.RawMessage) (json.RawMessage, error) {
-		return bridge.JSON(map[string]any{"supports_full_access": true}), nil
+		return bridge.JSON(struct{}{}), nil
 	})
 	if err := os.WriteFile(filepath.Join(os.Getenv("ORB_BRIDGE_HOME"), "personal", "stopped"), []byte("stopped\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -685,7 +685,7 @@ func TestBridgePairApprovesOnlyAfterAnExplicitYes(t *testing.T) {
 			case "status":
 				claimed := inv
 				claimed.Claimant = "orb:ed25519:phone"
-				return bridge.JSON(map[string]any{"supports_full_access": true, "pending": []bridge.Invitation{claimed}}), nil
+				return bridge.JSON(map[string]any{"pending": []bridge.Invitation{claimed}}), nil
 			case "invite":
 				return bridge.JSON(inv), nil
 			case "approve":
@@ -720,7 +720,7 @@ func TestBridgeJoinTrustsTheInviterOnceItApproves(t *testing.T) {
 	fakeBridgeOwner(t, func(method string, params json.RawMessage) (json.RawMessage, error) {
 		switch method {
 		case "status":
-			return bridge.JSON(map[string]any{"supports_full_access": true, "peer_id": "orb:ed25519:me"}), nil
+			return bridge.JSON(map[string]any{"peer_id": "orb:ed25519:me"}), nil
 		case "join":
 			return bridge.JSON(inv), nil
 		case "remote":
@@ -759,7 +759,7 @@ func TestBridgePipeServesOwnerCallsAsJSONLines(t *testing.T) {
 	fakeBridgeOwner(t, func(method string, params json.RawMessage) (json.RawMessage, error) {
 		switch method {
 		case "status":
-			return bridge.JSON(map[string]any{"supports_full_access": true, "peer_id": "me"}), nil
+			return bridge.JSON(map[string]any{"peer_id": "me"}), nil
 		case "echo":
 			return params, nil
 		}
@@ -780,40 +780,6 @@ func TestBridgePipeServesOwnerCallsAsJSONLines(t *testing.T) {
 	}
 	if len(replies) != 3 || !strings.Contains(string(replies["1"]["result"]), `"peer_id":"me"`) || string(replies[`"b"`]["result"]) != `{"x":2}` || !strings.Contains(string(replies["3"]["error"]), `"code":"not_found"`) {
 		t.Fatalf("replies = %s", output.String())
-	}
-}
-
-func TestBridgeServiceCompatibilityStopsOnlyOlderDaemons(t *testing.T) {
-	for _, current := range []bool{false, true} {
-		t.Run(fmt.Sprint(current), func(t *testing.T) {
-			x, y := net.Pipe()
-			stopped := make(chan struct{}, 1)
-			var server *protocol.Conn
-			server = protocol.NewConn(y, func(_ context.Context, method string, _ json.RawMessage) (json.RawMessage, error) {
-				if method == "stop" {
-					stopped <- struct{}{}
-					time.AfterFunc(10*time.Millisecond, func() { _ = server.Close() })
-					return bridge.JSON(struct{}{}), nil
-				}
-				if current {
-					return bridge.JSON(map[string]bool{"supports_full_access": true}), nil
-				}
-				return bridge.JSON(struct{}{}), nil
-			})
-			client := protocol.NewConn(x, nil)
-			defer func() { _ = client.Close(); _ = server.Close() }()
-			ready, err := daemon.Ready(t.Context(), client)
-			if err != nil || ready != current || (len(stopped) != 0) == current {
-				t.Fatalf("ready=%v stopped=%d err=%v", ready, len(stopped), err)
-			}
-			if !current {
-				select {
-				case <-client.Done():
-				default:
-					t.Fatal("replacement started before old daemon disconnected")
-				}
-			}
-		})
 	}
 }
 

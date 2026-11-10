@@ -1588,7 +1588,7 @@ func TestSessionRuntimeExpandsSlashResourcesBeforeAgentPrompt(t *testing.T) {
 	provider := testFaux(100000)
 	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "done", 10)})
 	runtime, _ := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
-	runtime.slashResolver = &SlashResolver{PromptTemplates: []PromptTemplate{{Name: "review", Content: "Review $1"}}}
+	runtime.slashResolver.Store(&SlashResolver{PromptTemplates: []PromptTemplate{{Name: "review", Content: "Review $1"}}})
 	if err := runtime.Prompt(context.Background(), "/review file.go"); err != nil {
 		t.Fatal(err)
 	}
@@ -1605,9 +1605,9 @@ func TestSessionRuntimeExpandsSlashResourcesBeforeAgentPrompt(t *testing.T) {
 	}
 
 	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "unused", 10)})
-	runtime.slashResolver.ExecuteExtension = func(name, args string) (bool, error) {
+	runtime.slashResolver.Store(&SlashResolver{ExecuteExtension: func(name, args string) (bool, error) {
 		return name == "handled" && args == "now", nil
-	}
+	}})
 	before := len(runtime.State().Messages)
 	if err := runtime.Prompt(context.Background(), "/handled now"); err != nil {
 		t.Fatal(err)

@@ -2,6 +2,8 @@ package main
 
 import (
 	"cmp"
+	"iter"
+	"maps"
 	"runtime"
 	"slices"
 	"strings"
@@ -221,6 +223,13 @@ func (a *app) view(c *ui.Context) {
 				a.unsplit(t)
 			}
 		}
+		for _, ids := range []iter.Seq[string]{maps.Keys(a.shells), maps.Keys(a.lists), maps.Keys(a.drafts)} {
+			for id := range ids {
+				if id != "" && id != a.tab && o.tab(id) == nil {
+					a.forget(id)
+				}
+			}
+		}
 	}
 	if a.dragNow {
 		a.linger = 3
@@ -228,13 +237,6 @@ func (a *app) view(c *ui.Context) {
 		a.linger--
 	}
 	a.dragging, a.dragNow = a.linger > 0, false
-	// The terminals of conversations closed elsewhere end with them.
-	for id, s := range a.shells {
-		if o.state.Up && o.tab(id) == nil && id != a.tab {
-			s.close()
-			delete(a.shells, id)
-		}
-	}
 	// Every conversation on screen follows at full pace.
 	var shown []string
 	if a.top().kind == "" {
@@ -341,14 +343,28 @@ func (a *app) close(id string) {
 		}
 		a.activate(t)
 	}
+	a.forget(id)
+	a.o.send("close", "tab", id)
+}
+
+// forget drops what the app keeps for conversation id, its terminal included.
+func (a *app) forget(id string) {
 	if s := a.shells[id]; s != nil {
 		s.close()
-		delete(a.shells, id)
 	}
+	if t := a.o.tab(id); t != nil && t.Ask != nil {
+		delete(a.asked, t.Ask.ID)
+		delete(a.answer, t.Ask.ID)
+	}
+	delete(a.shells, id)
 	delete(a.drafts, id)
 	delete(a.found, id)
 	delete(a.foundFor, id)
-	a.o.send("close", "tab", id)
+	delete(a.lists, id)
+	prefix := id + "\x00"
+	// Actions are keyed by the tab's id and the action's key.
+	maps.DeleteFunc(a.expanded, func(key string, _ bool) bool { return strings.HasPrefix(key, prefix) })
+	maps.DeleteFunc(a.details, func(key string, _ map[string]string) bool { return strings.HasPrefix(key, prefix) })
 }
 
 func (a *app) renameTab(t Tab) {

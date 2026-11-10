@@ -538,7 +538,7 @@ func TestLOGM3LoginUnknownRefOpensPrefilteredSelector(t *testing.T) {
 	}
 	mode := newAuthFlowTestMode(host)
 
-	mode.handleLoginCommand("gro")
+	mode.authenticateProvider("gro", false)
 	component := waitForAuthSelector(t, mode)
 	if got := component.searchInput.GetValue(); got != "gro" {
 		t.Fatalf("selector search = %q, want pre-filled ref", got)

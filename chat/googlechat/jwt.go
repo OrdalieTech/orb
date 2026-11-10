@@ -9,20 +9,15 @@ package googlechat
 
 import (
 	"context"
-	"crypto"
-	"crypto/rsa"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/OrdalieTech/orb/chat/internal/jwks"
 )
 
 const chatIssuer = "chat@system.gserviceaccount.com"
@@ -35,53 +30,27 @@ const defaultCertTTL = 5 * time.Minute
 const defaultRefetchFloor = 30 * time.Second
 
 type verifier struct {
-	certURL  string
 	audience string
-	client   *http.Client
 	now      func() time.Time
+	keys     *jwks.Set
+}
 
-	mu      sync.Mutex
-	keys    map[string]*rsa.PublicKey
-	expires time.Time
-	fetched time.Time
-	// refetchFloor is configurable only as a deterministic test seam.
-	refetchFloor time.Duration
+// newVerifier caches the JWKS at certURL as its Cache-Control allows.
+func newVerifier(certURL, audience string, client *http.Client) *verifier {
+	return &verifier{audience: audience, now: time.Now, keys: &jwks.Set{Floor: defaultRefetchFloor, Now: time.Now,
+		Fetch: func(ctx context.Context) (map[string]jwks.Key, time.Duration, error) {
+			keys, header, err := jwks.Get(ctx, client, certURL)
+			if err != nil {
+				return nil, 0, fmt.Errorf("googlechat: %w", err)
+			}
+			return keys, certTTL(header.Get("Cache-Control")), nil
+		}}}
 }
 
 func (v *verifier) verify(ctx context.Context, token string) error {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return errors.New("googlechat: malformed bearer token")
-	}
-	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	_, claimsJSON, err := v.keys.Verify(ctx, token)
 	if err != nil {
-		return errors.New("googlechat: malformed token header")
-	}
-	var header struct {
-		Alg string `json:"alg"`
-		Kid string `json:"kid"`
-	}
-	if err := json.Unmarshal(headerJSON, &header); err != nil {
-		return errors.New("googlechat: malformed token header")
-	}
-	if header.Alg != "RS256" {
-		return fmt.Errorf("googlechat: unsupported token alg %q", header.Alg)
-	}
-	key, err := v.key(ctx, header.Kid)
-	if err != nil {
-		return err
-	}
-	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil {
-		return errors.New("googlechat: malformed token signature")
-	}
-	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
-	if err := rsa.VerifyPKCS1v15(key, crypto.SHA256, digest[:], signature); err != nil {
-		return errors.New("googlechat: token signature verification failed")
-	}
-	claimsJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return errors.New("googlechat: malformed token claims")
+		return fmt.Errorf("googlechat: %w", err)
 	}
 	var claims struct {
 		Iss string `json:"iss"`
@@ -101,99 +70,6 @@ func (v *verifier) verify(ctx context.Context, token string) error {
 		return errors.New("googlechat: token expired")
 	}
 	return nil
-}
-
-func (v *verifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	now := v.now()
-	if now.Before(v.expires) {
-		if key, ok := v.keys[kid]; ok {
-			return key, nil
-		}
-		floor := v.refetchFloor
-		if floor <= 0 {
-			floor = defaultRefetchFloor
-		}
-		if now.Sub(v.fetched) < floor {
-			return nil, fmt.Errorf("googlechat: no JWKS key for kid %q", kid)
-		}
-	}
-	if err := v.fetchLocked(ctx); err != nil {
-		return nil, err
-	}
-	key, ok := v.keys[kid]
-	if !ok {
-		return nil, fmt.Errorf("googlechat: no JWKS key for kid %q", kid)
-	}
-	return key, nil
-}
-
-func (v *verifier) fetchLocked(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.certURL, nil)
-	if err != nil {
-		return fmt.Errorf("googlechat: build JWKS request: %w", err)
-	}
-	resp, err := v.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("googlechat: fetch JWKS: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	if err != nil {
-		return fmt.Errorf("googlechat: read JWKS: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("googlechat: JWKS endpoint returned HTTP %d", resp.StatusCode)
-	}
-	var payload struct {
-		Keys []struct {
-			Kty string `json:"kty"`
-			Kid string `json:"kid"`
-			N   string `json:"n"`
-			E   string `json:"e"`
-		} `json:"keys"`
-	}
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return fmt.Errorf("googlechat: decode JWKS: %w", err)
-	}
-	keys := make(map[string]*rsa.PublicKey, len(payload.Keys))
-	for _, jwk := range payload.Keys {
-		if jwk.Kty != "RSA" || jwk.Kid == "" {
-			continue
-		}
-		key, err := rsaKeyFromJWK(jwk.N, jwk.E)
-		if err != nil {
-			continue
-		}
-		keys[jwk.Kid] = key
-	}
-	if len(keys) == 0 {
-		return errors.New("googlechat: JWKS contains no usable RSA keys")
-	}
-	v.keys = keys
-	v.fetched = v.now()
-	v.expires = v.fetched.Add(certTTL(resp.Header.Get("Cache-Control")))
-	return nil
-}
-
-func rsaKeyFromJWK(n, e string) (*rsa.PublicKey, error) {
-	nBytes, err := base64.RawURLEncoding.DecodeString(n)
-	if err != nil {
-		return nil, err
-	}
-	eBytes, err := base64.RawURLEncoding.DecodeString(e)
-	if err != nil {
-		return nil, err
-	}
-	if len(nBytes) == 0 || len(eBytes) == 0 || len(eBytes) > 8 {
-		return nil, errors.New("bad JWK component length")
-	}
-	exponent := new(big.Int).SetBytes(eBytes)
-	if !exponent.IsInt64() || exponent.Int64() <= 1 {
-		return nil, errors.New("bad JWK exponent")
-	}
-	return &rsa.PublicKey{N: new(big.Int).SetBytes(nBytes), E: int(exponent.Int64())}, nil
 }
 
 func certTTL(cacheControl string) time.Duration {

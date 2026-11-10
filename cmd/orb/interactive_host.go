@@ -204,23 +204,6 @@ func (host *interactiveSessionHost) Dispose() {
 	host.AgentSessionRuntime.Dispose(context.Background())
 }
 
-func (host *interactiveSessionHost) ListProjectSessions(onProgress session.SessionListProgress) []session.SessionInfo {
-	manager := host.Session().Manager()
-	if host.args.native != nil {
-		rows, _ := host.args.native.Sessions().ListInfo(context.Background(), manager.GetCWD(), nil)
-		return spoken(rows)
-	}
-	return session.List(manager.GetCWD(), manager.GetSessionDir(), onProgress, session.WithAgentDir(host.agentDir))
-}
-
-func (host *interactiveSessionHost) ListAllSessions(onProgress session.SessionListProgress) []session.SessionInfo {
-	if host.args.native != nil {
-		rows, _ := host.args.native.Sessions().ListInfo(context.Background(), "", nil)
-		return spoken(rows)
-	}
-	return session.ListAll(host.allSessionsDir(), onProgress, session.WithAgentDir(host.agentDir))
-}
-
 func (host *interactiveSessionHost) ListProjectSessionsContext(ctx context.Context, onUpdate session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
 	manager := host.Session().Manager()
 	if host.args.native != nil {

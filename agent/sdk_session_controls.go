@@ -82,9 +82,9 @@ func (runtime *SessionRuntime) PromptWithOptions(ctx context.Context, text strin
 	if runtime.extensionState != nil {
 		return runtime.promptExtensionInput(ctx, text, images, source, expand, streamingBehavior, true, preflightResult)
 	}
-	if expand && runtime.slashResolver != nil {
+	if expand {
 		var handled bool
-		text, handled = runtime.slashResolver.ResolvePrompt(text)
+		text, handled = runtime.slashResolver.Load().ResolvePrompt(text)
 		if handled {
 			if preflightResult != nil {
 				preflightResult(DispositionHandled)

@@ -96,20 +96,36 @@ func PrependPath(dir, value string) string {
 	return dir + string(os.PathListSeparator) + value
 }
 
-// Merge overlays layers on base, later layers winning, sorted by name.
+// Merge overlays layers on base, later layers winning, sorted by name. On
+// Windows names match case-insensitively and the lexicographically first
+// spelling is kept, as Node's child_process does, so one entry per variable
+// reaches exec (which would otherwise keep the last duplicate).
 func Merge(base []string, layers ...map[string]string) []string {
+	names := make(map[string]string, len(base))
 	values := make(map[string]string, len(base))
+	put := func(name, value string) {
+		key := name
+		if windows {
+			key = strings.ToUpper(name)
+		}
+		if spelling, ok := names[key]; !ok || name < spelling {
+			names[key] = name
+		}
+		values[key] = value
+	}
 	for _, entry := range base {
-		if key, value, ok := strings.Cut(entry, "="); ok {
-			values[key] = value
+		if name, value, ok := strings.Cut(entry, "="); ok {
+			put(name, value)
 		}
 	}
 	for _, layer := range layers {
-		maps.Copy(values, layer)
+		for name, value := range layer {
+			put(name, value)
+		}
 	}
 	merged := make([]string, 0, len(values))
 	for _, key := range slices.Sorted(maps.Keys(values)) {
-		merged = append(merged, key+"="+values[key])
+		merged = append(merged, names[key]+"="+values[key])
 	}
 	return merged
 }

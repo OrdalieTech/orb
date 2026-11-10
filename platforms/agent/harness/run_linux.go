@@ -196,20 +196,13 @@ func oomKillCount() int {
 }
 
 // authFile is the agent's OAuth logins, root's, on a descriptor the agent
-// reads and rewrites while its tools cannot open it; one left in config/ is
-// moved there.
+// reads and rewrites while its tools cannot open it.
 func authFile(image layout) (*os.File, error) {
 	dir := filepath.Join(image.home, "secrets")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	path := filepath.Join(dir, "auth.json")
-	if legacy := filepath.Join(image.config, "auth.json"); exists(legacy) && !exists(path) {
-		if err := os.Rename(legacy, path); err != nil {
-			return nil, err
-		}
-	}
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	file, err := os.OpenFile(filepath.Join(dir, "auth.json"), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, err
 	}

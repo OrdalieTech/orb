@@ -2,9 +2,9 @@ package api
 
 import (
 	"math"
-	"slices"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 const (
@@ -203,17 +203,7 @@ func estimateTextTokens(text string) int64 { return ceilTokens(jsStringLength(te
 // ceilTokens is pi's ceil(chars / 3.5) (4 before pi 1.1.0).
 func ceilTokens(chars int64) int64 { return (2*chars + 6) / 7 }
 
-// jsStringLength counts value's UTF-16 code units, an invalid byte as one.
-func jsStringLength(value string) int64 {
-	var length int64
-	for _, char := range value {
-		length++
-		if char >= 0x10000 {
-			length++
-		}
-	}
-	return length
-}
+func jsStringLength(value string) int64 { return int64(jsonwire.UTF16Len(value)) }
 
 func messageTimestamp(message ai.Message) int64 {
 	switch message := message.(type) {
@@ -228,73 +218,11 @@ func messageTimestamp(message ai.Message) int64 {
 	}
 }
 
-var extendedThinkingLevels = []ai.ModelThinkingLevel{
-	ai.ModelThinkingOff,
-	ai.ModelThinkingMinimal,
-	ai.ModelThinkingLow,
-	ai.ModelThinkingMedium,
-	ai.ModelThinkingHigh,
-	ai.ModelThinkingXHigh,
-	ai.ModelThinkingMax,
-}
-
 func clampSimpleReasoning(model *ai.Model, requested *ai.ThinkingLevel) *ai.ThinkingLevel {
 	if requested == nil {
 		return nil
 	}
-	available := supportedThinkingLevels(model)
-	wanted := ai.ModelThinkingLevel(*requested)
-	for _, level := range available {
-		if level == wanted {
-			return simpleReasoningLevel(level)
-		}
-	}
-	requestedIndex := -1
-	for index, level := range extendedThinkingLevels {
-		if level == wanted {
-			requestedIndex = index
-			break
-		}
-	}
-	if requestedIndex < 0 {
-		if len(available) == 0 {
-			return nil
-		}
-		return simpleReasoningLevel(available[0])
-	}
-	for index := requestedIndex; index < len(extendedThinkingLevels); index++ {
-		if slices.Contains(available, extendedThinkingLevels[index]) {
-			return simpleReasoningLevel(extendedThinkingLevels[index])
-		}
-	}
-	for index := requestedIndex - 1; index >= 0; index-- {
-		if slices.Contains(available, extendedThinkingLevels[index]) {
-			return simpleReasoningLevel(extendedThinkingLevels[index])
-		}
-	}
-	return nil
-}
-
-func supportedThinkingLevels(model *ai.Model) []ai.ModelThinkingLevel {
-	if model == nil || !model.Reasoning {
-		return []ai.ModelThinkingLevel{ai.ModelThinkingOff}
-	}
-	var mappings map[ai.ModelThinkingLevel]*string
-	if model.ThinkingLevelMap != nil {
-		mappings = *model.ThinkingLevelMap
-	}
-	available := make([]ai.ModelThinkingLevel, 0, len(extendedThinkingLevels))
-	for _, level := range extendedThinkingLevels {
-		mapped, present := mappings[level]
-		if present && mapped == nil {
-			continue
-		}
-		if (level == ai.ModelThinkingXHigh || level == ai.ModelThinkingMax) && !present {
-			continue
-		}
-		available = append(available, level)
-	}
-	return available
+	return simpleReasoningLevel(ai.ClampThinkingLevel(model, ai.ModelThinkingLevel(*requested)))
 }
 
 func simpleReasoningLevel(level ai.ModelThinkingLevel) *ai.ThinkingLevel {

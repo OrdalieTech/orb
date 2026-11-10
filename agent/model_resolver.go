@@ -837,6 +837,13 @@ func ResolveCLIModel(provider, pattern string, cliThinking *ai.ModelThinkingLeve
 	return CLIModelResult{Error: `Model "` + display + `" not found. Use --list-models to see available models.`}
 }
 
+// DefaultModelIDForProvider reports the upstream defaultModelPerProvider entry
+// for provider, which the login completion names when it is missing.
+func DefaultModelIDForProvider(provider string) (string, bool) {
+	id, exists := defaultModelPerProvider[provider]
+	return id, exists
+}
+
 var defaultModelPerProvider = map[string]string{
 	"amazon-bedrock": "us.anthropic.claude-opus-4-6-v1", "ant-ling": "Ring-2.6-1T", "anthropic": "claude-opus-4-8",
 	"openai": "gpt-6.1-sol", "azure": "gpt-5.4", "openai-codex": "gpt-6.1-sol", "nvidia": "nvidia/nemotron-3.5-super-vl-120b-a12b",

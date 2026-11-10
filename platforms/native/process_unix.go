@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,7 +46,9 @@ func RequireOfflineMigration(ctx context.Context, agentDir string) error {
 	for _, pid := range pids {
 		environment, probeErr := probe(ctx, pid)
 		if probeErr != nil {
-			if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
+			// Only an Orb past the database cutover hides its environment
+			// (teamenv.Hide), so it is no legacy writer.
+			if errors.Is(probeErr, fs.ErrPermission) || errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
 				continue
 			}
 			return errors.New("cannot inspect a running Orb process before migration")

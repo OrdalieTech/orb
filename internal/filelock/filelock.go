@@ -73,9 +73,7 @@ func acquire(ctx context.Context, path string, staleAfter time.Duration) (*lock,
 			case deletePending(statErr):
 			case statErr != nil:
 				return nil, statErr
-			// A regular file is a lock an older orb took with flock and never
-			// removed; reclaim it so the two runtimes stop deadlocking on it.
-			case !info.IsDir(), time.Since(info.ModTime()) > staleAfter:
+			case time.Since(info.ModTime()) > staleAfter:
 				if removeErr := os.Remove(lockPath); removeErr == nil || errors.Is(removeErr, os.ErrNotExist) {
 					continue
 				}

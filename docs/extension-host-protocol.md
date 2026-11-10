@@ -157,6 +157,8 @@ The host retains the handler; argument completion is outside Phase 1. Orb instal
 `subscribe_event` carries `extensionId`, a host-generated `subscriptionId`, and the upstream event
 name. Each call to `pi.on()` creates a distinct subscription, preserving handler registration
 order. Orb installs an ordinary registry handler which sends `emit_event` to that subscription.
+The unsubscribe function `pi.on()` returns sends `unsubscribe_event` `{extensionId,subscriptionId}`
+once the extension has loaded; before that it drops the queued registration.
 
 `register_renderer` carries `extensionId`, `kind` (`message` or `entry`), and `customType`. Orb
 registers a native renderer closure. Invoking it sends `create_registered_renderer_component` with
@@ -356,8 +358,10 @@ Extension callbacks (tools, commands, dialogs, event handlers, providers, render
 actions) carry no deadline — upstream awaits them untimed — and only host-infrastructure RPCs
 (handshake, `load_extension`, dependency install) stay bounded. Cancelling the Go-side context of
 a pending callback emits a `cancel_request` notification `{"requestId":..., "reason":...}`; the
-host aborts the per-request `AbortController` backing the positional `AbortSignal` upstream
-extensions receive. The host also exits when its stdin transport closes, so a hard orb crash
+host aborts that request's `AbortController`, which it creates for every orb request as it reads
+the frame and drops when the request settles. Its signal is the positional `AbortSignal` upstream
+extensions receive: tool and session-tool `execute`, provider streams, OAuth `refresh`, the
+`login` interaction, and `user_bash` operations. The host also exits when its stdin transport closes, so a hard orb crash
 cannot orphan it, and extensions see the full Node `console` surface (`trace`, `table`, `group`,
 `time`/`timeEnd`, `count`, `assert`, …) routed through the log bridge.
 
@@ -396,7 +400,10 @@ successful runtime mutation, with this event:
 {"kind":"event","method":"state_delta","params":{"extensionId":"ext-1","stateSnapshot":{"flags":{"trace":true},"sessionName":"review","activeTools":["read"],"allTools":[],"commands":[],"thinkingLevel":"low","context":{"cwd":"/work","mode":"print","hasUI":false,"model":null,"idle":true,"projectTrusted":true,"hasPendingMessages":false,"contextUsage":null,"systemPrompt":""},"session":null,"modelRegistry":null}}}
 ```
 
-The delta is a complete replacement, not a patch. A host keeps registered flag defaults when an
+The delta is a complete replacement, not a patch, with two exceptions. A `session` already sent
+under the same `sessionRevision` arrives as `null`, and `modelRegistry` is omitted when it equals
+the extension's last delivered one; the host keeps its previous copy in both cases (an explicit
+`null` registry still clears it). A host keeps registered flag defaults when an
 early runtime snapshot cannot yet resolve them. Successful `setSessionName`, `setActiveTools`,
 `setThinkingLevel`, and label mutations also update the local mirror optimistically, so the void
 upstream facade remains synchronous while the authoritative delta is in flight.
@@ -457,7 +464,7 @@ callback is running and `state_signal_release` when it returns. For `session_bef
 
 The embedded orb-extension-sdk's three protocol-backed exports — `createAgentSession`,
 `ModelRuntime`, `ModelRegistry` — call through these capabilities. All three are advertised in
-`host_hello`; absence forbids every method they govern (the SDK then throws the precise
+the `handshake` response; absence forbids every method they govern (the SDK then throws the precise
 `OrbUnsupportedCapability` diagnostic naming the missing capability — this is how future Orbs
 degrade older hosts deliberately). The handshake response's `services` object is the `sdk_v1`
 bootstrap payload: `sessionsRoot` is the absolute sessions root, from which the SDK's
@@ -495,9 +502,9 @@ Host-to-orb requests:
 - `agent_session_prompt` `{handle,text,options?}` — resolves when the turn settles; provider
   quota/limit failures are not errors (they land in the message mirror as a final assistant
   message with `stopReason:"error"` and the provider's verbatim `errorMessage`).
-- `agent_session_messages`, `agent_session_abort`, `agent_session_subscribe`,
-  `agent_session_stats`, `agent_session_set_active_tools`, `agent_session_append_info`,
-  `agent_session_dispose` — the rest of the child-session surface, 1:1 with the SDK proxy.
+- `agent_session_abort`, `agent_session_subscribe`, `agent_session_set_active_tools`,
+  `agent_session_append_info`, `agent_session_dispose` — the rest of the child-session surface,
+  1:1 with the SDK proxy.
 
 Orb-to-host traffic:
 

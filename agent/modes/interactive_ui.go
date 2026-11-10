@@ -202,10 +202,10 @@ func (ui *InteractiveUI) Notify(message string, notifyType extensions.Notificati
 	switch notifyType {
 	case extensions.NotifyWarning:
 		ui.mode.chat.AddChild(tui.NewSpacer(1))
-		ui.mode.chat.AddChild(tui.NewText(theme.FG("warning", "Warning: "+message), ui.mode.outputPad+2, 0, nil))
+		ui.mode.chat.AddChild(tui.NewText(theme.FG("warning", "Warning: "+message), ui.mode.currentOutputPad()+2, 0, nil))
 	case extensions.NotifyError:
 		ui.mode.chat.AddChild(tui.NewSpacer(1))
-		ui.mode.chat.AddChild(tui.NewText(theme.FG("error", "Error: "+message), ui.mode.outputPad+2, 0, nil))
+		ui.mode.chat.AddChild(tui.NewText(theme.FG("error", "Error: "+message), ui.mode.currentOutputPad()+2, 0, nil))
 	default:
 		ui.mode.showStatusMessage(message)
 		return
@@ -601,19 +601,14 @@ func (ui *InteractiveUI) SetHeader(factory extensions.HeaderFactory) {
 	ui.mode.header.Clear()
 	if factory != nil {
 		if component := factory(ui.mode, ui.Theme()); component != nil {
-			ui.mode.mu.Lock()
-			expanded := ui.mode.toolsExpanded
-			ui.mode.mu.Unlock()
-			setExpandedComponent(component, expanded)
+			setExpandedComponent(component, ui.mode.currentToolsExpanded())
 			ui.mu.Lock()
 			ui.customHeader = component
 			ui.mu.Unlock()
 			ui.mode.header.AddChild(component)
 		}
 	} else if len(ui.builtInHeader) > 0 {
-		ui.mode.mu.Lock()
-		expanded := ui.mode.toolsExpanded
-		ui.mode.mu.Unlock()
+		expanded := ui.mode.currentToolsExpanded()
 		for _, component := range ui.builtInHeader {
 			setExpandedComponent(component, expanded)
 			ui.mode.header.AddChild(component)
@@ -1202,9 +1197,7 @@ func (adapter tuiAutocompleteAdapter) ShouldTriggerFileCompletion(request extens
 // ─── Tools ───────────────────────────────────────────────
 
 func (ui *InteractiveUI) GetToolsExpanded() bool {
-	ui.mode.mu.Lock()
-	defer ui.mode.mu.Unlock()
-	return ui.mode.toolsExpanded
+	return ui.mode.currentToolsExpanded()
 }
 
 func (ui *InteractiveUI) SetToolsExpanded(expanded bool) {

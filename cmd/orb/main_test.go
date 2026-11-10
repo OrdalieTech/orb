@@ -489,6 +489,8 @@ func TestBuiltBinaryServesRPCConversation(t *testing.T) {
 		}
 		line, readErr := reader.ReadBytes('\n')
 		if readErr != nil {
+			_ = stdin.Close()
+			_ = command.Wait()
 			t.Fatalf("read RPC response: %v; stderr=%q", readErr, stderr.String())
 		}
 		return bytes.TrimSuffix(line, []byte{'\n'})

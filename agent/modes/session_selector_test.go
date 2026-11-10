@@ -137,14 +137,16 @@ func TestSessionSelectorSelectionCancellationAndKeybindings(t *testing.T) {
 	fixture := loadSessionSelectorFixture(t)
 	now := time.Date(2026, 7, 18, 22, 0, 0, 0, time.UTC)
 	_, current, all := sessionSelectorSessions(t, now)
-	loader := func(values []session.SessionInfo) SessionSelectorLoader {
-		return func(session.SessionListProgress) []session.SessionInfo { return values }
+	loader := func(values []session.SessionInfo) SessionSelectorContextLoader {
+		return func(context.Context, session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+			return values, nil
+		}
 	}
 	bindings := NewAppKeybindings(nil)
 	tui.SetKeybindings(bindings)
 	selected := make(chan string, 1)
 	selector := NewSessionSelectorComponent(SessionSelectorOptions{
-		CurrentSessions: loader(current), AllSessions: loader(all), Keybindings: bindings, Now: func() time.Time { return now },
+		CurrentSessionsContext: loader(current), AllSessionsContext: loader(all), Keybindings: bindings, Now: func() time.Time { return now },
 	}, func(path string) { selected <- path }, nil)
 	waitForSelector(t, selector, "Root plan")
 	selector.HandleInput(selectorKey("\x1b[B"))
@@ -160,7 +162,7 @@ func TestSessionSelectorSelectionCancellationAndKeybindings(t *testing.T) {
 
 	cancelled := make(chan struct{}, 1)
 	selector = NewSessionSelectorComponent(SessionSelectorOptions{
-		CurrentSessions: loader(current), AllSessions: loader(all), Keybindings: bindings, Now: func() time.Time { return now },
+		CurrentSessionsContext: loader(current), AllSessionsContext: loader(all), Keybindings: bindings, Now: func() time.Time { return now },
 	}, nil, func() { cancelled <- struct{}{} })
 	waitForSelector(t, selector, "Root plan")
 	selector.HandleInput(selectorKey("\x1b"))
@@ -176,7 +178,7 @@ func TestSessionSelectorSelectionCancellationAndKeybindings(t *testing.T) {
 	overridden := NewAppKeybindings(tui.KeybindingsConfig{"app.session.toggleSort": {"ctrl+x"}})
 	tui.SetKeybindings(overridden)
 	selector = NewSessionSelectorComponent(SessionSelectorOptions{
-		CurrentSessions: loader(current), AllSessions: loader(all), Keybindings: overridden, Now: func() time.Time { return now },
+		CurrentSessionsContext: loader(current), AllSessionsContext: loader(all), Keybindings: overridden, Now: func() time.Time { return now },
 	}, nil, nil)
 	waitForSelector(t, selector, "Sort: Threaded")
 	selector.HandleInput(selectorKey("\x13"))
@@ -308,8 +310,10 @@ func TestSessionSelectorClearsStatusLifetimeOnSelectionCancellationAndExit(t *te
 	}
 	now := time.Date(2026, 7, 18, 22, 0, 0, 0, time.UTC)
 	_, current, all := sessionSelectorSessions(t, now)
-	loader := func(values []session.SessionInfo) SessionSelectorLoader {
-		return func(session.SessionListProgress) []session.SessionInfo { return values }
+	loader := func(values []session.SessionInfo) SessionSelectorContextLoader {
+		return func(context.Context, session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+			return values, nil
+		}
 	}
 
 	for _, expected := range fixture.Lifetime {
@@ -320,11 +324,11 @@ func TestSessionSelectorClearsStatusLifetimeOnSelectionCancellationAndExit(t *te
 			var renders atomic.Int32
 			events := make([]string, 0, 1)
 			selector := NewSessionSelectorComponent(SessionSelectorOptions{
-				CurrentSessions: loader(current),
-				AllSessions:     loader(all),
-				Keybindings:     bindings,
-				RequestRender:   func() { renders.Add(1) },
-				Now:             func() time.Time { return now },
+				CurrentSessionsContext: loader(current),
+				AllSessionsContext:     loader(all),
+				Keybindings:            bindings,
+				RequestRender:          func() { renders.Add(1) },
+				Now:                    func() time.Time { return now },
 			}, func(string) { events = append(events, "select") }, func() { events = append(events, "cancel") })
 			waitForSelector(t, selector, "Root plan")
 			time.Sleep(10 * time.Millisecond)
@@ -438,17 +442,17 @@ func runCancelledSelectorWithStatusTimer(t *testing.T) <-chan struct{} {
 	}
 	loaded := make(chan struct{})
 	var loadedOnce sync.Once
-	loader := func(session.SessionListProgress) []session.SessionInfo {
+	loader := func(context.Context, session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
 		runtime.KeepAlive(probe)
 		loadedOnce.Do(func() { close(loaded) })
 		return []session.SessionInfo{{
 			Path: sessionPath, ID: "pending-status", CWD: root, Created: time.Now(), Modified: time.Now(),
 			MessageCount: 1, FirstMessage: "pending status", AllMessagesText: "pending status",
-		}}
+		}}, nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	terminal := &selectorCancellationTerminal{loaded: loaded, session: sessionPath, cancel: cancel}
-	_, _, err := runSessionSelectorWithTerminal(ctx, SessionSelectorOptions{CurrentSessions: loader, AllSessions: loader}, terminal)
+	_, _, err := runSessionSelectorWithTerminal(ctx, SessionSelectorOptions{CurrentSessionsContext: loader, AllSessionsContext: loader}, terminal)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("runner cancellation error = %v, want %v", err, context.Canceled)
 	}
@@ -537,11 +541,13 @@ func (*selectorLifecycleTerminal) SetProgress(bool)                        {}
 func TestRunSessionSelectorTerminalLifecycle(t *testing.T) {
 	now := time.Now()
 	_, current, all := sessionSelectorSessions(t, now)
-	loader := func(values []session.SessionInfo) SessionSelectorLoader {
-		return func(session.SessionListProgress) []session.SessionInfo { return values }
+	loader := func(values []session.SessionInfo) SessionSelectorContextLoader {
+		return func(context.Context, session.SessionListUpdateFunc) ([]session.SessionInfo, error) {
+			return values, nil
+		}
 	}
 	terminal := &selectorLifecycleTerminal{input: "\r"}
-	path, selected, err := runSessionSelectorWithTerminal(context.Background(), SessionSelectorOptions{CurrentSessions: loader(current), AllSessions: loader(all)}, terminal)
+	path, selected, err := runSessionSelectorWithTerminal(context.Background(), SessionSelectorOptions{CurrentSessionsContext: loader(current), AllSessionsContext: loader(all)}, terminal)
 	if err != nil || !selected || path != current[1].Path {
 		t.Fatalf("path=%q selected=%t err=%v", path, selected, err)
 	}
@@ -554,7 +560,7 @@ func TestRunSessionSelectorTerminalLifecycle(t *testing.T) {
 
 	stopFailure := errors.New("restore failed")
 	terminal = &selectorLifecycleTerminal{input: "\x1b", stopErr: stopFailure}
-	_, _, err = runSessionSelectorWithTerminal(context.Background(), SessionSelectorOptions{CurrentSessions: loader(current), AllSessions: loader(all)}, terminal)
+	_, _, err = runSessionSelectorWithTerminal(context.Background(), SessionSelectorOptions{CurrentSessionsContext: loader(current), AllSessionsContext: loader(all)}, terminal)
 	if !errors.Is(err, stopFailure) {
 		t.Fatalf("stop error = %v", err)
 	}

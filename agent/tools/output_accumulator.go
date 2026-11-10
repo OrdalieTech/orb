@@ -97,12 +97,14 @@ func (output *OutputAccumulator) Append(data []byte) error {
 	return output.append(len(data), data, output.decoder.Decode(data, false))
 }
 
-// appendTransformed records rawSize for spill selection while retaining text
-// in the rolling buffer and full-output file.
-func (output *OutputAccumulator) appendTransformed(rawSize int, text string) error {
+// AppendSanitized appends data as the user bash executor keeps it: decoded,
+// without ANSI escapes, carriage returns or control characters. It returns
+// the kept text; the raw size still counts toward spilling to the temp file.
+func (output *OutputAccumulator) AppendSanitized(data []byte) (string, error) {
 	output.mu.Lock()
 	defer output.mu.Unlock()
-	return output.append(rawSize, []byte(text), text)
+	text := sanitizeBashOutput(output.decoder.Decode(data, false))
+	return text, output.append(len(data), []byte(text), text)
 }
 
 func (output *OutputAccumulator) append(rawSize int, persisted []byte, decoded string) error {

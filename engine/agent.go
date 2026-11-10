@@ -326,7 +326,17 @@ func (agent *Agent) Prompt(ctx context.Context, input any, images ...*ai.ImageCo
 	if err != nil {
 		return err
 	}
-	return agent.runPromptMessages(ctx, messages, false)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	agent.mu.Lock()
+	if agent.active != nil {
+		agent.mu.Unlock()
+		return upstreamError(alreadyPromptingMessage)
+	}
+	active := agent.beginRunLocked(ctx)
+	agent.mu.Unlock()
+	return agent.runPromptMessagesReserved(active, messages, false)
 }
 
 func (agent *Agent) Continue(ctx context.Context) error {
@@ -724,19 +734,6 @@ func (agent *Agent) normalizePromptInput(input any, images []*ai.ImageContent) (
 	}
 }
 
-func (agent *Agent) runPromptMessages(ctx context.Context, messages AgentMessages, skipInitialSteeringPoll bool) error {
-	return agent.runWithLifecycle(ctx, func(runContext context.Context) error {
-		loopContext := agent.contextSnapshot()
-		if agent.UsesSessionLoop() {
-			return agent.sessionLoop(runContext, messages, loopContext, agent.loopConfig(skipInitialSteeringPoll), agent.processEvent)
-		}
-		messages = agent.withInitialSystemPrompt(loopContext, messages)
-		config := agent.loopConfig(skipInitialSteeringPoll)
-		_, err := RunLoop(runContext, messages, loopContext, config, agent.processEvent, agent.StreamFn())
-		return err
-	})
-}
-
 func (agent *Agent) runPromptMessagesReserved(active *activeRun, messages AgentMessages, skipInitialSteeringPoll bool) error {
 	return agent.runReserved(active, func(runContext context.Context) error {
 		loopContext := agent.contextSnapshot()
@@ -780,20 +777,6 @@ func (agent *Agent) runContinuationReserved(active *activeRun) error {
 		_, err := RunLoopContinue(runContext, &loopContext, config, agent.processEvent, agent.StreamFn())
 		return err
 	})
-}
-
-func (agent *Agent) runWithLifecycle(ctx context.Context, execute func(context.Context) error) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	agent.mu.Lock()
-	if agent.active != nil {
-		agent.mu.Unlock()
-		return upstreamError(alreadyPromptingMessage)
-	}
-	active := agent.beginRunLocked(ctx)
-	agent.mu.Unlock()
-	return agent.runReserved(active, execute)
 }
 
 func (agent *Agent) beginRunLocked(ctx context.Context) *activeRun {

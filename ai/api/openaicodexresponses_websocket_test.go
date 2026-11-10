@@ -55,7 +55,7 @@ func TestF2OpenAICodexWebSocketTrace(t *testing.T) {
 			connections := 0
 			var endpoint string
 			var headers http.Header
-			withOpenAICodexWebSocketConnector(t, func(_ context.Context, gotEndpoint string, gotHeaders http.Header, _ time.Duration) (openAICodexSocket, error) {
+			withOpenAICodexWebSocketConnector(t, func(_ context.Context, gotEndpoint string, gotHeaders http.Header, _ time.Duration, _ openAIHTTPDoer) (openAICodexSocket, error) {
 				connections++
 				endpoint, headers = gotEndpoint, gotHeaders.Clone()
 				return socket, nil
@@ -182,7 +182,7 @@ func TestOpenAICodexAutoUsesWebSocket(t *testing.T) {
 	connectCalls, httpCalls := 0, 0
 	var endpoint string
 	var headers http.Header
-	withOpenAICodexWebSocketConnector(t, func(_ context.Context, gotEndpoint string, gotHeaders http.Header, _ time.Duration) (openAICodexSocket, error) {
+	withOpenAICodexWebSocketConnector(t, func(_ context.Context, gotEndpoint string, gotHeaders http.Header, _ time.Duration, _ openAIHTTPDoer) (openAICodexSocket, error) {
 		connectCalls++
 		endpoint, headers = gotEndpoint, gotHeaders.Clone()
 		return socket, nil
@@ -222,7 +222,7 @@ func TestOpenAICodexAutoUsesWebSocket(t *testing.T) {
 func TestOpenAICodexWebSocketFailureFallsBackAndSticks(t *testing.T) {
 	sessionID := "ws-fallback"
 	connectCalls, httpCalls := 0, 0
-	withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration) (openAICodexSocket, error) {
+	withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration, openAIHTTPDoer) (openAICodexSocket, error) {
 		connectCalls++
 		return nil, errors.New("dial failed")
 	})
@@ -257,7 +257,7 @@ func TestOpenAICodexRetriesWebSocketConnectionLimitOnce(t *testing.T) {
 		"type": "response.done", "response": map[string]any{"id": "retried", "status": "completed", "output": []any{}},
 	})}}}
 	connectCalls, httpCalls := 0, 0
-	withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration) (openAICodexSocket, error) {
+	withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration, openAIHTTPDoer) (openAICodexSocket, error) {
 		connectCalls++
 		if connectCalls == 1 {
 			return first, nil
@@ -286,7 +286,7 @@ func TestOpenAICodexWebSocketFailureAfterStartDoesNotFallback(t *testing.T) {
 		{err: io.ErrUnexpectedEOF},
 	}}
 	httpCalls := 0
-	withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration) (openAICodexSocket, error) {
+	withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration, openAIHTTPDoer) (openAICodexSocket, error) {
 		return socket, nil
 	})
 	withCodexHTTPClient(t, func(*http.Request) (*http.Response, error) {
@@ -316,7 +316,7 @@ func TestOpenAICodexWebSocketCachedSendsOnlyInputDelta(t *testing.T) {
 	})})
 	socket := &fakeCodexWebSocket{steps: steps}
 	connectCalls := 0
-	withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration) (openAICodexSocket, error) {
+	withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration, openAIHTTPDoer) (openAICodexSocket, error) {
 		connectCalls++
 		return socket, nil
 	})
@@ -376,7 +376,7 @@ func TestOpenAICodexRecoversMissingCachedContinuation(t *testing.T) {
 				secondSocket.steps = nil
 			}
 			connectCalls := 0
-			withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration) (openAICodexSocket, error) {
+			withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration, openAIHTTPDoer) (openAICodexSocket, error) {
 				connectCalls++
 				if connectCalls == 1 {
 					return firstSocket, nil
@@ -446,7 +446,7 @@ func TestOpenAICodexCachedWebSocketClosesWithSessionResources(t *testing.T) {
 	socket := &fakeCodexWebSocket{steps: []codexWebSocketStep{{message: codexWebSocketJSON(map[string]any{
 		"type": "response.done", "response": map[string]any{"id": "disposed", "status": "completed", "output": []any{}},
 	})}}}
-	withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration) (openAICodexSocket, error) {
+	withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration, openAIHTTPDoer) (openAICodexSocket, error) {
 		return socket, nil
 	})
 	model := codexTestModel()
@@ -472,7 +472,7 @@ func TestOpenAICodexCachedWebSocketClosesWithSessionResources(t *testing.T) {
 func TestB1OpenAICodexWebSocketConsumerBreakStopsCleanly(t *testing.T) {
 	for breakAfter := 1; breakAfter <= 3; breakAfter++ {
 		socket := &fakeCodexWebSocket{steps: codexWebSocketTextResponse("ws-b1", "hello")}
-		withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration) (openAICodexSocket, error) {
+		withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration, openAIHTTPDoer) (openAICodexSocket, error) {
 			return socket, nil
 		})
 		withCodexHTTPClient(t, func(*http.Request) (*http.Response, error) {
@@ -519,7 +519,7 @@ func TestCXm4OpenAICodexWebSocketAbortAfterTerminalEventFails(t *testing.T) {
 			cancel()
 		}
 	}
-	withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration) (openAICodexSocket, error) {
+	withOpenAICodexWebSocketConnector(t, func(context.Context, string, http.Header, time.Duration, openAIHTTPDoer) (openAICodexSocket, error) {
 		return socket, nil
 	})
 	withCodexHTTPClient(t, func(*http.Request) (*http.Response, error) {
@@ -589,7 +589,7 @@ func stringContains(contents, text string) bool {
 
 func withOpenAICodexWebSocketConnector(
 	t *testing.T,
-	connect func(context.Context, string, http.Header, time.Duration) (openAICodexSocket, error),
+	connect func(context.Context, string, http.Header, time.Duration, openAIHTTPDoer) (openAICodexSocket, error),
 ) {
 	t.Helper()
 	CloseOpenAICodexWebSocketSessions()

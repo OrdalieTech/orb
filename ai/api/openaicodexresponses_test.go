@@ -316,7 +316,7 @@ func TestCXM3OpenAICodexSSERequestBodyIsZstdCompressed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload, err := buildOpenAICodexResponsesPayload(&model, requestContext, options)
+	payload, _, err := buildOpenAICodexResponsesPayload(&model, requestContext, options)
 	if err != nil {
 		t.Fatal(err)
 	}

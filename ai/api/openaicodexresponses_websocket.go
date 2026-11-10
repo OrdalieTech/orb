@@ -28,8 +28,8 @@ type openAICodexSocket interface {
 }
 
 var (
-	openAICodexConnectWebSocket = func(ctx context.Context, endpoint string, headers http.Header, timeout time.Duration) (openAICodexSocket, error) {
-		return connectCodexWebSocket(ctx, endpoint, headers, timeout)
+	openAICodexConnectWebSocket = func(ctx context.Context, endpoint string, headers http.Header, timeout time.Duration, client openAIHTTPDoer) (openAICodexSocket, error) {
+		return connectCodexWebSocket(ctx, endpoint, headers, timeout, client)
 	}
 	openAICodexWebSocketNow = time.Now
 	openAICodexWebSockets   = newOpenAICodexWebSocketState()
@@ -37,11 +37,14 @@ var (
 
 func init() {
 	ai.RegisterSessionResourceCleanup(func(sessionID string) error {
+		CloseOpenAICodexWebSocketSessions(sessionID)
+		openAICodexWebSockets.mu.Lock()
 		if sessionID == "" {
-			CloseOpenAICodexWebSocketSessions()
+			clear(openAICodexWebSockets.fallbacks)
 		} else {
-			CloseOpenAICodexWebSocketSessions(sessionID)
+			delete(openAICodexWebSockets.fallbacks, sessionID)
 		}
+		openAICodexWebSockets.mu.Unlock()
 		return nil
 	})
 }
@@ -132,9 +135,10 @@ func acquireOpenAICodexWebSocket(
 	headers http.Header,
 	sessionID string,
 	connectTimeout time.Duration,
+	client openAIHTTPDoer,
 ) (*openAICodexWebSocketLease, error) {
 	if sessionID == "" {
-		socket, err := openAICodexConnectWebSocket(ctx, endpoint, headers, connectTimeout)
+		socket, err := openAICodexConnectWebSocket(ctx, endpoint, headers, connectTimeout, client)
 		if err != nil {
 			return nil, err
 		}
@@ -155,7 +159,7 @@ func acquireOpenAICodexWebSocket(
 	}
 	if entry != nil && entry.busy {
 		openAICodexWebSockets.mu.Unlock()
-		socket, err := openAICodexConnectWebSocket(ctx, endpoint, headers, connectTimeout)
+		socket, err := openAICodexConnectWebSocket(ctx, endpoint, headers, connectTimeout, client)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +175,7 @@ func acquireOpenAICodexWebSocket(
 	if stale != nil {
 		_ = stale.Close(1000, "connection_age_limit")
 	}
-	socket, err := openAICodexConnectWebSocket(ctx, endpoint, headers, connectTimeout)
+	socket, err := openAICodexConnectWebSocket(ctx, endpoint, headers, connectTimeout, client)
 	openAICodexWebSockets.mu.Lock()
 	if err != nil {
 		if openAICodexWebSockets.sessions[sessionID] == entry {
@@ -281,6 +285,7 @@ func processOpenAICodexWebSocket(
 		headers,
 		sessionID,
 		codexWebSocketConnectTimeout(streamOptions),
+		codexHTTPClient(streamOptions),
 	)
 	if err != nil {
 		return false, err

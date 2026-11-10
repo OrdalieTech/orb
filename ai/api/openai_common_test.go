@@ -166,12 +166,9 @@ func (body *contextGatedBody) Close() error { return nil }
 func TestStrictSamplingKeepsInternalReferences(t *testing.T) {
 	tool := ai.Tool{Name: "t", ConstrainedSampling: &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: ai.ConstrainedSamplingRequire},
 		Parameters: ai.JSONSchema(`{"type":"object","properties":{"a":{"$ref":"#/$defs/A"}},"$defs":{"A":{"type":"object","properties":{"x":{"type":"string"}}}}}`)}
-	if strict, err := resolveJSONSchemaStrictSampling(tool, true); err != nil || strict == nil || !*strict {
+	strict, parameters, err := resolveJSONSchemaStrictSampling(tool, true, nil)
+	if err != nil || strict == nil || !*strict {
 		t.Fatalf("strict = %v, %v", strict, err)
-	}
-	parameters, err := getJSONSchemaToolParameters(tool.Parameters, true)
-	if err != nil {
-		t.Fatal(err)
 	}
 	want := `{"type":"object","properties":{"a":{"anyOf":[{"$ref":"#/$defs/A"},{"type":"null"}]}},"$defs":{"A":{"type":"object","properties":{"x":{"anyOf":[{"type":"string"},{"type":"null"}]}},"required":["x"],"additionalProperties":false}},"required":["a"],"additionalProperties":false}`
 	if string(parameters) != want {
@@ -182,7 +179,7 @@ func TestStrictSamplingKeepsInternalReferences(t *testing.T) {
 		t.Fatalf("strict nulls inside a definition = %v, %v", arguments, err)
 	}
 	tool.Parameters = ai.JSONSchema(`{"type":"object","properties":{"a":{"$ref":"https://example.com/a.json"}}}`)
-	if _, err := resolveJSONSchemaStrictSampling(tool, true); err == nil || !strings.Contains(err.Error(), "external $ref is unsupported") {
+	if _, _, err := resolveJSONSchemaStrictSampling(tool, true, nil); err == nil || !strings.Contains(err.Error(), "external $ref is unsupported") {
 		t.Fatalf("external $ref error = %v", err)
 	}
 }

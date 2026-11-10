@@ -151,7 +151,9 @@ func newCLISessionRuntimeHost(ctx context.Context, options cliSessionRuntimeHost
 			AvailableModels: inputs.AvailableModels, ScopedModels: inputs.ScopedModels, SlashResolver: inputs.SlashResolver,
 			ExtensionRegistry: inputs.Extensions, ExtensionMode: options.ExtensionMode,
 			ExtensionErrorHandler: func(extensionError extensions.ExtensionError) {
-				_, _ = fmt.Fprintf(stderr, "Extension error (%s, %s): %s\n", extensionError.ExtensionPath, extensionError.Event, extensionError.Error)
+				if options.ExtensionMode != extensions.ModeTUI {
+					_, _ = fmt.Fprintf(stderr, "Extension error (%s, %s): %s\n", extensionError.ExtensionPath, extensionError.Event, extensionError.Error)
+				}
 			},
 			BaseTools: inputs.BaseTools, InitialActiveToolNames: inputs.ActiveToolNames,
 			AllowedToolNames: inputs.AllowedTools, ExcludedToolNames: inputs.ExcludedTools, RebuildBaseTools: inputs.RebuildBaseTools,

@@ -327,3 +327,32 @@ func gitRun(t *testing.T, dir string, args ...string) {
 		t.Fatalf("git %v: %v", args, err)
 	}
 }
+
+func TestNpmPackagePathContainmentRejectsTraversalOnInstallAndRemove(t *testing.T) {
+	manager, _, agentDir, _ := newTestPackageManager(t)
+	sentinel := filepath.Join(agentDir, "npm", "keep.txt")
+	writeTestFile(t, sentinel, "keep")
+	scopedSentinel := filepath.Join(agentDir, "npm", "node_modules", "@scope", "keep", "index.js")
+	writeTestFile(t, scopedSentinel, "export default 1;\n")
+
+	for _, bad := range []string{
+		"npm:..",
+		"npm:.",
+		"npm:../outside",
+		"npm:@scope/..",
+		"npm:@scope/.",
+		"npm:@scope/pkg/..",
+		"npm:@scope/pkg/extra",
+		`npm:foo\bar`,
+	} {
+		if err := manager.Install(bad, false); err == nil || !strings.Contains(err.Error(), "Refusing to use path outside package install root") {
+			t.Fatalf("Install(%q) error = %v, want install-root refusal", bad, err)
+		}
+		if err := manager.Remove(bad, false); err == nil || !strings.Contains(err.Error(), "Refusing to use path outside package install root") {
+			t.Fatalf("Remove(%q) error = %v, want install-root refusal", bad, err)
+		}
+	}
+	if !pathExists(sentinel) || !pathExists(scopedSentinel) {
+		t.Fatal("rejected package operation deleted existing files under install root")
+	}
+}

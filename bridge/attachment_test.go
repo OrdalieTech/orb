@@ -82,39 +82,41 @@ func TestObservationBoundsAndSnapshots(t *testing.T) {
 	}
 }
 
-func TestLedgerQuotaRetainsDeduplicationAndTerminalReceipts(t *testing.T) {
+func TestLedgerQuotaEvictsOldestTerminalReceipts(t *testing.T) {
 	s := &memoryStore{}
 	l, err := OpenLedger(s, 1024)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := Request{Principal: Principal{PeerID: "peer", Subject: Subject{Kind: "controller"}}, Call: Call{InstanceID: "instance", OperationID: "original", Method: "prompt", Args: json.RawMessage(`{"text":"hello"}`)}}
-	if _, _, err = l.Accept(req); err != nil {
-		t.Fatal(err)
+	req := Request{Principal: Principal{PeerID: "peer", Subject: Subject{Kind: "controller"}}, Call: Call{InstanceID: "instance", Method: "prompt", Args: json.RawMessage(`{"text":"hello"}`)}}
+	op := func(id string) Request { next := req; next.Call.OperationID = id; return next }
+	for i := 0; i < 20; i++ {
+		if _, _, err = l.Accept(op(fmt.Sprint(i))); err != nil {
+			t.Fatal(i, err)
+		}
+		if _, err = l.Set(op(fmt.Sprint(i)), "succeeded", json.RawMessage(`{}`), ""); err != nil {
+			t.Fatal(i, err)
+		}
 	}
-	if _, err = l.Set(req, "succeeded", json.RawMessage(`{}`), ""); err != nil {
-		t.Fatal(err)
+	if _, err = l.Get(req.Principal, "instance", "0"); Code(err) != "not_found" {
+		t.Fatal("oldest terminal receipt kept past the quota", err)
 	}
-	if _, err = l.Set(req, "running", nil, ""); err == nil {
-		t.Fatal("terminal receipt resumed")
+	if receipt, duplicate, err := l.Accept(op("19")); err != nil || !duplicate || receipt.Status != "succeeded" {
+		t.Fatal(receipt, duplicate, err)
 	}
 	full := false
-	for i := 0; i < 20; i++ {
-		next := req
-		next.Call.OperationID = fmt.Sprint(i)
-		if _, _, err = l.Accept(next); Code(err) == "resource_exhausted" {
+	for i := 0; i < 20 && !full; i++ {
+		if _, _, err = l.Accept(op(fmt.Sprint("running", i))); Code(err) == "resource_exhausted" {
 			full = true
-			break
 		} else if err != nil {
 			t.Fatal(err)
 		}
 	}
 	if !full {
-		t.Fatal("quota not enforced")
+		t.Fatal("quota not enforced for operations in flight")
 	}
-	receipt, duplicate, err := l.Accept(req)
-	if err != nil || !duplicate || receipt.Status != "succeeded" {
-		t.Fatal(receipt, duplicate, err)
+	if receipt, duplicate, err := l.Accept(op("running0")); err != nil || !duplicate || receipt.Status != "accepted" {
+		t.Fatal("receipt in flight evicted", receipt, duplicate, err)
 	}
 }
 

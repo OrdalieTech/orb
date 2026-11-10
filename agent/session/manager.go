@@ -589,8 +589,7 @@ func writeEntries(writer io.Writer, entries []*FileEntry) error {
 		if err != nil {
 			return err
 		}
-		line := append(append([]byte(nil), encoded...), '\n')
-		if _, err := io.Copy(writer, bytes.NewReader(line)); err != nil {
+		if _, err := fmt.Fprintf(writer, "%s\n", encoded); err != nil {
 			return err
 		}
 	}

@@ -92,8 +92,7 @@ func TestRealHostPositionalToolSignalFiresOnContextCancel(t *testing.T) {
 
 // Regression: readline replays every line of one stdin chunk synchronously,
 // so a cancel_request coalesced into the same chunk as the request it cancels
-// ran before retainRequestAbort and was dropped forever; the host now remembers
-// it and aborts the fresh controller immediately.
+// must find the controller the host creates as it reads the request frame.
 func TestRealHostCancelRequestCoalescedWithRequestStillAborts(t *testing.T) {
 	manager, _, _, result, cwd := startFixtureManager(t, fixturePath(t, "signals.mjs"))
 	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {

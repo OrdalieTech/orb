@@ -563,7 +563,7 @@ func (config *ModelConfig) HasConfiguredAPIKey(providerID string, env map[string
 	if !exists || provider.APIKey == nil {
 		return false
 	}
-	return strings.HasPrefix(*provider.APIKey, "!") || len(missingConfigEnv(*provider.APIKey, env)) == 0
+	return strings.HasPrefix(*provider.APIKey, "!") || len(GetMissingConfigValueEnvVarNames(*provider.APIKey, env)) == 0
 }
 
 // ResolveAPIKey resolves one models.json key at request time.
@@ -634,10 +634,6 @@ func setHeader(headers map[string]string, name, value string) {
 		}
 	}
 	headers[name] = value
-}
-
-func missingConfigEnv(value string, env map[string]string) []string {
-	return GetMissingConfigValueEnvVarNames(value, env)
 }
 
 func stripJSONComments(data []byte) []byte {

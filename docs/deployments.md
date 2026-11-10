@@ -50,7 +50,8 @@ is tested but is not released or is limited. **In progress** is under active dev
 | iOS via iSH | Preview: builds, not validated on device | all (slow) | SQLite | full peer | build from source |
 | WASI runtimes | Planned (core suites pass under wazero) | FS tools | preopened directories | — | — |
 | Android app | Preview: standalone and bridged, tested on device | all (Android shell) | app sandbox SQLite | full peer | `./gradlew assembleDebug` |
-| iOS app | Planned | FS tools; Exec via WASI commands | app sandbox | full peer | app store |
+| iOS app | Preview: simulator build and pairing in CI | none on the phone; conversations run on paired machines | app sandbox SQLite | full peer | `platforms/ios/build.sh` |
+| Desktop app | Preview | the local `orb`'s | the local `orb`'s | the local Bridge | `platforms/desktop/build.sh` |
 
 ## Targets
 
@@ -180,10 +181,10 @@ host-provided import.
 
 `platforms/android` is a native Kotlin app whose core is the unmodified `orb` binary, built
 `CGO_ENABLED=0` for `android/arm64` and shipped as the APK's `liborb.so` (Android executes only
-files installed to `nativeLibraryDir`). The app starts `orb --mode rpc --continue --bridge personal`
-for its own session and `orb bridge pipe` for Bridge, so the phone is a full peer: other Orbs see
-and drive its session, and it drives theirs with the same calls `orb bridge view` makes. A
-foreground service keeps both alive while the screen is off. Tools run in the app sandbox with
+files installed to `nativeLibraryDir`). The app runs `orb app` and draws the view it prints
+(`bridge/view`), as the desktop and iOS apps do, so the phone is a full peer: other Orbs see and
+drive its conversations, and it drives theirs. A foreground service keeps it alive while the
+screen is off. Tools run in the app sandbox with
 Android's `/system/bin/sh`; provider keys stay in the app and reach Orb as environment variables.
 Build and install with `./gradlew installDebug` in `platforms/android` (Go, JDK 17, Android SDK 37).
 To pair it with a computer, run `orb bridge pair` there and scan the QR code from the app's Bridge
@@ -193,10 +194,19 @@ server, answer yes when `orb bridge pair` offers the Bridge service (or run
 
 ### iOS app
 
-iOS apps cannot spawn processes, so an iOS app would embed the same core as a library built with
-gomobile, the shell supplying the ports and driving the core with RPC frames through callbacks;
-`Exec` would run WASI commands in-process (the a-Shell model). Termux and iSH are GPLv3, so the
-apps interoperate with them rather than embed them.
+iOS apps cannot spawn processes, so `platforms/ios` links `cmd/orb` into the app as a static
+library (`go build -buildmode=c-archive`) and runs `orb bridge run`, then `orb app`, over two
+pipes; `platforms/apple` is the Swift renderer of that view. The phone has no shell and starts no
+Orb of its own: a new conversation starts on a paired machine. `platforms/ios/README.md` has the
+build and the CI run. Termux and iSH are GPLv3, so the apps interoperate with them rather than
+embed them.
+
+### Desktop app
+
+`platforms/desktop` is a Go module of its own, drawn by MyGo's native UI on macOS, Linux and
+Windows. It runs `orb app` as a process and draws the view it prints: the conversations open on
+this computer's Bridge and on its paired machines. `platforms/desktop/README.md` has the keys and
+the build.
 
 ## Connecting deployments with Bridge
 
@@ -252,7 +262,7 @@ A target moves up this page only with evidence (DECISIONS.md P11):
 1. its host passes the port conformance suites (`engine/harness/envtest` for FS today; Store and
    Env suites join as those ports gain second implementations);
 2. `conformance/scenario` produces the same session on it as natively;
-3. a target end-to-end test runs in CI (for Workers: `cf dev` and `celld dev`);
+3. a target end-to-end test runs in CI (for Workers: `wrangler dev` and `celld dev`);
 4. one documented command deploys it, and one removes it;
 5. it states its capability profile and its Bridge role;
 6. its artifacts are produced by the release workflow and appear in the release notes.

@@ -747,9 +747,15 @@ func (manager *Manager) subscribe(api extensions.API, extensionID string, subscr
 	unsubscribe := api.OnWithUnsubscribe(subscription.Event, func(ctx context.Context, event extensions.Event, extensionContext extensions.Context) (any, error) {
 		return manager.emitEvent(ctx, extensionID, subscription, event, extensionContext)
 	})
+	key := eventSubscriptionKey(extensionID, subscription.ID)
 	manager.mu.Lock()
-	manager.eventUnsubs[eventSubscriptionKey(extensionID, subscription.ID)] = unsubscribe
+	// A restarted host replays its subscriptions under the same ids.
+	previous := manager.eventUnsubs[key]
+	manager.eventUnsubs[key] = unsubscribe
 	manager.mu.Unlock()
+	if previous != nil {
+		previous()
+	}
 }
 
 func (manager *Manager) registerRenderer(api extensions.API, extensionID string, renderer wireRendererRegistration) {

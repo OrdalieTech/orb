@@ -2,6 +2,7 @@ package agent
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"crypto/sha1" //nolint:gosec // npm legacy shasum verification
 	"crypto/sha512"
@@ -221,6 +222,10 @@ func (manager *PackageManager) installNpm(source *npmSource, scope string, tempo
 	if err != nil {
 		return err
 	}
+	destination, err := resolveNpmPackagePath(installRoot, source.name)
+	if err != nil {
+		return err
+	}
 	if err := manager.ensureNpmProject(installRoot); err != nil {
 		return err
 	}
@@ -239,7 +244,6 @@ func (manager *PackageManager) installNpm(source *npmSource, scope string, tempo
 	if err != nil {
 		return fmt.Errorf("failed to download %s@%s: %s", source.name, info.Version, err)
 	}
-	destination := filepath.Join(installRoot, "node_modules", source.name)
 	if err := extractNpmTarball(tarball, destination); err != nil {
 		return err
 	}
@@ -320,7 +324,7 @@ func (manager *PackageManager) installNpmPeerDependencies(packageDir string) err
 			if isEmbeddedSDKPeer(name) || optionalPeers[name] {
 				continue
 			}
-			target, err := resolveManagedPath(packageDir, "node_modules", name)
+			target, err := resolveNpmPackagePath(packageDir, name)
 			if err != nil {
 				return err
 			}
@@ -421,12 +425,12 @@ func (manager *PackageManager) uninstallNpm(source *npmSource, scope string) err
 	if err != nil {
 		return err
 	}
-	if !pathExists(installRoot) {
-		return nil
-	}
-	installed, err := resolveManagedPath(installRoot, "node_modules", source.name)
+	installed, err := resolveNpmPackagePath(installRoot, source.name)
 	if err != nil {
 		return err
+	}
+	if !pathExists(installRoot) {
+		return nil
 	}
 	if err := os.RemoveAll(installed); err != nil {
 		return err
@@ -522,7 +526,7 @@ func extractNpmTarball(tarball []byte, destination string) error {
 		}
 	}()
 
-	gzipReader, err := gzip.NewReader(strings.NewReader(string(tarball)))
+	gzipReader, err := gzip.NewReader(bytes.NewReader(tarball))
 	if err != nil {
 		return err
 	}

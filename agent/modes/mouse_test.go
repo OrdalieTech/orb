@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -158,8 +159,10 @@ func TestSessionSelectorClickSelectsAndDoubleClickResumes(t *testing.T) {
 	}
 	resumed := ""
 	selector := NewSessionSelectorComponent(SessionSelectorOptions{
-		CurrentSessions: func(sessionstore.SessionListProgress) []sessionstore.SessionInfo { return sessions },
-		Now:             func() time.Time { return now },
+		CurrentSessionsContext: func(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error) {
+			return sessions, nil
+		},
+		Now: func() time.Time { return now },
 	}, func(path string) { resumed = path }, nil)
 	waitForSelector(t, selector, "third session")
 
@@ -353,8 +356,10 @@ func TestSessionSelectorHoverPreservesWindowOnScrollableList(t *testing.T) {
 		}
 	}
 	selector := NewSessionSelectorComponent(SessionSelectorOptions{
-		CurrentSessions: func(sessionstore.SessionListProgress) []sessionstore.SessionInfo { return sessions },
-		Now:             func() time.Time { return now },
+		CurrentSessionsContext: func(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error) {
+			return sessions, nil
+		},
+		Now: func() time.Time { return now },
 	}, func(string) {}, nil)
 	waitForSelector(t, selector, "session 00")
 
@@ -430,8 +435,10 @@ func TestSessionSelectorHoverMovesSelection(t *testing.T) {
 		{Path: "/tmp/three.jsonl", ID: "three", FirstMessage: "third session", Modified: now},
 	}
 	selector := NewSessionSelectorComponent(SessionSelectorOptions{
-		CurrentSessions: func(sessionstore.SessionListProgress) []sessionstore.SessionInfo { return sessions },
-		Now:             func() time.Time { return now },
+		CurrentSessionsContext: func(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error) {
+			return sessions, nil
+		},
+		Now: func() time.Time { return now },
 	}, func(string) {}, nil)
 	waitForSelector(t, selector, "third session")
 

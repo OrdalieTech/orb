@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/OrdalieTech/orb/agent/config"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 )
 
@@ -19,21 +18,11 @@ import (
 func runLoginJSON(ctx context.Context, args []string, streams cliStreams) int {
 	out := aiauth.NewJSONLines(streams.Stdout)
 	fail := func(err error) int { out.Emit(map[string]string{"type": "error", "message": err.Error()}); return 1 }
-	agentDir, err := config.GetAgentDir()
+	book, err := openBook(ctx)
 	if err != nil {
 		return fail(err)
 	}
-	if _, err = migrateAuthForContext(ctx, agentDir); err != nil {
-		return fail(err)
-	}
-	storage, err := stateFromContext(ctx).Auth(agentDir)
-	if err != nil {
-		return fail(err)
-	}
-	registry, err := stateFromContext(ctx).Models(agentDir, storage, true)
-	if err != nil {
-		return fail(err)
-	}
+	storage, registry := book.credentials, book.registry
 	options, err := authOptions(ctx, storage, registry, nil)
 	if err != nil {
 		return fail(err)

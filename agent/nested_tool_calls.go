@@ -152,6 +152,7 @@ func (runtime *SessionRuntime) executeNestedTool(ctx context.Context, parentID, 
 		case <-ctx.Done():
 			outcome := engine.AgentToolCallOutcome{ToolCall: call, Result: engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: "Operation aborted"}}}, IsError: true}
 			scope.recorder.finish(record, outcome, time.Now())
+			runtime.emitNestedEvent(context.WithoutCancel(ctx), engine.ToolExecutionEndEvent{ToolCallID: call.ID, ToolName: name, Result: outcome.Result, IsError: true, DurationMS: record.DurationMS, ParentToolCallID: parentID})
 			return outcome
 		}
 	}
@@ -181,7 +182,7 @@ func (runtime *SessionRuntime) executeNestedTool(ctx context.Context, parentID, 
 		<-nested.queue
 	}
 	scope.recorder.finish(record, outcome, time.Now())
-	runtime.emitNestedEvent(ctx, engine.ToolExecutionEndEvent{ToolCallID: call.ID, ToolName: name, Result: outcome.Result, IsError: outcome.IsError, ParentToolCallID: parentID})
+	runtime.emitNestedEvent(ctx, engine.ToolExecutionEndEvent{ToolCallID: call.ID, ToolName: name, Result: outcome.Result, IsError: outcome.IsError, DurationMS: record.DurationMS, ParentToolCallID: parentID})
 	return outcome
 }
 

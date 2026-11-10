@@ -204,6 +204,8 @@ type resolvedAnthropicCompat struct {
 	sessionAffinityFormat           ai.SessionAffinityFormat
 	supportsMidConvoSystemMessages  bool
 	supportsMidConvoToolChanges     bool
+	supportsMidConvoEffort          bool
+	fallbackModels                  []ai.AnthropicAllowedFallbackModel
 }
 
 func StreamSimpleAnthropicMessages(
@@ -274,7 +276,9 @@ func StreamAnthropicMessagesWithOptions(
 		return nil, errors.New("ai/api: Anthropic Messages model is nil")
 	}
 	output := newAssistantMessage(model)
-	if anthropicManagedEffort(model, options) {
+	compat, compatErr := getAnthropicCompat(model)
+	nativeToolChanges := compatErr == nil && anthropicUsesNativeToolChanges(compat, requestContext)
+	if anthropicManagedEffort(model, compat, options) {
 		effort := string(AnthropicEffortHigh)
 		if options != nil && options.Effort != nil {
 			effort = string(*options.Effort)
@@ -291,8 +295,12 @@ func StreamAnthropicMessagesWithOptions(
 			fail(err)
 			return
 		}
+		if compatErr != nil {
+			fail(compatErr)
+			return
+		}
 		send := func(relaxPreferredStrict bool) (*http.Response, bool, error) {
-			payload, isOAuth, err := buildAnthropicMessagesPayload(model, requestContext, options, relaxPreferredStrict)
+			payload, isOAuth, err := buildAnthropicMessagesPayload(model, compat, requestContext, options, relaxPreferredStrict)
 			if err != nil {
 				return nil, false, err
 			}
@@ -308,13 +316,13 @@ func StreamAnthropicMessagesWithOptions(
 					}
 				}
 			}
-			response, err := postAnthropicStream(ctx, model, requestContext, streamOptions, hookedPayload, isOAuth, options)
+			response, err := postAnthropicStream(ctx, model, compat, requestContext, streamOptions, hookedPayload, isOAuth, nativeToolChanges, options)
 			return response, isOAuth, err
 		}
 		response, isOAuth, err := send(false)
 		var limit anthropicStrictToolLimitError
 		if errors.As(err, &limit) && ctx.Err() == nil && requestContext.Tools != nil && slices.ContainsFunc(*requestContext.Tools, func(tool ai.Tool) bool {
-			strict, strictErr := resolveJSONSchemaStrictSampling(tool, true, anthropicStrictRejects)
+			strict, _, strictErr := resolveJSONSchemaStrictSampling(tool, true, anthropicStrictRejects)
 			return strictErr == nil && strict != nil && *strict && tool.ConstrainedSampling.Strict != ai.ConstrainedSamplingRequire
 		}) {
 			// Anthropic refused the strict tool set as too large; once more with tools that only
@@ -332,6 +340,7 @@ func StreamAnthropicMessagesWithOptions(
 		}
 
 		processor := newAnthropicStreamProcessor(model, requestContext, output, isOAuth, sink)
+		processor.fallbackModels = compat.fallbackModels
 		err = scanSSE(response.Body, func(event *sseEvent) error {
 			if len(event.name) == 0 && len(event.data) == 0 {
 				return nil
@@ -368,11 +377,7 @@ func StreamAnthropicMessagesWithOptions(
 		if len(processor.inputTransformations) > 0 {
 			ai.SetAssistantMessageRawStopBeforeDiagnostics(output, true)
 			details, _ := ai.Marshal(map[string]any{"transformations": processor.inputTransformations})
-			diagnostic := ai.AssistantMessageDiagnostic{Type: "anthropic_input_transformations", Timestamp: openAINowUnixMilli(), Details: details}
-			if output.Diagnostics == nil {
-				output.Diagnostics = &[]ai.AssistantMessageDiagnostic{}
-			}
-			*output.Diagnostics = append(*output.Diagnostics, diagnostic)
+			appendDiagnostic(output, ai.AssistantMessageDiagnostic{Type: "anthropic_input_transformations", Timestamp: openAINowUnixMilli(), Details: details})
 		}
 		sink(ai.DoneEvent{Reason: output.StopReason, Message: output})
 	}, nil
@@ -434,6 +439,10 @@ func getAnthropicCompat(model *ai.Model) (resolvedAnthropicCompat, error) {
 		supportsTemperature:             true,
 		forceAdaptiveThinking:           raw.ForceAdaptiveThinking,
 		supportsToolReferences:          defaultAnthropicToolReferences(model),
+		supportsMidConvoEffort:          raw.SupportsMidConvoEffort != nil && *raw.SupportsMidConvoEffort,
+	}
+	if raw.AllowedFallbackModels != nil {
+		compat.fallbackModels = *raw.AllowedFallbackModels
 	}
 	if model.Provider == "openrouter" || strings.Contains(model.BaseURL, "openrouter.ai") {
 		compat.sessionAffinityFormat = ai.SessionAffinityOpenRouter
@@ -517,7 +526,7 @@ func decimalInt(value string) (int, bool) {
 	return result, true
 }
 
-func anthropicCacheControlFor(model *ai.Model, options *ai.StreamOptions, compat resolvedAnthropicCompat) *anthropicCacheControl {
+func anthropicCacheControlFor(options *ai.StreamOptions, compat resolvedAnthropicCompat) *anthropicCacheControl {
 	retention := resolveCacheRetention(options)
 	if retention == ai.CacheRetentionNone {
 		return nil
@@ -532,14 +541,11 @@ func anthropicCacheControlFor(model *ai.Model, options *ai.StreamOptions, compat
 
 func buildAnthropicMessagesPayload(
 	model *ai.Model,
+	compat resolvedAnthropicCompat,
 	requestContext ai.Context,
 	options *AnthropicMessagesOptions,
 	relaxPreferredStrict bool,
 ) (*AnthropicMessagesPayload, bool, error) {
-	compat, err := getAnthropicCompat(model)
-	if err != nil {
-		return nil, false, err
-	}
 	transcript := ai.NormalizeContext(requestContext)
 	if !compat.supportsMidConvoSystemMessages {
 		transcript = ai.CollapseSystemMessages(transcript)
@@ -553,7 +559,7 @@ func buildAnthropicMessagesPayload(
 		len(initialTools) > 0 && !ai.HasToolRedefinitions(transcript.Messages)
 	requestContext = projectTranscriptContext(transcript, true)
 	streamOptions := anthropicStreamOptions(options)
-	cacheControl := anthropicCacheControlFor(model, streamOptions, compat)
+	cacheControl := anthropicCacheControlFor(streamOptions, compat)
 	apiKey := anthropicAPIKey(streamOptions)
 	isOAuth := strings.Contains(apiKey, "sk-ant-oat")
 	transformed := transformMessages(requestContext.Messages, model, normalizeAnthropicToolCallID)
@@ -588,8 +594,7 @@ func buildAnthropicMessagesPayload(
 	if streamOptions != nil && streamOptions.MaxTokens != nil {
 		maxTokens = *streamOptions.MaxTokens
 	}
-	rawCompat, _ := decodeCompat[ai.AnthropicMessagesCompat](model)
-	managed := anthropicManagedEffort(model, options)
+	managed := anthropicManagedEffort(model, compat, options)
 	managedProvider := ""
 	if managed {
 		managedProvider = string(model.Provider)
@@ -605,7 +610,7 @@ func buildAnthropicMessagesPayload(
 		Stream:    true,
 	}
 
-	payload.Betas = anthropicBetaFeatures(model, requestContext, options, isOAuth, nativeToolChanges)
+	payload.Betas = anthropicBetaFeatures(model, compat, requestContext, options, isOAuth, nativeToolChanges)
 	if managed {
 		effort := AnthropicEffortHigh
 		if options != nil && options.Effort != nil {
@@ -613,7 +618,7 @@ func buildAnthropicMessagesPayload(
 		}
 		payload.Messages = append(payload.Messages, AnthropicMessageParam{Role: "system", Content: []any{}, OutputConfig: &anthropicOutputConfig{Effort: effort}})
 	}
-	for _, fallback := range anthropicFallbackModels(rawCompat) {
+	for _, fallback := range compat.fallbackModels {
 		payload.Fallbacks = append(payload.Fallbacks, anthropicFallback{Model: fallback.Model})
 	}
 	if isOAuth {
@@ -706,10 +711,9 @@ func buildAnthropicMessagesPayload(
 
 // anthropicManagedEffort reports a model whose effort is set per message, unless its thinking is off: then
 // it gets no effort and thinking disabled.
-func anthropicManagedEffort(model *ai.Model, options *AnthropicMessagesOptions) bool {
-	compat, _ := decodeCompat[ai.AnthropicMessagesCompat](model)
+func anthropicManagedEffort(model *ai.Model, compat resolvedAnthropicCompat, options *AnthropicMessagesOptions) bool {
 	off := model.Reasoning && options != nil && options.ThinkingEnabled != nil && !*options.ThinkingEnabled && anthropicThinkingCanDisable(model)
-	return compat.SupportsMidConvoEffort != nil && *compat.SupportsMidConvoEffort && !off
+	return compat.supportsMidConvoEffort && !off
 }
 
 func anthropicThinkingCanDisable(model *ai.Model) bool {
@@ -772,11 +776,7 @@ func convertAnthropicTools(
 		}
 		// relaxPreferredStrict: only tools that require strict sampling keep it.
 		strictMode := supportsStrictTools && (!relaxPreferredStrict || tool.ConstrainedSampling != nil && tool.ConstrainedSampling.Strict == ai.ConstrainedSamplingRequire)
-		strict, err := resolveJSONSchemaStrictSampling(tool, strictMode, anthropicStrictRejects)
-		if err != nil {
-			return nil, err
-		}
-		parameters, err := getJSONSchemaToolParameters(tool.Parameters, strict != nil && *strict)
+		strict, parameters, err := resolveJSONSchemaStrictSampling(tool, strictMode, anthropicStrictRejects)
 		if err != nil {
 			return nil, err
 		}
@@ -830,32 +830,13 @@ func buildAnthropicInputSchema(
 	if err != nil {
 		return nil, fmt.Errorf("marshal Anthropic tool %q schema: %w", toolName, err)
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	token, err := decoder.Token()
-	if err != nil {
-		return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", toolName, err)
-	}
-	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
+	members, ok := jsonwire.ParseRawObject(data)
+	if !ok {
 		return nil, fmt.Errorf("decode Anthropic tool %q schema: expected object", toolName)
 	}
-	schema := make(jsonwire.OrderedObject, 0)
-	for decoder.More() {
-		token, err := decoder.Token()
-		if err != nil {
-			return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", toolName, err)
-		}
-		key, ok := token.(string)
-		if !ok {
-			return nil, fmt.Errorf("decode Anthropic tool %q schema: expected object key", toolName)
-		}
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
-			return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", toolName, err)
-		}
-		schema.Set(key, value)
-	}
-	if _, err := decoder.Token(); err != nil {
-		return nil, fmt.Errorf("decode Anthropic tool %q schema: %w", toolName, err)
+	schema := make(jsonwire.OrderedObject, len(members))
+	for index, member := range members {
+		schema[index] = jsonwire.OrderedMember{Name: member.Name, Value: member.Value}
 	}
 	for _, member := range legacy {
 		schema.Set(member.Name, member.Value)
@@ -893,7 +874,7 @@ func convertAnthropicMessages(
 	deferredToolNames map[string]struct{},
 	normalizeName func(string) string,
 	nativeToolChanges bool,
-	managedProvider ...string,
+	managedProvider string,
 ) ([]AnthropicMessageParam, error) {
 	result := make([]AnthropicMessageParam, 0, len(messages))
 	pendingSystem := make([]AnthropicMessageParam, 0)
@@ -988,7 +969,7 @@ func convertAnthropicMessages(
 			// before a user message (upstream #11091).
 			if len(blocks) > 0 {
 				flushSystem()
-				if len(managedProvider) > 0 && managedProvider[0] != "" && string(message.Provider) == managedProvider[0] && message.API == ai.APIAnthropicMessages && message.ProviderThinkingLevel != nil {
+				if managedProvider != "" && string(message.Provider) == managedProvider && message.API == ai.APIAnthropicMessages && message.ProviderThinkingLevel != nil {
 					switch AnthropicEffort(*message.ProviderThinkingLevel) {
 					case AnthropicEffortLow, AnthropicEffortMedium, AnthropicEffortHigh, AnthropicEffortXHigh, AnthropicEffortMax:
 						result = append(result, AnthropicMessageParam{Role: "system", Content: []any{}, OutputConfig: &anthropicOutputConfig{Effort: AnthropicEffort(*message.ProviderThinkingLevel)}})
@@ -1185,10 +1166,11 @@ func hasAnthropicAuthHeader(options *ai.StreamOptions) bool {
 func postAnthropicStream(
 	ctx context.Context,
 	model *ai.Model,
+	compat resolvedAnthropicCompat,
 	requestContext ai.Context,
 	options *ai.StreamOptions,
 	payload any,
-	oauth bool,
+	oauth, nativeToolChanges bool,
 	anthropicOptions *AnthropicMessagesOptions,
 ) (*http.Response, error) {
 	body, err := ai.Marshal(payload)
@@ -1206,29 +1188,13 @@ func postAnthropicStream(
 	if !fields.Stream && streamTimeoutMS(options) == nil && fields.MaxTokens > 128000.0/6 {
 		return nil, errors.New("Streaming is required for operations that may take longer than 10 minutes. See https://github.com/anthropics/anthropic-sdk-typescript#long-requests for more details") //nolint:staticcheck // Upstream diagnostic text is observable.
 	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	if _, err := decoder.Token(); err != nil {
-		return nil, err
+	filtered, ok := jsonwire.ParseRawObject(body)
+	if !ok {
+		return nil, errors.New("encode Anthropic request: not a JSON object")
 	}
-	filtered := make(jsonwire.OrderedObject, 0)
-	for decoder.More() {
-		token, err := decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
-			return nil, err
-		}
-		if token != "betas" {
-			filtered = append(filtered, jsonwire.OrderedMember{Name: token.(string), Value: value})
-		}
-	}
-	body, err = ai.Marshal(filtered)
-	if err != nil {
-		return nil, err
-	}
-	headers, err := applyHeadersHook(ctx, model, options, anthropicHeaders(model, requestContext, options, anthropicOptions))
+	filtered.Delete("betas")
+	body, _ = filtered.MarshalJSON()
+	headers, err := applyHeadersHook(ctx, model, options, anthropicHeaders(model, compat, requestContext, options, anthropicOptions, nativeToolChanges))
 	if err != nil {
 		return nil, err
 	}
@@ -1282,21 +1248,22 @@ type anthropicStrictToolLimitError struct{ error }
 
 func anthropicHeaders(
 	model *ai.Model,
+	compat resolvedAnthropicCompat,
 	requestContext ai.Context,
 	options *ai.StreamOptions,
 	anthropicOptions *AnthropicMessagesOptions,
+	nativeToolChanges bool,
 ) http.Header {
 	headers := make(http.Header)
 	headers.Set("accept", "application/json")
 	headers.Set("anthropic-dangerous-direct-browser-access", "true")
-	compat, _ := getAnthropicCompat(model)
 	oauth := strings.Contains(anthropicAPIKey(options), "sk-ant-oat")
 	headers.Set("User-Agent", piUserAgent())
 	if oauth {
 		headers.Set("user-agent", "claude-cli/"+claudeCodeVersion)
 		headers.Set("x-app", "cli")
 	}
-	if betas := anthropicBetaFeatures(model, requestContext, anthropicOptions, oauth, anthropicUsesNativeToolChanges(model, requestContext)); len(betas) > 0 {
+	if betas := anthropicBetaFeatures(model, compat, requestContext, anthropicOptions, oauth, nativeToolChanges); len(betas) > 0 {
 		headers.Set("anthropic-beta", strings.Join(betas, ","))
 	}
 	// Upstream's github-copilot client branch never adds session affinity
@@ -1331,6 +1298,7 @@ type anthropicStreamProcessor struct {
 	requestContext       ai.Context
 	output               *ai.AssistantMessage
 	oauth                bool
+	fallbackModels       []ai.AnthropicAllowedFallbackModel
 	sink                 eventSink
 	blocks               map[int]*anthropicOutputBlock
 	sawMessageStart      bool
@@ -1459,12 +1427,11 @@ func (processor *anthropicStreamProcessor) handleSSE(eventName string, data, raw
 				processor.output.ResponseModel = &responseModel
 			}
 		}
-		rawCompat, _ := decodeCompat[ai.AnthropicMessagesCompat](processor.model)
 		responseModel := processor.model.ID
 		if processor.output.ResponseModel != nil {
 			responseModel = *processor.output.ResponseModel
 		}
-		for _, fallback := range anthropicFallbackModels(rawCompat) {
+		for _, fallback := range processor.fallbackModels {
 			if fallback.Provider == processor.model.Provider && fallback.Model == responseModel && responseModel != processor.model.ID {
 				copy := *processor.model
 				copy.ID = responseModel
@@ -1713,7 +1680,7 @@ func anthropicStreamFailure(ctx context.Context, output *ai.AssistantMessage, er
 	return ai.ErrorEvent{Reason: reason, Error: output}
 }
 
-func anthropicBetaFeatures(model *ai.Model, requestContext ai.Context, options *AnthropicMessagesOptions, oauth, nativeToolChanges bool) []string {
+func anthropicBetaFeatures(model *ai.Model, compat resolvedAnthropicCompat, requestContext ai.Context, options *AnthropicMessagesOptions, oauth, nativeToolChanges bool) []string {
 	var configured *string
 	found := false
 	if model.Headers != nil {
@@ -1752,18 +1719,16 @@ func anthropicBetaFeatures(model *ai.Model, requestContext ai.Context, options *
 	if oauth {
 		features = append(features, "claude-code-20250219", "oauth-2025-04-20")
 	}
-	compat, _ := getAnthropicCompat(model)
 	if requestContext.Tools != nil && len(*requestContext.Tools) > 0 && !compat.supportsEagerToolInputStreaming {
 		features = append(features, anthropicFineGrainedToolStreamingBeta)
 	}
 	if model.Reasoning && options != nil && options.ThinkingEnabled != nil && *options.ThinkingEnabled && (options.InterleavedThinking == nil || *options.InterleavedThinking) && (compat.forceAdaptiveThinking == nil || !*compat.forceAdaptiveThinking) {
 		features = append(features, anthropicInterleavedThinkingBeta)
 	}
-	raw, _ := decodeCompat[ai.AnthropicMessagesCompat](model)
-	if len(anthropicFallbackModels(raw)) > 0 {
+	if len(compat.fallbackModels) > 0 {
 		features = append(features, "server-side-fallback-2026-07-01")
 	}
-	if raw.SupportsMidConvoEffort != nil && *raw.SupportsMidConvoEffort {
+	if compat.supportsMidConvoEffort {
 		features = append(features, "mid-conversation-output-config-2026-07-01", "thinking-binding-controls-2026-08-01")
 	}
 	if nativeToolChanges {
@@ -1772,9 +1737,8 @@ func anthropicBetaFeatures(model *ai.Model, requestContext ai.Context, options *
 	return features
 }
 
-func anthropicUsesNativeToolChanges(model *ai.Model, requestContext ai.Context) bool {
-	compat, err := getAnthropicCompat(model)
-	if err != nil || !compat.supportsMidConvoSystemMessages || !compat.supportsMidConvoToolChanges {
+func anthropicUsesNativeToolChanges(compat resolvedAnthropicCompat, requestContext ai.Context) bool {
+	if !compat.supportsMidConvoSystemMessages || !compat.supportsMidConvoToolChanges {
 		return false
 	}
 	transcript := ai.NormalizeContext(requestContext)
@@ -1782,25 +1746,13 @@ func anthropicUsesNativeToolChanges(model *ai.Model, requestContext ai.Context) 
 	return initial != nil && len(initial.ToolsAdded) > 0 && !ai.HasToolRedefinitions(transcript.Messages)
 }
 
-func anthropicFallbackModels(compat ai.AnthropicMessagesCompat) []ai.AnthropicAllowedFallbackModel {
-	if compat.AllowedFallbackModels == nil {
-		return nil
-	}
-	return *compat.AllowedFallbackModels
-}
-
 // appendStrictToolsFallback records that a provider refused the strict tool set as too large and the request
 // went again with preferred-strict tools relaxed.
 func appendStrictToolsFallback(output *ai.AssistantMessage, provider, message string) {
-	diagnostics := []ai.AssistantMessageDiagnostic{}
-	if output.Diagnostics != nil {
-		diagnostics = append(diagnostics, *output.Diagnostics...)
-	}
-	diagnostics = append(diagnostics, ai.AssistantMessageDiagnostic{
+	appendDiagnostic(output, ai.AssistantMessageDiagnostic{
 		Type: provider + "_strict_tools_fallback", Timestamp: openAINowUnixMilli(),
 		Error: &ai.DiagnosticErrorInfo{Message: message}, Details: json.RawMessage(`{"reason":"strict_tool_limits_exceeded"}`),
 	})
-	output.Diagnostics = &diagnostics
 }
 
 func anthropicStrictToolLimit(message string) bool {

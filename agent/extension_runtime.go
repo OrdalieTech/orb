@@ -69,7 +69,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 		config:           runtimeConfig,
 	}
 	if len(state.baseTools) == 0 {
-		state.baseTools = append([]engine.AgentTool(nil), runtime.agent.State().Tools...)
+		state.baseTools = append([]engine.AgentTool(nil), runtime.agent.StateWithoutMessages().Tools...)
 	}
 	// Rebuilt base tools (session replacement, cwd change) need the session
 	// environment rebound, mirroring upstream's per-refresh ctx wrapping.
@@ -86,7 +86,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 		state.promptOptions = &copy
 		state.baseSystemPrompt = BuildSystemPrompt(copy)
 	} else {
-		state.baseSystemPrompt = cmp.Or(runtimeConfig.SystemPrompt, runtime.agent.State().SystemPrompt)
+		state.baseSystemPrompt = cmp.Or(runtimeConfig.SystemPrompt, runtime.agent.StateWithoutMessages().SystemPrompt)
 	}
 	runtime.extensionState = state
 	registerProvider := runtimeConfig.RegisterProvider
@@ -192,7 +192,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 	runner := extensions.NewRunner(runtimeConfig.ExtensionRegistry, extensions.RunnerOptions{
 		CWD: runtime.manager.GetCWD(), SessionManager: runtime.manager, ModelRegistry: runtimeConfig.ModelRegistry,
 		Mode: runtimeConfig.ExtensionMode, UI: runtimeConfig.ExtensionUI, Actions: actions,
-		ContextActions: contextActions, CommandActions: &commandActions, ErrorHandler: runtimeConfig.ExtensionErrorHandler,
+		ContextActions: contextActions, CommandActions: &commandActions, ErrorHandler: runtime.notifyExtensionErrorListeners,
 	})
 	state.runner = runner
 	runner.SetToolCallHost(&extensions.ToolCallHost{Tools: runtime.nestedLoadout, Execute: runtime.executeNestedTool})
@@ -233,7 +233,7 @@ func (runtime *SessionRuntime) bindExtensions(runtimeConfig SessionRuntimeConfig
 
 	initial := runtimeConfig.InitialActiveToolNames
 	if initial == nil {
-		for _, tool := range runtime.agent.State().Tools {
+		for _, tool := range runtime.agent.StateWithoutMessages().Tools {
 			initial = append(initial, tool.Spec().Name)
 		}
 	}
@@ -397,7 +397,7 @@ func (runtime *SessionRuntime) reloadExtensions(ctx context.Context) error {
 	if runner != nil {
 		flagValues = runner.FlagValues()
 	}
-	activeTools := runtime.agent.State().Tools
+	activeTools := runtime.agent.StateWithoutMessages().Tools
 	state.mu.Lock()
 	configuration.KnownToolNames = slices.Collect(maps.Keys(state.toolRegistry)) // tools turned off stay off
 	state.mu.Unlock()
@@ -434,9 +434,6 @@ func (runtime *SessionRuntime) reloadExtensions(ctx context.Context) error {
 			}
 		}
 		base := cloneSlashResolver(runtime.baseSlashResolver)
-		if base == nil {
-			base = &SlashResolver{}
-		}
 		base.Skills = loader.GetSkills().Skills
 		base.PromptTemplates = loader.GetPrompts().Prompts
 		runtime.baseSlashResolver = base
@@ -467,8 +464,7 @@ func (runtime *SessionRuntime) reloadExtensions(ctx context.Context) error {
 	runtime.autoRetry = runtime.settings.GetRetrySettings().Enabled
 	runtime.mu.Unlock()
 	configuration.ExtensionRegistry = registry
-	runtime.slashResolver = cloneSlashResolver(runtime.baseSlashResolver)
-	configuration.SlashResolver = runtime.slashResolver
+	runtime.setSlashResolver(cloneSlashResolver(runtime.baseSlashResolver))
 	configuration.SessionStartEvent = &extensions.SessionStartEvent{Reason: extensions.SessionStartReload}
 	configuration.DeferExtensionStart = true
 	runtime.bindExtensions(configuration)
@@ -496,7 +492,7 @@ func (runtime *SessionRuntime) ShutdownExtensions(reason extensions.SessionShutd
 }
 
 func (runtime *SessionRuntime) refreshCurrentModelFromRegistry(registry extensions.ModelRegistry) {
-	current := runtime.agent.State().Model
+	current := runtime.agent.StateWithoutMessages().Model
 	if current == nil {
 		return
 	}
@@ -564,7 +560,7 @@ func (runtime *SessionRuntime) RegisteredTool(name string) engine.AgentTool {
 		defer state.mu.Unlock()
 		return state.toolRegistry[name]
 	}
-	for _, tool := range runtime.agent.State().Tools {
+	for _, tool := range runtime.agent.StateWithoutMessages().Tools {
 		if tool.Spec().Name == name {
 			return tool
 		}
@@ -582,9 +578,7 @@ func (runtime *SessionRuntime) ExtensionResources() extensions.DiscoveredResourc
 }
 
 func (runtime *SessionRuntime) extendResourcesFromExtensions(resources extensions.DiscoveredResources) {
-	if runtime.slashResolver == nil {
-		runtime.slashResolver = &SlashResolver{}
-	}
+	current := runtime.slashResolver.Load()
 	cwd := runtime.manager.GetCWD()
 	if loader := runtime.ResourceLoader(); loader != nil {
 		loader.ExtendResources(ResourceExtensionPaths{
@@ -596,7 +590,7 @@ func (runtime *SessionRuntime) extendResourcesFromExtensions(resources extension
 		return
 	}
 	agentDir := DefaultAgentDir()
-	skillInputs := []LoadSkillsResult{{Skills: append([]Skill(nil), runtime.slashResolver.Skills...)}}
+	skillInputs := []LoadSkillsResult{{Skills: append([]Skill(nil), current.Skills...)}}
 	for _, entry := range resources.SkillPaths {
 		loaded := LoadSkills(LoadSkillsOptions{CWD: cwd, AgentDir: agentDir, SkillPaths: []string{entry.Path}})
 		source, baseDir := extensionResourceMetadata(cwd, entry.ExtensionPath)
@@ -610,7 +604,7 @@ func (runtime *SessionRuntime) extendResourcesFromExtensions(resources extension
 	}
 	mergedSkills := combineSkills(skillInputs).Skills
 
-	promptInputs := [][]PromptTemplate{append([]PromptTemplate(nil), runtime.slashResolver.PromptTemplates...)}
+	promptInputs := [][]PromptTemplate{append([]PromptTemplate(nil), current.PromptTemplates...)}
 	for _, entry := range resources.PromptPaths {
 		loaded, _ := LoadPromptTemplates(LoadPromptTemplatesOptions{CWD: cwd, AgentDir: agentDir, PromptPaths: []string{entry.Path}})
 		source, baseDir := extensionResourceMetadata(cwd, entry.ExtensionPath)
@@ -627,8 +621,10 @@ func (runtime *SessionRuntime) extendResourcesFromExtensions(resources extension
 }
 
 func (runtime *SessionRuntime) applyDiscoveredSlashResources(skills []Skill, prompts []PromptTemplate) {
-	runtime.slashResolver.Skills = append([]Skill(nil), skills...)
-	runtime.slashResolver.PromptTemplates = append([]PromptTemplate(nil), prompts...)
+	resolver := cloneSlashResolver(runtime.slashResolver.Load())
+	resolver.Skills = append([]Skill(nil), skills...)
+	resolver.PromptTemplates = append([]PromptTemplate(nil), prompts...)
+	runtime.setSlashResolver(resolver)
 
 	state := runtime.extensionState
 	if state == nil {
@@ -694,7 +690,7 @@ func (runtime *SessionRuntime) refreshExtensionTools(active []string, includeAll
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	previousActive := runtime.agent.State().Tools
+	previousActive := runtime.agent.StateWithoutMessages().Tools
 	previousNames := make([]string, 0, len(previousActive))
 	for _, tool := range previousActive {
 		previousNames = append(previousNames, tool.Spec().Name)
@@ -939,11 +935,11 @@ func (runtime *SessionRuntime) setActiveToolsByName(names []string) error {
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	previous := runtime.agent.State().Tools
+	previous := runtime.agent.StateWithoutMessages().Tools
 	runtime.setActiveToolsLocked(names, state)
 	// A loadout that deactivates a tool replaces the restored one and drops its
 	// pending tools; one that only adds tools, like tool_search, keeps them.
-	active := runtime.agent.State().Tools
+	active := runtime.agent.StateWithoutMessages().Tools
 	for _, tool := range previous {
 		if !slices.ContainsFunc(active, func(other engine.AgentTool) bool { return other.Spec().Name == tool.Spec().Name }) {
 			state.pendingTools = nil
@@ -957,7 +953,7 @@ func (runtime *SessionRuntime) setActiveToolsByName(names []string) error {
 // appended, so reordering the same tools leaves the prompt and its cache alone (upstream #11495).
 func (runtime *SessionRuntime) setActiveToolsLocked(names []string, state *extensionRuntimeState) {
 	ordered := make([]string, 0, len(names))
-	for _, tool := range runtime.agent.State().Tools {
+	for _, tool := range runtime.agent.StateWithoutMessages().Tools {
 		if name := tool.Spec().Name; slices.Contains(names, name) && !slices.Contains(ordered, name) {
 			ordered = append(ordered, name)
 		}
@@ -1131,10 +1127,12 @@ func (runtime *SessionRuntime) registeredExtensionCommands() []SlashCommandInfo 
 }
 
 func (runtime *SessionRuntime) syncExtensionCommands() {
-	if runtime == nil || runtime.slashResolver == nil {
+	if runtime == nil {
 		return
 	}
-	runtime.slashResolver.ExtensionCommands = runtime.registeredExtensionCommands()
+	resolver := cloneSlashResolver(runtime.slashResolver.Load())
+	resolver.ExtensionCommands = runtime.registeredExtensionCommands()
+	runtime.setSlashResolver(resolver)
 }
 
 func (runtime *SessionRuntime) extensionCommands() ([]extensions.SlashCommandInfo, error) {
@@ -1361,15 +1359,7 @@ func (runtime *SessionRuntime) extensionSystemPromptOptions() extensions.SystemP
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	if state.promptOptions == nil {
-		return extensions.SystemPromptOptions{CWD: runtime.manager.GetCWD()}
-	}
-	options := state.promptOptions
-	return extensions.SystemPromptOptions{
-		CustomPrompt: options.CustomPrompt, SelectedTools: slices.Clone(options.SelectedTools), HiddenTools: append([]string{}, options.HiddenTools...),
-		ToolSnippets: maps.Clone(options.ToolSnippets), PromptGuidelines: append([]string(nil), options.PromptGuidelines...),
-		AppendSystemPrompt: options.AppendSystemPrompt, CWD: options.CWD, ContextFiles: extensionContextFiles(options.ContextFiles),
-	}
+	return runtime.extensionSystemPromptOptionsLocked(state)
 }
 
 func (runtime *SessionRuntime) ExecuteUserBash(
@@ -1442,28 +1432,31 @@ func (runtime *SessionRuntime) executeUserBash(
 	}
 	bashContext, finish := runtime.startBash(ctx)
 	defer finish()
-	output := tools.NewOutputAccumulator()
+	tempPrefix := "pi-bash"
+	output := tools.NewOutputAccumulator(tools.OutputAccumulatorOptions{TempFilePrefix: &tempPrefix})
 	var outputErr error
-	var outputErrMu sync.Mutex
+	var outputMu sync.Mutex
 	result, executeErr := operations.Exec(bashContext, resolvedCommand, runtime.manager.GetCWD(), tools.BashExecOptions{
 		OnData: func(data []byte) {
-			if err := output.Append(data); err != nil {
-				outputErrMu.Lock()
-				if outputErr == nil {
-					outputErr = err
-				}
-				outputErrMu.Unlock()
+			outputMu.Lock()
+			defer outputMu.Unlock()
+			text, err := output.AppendSanitized(data)
+			if outputErr == nil {
+				outputErr = err
+			}
+			if text == "" {
+				return
 			}
 			if onChunk != nil {
-				onChunk(string(data))
+				onChunk(text)
 			}
-			runtime.emit(BashExecutionUpdateEvent{ID: id, Delta: string(data)})
+			runtime.emit(BashExecutionUpdateEvent{ID: id, Delta: text})
 		},
 		Env: environment,
 	})
-	outputErrMu.Lock()
+	outputMu.Lock()
 	appendErr := outputErr
-	outputErrMu.Unlock()
+	outputMu.Unlock()
 	if appendErr != nil && executeErr == nil {
 		executeErr = appendErr
 	}
@@ -1822,8 +1815,8 @@ func (runtime *SessionRuntime) promptExtensionInput(
 			}
 		}
 	}
-	if commands && runtime.slashResolver != nil {
-		text = runtime.slashResolver.Expand(text)
+	if commands {
+		text = runtime.slashResolver.Load().Expand(text)
 	}
 	if streamingBehavior != nil && runtime.queueWhileRunning(runtime.userMessage(text, images), &text, *streamingBehavior == extensions.DeliverFollowUp) {
 		if preflightResult != nil {
@@ -1877,7 +1870,7 @@ func (runtime *SessionRuntime) openingMessages(ctx context.Context, state *exten
 	state.mu.Lock()
 	basePrompt := state.baseSystemPrompt
 	if state.promptOptions == nil {
-		basePrompt = runtime.agent.State().SystemPrompt
+		basePrompt = runtime.agent.StateWithoutMessages().SystemPrompt
 	}
 	state.systemPromptOverride = nil
 	options := runtime.extensionSystemPromptOptionsLocked(state)

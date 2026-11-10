@@ -3,7 +3,7 @@
 // turn ledger, a preview coalescer, and a local single-process runner with a
 // durable spool.
 //
-// Platform adapters (Telegram, WhatsApp) live in subpackages and plug in via
+// Platform adapters live in subpackages and plug in via
 // the [Adapter] and [Delivery] interfaces; agent sessions are supplied by a
 // [SessionProvider] such as [NewLocalProvider].
 package chat

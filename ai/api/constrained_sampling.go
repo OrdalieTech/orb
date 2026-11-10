@@ -252,12 +252,3 @@ func makeStrictJSONSchema(parameters jsonschema.Schema, rejects strictKeywordChe
 	}
 	return jsonschema.Schema(json.RawMessage(encoded)), nil
 }
-
-// getJSONSchemaToolParameters returns the schema a provider should send: the
-// strict rewrite when strict sampling is on, the original otherwise.
-func getJSONSchemaToolParameters(parameters jsonschema.Schema, strict bool) (jsonschema.Schema, error) {
-	if !strict {
-		return parameters, nil
-	}
-	return makeStrictJSONSchema(parameters, nil)
-}

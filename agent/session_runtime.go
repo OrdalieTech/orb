@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -93,6 +94,8 @@ type SessionRuntime struct {
 	chanCancels          map[chan struct{}]func()
 	disposed             bool
 	nextListenerID       uint64
+	errorListeners       map[uint64]func(extensions.ExtensionError)
+	nextErrorListenerID  uint64
 	steering             []string
 	followUps            []string
 	lastAssistant        *ai.AssistantMessage
@@ -115,7 +118,7 @@ type SessionRuntime struct {
 	getAPIKey            engine.GetAPIKeyFunc
 	getRequestAuth       engine.GetRequestAuthFunc
 	unsubscribeAgent     func()
-	slashResolver        *SlashResolver
+	slashResolver        atomic.Pointer[SlashResolver]
 	baseSlashResolver    *SlashResolver
 	resourceLoader       ResourceLoader
 	activeRuns           int
@@ -288,12 +291,14 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		getAPIKey:          runtimeConfig.GetAPIKey,
 		getRequestAuth:     runtimeConfig.GetRequestAuth,
 		scopedModels:       append([]ScopedModel(nil), runtimeConfig.ScopedModels...),
-		slashResolver:      cloneSlashResolver(runtimeConfig.SlashResolver),
 		baseSlashResolver:  cloneSlashResolver(runtimeConfig.SlashResolver),
 		resourceLoader:     runtimeConfig.ResourceLoader,
 		builtinToolPrompts: runtimeConfig.BuiltinToolPrompts,
 	}
-	runtimeConfig.SlashResolver = runtime.slashResolver
+	if runtimeConfig.ExtensionErrorHandler != nil {
+		runtime.OnExtensionError(runtimeConfig.ExtensionErrorHandler)
+	}
+	runtime.setSlashResolver(cloneSlashResolver(runtimeConfig.SlashResolver))
 	var previousRequest engine.PrepareRequestFunc
 	previousRequest = runtime.agent.SwapPrepareRequest(func(ctx context.Context, request engine.PrepareRequestContext) (*engine.AgentLoopTurnUpdate, error) {
 		// The session is the canonical provider context: each request is its
@@ -357,7 +362,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 	runtime.agent.SetFollowUpMode(engine.QueueMode(runtime.settings.GetFollowUpMode()))
 	sessionEnvTools := runtimeConfig.BaseTools
 	if len(sessionEnvTools) == 0 {
-		sessionEnvTools = runtime.agent.State().Tools
+		sessionEnvTools = runtime.agent.StateWithoutMessages().Tools
 	}
 	runtime.bindBashSessionEnvironment(sessionEnvTools)
 	if runtimeConfig.ExtensionRegistry != nil {
@@ -377,7 +382,7 @@ func (runtime *SessionRuntime) bindBashSessionEnvironment(baseTools []engine.Age
 			continue
 		}
 		binder.BindSessionEnvironment(func() *tools.BashSessionEnvironment {
-			state := runtime.agent.State()
+			state := runtime.agent.StateWithoutMessages()
 			info := &tools.BashSessionEnvironment{
 				SessionID:      runtime.manager.GetSessionID(),
 				SessionFile:    runtime.manager.GetSessionFile(),
@@ -438,7 +443,7 @@ func providerStreamOptions(settings *config.SettingsManager, options *ai.SimpleS
 
 func cloneSlashResolver(resolver *SlashResolver) *SlashResolver {
 	if resolver == nil {
-		return nil
+		return &SlashResolver{}
 	}
 	cloned := *resolver
 	cloned.Skills = append([]Skill(nil), resolver.Skills...)
@@ -486,12 +491,8 @@ func mergeSummaryEnv(resolved, overrides ai.ProviderEnv) ai.ProviderEnv {
 		return nil
 	}
 	merged := make(ai.ProviderEnv, len(resolved)+len(overrides))
-	for name, value := range resolved {
-		merged[name] = value
-	}
-	for name, value := range overrides {
-		merged[name] = value
-	}
+	maps.Copy(merged, resolved)
+	maps.Copy(merged, overrides)
 	return merged
 }
 
@@ -516,8 +517,6 @@ func (runtime *SessionRuntime) dispose(emitExtensionShutdown bool) {
 	}
 	runtime.disposeExtensions(emitExtensionShutdown)
 	runtime.Abort()
-	runtime.AbortCompaction()
-	runtime.AbortBranchSummary()
 	runtime.AbortBash()
 	runtime.disconnectFromAgent()
 	runtime.mu.Lock()
@@ -660,11 +659,9 @@ func (runtime *SessionRuntime) QueueInteractive(ctx context.Context, text string
 
 // enqueue expands text and queues it as a follow-up or steering message.
 func (runtime *SessionRuntime) enqueue(text string, images []*ai.ImageContent, followUp bool) error {
-	if runtime.slashResolver != nil {
-		var err error
-		if text, err = runtime.slashResolver.ExpandQueued(text); err != nil {
-			return err
-		}
+	text, err := runtime.slashResolver.Load().ExpandQueued(text)
+	if err != nil {
+		return err
 	}
 	runtime.mu.Lock()
 	runtime.queueLocked(runtime.userMessage(text, images), &text, followUp)
@@ -679,11 +676,9 @@ func (runtime *SessionRuntime) SteerRunning(text string, images []*ai.ImageConte
 	if err := runtime.checkLive(); err != nil {
 		return false, err
 	}
-	if runtime.slashResolver != nil {
-		var err error
-		if text, err = runtime.slashResolver.ExpandQueued(text); err != nil {
-			return false, err
-		}
+	text, err := runtime.slashResolver.Load().ExpandQueued(text)
+	if err != nil {
+		return false, err
 	}
 	return runtime.queueWhileRunning(runtime.userMessage(text, images), &text, false), nil
 }
@@ -774,8 +769,8 @@ func (runtime *SessionRuntime) PromptAfterPreflight(ctx context.Context, input a
 	if text, ok := input.(string); ok && runtime.extensionState != nil {
 		return runtime.promptExtensionInput(ctx, text, images, extensions.InputInteractive, true, nil, false, nil)
 	}
-	if text, ok := input.(string); ok && runtime.slashResolver != nil {
-		expanded, handled := runtime.slashResolver.ResolvePrompt(text)
+	if text, ok := input.(string); ok {
+		expanded, handled := runtime.slashResolver.Load().ResolvePrompt(text)
 		if handled {
 			return nil
 		}
@@ -814,14 +809,70 @@ func (runtime *SessionRuntime) FollowUpImages(text string, images []*ai.ImageCon
 }
 
 func (runtime *SessionRuntime) Commands() []SlashCommandInfo {
-	if runtime == nil || runtime.slashResolver == nil {
+	if runtime == nil {
 		return []SlashCommandInfo{}
 	}
-	// A copy with the extensions' commands as of now: callers list commands concurrently (every
-	// follower's describe), and must not write the resolver prompts are expanded with.
-	resolver := *runtime.slashResolver
+	resolver := cloneSlashResolver(runtime.slashResolver.Load())
 	resolver.ExtensionCommands = runtime.registeredExtensionCommands()
-	return resolver.Commands(runtime.settings.GetEnableSkillCommands())
+	return resolver.Commands()
+}
+
+// OnExtensionError subscribes to extension and skill-expansion errors across
+// reloads of the session's extension runner.
+func (runtime *SessionRuntime) OnExtensionError(listener func(extensions.ExtensionError)) func() {
+	if runtime == nil || listener == nil {
+		return func() {}
+	}
+	runtime.mu.Lock()
+	runtime.nextErrorListenerID++
+	id := runtime.nextErrorListenerID
+	if runtime.errorListeners == nil {
+		runtime.errorListeners = make(map[uint64]func(extensions.ExtensionError))
+	}
+	runtime.errorListeners[id] = listener
+	runtime.mu.Unlock()
+	return func() {
+		runtime.mu.Lock()
+		delete(runtime.errorListeners, id)
+		runtime.mu.Unlock()
+	}
+}
+
+func (runtime *SessionRuntime) notifyExtensionErrorListeners(extensionError extensions.ExtensionError) {
+	runtime.mu.Lock()
+	listeners := make([]func(extensions.ExtensionError), 0, len(runtime.errorListeners))
+	for _, listener := range runtime.errorListeners {
+		listeners = append(listeners, listener)
+	}
+	runtime.mu.Unlock()
+	for _, listener := range listeners {
+		listener(extensionError)
+	}
+}
+
+func (runtime *SessionRuntime) reportExtensionError(extensionError extensions.ExtensionError) {
+	if state := runtime.extensionState; state != nil {
+		state.mu.Lock()
+		runner := state.runner
+		state.mu.Unlock()
+		if runner != nil {
+			runner.ReportError(extensionError)
+			return
+		}
+	}
+	runtime.notifyExtensionErrorListeners(extensionError)
+}
+
+// setSlashResolver publishes resolver, which is never written afterwards: RPC, bridge and
+// follower goroutines load it while extensions bind or reload.
+func (runtime *SessionRuntime) setSlashResolver(resolver *SlashResolver) {
+	resolver.OnError = func(err error) {
+		var failure *skillExpansionError
+		if errors.As(err, &failure) {
+			runtime.reportExtensionError(extensions.ExtensionError{ExtensionPath: failure.path, Event: "skill_expansion", Error: err.Error()})
+		}
+	}
+	runtime.slashResolver.Store(resolver)
 }
 
 // State is the agent's state with the session's effective system prompt,
@@ -1105,10 +1156,10 @@ func (runtime *SessionRuntime) handleAgentEvent(ctx context.Context, event engin
 		if text := userMessageText(start.Message); text != "" {
 			changed := false
 			runtime.mu.Lock()
-			if index := indexOf(runtime.steering, text); index >= 0 {
+			if index := slices.Index(runtime.steering, text); index >= 0 {
 				runtime.steering = append(runtime.steering[:index], runtime.steering[index+1:]...)
 				changed = true
-			} else if index := indexOf(runtime.followUps, text); index >= 0 {
+			} else if index := slices.Index(runtime.followUps, text); index >= 0 {
 				runtime.followUps = append(runtime.followUps[:index], runtime.followUps[index+1:]...)
 				changed = true
 			}
@@ -1376,7 +1427,7 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 
 func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason string, willRetry bool) (bool, error) {
 	var fromExtension bool
-	model := runtime.agent.State().Model
+	model := runtime.agent.StateWithoutMessages().Model
 	settings := runtime.settings.GetCompactionSettingsForModel(model)
 	branch := runtime.manager.GetBranch()
 	preparation, err := harness.PrepareLegacyCompaction(projectSessionEntries(branch), harness.CompactionSettings{
@@ -1413,7 +1464,7 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 		compactErr = context.Canceled
 	} else if result == nil {
 		var harnessResult *harness.CompactionResult
-		harnessResult, compactErr = harness.CompactProduct(compactionContext, preparation, model, runtime.summarizationComplete("compaction", reason), "", runtime.agent.State().ThinkingLevel, nil)
+		harnessResult, compactErr = harness.CompactProduct(compactionContext, preparation, model, runtime.summarizationComplete("compaction", reason), "", runtime.agent.StateWithoutMessages().ThinkingLevel, nil)
 		result = codingCompactionResult(harnessResult)
 	}
 	wasCancelled := compactionContext.Err() != nil
@@ -1480,9 +1531,6 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 	if err := runtime.checkLive(); err != nil {
 		return nil, err
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	runtime.disconnectFromAgent()
 	defer runtime.reconnectToAgent()
 	runtime.Abort()
@@ -1502,13 +1550,13 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		runtime.mu.Unlock()
 	}()
 	runtime.emit(CompactionStartEvent{Reason: "manual"})
-	if model := runtime.agent.State().Model; model == nil || IsUnknownModel(model) {
+	if model := runtime.agent.StateWithoutMessages().Model; model == nil || IsUnknownModel(model) {
 		err := noModelSelectedError()
 		message := "Compaction failed: " + err.Error()
 		runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "manual", ErrorMessage: &message}, fromExtension)
 		return nil, err
 	}
-	model := runtime.agent.State().Model
+	model := runtime.agent.StateWithoutMessages().Model
 	settings := runtime.settings.GetCompactionSettingsForModel(model)
 	branch := runtime.manager.GetBranch()
 	preparation, err := harness.PrepareLegacyCompaction(projectSessionEntries(branch), harness.CompactionSettings{
@@ -1540,7 +1588,7 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		err = errors.New("Compaction cancelled")
 	} else if result == nil {
 		var harnessResult *harness.CompactionResult
-		harnessResult, err = harness.CompactProduct(compactionContext, preparation, model, runtime.summarizationComplete("compaction", "manual"), customInstructions, runtime.agent.State().ThinkingLevel, nil)
+		harnessResult, err = harness.CompactProduct(compactionContext, preparation, model, runtime.summarizationComplete("compaction", "manual"), customInstructions, runtime.agent.StateWithoutMessages().ThinkingLevel, nil)
 		result = codingCompactionResult(harnessResult)
 	}
 	if err == nil && compactionContext.Err() != nil {
@@ -1708,9 +1756,6 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	if !runtime.IsIdle() {
 		return NavigateTreeResult{}, errors.New("Wait for the current response to finish before navigating the session tree.")
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	oldLeaf := runtime.manager.GetLeafID()
 	if oldLeaf != nil && *oldLeaf == targetID {
 		return NavigateTreeResult{}, nil
@@ -1808,9 +1853,9 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	if options.Summarize && len(collected.Entries) > 0 && !fromExtension {
 		settings := runtime.settings.GetBranchSummarySettings()
 		result, summaryErr := harness.GenerateProductBranchSummary(branchContext, collected.Entries, harness.GenerateBranchSummaryOptions{
-			Model: runtime.agent.State().Model, Complete: runtime.summarizationComplete("branchSummary", ""),
+			Model: runtime.agent.StateWithoutMessages().Model, Complete: runtime.summarizationComplete("branchSummary", ""),
 			CustomInstructions: customInstructions, ReplaceInstructions: replaceInstructions,
-			ReserveTokens: &settings.ReserveTokens, ThinkingLevel: runtime.agent.State().ThinkingLevel,
+			ReserveTokens: &settings.ReserveTokens, ThinkingLevel: runtime.agent.StateWithoutMessages().ThinkingLevel,
 		})
 		if summaryErr != nil {
 			if errors.Is(summaryErr, context.Canceled) || branchContext.Err() != nil {
@@ -2130,15 +2175,6 @@ func userMessageText(message engine.AgentMessage) string {
 		return *user.Content.Text
 	}
 	return ai.ContentText(user.Content.Blocks, "")
-}
-
-func indexOf(values []string, target string) int {
-	for index, value := range values {
-		if value == target {
-			return index
-		}
-	}
-	return -1
 }
 
 func decodeUserContentText(raw json.RawMessage) string {

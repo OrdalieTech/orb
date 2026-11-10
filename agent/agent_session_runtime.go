@@ -324,7 +324,7 @@ func (runtime *AgentSessionRuntime) NewSession(
 	}
 	cancelled := false
 	err := runtime.transition(ctx, options.WithSession, func(ctx context.Context, current *AgentSession) (*AgentSession, error) {
-		if runtimeSwitchCancelled(ctx, current, extensions.SessionBeforeSwitchEvent{Reason: extensions.SessionSwitchNew}) {
+		if beforeSessionChangeCancelled(ctx, current, extensions.SessionBeforeSwitchEvent{Reason: extensions.SessionSwitchNew}) {
 			cancelled = true
 			return nil, nil
 		}
@@ -399,7 +399,7 @@ func (runtime *AgentSessionRuntime) SwitchSession(
 	cancelled := false
 	err := runtime.transition(ctx, options.WithSession, func(ctx context.Context, current *AgentSession) (*AgentSession, error) {
 		target := path
-		if runtimeSwitchCancelled(ctx, current, extensions.SessionBeforeSwitchEvent{
+		if beforeSessionChangeCancelled(ctx, current, extensions.SessionBeforeSwitchEvent{
 			Reason: extensions.SessionSwitchResume, TargetSessionFile: &target,
 		}) {
 			cancelled = true
@@ -497,7 +497,7 @@ func (runtime *AgentSessionRuntime) Fork(
 	}
 	var result AgentSessionRuntimeForkResult
 	err := runtime.transition(ctx, options.WithSession, func(ctx context.Context, current *AgentSession) (*AgentSession, error) {
-		if runtimeForkCancelled(ctx, current, extensions.SessionBeforeForkEvent{EntryID: entryID, Position: position}) {
+		if beforeSessionChangeCancelled(ctx, current, extensions.SessionBeforeForkEvent{EntryID: entryID, Position: position}) {
 			result.Cancelled = true
 			return nil, nil
 		}
@@ -617,7 +617,7 @@ func (runtime *AgentSessionRuntime) ImportFromJSONL(
 			destination = filepath.Join(sessionDir, filepath.Base(resolvedPath))
 		}
 		target := destination
-		if runtimeSwitchCancelled(ctx, current, extensions.SessionBeforeSwitchEvent{
+		if beforeSessionChangeCancelled(ctx, current, extensions.SessionBeforeSwitchEvent{
 			Reason: extensions.SessionSwitchResume, TargetSessionFile: &target,
 		}) {
 			cancelled = true
@@ -828,17 +828,7 @@ func (runtime *AgentSessionRuntime) bindSessionCommands(created *AgentSession) {
 			result, err := runtime.Fork(ctx, entryID, options)
 			return extensions.SessionReplacementResult{Cancelled: result.Cancelled}, err
 		},
-		NavigateTree: func(ctx context.Context, targetID string, options *extensions.NavigateTreeOptions) (extensions.SessionReplacementResult, error) {
-			resolved := NavigateTreeOptions{}
-			if options != nil {
-				resolved = NavigateTreeOptions{
-					Summarize: options.Summarize, CustomInstructions: options.CustomInstructions,
-					ReplaceInstructions: options.ReplaceInstructions, Label: options.Label,
-				}
-			}
-			result, err := created.NavigateTree(ctx, targetID, resolved)
-			return extensions.SessionReplacementResult{Cancelled: result.Cancelled || result.Aborted}, err
-		},
+		NavigateTree: created.runtimeCommandActions().NavigateTree,
 		SwitchSession: func(ctx context.Context, path string, options *extensions.SwitchSessionOptions) (extensions.SessionReplacementResult, error) {
 			resolved := &AgentSessionRuntimeSwitchOptions{}
 			if options != nil {
@@ -896,36 +886,24 @@ func (runtime *AgentSessionRuntime) teardown(
 	current.disposeAfterExtensionShutdown()
 }
 
-func runtimeSwitchCancelled(ctx context.Context, current *AgentSession, event extensions.SessionBeforeSwitchEvent) bool {
+// beforeSessionChangeCancelled reports whether a session_before_switch or
+// session_before_fork handler cancelled the change.
+func beforeSessionChangeCancelled(ctx context.Context, current *AgentSession, event extensions.Event) bool {
 	runner := current.ExtensionRunner()
-	if runner == nil || !runner.HasHandlers(extensions.EventSessionBeforeSwitch) {
+	if runner == nil || !runner.HasHandlers(event.Type()) {
 		return false
 	}
-	result := runner.Emit(ctx, event)
-	switch typed := result.(type) {
+	switch typed := runner.Emit(ctx, event).(type) {
 	case extensions.SessionBeforeSwitchResult:
 		return typed.Cancel
 	case *extensions.SessionBeforeSwitchResult:
 		return typed != nil && typed.Cancel
-	default:
-		return false
-	}
-}
-
-func runtimeForkCancelled(ctx context.Context, current *AgentSession, event extensions.SessionBeforeForkEvent) bool {
-	runner := current.ExtensionRunner()
-	if runner == nil || !runner.HasHandlers(extensions.EventSessionBeforeFork) {
-		return false
-	}
-	result := runner.Emit(ctx, event)
-	switch typed := result.(type) {
 	case extensions.SessionBeforeForkResult:
 		return typed.Cancel
 	case *extensions.SessionBeforeForkResult:
 		return typed != nil && typed.Cancel
-	default:
-		return false
 	}
+	return false
 }
 
 // AssertSessionCWD reports a persisted session whose working directory is

@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -20,10 +19,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 	"github.com/OrdalieTech/orb/platforms/native/selfupdate"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/creack/pty"
@@ -135,15 +134,10 @@ func (s *Service) host(ctx context.Context, p bridge.Principal, method string, p
 			return nil, err
 		}
 		if q.SessionID != "" {
-			rows, err := s.state.Sessions().ListInfo(ctx, "", nil)
-			if err != nil {
-				return nil, err
-			}
-			i := slices.IndexFunc(rows, func(r session.SessionInfo) bool { return r.ID == q.SessionID })
-			if i < 0 {
+			var err error
+			if q.CWD, err = s.state.Sessions().CWD(ctx, q.SessionID); err != nil {
 				return nil, bridge.Fail("not_found")
 			}
-			q.CWD = rows[i].CWD
 		}
 		cwd, err := launchFolder(q.CWD)
 		if err != nil {
@@ -177,13 +171,9 @@ func lines(name string, output []byte) json.RawMessage {
 	return bridge.JSON(map[string]any{name: rows})
 }
 
-// lazyRegexp compiles when first used: counted repetitions make large programs, which every orb
-// process (this package is in all of them) paid for as it started.
-func lazyRegexp(pattern string) func() *regexp.Regexp {
-	return sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(pattern) })
-}
-
-var settingName = lazyRegexp(`^[a-zA-Z][a-zA-Z0-9]{0,63}$`)
+// Compiled when first used: counted repetitions make large programs, which every orb process
+// (this package is in all of them) paid for as it started.
+var settingName = lazyregexp.New(`^[a-zA-Z][a-zA-Z0-9]{0,63}$`)
 
 // cli is what a peer reads and changes of this machine's Orb through its CLI here: its accounts
 // with their plan limits and the switch between them, its plugins and their choices, a provider's
@@ -279,10 +269,10 @@ func (l *hostLogin) add(line json.RawMessage, done bool) {
 	l.wake = make(chan struct{})
 }
 
-var providerName = lazyRegexp(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+var providerName = lazyregexp.New(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 // modelName is a model id as providers write them (claude-opus-4-5, openai/gpt-5:free, Qwen/Qwen3…).
-var modelName = lazyRegexp(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$`)
+var modelName = lazyregexp.New(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$`)
 
 func (s *Service) login(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	exe, err := s.loginExecutable()

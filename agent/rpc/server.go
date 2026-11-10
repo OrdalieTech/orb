@@ -402,7 +402,7 @@ func (mode *server) answer(session *agent.SessionRuntime, command Command) *Resp
 			Cancelled bool `json:"cancelled"`
 		}{cancelled})
 	case "get_state":
-		state := session.State()
+		state := session.Agent().StateWithoutMessages()
 		manager := session.Manager()
 		name := manager.GetSessionName()
 		result := SessionState{
@@ -410,7 +410,7 @@ func (mode *server) answer(session *agent.SessionRuntime, command Command) *Resp
 			IsCompacting: session.IsCompacting(), SteeringMode: string(session.SteeringMode()),
 			FollowUpMode: string(session.FollowUpMode()), SessionFile: manager.GetSessionFile(),
 			SessionID: manager.GetSessionID(), AutoCompactionEnabled: session.AutoCompactionEnabled(),
-			MessageCount: rpcMessageCount(state.Messages), PendingMessageCount: session.PendingMessageCount(),
+			MessageCount: rpcMessageCount(session.Agent().Messages()), PendingMessageCount: session.PendingMessageCount(),
 		}
 		if name != nil {
 			value := *name

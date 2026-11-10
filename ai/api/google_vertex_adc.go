@@ -96,8 +96,28 @@ func newGoogleVertexADC(options *ai.StreamOptions) *googleVertexADC {
 	}
 }
 
+// googleVertexADCs keeps one ADC per credential source and request env, so
+// its token cache outlives the request that filled it.
+var googleVertexADCs sync.Map
+
 func googleVertexAuthHeaders(ctx context.Context, options *ai.StreamOptions) (googleVertexADCHeaders, error) {
-	return newGoogleVertexADC(options).headers(ctx)
+	adc := newGoogleVertexADC(options)
+	home, _ := googleVertexUserHomeDir()
+	var env ai.ProviderEnv
+	if options != nil {
+		env = options.Env
+	}
+	key := fmt.Sprintf("%q %q", []string{
+		adc.credentialsPath(), home,
+		adc.providerEnv("GCE_METADATA_IP"), adc.providerEnv("GCE_METADATA_HOST"), adc.providerEnv("GOOGLE_CLOUD_QUOTA_PROJECT"),
+	}, env)
+	cached, _ := googleVertexADCs.LoadOrStore(key, adc)
+	headers, err := cached.(*googleVertexADC).headers(ctx)
+	if err != nil {
+		// The next request reads the credentials again: they may have been replaced.
+		googleVertexADCs.CompareAndDelete(key, cached)
+	}
+	return headers, err
 }
 
 func (adc *googleVertexADC) headers(ctx context.Context) (googleVertexADCHeaders, error) {
@@ -134,10 +154,7 @@ func (adc *googleVertexADC) quotaProject() string {
 }
 
 func (adc *googleVertexADC) loadSource(ctx context.Context) error {
-	path := adc.providerEnv("GOOGLE_APPLICATION_CREDENTIALS")
-	if path == "" {
-		path = os.Getenv("google_application_credentials")
-	}
+	path := adc.credentialsPath()
 	if path != "" {
 		credential, err := readGoogleVertexADCFile(path)
 		if err != nil {
@@ -275,6 +292,13 @@ func (adc *googleVertexADC) credentialToken(ctx context.Context, credential *goo
 	default:
 		return googleVertexTokenResponse{}, fmt.Errorf("unsupported Google application default credential type %q", credential.Type)
 	}
+}
+
+func (adc *googleVertexADC) credentialsPath() string {
+	if path := adc.providerEnv("GOOGLE_APPLICATION_CREDENTIALS"); path != "" {
+		return path
+	}
+	return os.Getenv("google_application_credentials")
 }
 
 func (adc *googleVertexADC) providerEnv(name string) string {

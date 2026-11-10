@@ -28,6 +28,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai/api"
@@ -63,21 +64,30 @@ type transport struct {
 	credentials func(context.Context) (api.BedrockCredentials, error)
 }
 
-// defaultClient sends through the default transport, reusing its connections.
-var defaultClient = &http.Client{}
+// defaultClient sends through the default transport, reusing its connections;
+// proxyClients does the same per proxy and HTTP/1 setting.
+var (
+	defaultClient = &http.Client{}
+	proxyClients  sync.Map
+)
 
 func newTransport(ctx context.Context, config api.BedrockTransportConfig, client *http.Client) (api.BedrockTransport, error) {
 	if client == nil {
 		client = defaultClient
 		if config.Proxy != nil || config.ForceHTTP1 {
-			transport := &http.Transport{MaxIdleConns: 100, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ExpectContinueTimeout: time.Second}
-			if config.Proxy != nil {
-				transport.Proxy = http.ProxyURL(config.Proxy)
+			key := fmt.Sprint(config.Proxy, config.ForceHTTP1)
+			cached, ok := proxyClients.Load(key)
+			if !ok {
+				transport := &http.Transport{MaxIdleConns: 100, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ExpectContinueTimeout: time.Second}
+				if config.Proxy != nil {
+					transport.Proxy = http.ProxyURL(config.Proxy)
+				}
+				if config.ForceHTTP1 {
+					transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+				}
+				cached, _ = proxyClients.LoadOrStore(key, &http.Client{Transport: transport})
 			}
-			if config.ForceHTTP1 {
-				transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
-			}
-			client = &http.Client{Transport: transport}
+			client = cached.(*http.Client)
 		}
 	}
 	region, credentials := config.Region, func(context.Context) (api.BedrockCredentials, error) { return *config.Credentials, nil }

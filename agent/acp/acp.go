@@ -73,6 +73,7 @@ type server struct {
 
 	mu       sync.Mutex
 	live     []*live // most recently used last
+	opening  map[string]chan struct{}
 	options  map[string]Options
 	protocol int
 }
@@ -90,7 +91,7 @@ type live struct {
 // Serve answers one client until in ends or ctx is done.
 func Serve(ctx context.Context, in io.Reader, out io.Writer, host Host, version string) error {
 	ctx, stop := context.WithCancel(ctx)
-	s := &server{ctx: ctx, host: host, version: version, out: bufio.NewWriter(out), options: map[string]Options{}}
+	s := &server{ctx: ctx, host: host, version: version, out: bufio.NewWriter(out), opening: map[string]chan struct{}{}, options: map[string]Options{}}
 	var requests sync.WaitGroup
 	defer func() {
 		stop()
@@ -199,16 +200,27 @@ func (s *server) request(method string, params json.RawMessage) (any, error) {
 		if !filepath.IsAbs(p.CWD) {
 			return nil, invalid("%s: cwd must be an absolute path", method)
 		}
-		options := Options{ID: p.SessionID, CWD: p.CWD, MCPServers: p.MCPServers}
-		if method == "session/load" && p.SessionID == "" {
-			return nil, invalid("session/load: sessionId is required")
+		options := Options{CWD: p.CWD, MCPServers: p.MCPServers}
+		if method == "session/load" {
+			if p.SessionID == "" {
+				return nil, invalid("session/load: sessionId is required")
+			}
+			options.ID = p.SessionID
 		}
 		for _, raw := range []json.RawMessage{p.SystemPrompt, p.Meta.SystemPrompt} {
 			if err := options.prompt(raw); err != nil {
 				return nil, err
 			}
 		}
-		session, err := s.open(options)
+		// A session already live on this connection is reused rather than
+		// opened twice, which would put two runtimes on one session file.
+		session, err := (*live)(nil), error(nil)
+		if options.ID != "" {
+			session = s.find(options.ID)
+		}
+		if session == nil {
+			session, err = s.open(options)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -250,13 +262,7 @@ func (s *server) request(method string, params json.RawMessage) (any, error) {
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, invalid("_session/steering: %v", err)
 		}
-		s.mu.Lock()
-		index := slices.IndexFunc(s.live, func(session *live) bool { return session.id == p.SessionID })
-		var session *live
-		if index >= 0 {
-			session = s.live[index]
-		}
-		s.mu.Unlock()
+		session := s.find(p.SessionID)
 		if session == nil || !session.running() {
 			return nil, errors.New("no turn is running to steer")
 		}
@@ -308,13 +314,7 @@ func (s *server) notification(method string, params json.RawMessage) {
 	if json.Unmarshal(params, &p) != nil {
 		return
 	}
-	s.mu.Lock()
-	index := slices.IndexFunc(s.live, func(session *live) bool { return session.id == p.SessionID })
-	var session *live
-	if index >= 0 {
-		session = s.live[index]
-	}
-	s.mu.Unlock()
+	session := s.find(p.SessionID)
 	if session == nil {
 		return
 	}
@@ -357,8 +357,39 @@ func (options *Options) prompt(raw json.RawMessage) error {
 }
 
 // open starts a session and makes it the most recent live one, disposing the
-// least recently used idle session past maxLive.
+// least recently used idle session past maxLive. Concurrent opens for the same
+// ID wait for the first so two runtimes never open one session file.
 func (s *server) open(options Options) (*live, error) {
+	if options.ID != "" {
+		for {
+			s.mu.Lock()
+			if index := slices.IndexFunc(s.live, func(candidate *live) bool { return candidate.id == options.ID }); index >= 0 {
+				session := s.live[index]
+				s.live = append(slices.Delete(s.live, index, index+1), session)
+				s.mu.Unlock()
+				return session, nil
+			}
+			wait, inflight := s.opening[options.ID]
+			if !inflight {
+				wait = make(chan struct{})
+				s.opening[options.ID] = wait
+				s.mu.Unlock()
+				defer func() {
+					s.mu.Lock()
+					delete(s.opening, options.ID)
+					s.mu.Unlock()
+					close(wait)
+				}()
+				break
+			}
+			s.mu.Unlock()
+			select {
+			case <-wait:
+			case <-s.ctx.Done():
+				return nil, s.ctx.Err()
+			}
+		}
+	}
 	runtime, close, err := s.host.Open(s.ctx, options)
 	if err != nil {
 		return nil, err
@@ -393,13 +424,10 @@ func (s *server) session(id string) (*live, error) {
 	if id == "" {
 		return nil, invalid("sessionId is required")
 	}
-	s.mu.Lock()
-	if index := slices.IndexFunc(s.live, func(session *live) bool { return session.id == id }); index >= 0 {
-		session := s.live[index]
-		s.live = append(slices.Delete(s.live, index, index+1), session)
-		s.mu.Unlock()
+	if session := s.find(id); session != nil {
 		return session, nil
 	}
+	s.mu.Lock()
 	options, known := s.options[id]
 	s.mu.Unlock()
 	if !known {
@@ -410,6 +438,19 @@ func (s *server) session(id string) (*live, error) {
 		return nil, invalid("unknown session %s: %v", id, err)
 	}
 	return session, nil
+}
+
+// find returns the live session with id, made the most recent, or nil.
+func (s *server) find(id string) *live {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index := slices.IndexFunc(s.live, func(session *live) bool { return session.id == id })
+	if index < 0 {
+		return nil
+	}
+	session := s.live[index]
+	s.live = append(slices.Delete(s.live, index, index+1), session)
+	return session
 }
 
 // prompt runs one turn and answers once the session settles.
@@ -437,7 +478,7 @@ func (s *server) prompt(session *live, text string, images []*ai.ImageContent) (
 			s.update(session.id, update)
 		}
 	})
-	before := len(runtime.State().Messages)
+	before := len(runtime.Agent().Messages())
 	err := runtime.PromptWithOptions(s.ctx, text, &agent.PromptOptions{Images: images})
 	if err == nil {
 		err = runtime.WaitForIdle(s.ctx)
@@ -453,7 +494,7 @@ func (s *server) prompt(session *live, text string, images []*ai.ImageContent) (
 	if err != nil {
 		return nil, err
 	}
-	messages := runtime.State().Messages
+	messages := runtime.Agent().Messages()
 	for index := len(messages) - 1; index >= before && index >= 0; index-- {
 		assistant, ok := messages[index].(*ai.AssistantMessage)
 		if !ok {

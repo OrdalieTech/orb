@@ -268,11 +268,7 @@ func buildMistralPayload(
 	if requestContext.Tools != nil && len(*requestContext.Tools) > 0 {
 		payload.Tools = make([]MistralConversationTool, 0, len(*requestContext.Tools))
 		for _, tool := range *requestContext.Tools {
-			strict, err := resolveJSONSchemaStrictSampling(tool, true)
-			if err != nil {
-				return nil, err
-			}
-			parameters, err := getJSONSchemaToolParameters(tool.Parameters, strict != nil && *strict)
+			strict, parameters, err := resolveJSONSchemaStrictSampling(tool, true, nil)
 			if err != nil {
 				return nil, err
 			}

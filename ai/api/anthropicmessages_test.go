@@ -232,7 +232,8 @@ func TestAnthropicRetriesTooManyStrictToolsWithPreferredOnesRelaxed(t *testing.T
 func TestAnthropicMovesErrorResultImagesAfterTheToolResults(t *testing.T) {
 	model := anthropicTestModel()
 	calls := ai.AssistantContent{&ai.ToolCall{ID: "a", Name: "shot", Arguments: map[string]any{}}, &ai.ToolCall{ID: "b", Name: "read", Arguments: map[string]any{}}}
-	payload, _, err := buildAnthropicMessagesPayload(model, ai.Context{Messages: ai.MessageList{
+	compat, _ := getAnthropicCompat(model)
+	payload, _, err := buildAnthropicMessagesPayload(model, compat, ai.Context{Messages: ai.MessageList{
 		&ai.UserMessage{Content: ai.NewUserText("go")},
 		&ai.AssistantMessage{Content: calls, API: model.API, Provider: model.Provider, Model: model.ID, StopReason: ai.StopReasonToolUse},
 		&ai.ToolResultMessage{ToolCallID: "a", ToolName: "shot", IsError: true, Content: ai.ToolResultContent{&ai.TextContent{Text: "failed"}, &ai.ImageContent{Data: "png", MimeType: "image/png"}}},
@@ -272,7 +273,8 @@ func TestAnthropicManagedEffortModelWithThinkingOff(t *testing.T) {
 	model := anthropicTestModel()
 	model.Compat = json.RawMessage(`{"supportsMidConvoEffort":true,"forceAdaptiveThinking":true}`)
 	off := false
-	payload, _, err := buildAnthropicMessagesPayload(model, ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hi")}}},
+	compat, _ := getAnthropicCompat(model)
+	payload, _, err := buildAnthropicMessagesPayload(model, compat, ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hi")}}},
 		&AnthropicMessagesOptions{ThinkingEnabled: &off}, false)
 	if err != nil {
 		t.Fatal(err)

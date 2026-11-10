@@ -269,7 +269,7 @@ func (policy *Policy) Evaluate(ctx context.Context, info ToolCallInfo) Decision 
 	}
 	if info.Tool == "bash" && decision.Action != Deny {
 		command, _ := commandArgument(info.Args)
-		if strings.ContainsAny(command, ";&|<>$`\\\"'()\n\r") {
+		if strings.ContainsAny(command, ";&|<>$`\\\"'(){}\n\r") {
 			scoped := false
 			for _, rule := range rules {
 				if matchGlob(ruleTool(rule), "bash", false) && (rule.Command != "" || rule.Path != "") {
@@ -312,7 +312,7 @@ func ruleMatches(rule Rule, info ToolCallInfo) bool {
 		candidates := pathArguments(info.Args)
 		// Only restrictions scan words; widening a last-match-wins allow could override a deny.
 		if info.Tool == "bash" && hasCommand && rule.Action != Allow {
-			candidates = append(candidates, commandPaths(command)...)
+			candidates = append(candidates, commandPaths(command, info.CWD)...)
 		}
 		matched := false
 		for _, candidate := range candidates {
@@ -328,7 +328,8 @@ func ruleMatches(rule Rule, info ToolCallInfo) bool {
 }
 
 // commandPaths sees bare words, not quoted paths, variables, or substitutions; use only to restrict.
-func commandPaths(command string) []string {
+// A word with * ? or [ also yields what bash would expand it to in cwd.
+func commandPaths(command, cwd string) []string {
 	fields := strings.FieldsFunc(command, func(letter rune) bool {
 		return unicode.IsSpace(letter) || strings.ContainsRune("|&;<>()", letter)
 	})
@@ -336,6 +337,10 @@ func commandPaths(command string) []string {
 	for _, field := range fields {
 		if field = strings.Trim(field, `"'`); field != "" && !strings.HasPrefix(field, "-") {
 			candidates = append(candidates, field)
+			if strings.ContainsAny(field, "*?[") {
+				matches, _ := filepath.Glob(nodepath.Resolve(field, cwd))
+				candidates = append(candidates, matches...)
+			}
 		}
 	}
 	return candidates

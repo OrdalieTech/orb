@@ -13,7 +13,7 @@ e.g. `packages/agent/src/agent-loop.ts`. `make upstream` materializes that check
 
 ```
 orb/
-├── go.mod                    module github.com/OrdalieTech/orb   (go ≥ 1.27.1)
+├── go.mod                    module github.com/OrdalieTech/orb   (go ≥ 1.27.3)
 ├── cmd/orb/                   CLI entry point (thin: arg parsing → agent)
 ├── ai/                       port of packages/ai        — importable alone
 │   ├── api/                  one file per API shape (openairesponses.go, anthropicmessages.go, …)
@@ -81,7 +81,6 @@ orb/
 │   ├── toolenv/              tool environments: case-aware get/set, PATH, lookup
 │   ├── ptr/                  pointer clone helper
 │   ├── cjksegment/           CJK segmentation helper
-│   ├── ignorerules/          gitignore-style matching
 │   ├── localecompare/        JS localeCompare ordering
 │   ├── skilllocations/       external Agent Skills compatibility roots
 │   ├── semver/               semver range matching (packages)
@@ -711,11 +710,8 @@ discovery scopes, or agent-subject authority. Saved pairings survive service res
 live streams, and stopping waits for the admin connection to close. Open panels refresh bounded
 reads once per second, preserve selection by identity, and cancel work on close. The conversation
 picker reads bounded catalog pages, excludes disconnected instances, and reconnects after daemon
-restarts without replaying any commands. Local admin status advertises
-`supports_full_access`; start and pairing replace a daemon missing that capability through the
-normal stop/start path before issuing grants. The replacement preserves profile state and lets
-non-owning runtime attachments reconnect. A previously deliberate Stop remains effective until
-explicit activation; an upgrade's temporary stop marker is removed before starting the replacement.
+restarts without replaying any commands. A previously deliberate Stop remains effective until
+explicit activation.
 Networking remains explicitly enabled, and its focused remote conversation view requires no local model credentials.
 Restricted launching remains excluded; mobile apps and hosted deployments follow P11 and
 [deployments.md](deployments.md). The optional
@@ -773,7 +769,9 @@ out the updates a later event in it replaces. Snapshots window the newest 8 MiB 
 Session IDs resolve inside the adapter. Local, extension, and remote work share transition
 ordering and execution identity; control locks never span model streams or interactive approvals.
 Durably record acceptance before acknowledgment or dispatch. Retain compact deduplication
-records for the instance identity's lifetime; quota exhaustion refuses new acceptance. Identical
+records within the ledger quota, evicting the oldest terminal receipts first when full while
+keeping accepted and running records intact; quota exhaustion with only in-flight records refuses
+new acceptance. Identical
 retries retrieve authorized receipts before stale-generation checks; conflicting payloads fail.
 Recheck authorization and target preconditions at dispatch, never retarget, and reconcile crash
 ambiguity as `outcome_unknown` rather than replaying effects. Accepted work belongs to the runtime.
@@ -834,8 +832,9 @@ reopening revalidates the destination, and revocation fences delayed refreshes a
 Reasoning, tool payloads and attachments never enter this cache.
 
 Receipts retain the operation ID, target, expected revision/generation, method, acceptance time,
-canonical payload digest, status, and bounded result/error. Terminal deduplication entries are
-never evicted. A failed storage barrier makes the writer unavailable until reopened; unfinished
+canonical payload digest, status, and bounded result/error. When a write would exceed the ledger
+quota, the oldest terminal receipts are evicted first; accepted and running receipts (and the
+operation being recorded) are never evicted. A failed storage barrier makes the writer unavailable until reopened; unfinished
 receipts recover as `outcome_unknown`. Bridge profiles and ledgers each cap storage at 1 MiB.
 Snapshot retention is four snapshots per attachment for one minute, over a transcript mirror of
 the newest 8 MiB/16,384 messages; a message larger than a page keeps the ends of its texts.
@@ -905,7 +904,8 @@ Where upstream lacks a directly extractable test, the extractor drives upstream'
 that swaps the spawned binary and maps upstream directory/environment inputs onto Orb’s
 independent names. Directory fixtures adapt only complete `.pi` path components to `.orb`;
 upstream goldens remain untouched. Host behavior is covered by real Node/Bun end-to-end tests and the
-locked 44-package harness under `conformance/extensions/`; F11 remains the extracted Go-native
+locked 44-package harness under `conformance/extensions/` (run by hand, last against pi 0.81.1,
+not the pinned release); F11 remains the extracted Go-native
 runner and wiring surface.
 
 ## 7. Upstream pin
@@ -935,7 +935,10 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | gopkg.in/yaml.v3 | skills, config | frontmatter + YAML settings surfaces |
 | aymanbagabas/go-udiff | tools | unified diff for edit rendering (upstream: `diff`) |
 | tailscale/tailcat v0.7.0 | CLI transport assembly | Stream-only WireGuard/NAT traversal and DERP; tested below the existing size/startup budgets with upstream omission tags; no SDK dependency |
-| coder/websocket v1.8.15 | optional Bridge WebSocket transport | Reuses the installed dependency for native and browser streams; Bridge retains pinned TLS authentication inside the stream |
+| coder/websocket v1.8.15 | optional Bridge WebSocket transport, `chat/discord` gateway | Reuses the installed dependency for native and browser streams; Bridge retains pinned TLS authentication inside the stream |
+| tailscale.com | `platforms/native/tailcat` | the node-key and DERP-region types tailcat's API takes; already in the build through tailcat |
+| creack/pty | `platforms/native/bridge/daemon` | the pseudo-terminal behind a terminal opened on a paired machine |
+| dlclark/regexp2/v2 | `internal/chromalexers` | the regexp engine chroma's lexers are written for; already in the build through chroma |
 | gofrs/flock | memory, native bridge storage | file locking for the JSONL memory store (session/config use internal/filelock) |
 | @anthropic-ai/claude-agent-sdk 0.3.280 | optional `plugins/claudesessions` Node host | Official native session, permission and cancellation API; installed automatically on first Claude session, outside Go module and release binary |
 | egoist/mygo v0.7.4 | `platforms/desktop` (its own module) | native UI, windows and packaging for the desktop app in pure Go (purego, no cgo); its terminal plugin loads libghostty-vt, pinned and bundled by `mygo build`. Never imported by Orb's module |

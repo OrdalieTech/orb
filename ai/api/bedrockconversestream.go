@@ -828,17 +828,14 @@ func convertBedrockToolConfig(
 		preferred := tool.ConstrainedSampling != nil && tool.ConstrainedSampling.Type == ai.ConstrainedSamplingJSONSchema &&
 			tool.ConstrainedSampling.Strict == ai.ConstrainedSamplingPrefer
 		var strict *bool
+		parameters := tool.Parameters
 		if !relaxPreferredStrict || !preferred {
 			var err error
-			if strict, err = resolveJSONSchemaStrictSampling(tool, supportsStrictMode); err != nil {
+			if strict, parameters, err = resolveJSONSchemaStrictSampling(tool, supportsStrictMode, nil); err != nil {
 				return nil, false, err
 			}
 		}
 		preferredStrict = preferredStrict || preferred && strict != nil && *strict
-		parameters, err := getJSONSchemaToolParameters(tool.Parameters, strict != nil && *strict)
-		if err != nil {
-			return nil, false, err
-		}
 		result.Tools = append(result.Tools, BedrockTool{ToolSpec: BedrockToolSpecification{
 			Name: tool.Name, Description: tool.Description, InputSchema: BedrockToolInputSchema{JSON: parameters},
 			Strict: strict,
@@ -1372,14 +1369,9 @@ func appendBedrockFailureDiagnostic(output *ai.AssistantMessage, err error, fall
 	if marshalErr != nil {
 		return
 	}
-	diagnostics := make([]ai.AssistantMessageDiagnostic, 0, 1)
-	if output.Diagnostics != nil {
-		diagnostics = append(diagnostics, (*output.Diagnostics)...)
-	}
-	diagnostics = append(diagnostics, ai.AssistantMessageDiagnostic{
+	appendDiagnostic(output, ai.AssistantMessageDiagnostic{
 		Type: "bedrock_response_failure", Timestamp: openAINowUnixMilli(), Details: encoded,
 	})
-	output.Diagnostics = &diagnostics
 }
 
 func bedrockErrorCarriesBody(message, body string) bool {

@@ -359,7 +359,7 @@ func TestExtensionCommandInputAndNativeResourcesShareUpstreamOrder(t *testing.T)
 	if err != nil || len(apiCommands) != len(commands) {
 		t.Fatalf("extension getCommands = %#v, %v", apiCommands, err)
 	}
-	if got := runtime.slashResolver.Skills[1].SourceInfo; got.Source != "extension:wire" || got.BaseDir != filepath.Dir(extensionPath) {
+	if got := runtime.slashResolver.Load().Skills[1].SourceInfo; got.Source != "extension:wire" || got.BaseDir != filepath.Dir(extensionPath) {
 		t.Fatalf("extension skill source = %#v", got)
 	}
 	if !strings.Contains(runtime.State().SystemPrompt, "<name>ext-skill</name>") {
@@ -539,7 +539,7 @@ func TestUserBashHandlerCanReplaceOperations(t *testing.T) {
 		if command != "printf fixture" || gotCWD != cwd {
 			t.Fatalf("command=%q cwd=%q", command, gotCWD)
 		}
-		options.OnData([]byte("handled"))
+		options.OnData([]byte("\x1b[31mhand\r\x1b[0m\x00led"))
 		return tools.BashExecResult{ExitCode: &exitCode}, nil
 	})
 	if err := registry.Register("<inline:bash>", func(api extensions.API) error {
@@ -627,7 +627,12 @@ func TestConcurrentUserBashCancellationTracksEveryExecution(t *testing.T) {
 	if command := <-started; command != "second" {
 		t.Fatalf("second command = %q", command)
 	}
-	if !runtime.IsBashRunning() {
+	running := func() bool {
+		runtime.mu.Lock()
+		defer runtime.mu.Unlock()
+		return len(runtime.bashCancels) > 0
+	}
+	if !running() {
 		t.Fatal("concurrent bash executions were not tracked")
 	}
 
@@ -635,7 +640,7 @@ func TestConcurrentUserBashCancellationTracksEveryExecution(t *testing.T) {
 	if first := <-firstDone; first.err != nil || first.result.Cancelled {
 		t.Fatalf("first result = %#v, %v", first.result, first.err)
 	}
-	if !runtime.IsBashRunning() {
+	if !running() {
 		t.Fatal("newer bash execution was untracked when the older one settled")
 	}
 	runtime.AbortBash()
@@ -649,7 +654,7 @@ func TestConcurrentUserBashCancellationTracksEveryExecution(t *testing.T) {
 		<-secondDone
 		t.Fatal("remaining bash execution was not cancelled")
 	}
-	if runtime.IsBashRunning() {
+	if running() {
 		t.Fatal("settled bash execution remained tracked")
 	}
 }
@@ -1786,5 +1791,57 @@ func TestAbortInBeforeAgentStartStopsTheRun(t *testing.T) {
 	messages := host.Session().State().Messages
 	if last, _ := messages[len(messages)-1].(*ai.AssistantMessage); last == nil || last.StopReason != ai.StopReasonAborted {
 		t.Fatalf("the run went on after its abort: %#v", messages[len(messages)-1])
+	}
+}
+
+func TestAbortedQueuedNestedToolCallEmitsEndEventToExtensionsAndSubscribers(t *testing.T) {
+	cwd := t.TempDir()
+	provider := testFaux(100000)
+	var extensionSawEnd bool
+	registry := extensions.NewRegistry(cwd)
+	if err := registry.Register("builtin:watcher", func(api extensions.API) error {
+		api.RegisterTool(extensions.ToolDefinition{
+			Name: "seq", Label: "seq", Description: "seq", ExecutionMode: engine.ToolExecutionSequential,
+			Execute: func(context.Context, string, any, engine.AgentToolUpdateCallback, extensions.Context) (engine.AgentToolResult, error) {
+				return engine.AgentToolResult{}, nil
+			},
+		})
+		api.On(extensions.EventToolExecutionEnd, func(ctx context.Context, _ extensions.Event, _ extensions.Context) (any, error) {
+			if ctx.Err() != nil {
+				t.Errorf("extension EventToolExecutionEnd received cancelled context: %v", ctx.Err())
+			}
+			extensionSawEnd = true
+			return nil, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	host, err := NewAgentSessionRuntime(context.Background(), AgentSessionOptions{
+		CWD: cwd, AgentDir: t.TempDir(), StreamFn: provider.StreamSimple, Model: provider.GetModel(), ExtensionRegistry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { host.Dispose(context.Background()) })
+	if err := host.Session().BindExtensions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var endEvents []engine.ToolExecutionEndEvent
+	unsub := host.Session().Subscribe(func(event any) {
+		if end, ok := event.(engine.ToolExecutionEndEvent); ok {
+			endEvents = append(endEvents, end)
+		}
+	})
+	defer unsub()
+
+	host.Session().nested.queue <- struct{}{}
+	defer func() { <-host.Session().nested.queue }()
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	outcome := host.Session().executeNestedTool(cancelled, "parent-1", "seq", map[string]any{}, nil)
+	if !outcome.IsError || !extensionSawEnd || len(endEvents) != 1 || endEvents[0].DurationMS == nil || endEvents[0].ToolCallID != "parent-1/1" {
+		t.Fatalf("outcome=%+v extensionSawEnd=%v endEvents=%+v", outcome, extensionSawEnd, endEvents)
 	}
 }

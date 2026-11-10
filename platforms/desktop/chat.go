@@ -323,7 +323,8 @@ var fold = ui.ElementTransition{Enter: &ui.Motion{Collapse: true}, Exit: &ui.Mot
 // worked folds a run of actions into one line, as the TUI folds exploration, naming what runs now;
 // it opens to the actions.
 func (a *app) worked(c *ui.Context, r Row, t *Tab) {
-	open := a.expanded[t.ID+r.Key]
+	rowKey := t.ID + "\x00" + r.Key
+	open := a.expanded[rowKey]
 	ui.Column(c).FillWidth().Children(func() {
 		verb, result, now := "worked", "", ""
 		if r.Live {
@@ -336,7 +337,7 @@ func (a *app) worked(c *ui.Context, r Row, t *Tab) {
 			now = " · " + r.Now
 		}
 		if press(actionLine(c, verb, r.What+now, result, r.Live, r.Failed > 0, &open)) {
-			a.expanded[t.ID+r.Key] = !open
+			a.expanded[rowKey] = !open
 		}
 		if open {
 			ui.Column(c).FillWidth().PaddingStart(16).Transition(fold).Children(func() {
@@ -352,7 +353,7 @@ func (a *app) worked(c *ui.Context, r Row, t *Tab) {
 // and returned.
 func (a *app) action(c *ui.Context, x Action, t *Tab) {
 	pal := p(c)
-	key := t.ID + x.Key
+	key := t.ID + "\x00" + x.Key
 	open := a.expanded[key]
 	ui.Column(c).FillWidth().Children(func() {
 		if press(actionLine(c, x.Verb, x.Target, x.Result, x.Live, x.Failed, &open)) {

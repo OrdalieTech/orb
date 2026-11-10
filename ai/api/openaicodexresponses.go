@@ -196,18 +196,7 @@ func StreamOpenAICodexResponsesWithOptions(
 			fail(errors.New("Failed to extract accountId from token")) //nolint:staticcheck // Upstream capitalization is observable.
 			return
 		}
-		rawCompat, err := decodeCompat[ai.OpenAIResponsesCompat](model)
-		if err != nil {
-			fail(err)
-			return
-		}
-		supportsGrammar := rawCompat.SupportsOpenAIGrammarTools != nil && *rawCompat.SupportsOpenAIGrammarTools
-		grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, supportsGrammar)
-		if err != nil {
-			fail(err)
-			return
-		}
-		payload, err := buildOpenAICodexResponsesPayload(model, requestContext, options)
+		payload, grammarToolInputProperties, err := buildOpenAICodexResponsesPayload(model, requestContext, options)
 		if err != nil {
 			fail(err)
 			return
@@ -401,17 +390,12 @@ func appendOpenAICodexTransportFailure(
 	if errors.As(failure, &closeFailure) {
 		name = "WebSocketCloseError"
 	}
-	diagnostic := ai.AssistantMessageDiagnostic{
+	appendDiagnostic(output, ai.AssistantMessageDiagnostic{
 		Type:      "provider_transport_failure",
 		Timestamp: openAINowUnixMilli(),
 		Error:     &ai.DiagnosticErrorInfo{Name: &name, Message: failure.Error()},
 		Details:   details,
-	}
-	diagnostics := []ai.AssistantMessageDiagnostic{diagnostic}
-	if output.Diagnostics != nil {
-		diagnostics = append(append([]ai.AssistantMessageDiagnostic(nil), (*output.Diagnostics)...), diagnostic)
-	}
-	output.Diagnostics = &diagnostics
+	})
 	return nil
 }
 
@@ -419,51 +403,19 @@ func buildOpenAICodexResponsesPayload(
 	model *ai.Model,
 	requestContext ai.Context,
 	options *OpenAICodexResponsesOptions,
-) (*OpenAICodexResponsesPayload, error) {
-	compat, err := getOpenAIResponsesCompat(model)
+) (*OpenAICodexResponsesPayload, map[string]string, error) {
+	prepared, err := prepareResponsesInput(model, requestContext, true)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	transcript := ai.NormalizeContext(requestContext)
-	if !compat.supportsMidConvoSystemMessages {
-		transcript = ai.CollapseSystemMessages(transcript)
-	}
-	requestTools, deferredTools, anchoredFrom := transcriptToolPlacement(
-		transcript.Messages, compat.supportsAdditionalTools || compat.supportsToolSearch,
-	)
-	toolChanges, initialTools := responsesToolChanges(compat.supportsMidConvoSystemMessages && compat.supportsAdditionalTools, transcript.Messages, &requestTools)
-	requestContext = projectTranscriptContext(transcript, true)
-	rawCompat, err := decodeCompat[ai.OpenAIResponsesCompat](model)
-	if err != nil {
-		return nil, err
-	}
-	supportsStrictMode := true
-	if rawCompat.SupportsStrictMode != nil {
-		supportsStrictMode = *rawCompat.SupportsStrictMode
-	}
-	supportsGrammar := rawCompat.SupportsOpenAIGrammarTools != nil && *rawCompat.SupportsOpenAIGrammarTools
-	grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, supportsGrammar)
-	if err != nil {
-		return nil, err
-	}
-	toolOptions := responsesToolOptions{
-		supportsStrictMode: supportsStrictMode, supportsOpenAIGrammarTools: supportsGrammar, strictNull: true,
-	}
-	deferredToolsMode := responsesDeferredToolsMode(compat.supportsAdditionalTools, compat.supportsToolSearch)
-	placement := responsesToolPlacement{immediate: requestTools, deferred: deferredTools}
+	requestContext = prepared.context
 	withoutSystem := requestContext
 	withoutSystem.SystemPrompt = nil
-	input, err := convertResponsesMessagesWithOptions(model, withoutSystem, placement.deferred, responsesMessageOptions{
-		supportsDeveloperRole:      false,
-		grammarToolInputProperties: grammarToolInputProperties,
-		deferredToolsMode:          deferredToolsMode,
-		toolsAnchoredFrom:          anchoredFrom,
-		toolChanges:                toolChanges,
-		initialTools:               initialTools,
-		toolOptions:                toolOptions,
-	})
+	prepared.messages.supportsDeveloperRole = false
+	prepared.messages.toolOptions.strictNull = true
+	input, err := convertResponsesMessagesWithOptions(model, withoutSystem, prepared.deferred, prepared.messages)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	instructions := "You are a helpful assistant."
 	if requestContext.SystemPrompt != nil && *requestContext.SystemPrompt != "" {
@@ -513,13 +465,13 @@ func buildOpenAICodexResponsesPayload(
 	if payload.Reasoning == nil && model.Reasoning && supportsOffReasoning(model) {
 		payload.Reasoning = &OpenAIReasoningParams{Effort: mappedThinkingLevel(model, "off", "none")}
 	}
-	if len(placement.immediate) > 0 {
-		payload.Tools, err = convertOpenAICodexResponsesTools(placement.immediate, toolOptions)
+	if len(prepared.tools) > 0 {
+		payload.Tools, err = convertOpenAICodexResponsesTools(prepared.tools, prepared.messages.toolOptions)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return payload, nil
+	return payload, prepared.messages.grammarToolInputProperties, nil
 }
 
 func convertOpenAICodexResponsesTools(
@@ -613,11 +565,7 @@ func postOpenAICodexStream(
 			return nil, err
 		}
 		request.Header = headers.Clone()
-		client := openAIHTTPDoer(openAIHTTPClient)
-		if options != nil && options.HTTPClient != nil {
-			client = options.HTTPClient
-		}
-		response, err, timedOut := doOpenAICodexRequest(ctx, request, codexHeaderTimeout(options), client)
+		response, err, timedOut := doOpenAICodexRequest(ctx, request, codexHeaderTimeout(options), codexHTTPClient(options))
 		if err != nil {
 			if timedOut {
 				err = fmt.Errorf("Codex SSE response headers timed out after %dms", *options.TimeoutMS) //nolint:staticcheck // Upstream capitalization is observable.
@@ -701,6 +649,13 @@ func retryOpenAICodexFailure(ctx context.Context, failure error, attempt, maxRet
 	return true, nil
 }
 
+func codexHTTPClient(options *ai.StreamOptions) openAIHTTPDoer {
+	if options != nil && options.HTTPClient != nil {
+		return options.HTTPClient
+	}
+	return openAIHTTPClient
+}
+
 func codexHeaderTimeout(options *ai.StreamOptions) time.Duration {
 	if options == nil || options.TimeoutMS == nil || *options.TimeoutMS <= 0 {
 		return 0
@@ -737,7 +692,19 @@ func doOpenAICodexRequest(
 		return response, err, false
 	}
 	requestContext, cancel := context.WithCancel(ctx)
-	request = request.WithContext(requestContext)
+	response, err, timedOut := awaitCodexResponse(ctx, request.WithContext(requestContext), headerTimeout, client)
+	if err != nil || response == nil || response.Body == nil {
+		cancel()
+		return response, err, timedOut
+	}
+	response.Body = &cancelOnCloseBody{ReadCloser: response.Body, cancel: cancel}
+	return response, nil, false
+}
+
+// awaitCodexResponse stops waiting for request when ctx ends or timeout
+// (when positive) elapses, closing a response that arrives later; the caller
+// cancels the request's own context.
+func awaitCodexResponse(ctx context.Context, request *http.Request, timeout time.Duration, client openAIHTTPDoer) (*http.Response, error, bool) {
 	result := make(chan codexHTTPResult)
 	abandoned := make(chan struct{})
 	go func() {
@@ -750,36 +717,22 @@ func doOpenAICodexRequest(
 			}
 		}
 	}()
-	timer := time.NewTimer(headerTimeout)
-	defer timer.Stop()
+	var timeoutChannel <-chan time.Time
+	if timeout > 0 {
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		timeoutChannel = timer.C
+	}
 	select {
 	case <-ctx.Done():
-		cancel()
 		close(abandoned)
 		return nil, ctx.Err(), false
-	case <-timer.C:
-		cancel()
+	case <-timeoutChannel:
 		close(abandoned)
 		return nil, context.DeadlineExceeded, true
 	case completed := <-result:
-		if completed.err != nil || completed.response == nil || completed.response.Body == nil {
-			cancel()
-			return completed.response, completed.err, false
-		}
-		completed.response.Body = &codexCancelReadCloser{ReadCloser: completed.response.Body, cancel: cancel}
-		return completed.response, nil, false
+		return completed.response, completed.err, false
 	}
-}
-
-type codexCancelReadCloser struct {
-	io.ReadCloser
-	cancel context.CancelFunc
-}
-
-func (body *codexCancelReadCloser) Close() error {
-	err := body.ReadCloser.Close()
-	body.cancel()
-	return err
 }
 
 func handleOpenAICodexEvent(processor *openAIResponsesProcessor, raw json.RawMessage) error {

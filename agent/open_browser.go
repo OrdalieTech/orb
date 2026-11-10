@@ -1,57 +1,41 @@
 package agent
 
 import (
-	"context"
-
-	"github.com/OrdalieTech/orb/ai"
+	"os/exec"
+	"runtime"
 )
 
-// DefaultModelIDForProvider reports the upstream defaultModelPerProvider entry
-// for a provider so the interactive login completion can name the missing
-// default in its diagnostics (upstream interactive-mode.ts
-// completeProviderAuthentication). It lives here only because this is the
-// package-internal seam owned by the login work; model_resolver.go owns the
-// table itself.
-func DefaultModelIDForProvider(provider string) (string, bool) {
-	id, exists := defaultModelPerProvider[provider]
-	return id, exists
+// openBrowserCommand returns the platform launcher invocation for target,
+// mirroring upstream utils/open-browser.ts. This intentionally never invokes a
+// shell: on Windows `cmd /c start` would re-parse metacharacters (&, |, ^,
+// ...) before `start` runs, making attacker-controlled URLs injectable.
+func openBrowserCommand(goos, target string) (string, []string) {
+	switch goos {
+	case "darwin":
+		return "open", []string{target}
+	case "windows":
+		return "rundll32", []string{"url.dll,FileProtocolHandler", target}
+	default:
+		return "xdg-open", []string{target}
+	}
 }
 
-// ProviderAPIKey resolves the API key the runtime would send for provider, the
-// seam behind the TUI's Anthropic subscription-auth warning (upstream
-// modelRuntime.getAuth(...)?.auth.apiKey in
-// maybeWarnAboutAnthropicSubscriptionAuth). It lives here with the other
-// login-flow seams owned by this work.
-func (runtime *SessionRuntime) ProviderAPIKey(ctx context.Context, provider ai.ProviderID) (string, error) {
-	if runtime == nil {
-		return "", nil
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if runtime.getRequestAuth != nil {
-		resolved, err := runtime.getRequestAuth(ctx, provider)
-		if err != nil || resolved == nil || resolved.APIKey == nil {
-			return "", err
-		}
-		return *resolved.APIKey, nil
-	}
-	if runtime.getAPIKey != nil {
-		key, err := runtime.getAPIKey(ctx, provider)
-		if err != nil || key == nil {
-			return "", err
-		}
-		return *key, nil
-	}
-	return "", nil
+// OpenBrowser opens a URL or file in the platform browser/default handler
+// (upstream utils/open-browser.ts openBrowser). The launch is non-blocking and
+// best-effort: callers still present the target to the user, so launcher
+// failures (for example a missing xdg-open) are swallowed rather than
+// surfaced.
+func OpenBrowser(target string) {
+	name, args := openBrowserCommand(runtime.GOOS, target)
+	launchDetached(name, args)
 }
 
-// WarnAnthropicExtraUsage reads the warnings.anthropicExtraUsage settings gate
-// for the Anthropic subscription-auth warning (upstream
-// settingsManager.getWarnings().anthropicExtraUsage; default true).
-func (runtime *SessionRuntime) WarnAnthropicExtraUsage() bool {
-	if runtime == nil || runtime.settings == nil {
-		return true
+func launchDetached(name string, args []string) {
+	command := exec.Command(name, args...)
+	configureDetachedProcess(command)
+	if err := command.Start(); err != nil {
+		return
 	}
-	return runtime.settings.GetWarningAnthropicExtraUsage()
+	// Reap the launcher without blocking the caller (upstream unref()).
+	go func() { _ = command.Wait() }()
 }

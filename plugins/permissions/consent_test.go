@@ -196,6 +196,10 @@ func TestPathAndCommandRules(t *testing.T) {
 	if err := os.Symlink(real, filepath.Join(root, "link")); err != nil {
 		t.Fatal(err)
 	}
+	secret := filepath.Join(real, "shadow")
+	if err := os.WriteFile(secret, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		name, tool string
 		args       map[string]any
@@ -208,6 +212,9 @@ func TestPathAndCommandRules(t *testing.T) {
 		{"mixed paths", "copy", map[string]any{"paths": []any{"secrets/key", "public/file"}}, []Rule{{Path: "secrets/**", Action: Deny}, {Path: "public/**", Action: Allow}}, Deny},
 		{"compound allow", "bash", map[string]any{"command": "git status; echo other"}, []Rule{{Tool: "bash", Action: Ask}, {Tool: "bash", Command: "git status*", Action: Allow}}, Ask},
 		{"compound restriction", "bash", map[string]any{"command": "cd /tmp && git push"}, []Rule{{Tool: "bash", Command: "git push*", Action: Deny}}, Ask},
+		{"glob reaching a denied path", "bash", map[string]any{"command": "cat real/sha?o*"}, []Rule{{Path: secret, Action: Deny}}, Deny},
+		{"harmless glob", "bash", map[string]any{"command": "ls *.go"}, []Rule{{Path: secret, Action: Deny}}, Allow},
+		{"braces", "bash", map[string]any{"command": "cat real/{shadow,x}"}, []Rule{{Path: secret, Action: Deny}}, Ask},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &Policy{Rules: tc.rules}

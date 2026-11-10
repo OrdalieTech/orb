@@ -13,10 +13,8 @@ import (
 	host "github.com/OrdalieTech/orb/agent/extensions/host"
 )
 
-// Capability identifiers the host_hello frame must advertise (design brief:
-// "host_hello capability list grows: sdk_v1, agent_session_v1,
-// model_runtime_v1"). The strings are the wire contract; HelloCapabilities is
-// the public accessor over protocol.go's capability list.
+// Capability identifiers the handshake must advertise. The strings are the wire
+// contract; HelloCapabilities is the public accessor over protocol.go's list.
 func TestF13OrbHostAdvertisesSDKCapabilities(t *testing.T) {
 	caps := host.HelloCapabilities()
 	for _, want := range []string{"sdk_v1", "agent_session_v1", "model_runtime_v1"} {
@@ -27,7 +25,7 @@ func TestF13OrbHostAdvertisesSDKCapabilities(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("host_hello capabilities %v missing %q", caps, want)
+			t.Errorf("handshake capabilities %v missing %q", caps, want)
 		}
 	}
 }

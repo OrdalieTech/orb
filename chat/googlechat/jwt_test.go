@@ -14,12 +14,7 @@ import (
 func newTestVerifier(t *testing.T, fetches *int32) *verifier {
 	t.Helper()
 	cert := newCertServer(t, fetches)
-	return &verifier{
-		certURL:  cert.URL,
-		audience: testProjectNumber,
-		client:   http.DefaultClient,
-		now:      time.Now,
-	}
+	return newVerifier(cert.URL, testProjectNumber, http.DefaultClient)
 }
 
 func TestVerifyMatrix(t *testing.T) {
@@ -117,7 +112,7 @@ func TestVerifierThrottlesUnknownKidRefetch(t *testing.T) {
 	var fetches int32
 	verifier := newTestVerifier(t, &fetches)
 	current := time.Now()
-	verifier.now = func() time.Time { return current }
+	verifier.keys.Now = func() time.Time { return current }
 	if err := verifier.verify(context.Background(), inboundJWT(t, nil)); err != nil {
 		t.Fatalf("verify: %v", err)
 	}

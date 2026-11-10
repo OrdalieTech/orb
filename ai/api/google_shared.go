@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf16"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
@@ -262,11 +261,7 @@ func buildGoogleParameters(model *ai.Model, requestContext ai.Context, options *
 				config.ThinkingConfig.ThinkingBudget = options.Thinking.BudgetTokens
 			}
 		} else {
-			if model.API == ai.APIGoogleVertex {
-				config.ThinkingConfig = disabledGoogleVertexThinkingConfig(model)
-			} else {
-				config.ThinkingConfig = disabledGoogleThinkingConfig(model)
-			}
+			config.ThinkingConfig = disabledGoogleThinkingConfig(model)
 		}
 	}
 	return GoogleGenerateContentParameters{Model: model.ID, Contents: contents, Config: config}, nil
@@ -474,11 +469,7 @@ func convertGoogleTools(tools []ai.Tool, supportsStrictMode bool) ([]GoogleTool,
 	}
 	declarations := make([]GoogleFunctionDeclaration, 0, len(tools))
 	for _, tool := range tools {
-		strict, err := resolveJSONSchemaStrictSampling(tool, supportsStrictMode)
-		if err != nil {
-			return nil, err
-		}
-		parameters, err := getJSONSchemaToolParameters(tool.Parameters, strict != nil && *strict)
+		_, parameters, err := resolveJSONSchemaStrictSampling(tool, supportsStrictMode, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -572,7 +563,7 @@ func resolveGoogleFunctionCallingMode(
 ) (string, bool, error) {
 	useStrictMode := false
 	for _, tool := range tools {
-		strict, err := resolveJSONSchemaStrictSampling(tool, supportsStrictMode)
+		strict, _, err := resolveJSONSchemaStrictSampling(tool, supportsStrictMode, nil)
 		if err != nil {
 			return "", false, err
 		}
@@ -794,26 +785,11 @@ func googleSupportsMultimodalFunctionResponse(modelID string) bool {
 	return true
 }
 
-func normalizeGoogleToolCallID(value string) string {
-	units := utf16.Encode([]rune(value))
-	var builder strings.Builder
-	builder.Grow(min(len(units), 64))
-	for _, unit := range units[:min(len(units), 64)] {
-		if unit <= 0x7f && ((unit >= 'a' && unit <= 'z') || (unit >= 'A' && unit <= 'Z') ||
-			(unit >= '0' && unit <= '9') || unit == '_' || unit == '-') {
-			builder.WriteByte(byte(unit))
-		} else {
-			builder.WriteByte('_')
-		}
-	}
-	return builder.String()
-}
-
 func normalizeGoogleToolCallIDForModel(value string, model *ai.Model, _ *ai.AssistantMessage) string {
 	if !googleRequiresToolCallID(model.ID) {
 		return value
 	}
-	return normalizeGoogleToolCallID(value)
+	return normalizeAnthropicToolCallID(value, nil, nil)
 }
 
 func validateGoogleParameters(parameters googleDecodedParameters) error {

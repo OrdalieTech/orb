@@ -127,7 +127,7 @@ func TestDefaultResourceLoaderOverridesAndSDKReuse(t *testing.T) {
 	if !strings.Contains(prompt, customPrompt) || strings.Contains(prompt, ignored) || !strings.Contains(prompt, "SDK context") {
 		t.Fatalf("assembled prompt = %q", prompt)
 	}
-	if expanded, handled := result.Session.slashResolver.ResolvePrompt("/deploy"); handled || expanded != "deploy now" {
+	if expanded, handled := result.Session.slashResolver.Load().ResolvePrompt("/deploy"); handled || expanded != "deploy now" {
 		t.Fatalf("prompt expansion handled=%t value=%q", handled, expanded)
 	}
 }

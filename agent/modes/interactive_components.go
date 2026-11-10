@@ -2283,11 +2283,7 @@ func (c *SummaryMessageComponent) Render(width int) []string {
 // CustomMessageComponent
 // ─────────────────────────────────────────────────────────────
 
-type CustomMessageComponent struct {
-	container *tui.Container
-	box       *tui.Box
-	expanded  bool
-}
+type CustomMessageComponent struct{ container *tui.Container }
 
 func NewCustomMessageComponent(customType string, content any, mdTheme tui.MarkdownTheme) *CustomMessageComponent {
 	container := &tui.Container{}
@@ -2297,14 +2293,69 @@ func NewCustomMessageComponent(customType string, content any, mdTheme tui.Markd
 	label := theme.FG("customMessageLabel", theme.Bold(fmt.Sprintf("[%s]", customType)))
 	box.AddChild(tui.NewText(label, 0, 0, nil))
 	box.AddChild(tui.NewSpacer(1))
-	text := fmt.Sprintf("%v", content)
-	if text != "" {
+	if text := customMessageText(content); text != "" {
 		box.AddChild(tui.NewMarkdown(text, 0, 0, mdTheme,
 			&tui.DefaultTextStyle{Color: func(t string) string { return theme.FG("customMessageText", t) }}, nil))
 	}
-	return &CustomMessageComponent{container: container, box: box}
+	return &CustomMessageComponent{container: container}
 }
 
-func (c *CustomMessageComponent) SetExpanded(expanded bool) { c.expanded = expanded }
+// customMessageText joins the text blocks of block-array content, as the HTML
+// export does; any other content prints as is.
+func customMessageText(content any) string {
+	switch typed := content.(type) {
+	case string:
+		return typed
+	case ai.UserContent:
+		if typed.Text != nil {
+			return *typed.Text
+		}
+		return customBlocksText(typed.Blocks)
+	case ai.UserContentBlocks:
+		return customBlocksText(typed)
+	case []ai.UserContentBlock:
+		return customBlocksText(typed)
+	case []*ai.TextContent:
+		var texts []string
+		for _, block := range typed {
+			if block != nil {
+				texts = append(texts, block.Text)
+			}
+		}
+		return strings.Join(texts, "\n")
+	case []any:
+		var texts []string
+		for _, block := range typed {
+			switch value := block.(type) {
+			case *ai.TextContent:
+				if value != nil {
+					texts = append(texts, value.Text)
+				}
+			case ai.TextContent:
+				texts = append(texts, value.Text)
+			case map[string]any:
+				if value["type"] == "text" {
+					if text, ok := value["text"].(string); ok {
+						texts = append(texts, text)
+					}
+				}
+			}
+		}
+		return strings.Join(texts, "\n")
+	default:
+		return fmt.Sprintf("%v", content)
+	}
+}
+
+func customBlocksText(blocks []ai.UserContentBlock) string {
+	var texts []string
+	for _, block := range blocks {
+		if text, ok := block.(*ai.TextContent); ok && text != nil {
+			texts = append(texts, text.Text)
+		}
+	}
+	return strings.Join(texts, "\n")
+}
+
 func (c *CustomMessageComponent) Invalidate()               { c.container.Invalidate() }
 func (c *CustomMessageComponent) Render(width int) []string { return c.container.Render(width) }

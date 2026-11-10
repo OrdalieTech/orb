@@ -83,18 +83,7 @@ func StreamAzureOpenAIResponsesWithOptions(
 			fail(err)
 			return
 		}
-		payload, err := buildAzureOpenAIResponsesPayload(model, requestContext, options, deploymentName)
-		if err != nil {
-			fail(err)
-			return
-		}
-		rawCompat, err := decodeCompat[ai.OpenAIResponsesCompat](model)
-		if err != nil {
-			fail(err)
-			return
-		}
-		supportsGrammar := rawCompat.SupportsOpenAIGrammarTools != nil && *rawCompat.SupportsOpenAIGrammarTools
-		grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, supportsGrammar)
+		payload, grammarToolInputProperties, err := buildAzureOpenAIResponsesPayload(model, requestContext, options, deploymentName)
 		if err != nil {
 			fail(err)
 			return
@@ -133,7 +122,11 @@ func StreamAzureOpenAIResponsesWithOptions(
 			err = errors.New("Azure OpenAI Responses stream ended without a stop reason") //nolint:staticcheck // Exact upstream text is observable.
 		}
 		if err == nil && (output.StopReason == ai.StopReasonAborted || output.StopReason == ai.StopReasonError) {
-			err = errors.New("An unknown error occurred") //nolint:staticcheck // Exact upstream error text is observable.
+			message := "An unknown error occurred"
+			if output.ErrorMessage != nil {
+				message = *output.ErrorMessage
+			}
+			err = errors.New(message)
 		}
 		if err != nil {
 			fail(err)
@@ -266,47 +259,14 @@ func buildAzureOpenAIResponsesPayload(
 	requestContext ai.Context,
 	options *AzureOpenAIResponsesOptions,
 	deploymentName string,
-) (*OpenAIResponsesPayload, error) {
-	compat, err := getOpenAIResponsesCompat(model)
+) (*OpenAIResponsesPayload, map[string]string, error) {
+	prepared, err := prepareResponsesInput(model, requestContext, true)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	transcript := ai.NormalizeContext(requestContext)
-	if !compat.supportsMidConvoSystemMessages {
-		transcript = ai.CollapseSystemMessages(transcript)
-	}
-	requestTools, deferredTools, anchoredFrom := transcriptToolPlacement(
-		transcript.Messages, compat.supportsAdditionalTools || compat.supportsToolSearch,
-	)
-	toolChanges, initialTools := responsesToolChanges(compat.supportsMidConvoSystemMessages && compat.supportsAdditionalTools, transcript.Messages, &requestTools)
-	requestContext = projectTranscriptContext(transcript, true)
-	rawCompat, err := decodeCompat[ai.OpenAIResponsesCompat](model)
+	input, err := convertResponsesMessagesWithOptions(model, prepared.context, prepared.deferred, prepared.messages)
 	if err != nil {
-		return nil, err
-	}
-	supportsStrictMode := true
-	if rawCompat.SupportsStrictMode != nil {
-		supportsStrictMode = *rawCompat.SupportsStrictMode
-	}
-	supportsGrammar := rawCompat.SupportsOpenAIGrammarTools != nil && *rawCompat.SupportsOpenAIGrammarTools
-	grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, supportsGrammar)
-	if err != nil {
-		return nil, err
-	}
-	toolOptions := responsesToolOptions{
-		supportsStrictMode: supportsStrictMode, supportsOpenAIGrammarTools: supportsGrammar,
-	}
-	input, err := convertResponsesMessagesWithOptions(model, requestContext, deferredTools, responsesMessageOptions{
-		supportsDeveloperRole:      compat.supportsDeveloperRole,
-		grammarToolInputProperties: grammarToolInputProperties,
-		deferredToolsMode:          responsesDeferredToolsMode(compat.supportsAdditionalTools, compat.supportsToolSearch),
-		toolsAnchoredFrom:          anchoredFrom,
-		toolChanges:                toolChanges,
-		initialTools:               initialTools,
-		toolOptions:                toolOptions,
-	})
-	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	payload := &OpenAIResponsesPayload{Model: deploymentName, Input: input, Stream: true, Store: false}
 	streamOptions := azureOpenAIStreamOptions(options)
@@ -322,10 +282,10 @@ func buildAzureOpenAIResponsesPayload(
 		}
 		payload.Temperature = streamOptions.Temperature
 	}
-	if len(requestTools) > 0 {
-		payload.Tools, err = convertResponsesToolsWithOptions(requestTools, toolOptions)
+	if len(prepared.tools) > 0 {
+		payload.Tools, err = convertResponsesToolsWithOptions(prepared.tools, prepared.messages.toolOptions)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if options != nil {
@@ -333,7 +293,7 @@ func buildAzureOpenAIResponsesPayload(
 	}
 	applyAzureOpenAIReasoning(payload, model, options)
 	payload.Extra = mergedSamplingParams(model, streamOptions)
-	return payload, nil
+	return payload, prepared.messages.grammarToolInputProperties, nil
 }
 
 func applyAzureOpenAIReasoning(payload *OpenAIResponsesPayload, model *ai.Model, options *AzureOpenAIResponsesOptions) {

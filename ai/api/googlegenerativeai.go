@@ -92,20 +92,26 @@ func StreamSimpleGoogleGenerativeAI(
 	if err := assertGoogleAuth(model, &base); err != nil {
 		return nil, err
 	}
+	thinking, err := simpleGoogleThinking(model, options, googleThinkingBudget)
+	if err != nil {
+		return nil, err
+	}
+	return StreamGoogleGenerativeAIWithOptions(ctx, model, requestContext, &GoogleOptions{
+		StreamOptions: base,
+		ToolChoice:    GoogleToolChoice(simpleToolChoice(options, "any")),
+		Thinking:      thinking,
+	})
+}
+
+// simpleGoogleThinking maps the simple options' reasoning to Google thinking;
+// budget sizes it for models that take a budget rather than a level.
+func simpleGoogleThinking(model *ai.Model, options *ai.SimpleStreamOptions, budget func(*ai.Model, ai.ThinkingLevel, *ai.ThinkingBudgets) *int64) (*GoogleThinkingOptions, error) {
 	if options == nil || options.Reasoning == nil {
-		return StreamGoogleGenerativeAIWithOptions(ctx, model, requestContext, &GoogleOptions{
-			StreamOptions: base,
-			ToolChoice:    GoogleToolChoice(simpleToolChoice(options, "any")),
-			Thinking:      &GoogleThinkingOptions{Enabled: false},
-		})
+		return &GoogleThinkingOptions{Enabled: false}, nil
 	}
 	clamped := clampGoogleReasoning(model, *options.Reasoning)
 	if clamped == ai.ThinkingLevel(ai.ModelThinkingOff) {
-		return StreamGoogleGenerativeAIWithOptions(ctx, model, requestContext, &GoogleOptions{
-			StreamOptions: base,
-			ToolChoice:    GoogleToolChoice(simpleToolChoice(options, "any")),
-			Thinking:      &GoogleThinkingOptions{Enabled: false},
-		})
+		return &GoogleThinkingOptions{Enabled: false}, nil
 	}
 	effort, err := resolveGoogleThinkingLevel(model, clamped)
 	if err != nil {
@@ -115,13 +121,9 @@ func StreamSimpleGoogleGenerativeAI(
 	if usesGoogleThinkingLevel(model) {
 		thinking.Level = googleThinkingLevel(effort)
 	} else {
-		thinking.BudgetTokens = googleThinkingBudget(model, effort, options.ThinkingBudgets)
+		thinking.BudgetTokens = budget(model, effort, options.ThinkingBudgets)
 	}
-	return StreamGoogleGenerativeAIWithOptions(ctx, model, requestContext, &GoogleOptions{
-		StreamOptions: base,
-		ToolChoice:    GoogleToolChoice(simpleToolChoice(options, "any")),
-		Thinking:      thinking,
-	})
+	return thinking, nil
 }
 
 func StreamGoogleGenerativeAIWithOptions(
@@ -683,11 +685,7 @@ func googleOutputHasToolCallID(output *ai.AssistantMessage, id string) bool {
 }
 
 func clampGoogleReasoning(model *ai.Model, requested ai.ThinkingLevel) ai.ThinkingLevel {
-	clamped := clampSimpleReasoning(model, &requested)
-	if clamped != nil {
-		return *clamped
-	}
-	return ai.ThinkingLevel(ai.ModelThinkingOff)
+	return ai.ThinkingLevel(ai.ClampThinkingLevel(model, ai.ModelThinkingLevel(requested)))
 }
 
 // usesGoogleThinkingLevel picks thinkingLevel over thinkingBudget; the model's thinkingLevelMap says which levels it takes.

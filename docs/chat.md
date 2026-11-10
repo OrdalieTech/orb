@@ -33,6 +33,11 @@ err = adapter.Poll(ctx, local.Publish)
 ```
 
 `ORB_CHAT_ALLOWED_SENDERS` is required; this CLI path never exposes an allow-all bot.
+`orb chat slack teams` runs both platforms in one process: every webhook platform is served by
+one HTTP server on `ORB_CHAT_LISTEN` (default `127.0.0.1:8080`), each at `/<platform>`.
+`ORB_CHAT_PATH` replaces that path only when a single webhook platform runs; with several it is an
+error. The gateway locks its data directory, so a second gateway on it refuses to start, and
+adapter and processor diagnostics go to stderr.
 `chat/examples/localbot` remains the embeddable example for custom authorization.
 
 ## Processor
@@ -292,8 +297,8 @@ returns 413 `MessageSizeTooBig`.
 ### Discord (`chat/discord`)
 
 `discord.New(discord.Options{Token})`; the bot identity is derived from the token and confirmed
-by the gateway READY event. Ingress is not a webhook: `Run(ctx, publish)` maintains a Gateway
-websocket session over `chat/internal/wsclient` — hello/heartbeat/identify, READY capture, and
+by the gateway READY event. Ingress is not a webhook: `Poll(ctx, publish)` maintains a Gateway
+websocket session over `github.com/coder/websocket` — hello/heartbeat/identify, READY capture, and
 resume-first reconnects with capped backoff (a fresh IDENTIFY is budgeted 1000/day). The
 identify intents include MESSAGE_CONTENT and DIRECT_MESSAGES; MESSAGE_CONTENT is privileged,
 and close code 4014 surfaces an actionable "enable the Message Content Intent" error
@@ -342,14 +347,11 @@ Chat dialect, and `ChunkText` cuts at 4,000 under the 4,096-character cap.
 
 ### Internal helpers
 
-`chat/internal/wsclient` is a hand-rolled RFC 6455 WebSocket client on the standard library
-alone — client role only, no extensions, no compression, no subprotocol negotiation: `Dial`,
-`Conn.ReadMessage` (exactly one reader; pings are auto-ponged, fragments reassembled, close
-frames return a `*CloseError`), and `Conn.WriteText`/`Conn.WriteClose` safe from any goroutine.
-Heartbeats are the caller's job — the layer is protocol-only, and after any error the `Conn` is
-dead; callers reconnect rather than recover. `chat/internal/graphhook` is the Meta Graph
-webhook plumbing shared by WhatsApp and Messenger — `HandleVerify` (the one-time hub.challenge
-subscribe handshake) and `ValidSignature` (`X-Hub-Signature-256` raw-body HMAC), both
-constant-time via `hmac.Equal` — extracted from `chat/whatsapp` with zero behavior change (its
-existing tests pass unmodified). `chat/internal/runechunk` holds the identical readable-boundary
-splitter shared by Discord and Messenger, keeping their platform-specific limits in the adapters.
+`chat/internal/graphhook` is the Meta Graph webhook plumbing shared by WhatsApp and Messenger —
+one `Handler[T]` that answers the one-time hub.challenge subscribe handshake and checks the
+`X-Hub-Signature-256` HMAC over the raw body before decoding it, both constant-time via
+`hmac.Equal`. `chat/internal/runechunk` holds the
+readable-boundary splitting, truncation and code-fence helpers every adapter uses, in runes or
+UTF-16 units, keeping the platform-specific limits in the adapters. `chat/internal/jwks` verifies
+RS256 bearer tokens against a cached key set for Teams and Google Chat, each of which checks its
+own claims.

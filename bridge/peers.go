@@ -171,7 +171,7 @@ func (ps *Peers) call(ctx context.Context, id string, c *protocol.Conn, method s
 	}
 }
 
-// keepalive pings a peer connection until the connection or the service ends, and closes it when
+// Keepalive pings a peer connection until the connection or the service ends, and closes it when
 // the peer stops answering. A peer that restarted or lost its network leaves a half-open connection
 // behind; without this, the next call on it would wait out its timeout before anything redialled.
 func Keepalive(ctx context.Context, c *protocol.Conn, every time.Duration) {
@@ -214,18 +214,22 @@ func (ps *Peers) Admin(ctx context.Context, method string, params json.RawMessag
 		}
 		return raw, ps.Forget(ps.ctx, p.PeerID)
 	case "invite":
+		locator := ps.WebURL
+		var err error
+		if locator == "" {
+			locator, err = ps.Locator()
+			if err != nil {
+				return nil, err
+			}
+		}
 		raw, err := ps.Bridge.Admin(ctx, method, params)
 		if err != nil {
 			return nil, err
 		}
 		var invite Invitation
 		_ = json.Unmarshal(raw, &invite)
-		if ps.WebURL != "" {
-			invite.Locator = ps.WebURL
-		} else {
-			invite.Locator, err = ps.Locator()
-		}
-		return JSON(invite), err
+		invite.Locator = locator
+		return JSON(invite), nil
 	case "join":
 		var inv Invitation
 		if err := protocol.Decode(params, &inv); err != nil {
@@ -293,14 +297,14 @@ func (ps *Peers) Admin(ctx context.Context, method string, params json.RawMessag
 	}
 }
 
-// greet runs at startup: it clears what the previous run left, then dials every known peer, and
-// keeps dialling those without a channel.
-// Their connections to that run are half-open; a fresh channel from this side becomes their
-// newest, so their next call lands at once instead of waiting out a timeout on the dead one.
 // retireAfter is how long a restarted Bridge waits before retiring throwaway registrations no Orb
 // came back to: attached Orbs retry every two seconds at most.
 const retireAfter = 2 * time.Minute
 
+// Greet runs at startup: it clears what the previous run left, then dials every known peer, and
+// keeps dialling those without a channel.
+// Their connections to that run are half-open; a fresh channel from this side becomes their
+// newest, so their next call lands at once instead of waiting out a timeout on the dead one.
 func (ps *Peers) Greet() {
 	raw, err := ps.Bridge.Admin(ps.ctx, "status", JSON(struct{}{}))
 	if err != nil {

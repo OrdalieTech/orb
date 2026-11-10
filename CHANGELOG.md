@@ -53,6 +53,24 @@ Orb follows pi 1.5.0, and the apps grow: Orb for the desktop replaces the SwiftU
 
 - Orb builds with Go 1.27.3, which MyGo, under the desktop app, requires. On Windows, Claude Sessions no longer end whatever process took the PID of a Claude host that had already exited.
 
+- An extension host restarted after a crash runs each `pi.on()` handler once, not twice; a custom message whose content is a list of blocks shows its text instead of Go map syntax; copying to the clipboard on Linux no longer waits on the helper that keeps serving the selection; a nested tool call aborted while it waits its turn ends for the clients watching it; and a session's end releases the request it left cached for Chat Completions and its Codex WebSocket fallback.
+
+- A package range such as `>1.2` no longer matches the prereleases npm rejects (`1.3.0-alpha`), and installing an npm package refuses a name that would leave the install root, as removing one already did. `orb --help` lists `--bridge`, `--instance`, `--no-tools` and `--no-builtin-tools`.
+
+- Permissions: a bash command no longer reaches a path a deny rule protects through a shell glob (`cat /etc/sha*`) or brace expansion: globs are expanded against the file system before the rules are matched, and braces need approval like other shell syntax.
+
+- `!` commands and the RPC and Bridge `bash` command strip ANSI escapes, carriage returns and control characters from the output they stream and record, and keep a multibyte character split across two reads whole, as pi does.
+
+- Remote control of an Orb no longer stops for good once its operation ledger fills: the oldest finished operations are dropped instead, and an invitation or join asked right as Bridge starts waits for its relay address instead of failing with `unavailable`. Compaction no longer summarizes an empty conversation when the newest message alone exceeds the summary budget, an ACP client loading a thread already open on its connection reuses it instead of starting a second runtime on the session, a Claude Sessions turn no longer hangs after the previous host was stopped while still streaming, and an Orb that hides its environment (a team agent, `orb chat --tools`) no longer blocks another Orb's one-time storage migration.
+
+- Extensions: cancelling a delegated `user_bash` command, an OAuth refresh or a provider login aborts the signal the extension was given, `pi.on()` returns its unsubscribe function as in pi, a skill that cannot be read when invoked is reported as an extension error instead of being ignored, and the model catalog is sent to the extension host only when it changed rather than on every callback. `/share` says that sharing as a gist is unavailable and where it wrote the HTML export.
+
+- `orb chat` runs several webhook platforms at once (`orb chat slack teams`) from one server, each at `/<platform>`; `ORB_CHAT_PATH` applies only when one webhook platform runs. It prints adapter and processor diagnostics (dropped messages, failing polls, rejected webhook tokens) to stderr, and `orb --pi-files chat` refuses a second gateway on the same data directory as the native path did.
+
+- Providers: Google Vertex with application default credentials reuses its access token across requests, Amazon Bedrock reuses its connections through a proxy and the credentials of the AWS default chain, the OpenAI Codex WebSocket goes through a caller's HTTP client as its SSE requests do, an Azure OpenAI stop such as a content filter shows the provider's reason instead of "An unknown error occurred", and `orb models` and `orb login --json` include accounts stored in `accounts.json` and enabled Claude Sessions models. On Windows, an environment override for an MCP server or a tool replaces the inherited variable whatever its case (`PATH` over `Path`).
+
+- Removed, as shims for earlier Orb: Bridge no longer replaces a daemon that predates full-access grants, `orb-agent` no longer moves an `auth.json` left in `config/` to `secrets/`, and a regular-file `.lock` left by an old Orb is no longer reclaimed.
+
 ## [0.20.0] - 2026-11-01
 
 Orb follows pi 1.4.0, and strict tool sampling keeps schemas built from `$ref` and `$defs`: messages, tool results and settled runs record their duration and outcome as pi 1.4 writes them, the Azure OpenAI provider is now `azure`, and a Claude session's native tools get the environment Orb's own tools get.

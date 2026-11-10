@@ -268,9 +268,14 @@ func (d *Driver) settle() {
 }
 
 // close lets the host end its native session, and kills it if it lingers.
+// Nobody reads its frames any more, so they are drained for the reader to reach exited.
 func (h *host) close() {
 	_ = h.mcp.Close()
 	_ = h.input.Close()
+	go func() {
+		for range h.frames {
+		}
+	}()
 	time.AfterFunc(5*time.Second, func() {
 		select {
 		case <-h.exited:

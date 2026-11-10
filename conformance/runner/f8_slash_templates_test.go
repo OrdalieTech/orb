@@ -290,7 +290,7 @@ func TestF8ResourceDiscoveryMatchesUpstream(t *testing.T) {
 	}
 
 	resolver := agent.SlashResolver{Skills: skillResult.Skills, PromptTemplates: templates}
-	commands := resolver.Commands(true)
+	commands := resolver.Commands()
 	gotCommands := make([]f8Command, len(commands))
 	for index, command := range commands {
 		gotCommands[index] = f8Command{
@@ -317,7 +317,7 @@ func TestF8CommandSurfacesMatchUpstream(t *testing.T) {
 	})
 	resolver := agent.SlashResolver{Skills: skills, PromptTemplates: templates}
 	t.Run("rpc-ignores-interactive-skill-command-setting", func(t *testing.T) {
-		gotRPC := f8FixtureCommands(resolver.Commands(false), fixtureRoot)
+		gotRPC := f8FixtureCommands(resolver.Commands(), fixtureRoot)
 		if !reflect.DeepEqual(gotRPC, fixture.Discovery.RPCCommandsWhenSkillCommandsDisabled) {
 			t.Fatalf("RPC commands with enableSkillCommands=false\nwant: %+v\n got: %+v", fixture.Discovery.RPCCommandsWhenSkillCommandsDisabled, gotRPC)
 		}

@@ -10,9 +10,11 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 const estimatedImageChars int64 = 4800
@@ -642,7 +644,7 @@ func GenerateSummaryWithUsage(
 // the model's window, such as one another harness kept compacting on its own, is summarized
 // from its most recent messages that fit.
 func generateSummaryWithUsage(ctx context.Context, messages engine.AgentMessages, model *ai.Model, complete CompleteFunc, reserveTokens int64, customInstructions string, previousSummary *string, thinkingLevel ai.ModelThinkingLevel, product *productSummaryOptions) (*SummaryResult, error) {
-	messages = fitting(messages, model, reserveTokens)
+	conversation := fitting(messages, model, reserveTokens)
 	base := SummarizationPrompt
 	if previousSummary != nil && *previousSummary != "" {
 		base = UpdateSummarizationPrompt
@@ -650,7 +652,7 @@ func generateSummaryWithUsage(ctx context.Context, messages engine.AgentMessages
 	if customInstructions != "" {
 		base += "\n\nAdditional focus: " + customInstructions
 	}
-	prompt := "<conversation>\n" + SerializeConversation(messages) + "\n</conversation>\n\n"
+	prompt := "<conversation>\n" + conversation + "\n</conversation>\n\n"
 	if previousSummary != nil && *previousSummary != "" {
 		prompt += "<previous-summary>\n" + *previousSummary + "\n</previous-summary>\n\n"
 	}
@@ -658,23 +660,32 @@ func generateSummaryWithUsage(ctx context.Context, messages engine.AgentMessages
 	return runSummary(ctx, prompt, model, complete, thinkingLevel, product)
 }
 
-// fitting is the most recent messages whose serialized text fits the model's window beside the
+// fitting serializes the most recent messages whose text fits the model's window beside the
 // reply, a previous summary and the instructions, at a conservative 3 characters a token; all of
-// them when they fit or the window is unknown.
-func fitting(messages engine.AgentMessages, model *ai.Model, reserveTokens int64) engine.AgentMessages {
+// them when they fit or the window is unknown, and the newest one clipped when it alone does not.
+func fitting(messages engine.AgentMessages, model *ai.Model, reserveTokens int64) string {
+	all := SerializeConversation(messages)
 	if model == nil || model.ContextWindow <= 0 {
-		return messages
+		return all
 	}
 	budget := int((int64(model.ContextWindow) - reserveTokens - 4_000) * 3)
-	if budget <= 0 || len(SerializeConversation(messages)) <= budget {
-		return messages
+	if budget <= 0 || len(all) <= budget {
+		return all
 	}
 	for index, size := len(messages)-1, 0; index >= 0; index-- {
-		if size += len(SerializeConversation(engine.AgentMessages{messages[index]})) + 2; size > budget {
-			return messages[index+1:]
+		text := SerializeConversation(engine.AgentMessages{messages[index]})
+		if size += len(text) + 2; size > budget {
+			if index == len(messages)-1 {
+				end := min(budget, len(text))
+				for end > 0 && !utf8.RuneStart(text[end]) {
+					end--
+				}
+				return text[:end] + fmt.Sprintf("\n\n[... %d more characters truncated]", jsonwire.UTF16Len(text[end:]))
+			}
+			return SerializeConversation(messages[index+1:])
 		}
 	}
-	return messages
+	return all
 }
 
 //nolint:staticcheck // CompactionError messages match upstream capitalization.
@@ -1214,7 +1225,7 @@ func computeFileLists(operations FileOperations) ([]string, []string) {
 }
 
 func ceilQuarter(chars int64) int64 { return (chars + 3) / 4 }
-func jsLength(value string) int64   { return int64(len(utf16.Encode([]rune(value)))) }
+func jsLength(value string) int64   { return int64(jsonwire.UTF16Len(value)) }
 
 func userText(content ai.UserContent) string {
 	if content.Text != nil {

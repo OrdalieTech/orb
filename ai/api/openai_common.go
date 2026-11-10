@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
@@ -102,36 +103,34 @@ func appendGrammarToolInputJSONDelta(
 	return &value, nil
 }
 
-// resolveJSONSchemaStrictSampling decides strict sampling for a tool; with
-// rejects, a "prefer" tool whose schema hits a keyword the provider's strict
-// mode rejects is sent non-strict.
-func resolveJSONSchemaStrictSampling(tool ai.Tool, supportsStrictMode bool, rejects ...strictKeywordCheck) (*bool, error) {
+// resolveJSONSchemaStrictSampling decides strict sampling for a tool and
+// returns the schema to send, rewritten when strict; with rejects, a "prefer"
+// tool whose schema hits a keyword the provider's strict mode rejects is sent
+// non-strict.
+func resolveJSONSchemaStrictSampling(tool ai.Tool, supportsStrictMode bool, rejects strictKeywordCheck) (*bool, jsonschema.Schema, error) {
 	config := tool.ConstrainedSampling
 	if config == nil || config.Type != ai.ConstrainedSamplingJSONSchema {
-		return nil, nil
+		return nil, tool.Parameters, nil
 	}
 	if supportsStrictMode {
-		var check strictKeywordCheck
-		if len(rejects) > 0 {
-			check = rejects[0]
-		}
-		if _, err := makeStrictJSONSchema(tool.Parameters, check); err != nil {
+		parameters, err := makeStrictJSONSchema(tool.Parameters, rejects)
+		if err != nil {
 			var unsupported *unsupportedStrictSchemaError
 			if !errors.As(err, &unsupported) {
-				return nil, err
+				return nil, nil, err
 			}
 			if config.Strict != ai.ConstrainedSamplingRequire {
-				return nil, nil
+				return nil, tool.Parameters, nil
 			}
-			return nil, fmt.Errorf("Tool %q requires JSON-schema constrained sampling, but %s.", tool.Name, unsupported.reason) //nolint:staticcheck // Exact upstream text.
+			return nil, nil, fmt.Errorf("Tool %q requires JSON-schema constrained sampling, but %s.", tool.Name, unsupported.reason) //nolint:staticcheck // Exact upstream text.
 		}
 		value := true
-		return &value, nil
+		return &value, parameters, nil
 	}
 	if config.Strict == ai.ConstrainedSamplingRequire {
-		return nil, fmt.Errorf("Tool %q requires JSON-schema constrained sampling, but strict tools are unsupported.", tool.Name) //nolint:staticcheck // Exact upstream text.
+		return nil, nil, fmt.Errorf("Tool %q requires JSON-schema constrained sampling, but strict tools are unsupported.", tool.Name) //nolint:staticcheck // Exact upstream text.
 	}
-	return nil, nil
+	return nil, tool.Parameters, nil
 }
 
 func resolveGrammarConstrainedSampling(tool ai.Tool, supportsOpenAIGrammarTools bool) (*grammarConstrainedSampling, error) {
@@ -1063,21 +1062,13 @@ func mergedSamplingParams(model *ai.Model, options *ai.StreamOptions) map[string
 // assignJSONObject applies Object.assign to an encoded object: existing keys
 // keep their position, new keys follow in sorted order.
 func assignJSONObject(encoded []byte, values map[string]any) ([]byte, error) {
-	decoder := json.NewDecoder(bytes.NewReader(encoded))
-	if _, err := decoder.Token(); err != nil {
-		return nil, err
+	members, ok := jsonwire.ParseRawObject(encoded)
+	if !ok {
+		return nil, errors.New("assign to a value that is not a JSON object")
 	}
-	object := jsonwire.OrderedObject{}
-	for decoder.More() {
-		key, err := decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
-			return nil, err
-		}
-		object = append(object, jsonwire.OrderedMember{Name: key.(string), Value: value})
+	object := make(jsonwire.OrderedObject, len(members))
+	for index, member := range members {
+		object[index] = jsonwire.OrderedMember{Name: member.Name, Value: member.Value}
 	}
 	for _, key := range slices.Sorted(maps.Keys(values)) {
 		object.Set(key, values[key])

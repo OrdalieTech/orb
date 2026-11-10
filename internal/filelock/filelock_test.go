@@ -33,22 +33,6 @@ func TestAcquireUsesRemovableDirectory(t *testing.T) {
 	}
 }
 
-// A zero-byte regular file is what an older orb left behind with flock. It
-// wedges upstream forever, so acquiring must reclaim it rather than honour it.
-func TestAcquireReclaimsLeftoverRegularFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "models-store.json")
-	if err := os.WriteFile(path+".lock", nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	release, err := Acquire(path)
-	if err != nil {
-		t.Fatalf("leftover flock file must be reclaimed: %v", err)
-	}
-	if err := release(); err != nil {
-		t.Fatalf("release: %v", err)
-	}
-}
-
 // Jittered backoff exists so contending writers do not lose in lockstep; every
 // writer must eventually get the lock, and only one may hold it at a time.
 func TestAcquireSerializesContendingWriters(t *testing.T) {

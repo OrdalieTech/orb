@@ -30,24 +30,15 @@ const pending = new Map();
 const entries = new Map();
 const extensions = new Map();
 const hostSections = [];
-// Per-in-flight-request abort controllers: orb emits cancel_request when the
-// Go-side ctx for a pending request is cancelled, so the positional
-// AbortSignal handed to tool.execute and provider streams fires live.
+// One abort controller per in-flight orb request, created synchronously as
+// the request frame is read so a cancel_request coalesced into the same stdin
+// chunk finds it: orb emits cancel_request when the Go-side ctx of a pending
+// request ends, and the signal reaches the positional AbortSignal of every
+// callback kind.
 const requestAborts = new Map();
-// cancel_request frames that arrived before their request registered a
-// controller: readline replays every line of one stdin chunk synchronously,
-// so a coalesced request+cancel pair delivers the cancel first.
-const cancelledBeforeStart = new Map();
 
-function retainRequestAbort(requestId) {
-	const controller = new AbortController();
-	requestAborts.set(requestId, controller);
-	if (cancelledBeforeStart.has(requestId)) {
-		const reason = cancelledBeforeStart.get(requestId);
-		cancelledBeforeStart.delete(requestId);
-		controller.abort(reason);
-	}
-	return controller;
+function requestSignal(frame) {
+	return requestAborts.get(frame.id).signal;
 }
 
 function registerHostSection(section) {
@@ -75,12 +66,12 @@ function write(frame) {
 	process.stdout.write(`${encoded}\n`);
 }
 
-function request(method, params) {
+function startRequest(method, params) {
 	if (shuttingDown && method !== "handshake") {
-		return Promise.reject(new Error("extension host is shutting down"));
+		return { id: "", promise: Promise.reject(new Error("extension host is shutting down")) };
 	}
 	const id = `host-${nextRequestId++}`;
-	return new Promise((resolve, reject) => {
+	const promise = new Promise((resolve, reject) => {
 		pending.set(id, { resolve, reject });
 		try {
 			write({ kind: "request", id, method, params });
@@ -89,6 +80,11 @@ function request(method, params) {
 			reject(error);
 		}
 	});
+	return { id, promise };
+}
+
+function request(method, params) {
+	return startRequest(method, params).promise;
 }
 
 function emit(method, params) {
@@ -363,29 +359,23 @@ async function executeTool(frame) {
 	const state = extensions.get(frame.params.extensionId);
 	const tool = state?.tools.get(frame.params.toolName);
 	if (!tool) throw new Error(`unknown tool ${frame.params.toolName}`);
-	const controller = retainRequestAbort(frame.id);
 	const onUpdate = (partial) => emit("tool_update", { requestId: frame.id, partial: partial ?? { content: [] } });
-	try {
-		// The tool object retains upstream's sync prepareArguments; run it here
-		// so its normalization (and its throw-on-invalid contract) reaches
-		// execute. Orb has already schema-validated the raw params, so inputs
-		// that only validate AFTER preparation still fail Go-side — the
-		// residual ordering divergence stays inventoried in
-		// docs/extension-host-protocol.md.
-		let params = frame.params.params;
-		if (typeof tool.prepareArguments === "function") params = tool.prepareArguments(params);
-		// The tool context: the extension context plus the tools it can call and executeTool().
-		const context = Object.freeze(Object.assign(Object.create(makeContext(frame.params.context, state)), {
-			tools: frame.params.tools ?? [],
-			executeTool: (name, args) => request("execute_nested_tool", { toolCallId: frame.params.toolCallId, name, args: args ?? {} }),
-		}));
-		const result = await tool.execute(frame.params.toolCallId, params, controller.signal, onUpdate, context);
-		await state.registrationTail;
-		return result ?? { content: [] };
-	} finally {
-		requestAborts.delete(frame.id);
-		cancelledBeforeStart.delete(frame.id);
-	}
+	// The tool object retains upstream's sync prepareArguments; run it here
+	// so its normalization (and its throw-on-invalid contract) reaches
+	// execute. Orb has already schema-validated the raw params, so inputs
+	// that only validate AFTER preparation still fail Go-side — the
+	// residual ordering divergence stays inventoried in
+	// docs/extension-host-protocol.md.
+	let params = frame.params.params;
+	if (typeof tool.prepareArguments === "function") params = tool.prepareArguments(params);
+	// The tool context: the extension context plus the tools it can call and executeTool().
+	const context = Object.freeze(Object.assign(Object.create(makeContext(frame.params.context, state)), {
+		tools: frame.params.tools ?? [],
+		executeTool: (name, args) => request("execute_nested_tool", { toolCallId: frame.params.toolCallId, name, args: args ?? {} }),
+	}));
+	const result = await tool.execute(frame.params.toolCallId, params, requestSignal(frame), onUpdate, context);
+	await state.registrationTail;
+	return result ?? { content: [] };
 }
 
 async function executeCommand(frame) {
@@ -463,6 +453,8 @@ async function handleRequest(frame) {
 				...(error?.data ? { data: error.data } : detail.stack ? { data: { stack: detail.stack } } : {}),
 			},
 		});
+	} finally {
+		requestAborts.delete(frame.id);
 	}
 }
 
@@ -484,23 +476,17 @@ function handleFrame(frame) {
 	}
 	if (frame.kind === "event" && typeof frame.method === "string") {
 		if (frame.method === "cancel_request") {
-			const requestId = frame.params?.requestId;
 			// Upstream abort reasons are Error values; wrap the wire string so
 			// signal.reason.message works. Without one, abort() keeps the
 			// default AbortError DOMException.
-			const reason = frame.params?.reason ? new Error(frame.params.reason) : undefined;
-			const controller = requestAborts.get(requestId);
-			if (!controller) {
-				if (typeof requestId === "string" && requestId !== "") cancelledBeforeStart.set(requestId, reason);
-			} else if (!controller.signal.aborted) {
-				controller.abort(reason);
-			}
+			requestAborts.get(frame.params?.requestId)?.abort(frame.params?.reason ? new Error(frame.params.reason) : undefined);
 			return;
 		}
 		dispatchHostSectionEvent(frame);
 		return;
 	}
 	if (frame.kind === "request" && typeof frame.id === "string" && typeof frame.method === "string") {
+		requestAborts.set(frame.id, new AbortController());
 		void handleRequest(frame);
 	}
 }
@@ -558,10 +544,9 @@ registerHostSection((() => {
 		});
 	}
 
-	function authInteraction(invocationID) {
-		const controller = new AbortController();
+	function authInteraction(invocationID, signal) {
 		return Object.freeze({
-			signal: controller.signal,
+			signal,
 			prompt: (prompt) => interactionCall(invocationID, "prompt", prompt),
 			notify(event) {
 				emit("provider_interaction", { invocationId: invocationID, operation: "notify", value: event });
@@ -659,28 +644,23 @@ registerHostSection((() => {
 	}
 
 	async function collectProviderStream(frame, callback, owner, args) {
-		const controller = retainRequestAbort(frame.id);
-		try {
-			const options = args.options === undefined ? undefined : { ...args.options, signal: controller.signal };
-			const source = await callback.call(owner, args.model, args.context, options);
-			const iterator = typeof source?.[Symbol.asyncIterator] === "function" ? source[Symbol.asyncIterator]() : source;
-			if (!iterator || typeof iterator.next !== "function") throw new TypeError("provider stream is not async iterable");
-			while (true) {
-				const next = await iterator.next();
-				if (next.done) break;
-				if (controller.signal.aborted) {
-					// orb abandoned the stream: terminate the extension
-					// generator like an upstream consumer's iterator.return().
-					await iterator.return?.();
-					break;
-				}
-				emit("provider_stream_event", { requestId: frame.id, event: next.value });
+		const signal = requestSignal(frame);
+		const options = args.options === undefined ? undefined : { ...args.options, signal };
+		const source = await callback.call(owner, args.model, args.context, options);
+		const iterator = typeof source?.[Symbol.asyncIterator] === "function" ? source[Symbol.asyncIterator]() : source;
+		if (!iterator || typeof iterator.next !== "function") throw new TypeError("provider stream is not async iterable");
+		while (true) {
+			const next = await iterator.next();
+			if (next.done) break;
+			if (signal.aborted) {
+				// orb abandoned the stream: terminate the extension
+				// generator like an upstream consumer's iterator.return().
+				await iterator.return?.();
+				break;
 			}
-			return { events: [] };
-		} finally {
-			requestAborts.delete(frame.id);
-			cancelledBeforeStart.delete(frame.id);
+			emit("provider_stream_event", { requestId: frame.id, event: next.value });
 		}
+		return { events: [] };
 	}
 
 	async function invokeProvider(frame) {
@@ -701,13 +681,11 @@ registerHostSection((() => {
 				break;
 			case "apiKey.login":
 			case "oauth.login":
-				value = await retained.callback.call(retained.owner, authInteraction(frame.params.invocationId));
+				value = await retained.callback.call(retained.owner, authInteraction(frame.params.invocationId, requestSignal(frame)));
 				break;
-			case "oauth.refresh": {
-				const controller = new AbortController();
-				value = await retained.callback.call(retained.owner, args.credential, controller.signal);
+			case "oauth.refresh":
+				value = await retained.callback.call(retained.owner, args.credential, requestSignal(frame));
 				break;
-			}
 			case "oauth.toAuth":
 				value = await retained.callback.call(retained.owner, args.credential);
 				break;
@@ -1219,34 +1197,12 @@ registerHostSection((() => {
 		}
 	}
 
-	function startUIRequest(context, method, fields) {
-		if (shuttingDown) return { id: "", promise: Promise.reject(new Error("extension host is shutting down")) };
-		const id = `host-${nextRequestId++}`;
-		const promise = new Promise((resolve, reject) => {
-			pending.set(id, { resolve, reject });
-			try {
-				write({
-					kind: "request",
-					id,
-					method: "ui_request",
-					params: {
-						extensionId: context.state.id,
-						contextId: context.value.uiContextId,
-						method,
-						...fields,
-					},
-				});
-			} catch (error) {
-				pending.delete(id);
-				reject(error);
-			}
-		});
-		return { id, promise };
-	}
-
 	function dialog(context, method, fields, options, fallback, decode) {
 		if (options?.signal?.aborted) return Promise.resolve(fallback);
-		const pendingDialog = startUIRequest(context, method, {
+		const pendingDialog = startRequest("ui_request", {
+			extensionId: context.state.id,
+			contextId: context.value.uiContextId,
+			method,
 			...fields,
 			...(options?.timeout === undefined ? {} : { timeout: options.timeout }),
 		});
@@ -1811,9 +1767,8 @@ emit(channel, data) {
 		const state = extensions.get(frame.params.extensionId);
 		const operation = state?.bashOperations.get(frame.params.operationId);
 		if (!operation) throw new Error(`unknown bash operation ${frame.params.operationId}`);
-		const controller = new AbortController();
 		const options = {
-			signal: controller.signal,
+			signal: requestSignal(frame),
 			...(frame.params.timeout === undefined ? {} : { timeout: frame.params.timeout }),
 			...(frame.params.env === undefined ? {} : { env: frame.params.env }),
 			onData(data) {
@@ -1837,7 +1792,7 @@ emit(channel, data) {
 		const registerOn = api.on.bind(api);
 		api.on = (event, handler) => {
 			if (typeof handler !== "function") throw new TypeError("on requires an event name and handler");
-			registerOn(event, async (payload, context) => {
+			return registerOn(event, async (payload, context) => {
 				const before = event === "context" ? JSON.stringify(payload.messages) : undefined;
 				return normalizeEventResult(state, event, payload, await handler(payload, context), before);
 			});
@@ -1970,6 +1925,8 @@ if (definition.default !== undefined && typeof definition.default !== definition
 				sharedSessions.set(revision, frame.params.stateSnapshot.session);
 			}
 			if (revision) frame.params.stateSnapshot.session = sharedSessions.get(revision) ?? null;
+			// orb omits an unchanged model registry; null still clears it.
+			if (!Object.hasOwn(frame.params.stateSnapshot, "modelRegistry")) frame.params.stateSnapshot.modelRegistry = state.stateSnapshot.modelRegistry;
 			state.stateSnapshot = normalizeSnapshot(frame.params.stateSnapshot);
 			for (const [name, definition] of state.stateFlags) {
 				if (!Object.hasOwn(state.stateSnapshot.flags, name) && definition.default !== undefined) {
@@ -2006,16 +1963,7 @@ registerHostSection((() => {
 	function requestCancellable(method, params, signal) {
 		if (signal === undefined || signal === null) return request(method, params);
 		if (signal.aborted) return Promise.reject(signalAbortError(signal));
-		const id = `host-${nextRequestId++}`;
-		const requesting = new Promise((resolve, reject) => {
-			pending.set(id, { resolve, reject });
-			try {
-				write({ kind: "request", id, method, params });
-			} catch (error) {
-				pending.delete(id);
-				reject(error);
-			}
-		});
+		const { id, promise } = startRequest(method, params);
 		const cancel = () => {
 			try {
 				emit("service_cancel", { requestId: id, reason: signalReason(signal) });
@@ -2024,7 +1972,7 @@ registerHostSection((() => {
 			}
 		};
 		signal.addEventListener("abort", cancel, { once: true });
-		return requesting.finally(() => signal.removeEventListener("abort", cancel));
+		return promise.finally(() => signal.removeEventListener("abort", cancel));
 	}
 
 	function signalReason(signal) {
@@ -2314,26 +2262,20 @@ registerHostSection((() => {
 				{ code: "unknown_session_tool" },
 			);
 		}
-		const controller = retainRequestAbort(frame.id);
 		const onUpdate = (partial) => emit("tool_update", { requestId: frame.id, partial: partial ?? { content: [] } });
-		try {
-			let params = frame.params.params;
-			if (typeof tool.prepareArguments === "function") params = tool.prepareArguments(params);
-			const result = await tool.execute(
-				frame.params.toolCallId,
-				params,
-				controller.signal,
-				onUpdate,
-				Object.freeze({
-					cwd: frame.params.context?.cwd ?? agent.cwd ?? process.cwd(),
-					sessionId: frame.params.handle,
-				}),
-			);
-			return result ?? { content: [] };
-		} finally {
-			requestAborts.delete(frame.id);
-			cancelledBeforeStart.delete(frame.id);
-		}
+		let params = frame.params.params;
+		if (typeof tool.prepareArguments === "function") params = tool.prepareArguments(params);
+		const result = await tool.execute(
+			frame.params.toolCallId,
+			params,
+			requestSignal(frame),
+			onUpdate,
+			Object.freeze({
+				cwd: frame.params.context?.cwd ?? agent.cwd ?? process.cwd(),
+				sessionId: frame.params.handle,
+			}),
+		);
+		return result ?? { content: [] };
 	}
 
 	return {

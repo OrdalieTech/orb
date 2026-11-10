@@ -21,10 +21,8 @@ import (
 	"github.com/OrdalieTech/orb/tui"
 )
 
-type SessionSelectorLoader func(session.SessionListProgress) []session.SessionInfo
-
-// SessionSelectorContextLoader is the cancellable, progressive companion used
-// by selectors backed by session.ListContext or session.ListAllContext.
+// SessionSelectorContextLoader is a cancellable, progressive session list,
+// backed by session.ListContext or session.ListAllContext.
 type SessionSelectorContextLoader func(context.Context, session.SessionListUpdateFunc) ([]session.SessionInfo, error)
 
 type SessionDeleteMethod string
@@ -35,8 +33,6 @@ const (
 )
 
 type SessionSelectorOptions struct {
-	CurrentSessions        SessionSelectorLoader
-	AllSessions            SessionSelectorLoader
 	CurrentSessionsContext SessionSelectorContextLoader
 	AllSessionsContext     SessionSelectorContextLoader
 	CurrentSessionPath     string
@@ -92,8 +88,6 @@ type selectorStatus struct {
 type SessionSelectorComponent struct {
 	mu sync.Mutex
 
-	currentLoader        SessionSelectorLoader
-	allLoader            SessionSelectorLoader
 	currentContextLoader SessionSelectorContextLoader
 	allContextLoader     SessionSelectorContextLoader
 	keybindings          *tui.KeybindingsManager
@@ -138,11 +132,12 @@ type SessionSelectorComponent struct {
 }
 
 func NewSessionSelectorComponent(options SessionSelectorOptions, onSelect func(string), onCancel func()) *SessionSelectorComponent {
-	if options.CurrentSessions == nil {
-		options.CurrentSessions = func(session.SessionListProgress) []session.SessionInfo { return nil }
+	noSessions := func(context.Context, session.SessionListUpdateFunc) ([]session.SessionInfo, error) { return nil, nil }
+	if options.CurrentSessionsContext == nil {
+		options.CurrentSessionsContext = noSessions
 	}
-	if options.AllSessions == nil {
-		options.AllSessions = func(session.SessionListProgress) []session.SessionInfo { return nil }
+	if options.AllSessionsContext == nil {
+		options.AllSessionsContext = noSessions
 	}
 	if options.Keybindings == nil {
 		options.Keybindings = NewAppKeybindings(nil)
@@ -157,8 +152,6 @@ func NewSessionSelectorComponent(options SessionSelectorOptions, onSelect func(s
 		options.DeleteSession = deleteSessionFile
 	}
 	selector := &SessionSelectorComponent{
-		currentLoader:        options.CurrentSessions,
-		allLoader:            options.AllSessions,
 		currentContextLoader: options.CurrentSessionsContext,
 		allContextLoader:     options.AllSessionsContext,
 		keybindings:          options.Keybindings,
@@ -196,17 +189,16 @@ func (selector *SessionSelectorComponent) loadScope(scope sessionSelectorScope) 
 	}
 	selector.cancelScopeLoadLocked(scope)
 	loadContext, cancel := context.WithCancel(context.Background())
-	var loader SessionSelectorLoader
-	var contextLoader SessionSelectorContextLoader
+	var loader SessionSelectorContextLoader
 	seq := 0
 	if scope == sessionScopeCurrent {
 		selector.currentLoading, selector.currentCancel = true, cancel
 		selector.currentLoadSeq++
-		seq, loader, contextLoader = selector.currentLoadSeq, selector.currentLoader, selector.currentContextLoader
+		seq, loader = selector.currentLoadSeq, selector.currentContextLoader
 	} else {
 		selector.allLoading, selector.allCancel = true, cancel
 		selector.allLoadSeq++
-		seq, loader, contextLoader = selector.allLoadSeq, selector.allLoader, selector.allContextLoader
+		seq, loader = selector.allLoadSeq, selector.allContextLoader
 	}
 	selector.loadProgress = ""
 	selector.mu.Unlock()
@@ -233,15 +225,7 @@ func (selector *SessionSelectorComponent) loadScope(scope sessionSelectorScope) 
 		selector.mu.Unlock()
 		selector.requestRender()
 	}
-	var sessions []session.SessionInfo
-	var err error
-	if contextLoader != nil {
-		sessions, err = contextLoader(loadContext, progressive)
-	} else {
-		sessions = loader(func(loaded, total int) {
-			progressive(session.SessionListUpdate{Loaded: loaded, Total: total})
-		})
-	}
+	sessions, err := loader(loadContext, progressive)
 
 	selector.mu.Lock()
 	if !isActiveLocked() {

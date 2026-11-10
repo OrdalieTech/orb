@@ -14,6 +14,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
 // recordingSessionHost captures the TUI callbacks so the test can drive the
@@ -49,12 +50,17 @@ func (host *recordingSessionHost) ImportSession(context.Context, string, string)
 	return extensions.SessionReplacementResult{}, errors.New("unused")
 }
 func (host *recordingSessionHost) Reload(context.Context) error { return errors.New("unused") }
-func (host *recordingSessionHost) ListProjectSessions(sessionstore.SessionListProgress) []sessionstore.SessionInfo {
-	return nil
+func (host *recordingSessionHost) ListProjectSessionsContext(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error) {
+	return nil, nil
 }
-func (host *recordingSessionHost) ListAllSessions(sessionstore.SessionListProgress) []sessionstore.SessionInfo {
-	return nil
+func (host *recordingSessionHost) ListAllSessionsContext(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error) {
+	return nil, nil
 }
+func (host *recordingSessionHost) DeleteSession(string) (SessionDeleteMethod, error) {
+	return SessionDeleteUnlink, nil
+}
+func (host *recordingSessionHost) PlanLimits() *usage.Snapshot               { return nil }
+func (host *recordingSessionHost) WatchOthers(context.Context, func(string)) {}
 func (host *recordingSessionHost) TrustState() (InteractiveTrustState, error) {
 	return InteractiveTrustState{}, errors.New("unused")
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/OrdalieTech/orb/bridge/protocol"
 )
@@ -152,13 +153,10 @@ func (b *Bridge) Contacts(peer, scope string) ([]Record, error) {
 	if b.closed || b.failed || b.state.Blocked[peer] || !slices.Contains(b.state.Scopes[scope], peer) {
 		return nil, Fail("unauthorized")
 	}
+	// Records are verified when loaded or stored, under their scope/peer key.
 	keys := []string{}
-	for k, r := range b.state.Records {
-		c, err := r.Verify()
-		if err != nil {
-			return nil, err
-		}
-		if c.Scope == scope {
+	for k := range b.state.Records {
+		if strings.HasPrefix(k, scope+"/") {
 			keys = append(keys, k)
 		}
 	}

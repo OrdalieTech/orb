@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/OrdalieTech/orb/agent/extensions"
 )
 
 func TestSlashResolutionOrderAndSkillTemplateCollision(t *testing.T) {
@@ -58,5 +60,25 @@ func TestQueuedExpansionRejectsExtensionCommands(t *testing.T) {
 	}
 	if got, err := resolver.ExpandQueued("/review file.go"); err != nil || got != "Review file.go" {
 		t.Fatalf("template queue expansion = %q, %v", got, err)
+	}
+}
+
+func TestUnreadableSkillReportsSkillExpansionError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing", "SKILL.md")
+	var reported []string
+	provider := testFaux(1000)
+	runtime, _ := newTestRuntime(t, provider, nil)
+	runtime.setSlashResolver(&SlashResolver{
+		Skills: []Skill{{Name: "broken", Description: "Broken", FilePath: missing, BaseDir: filepath.Dir(missing)}},
+	})
+	runtime.OnExtensionError(func(failure extensions.ExtensionError) {
+		reported = append(reported, failure.Event+":"+failure.ExtensionPath)
+	})
+	got, handled := runtime.slashResolver.Load().ResolvePrompt("/skill:broken arg")
+	if handled || got != "/skill:broken arg" {
+		t.Fatalf("ResolvePrompt = %q, %v; want passthrough", got, handled)
+	}
+	if !reflect.DeepEqual(reported, []string{"skill_expansion:" + missing}) {
+		t.Fatalf("reported = %#v", reported)
 	}
 }

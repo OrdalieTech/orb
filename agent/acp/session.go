@@ -158,7 +158,7 @@ func commands(runtime *agent.AgentSession) []map[string]any {
 
 // configOptions lists the model and reasoning selectors, as pi-acp names them.
 func configOptions(runtime *agent.AgentSession) []map[string]any {
-	state := runtime.State()
+	state := runtime.Agent().StateWithoutMessages()
 	var options []map[string]any
 	if models := runtime.AvailableModels(); len(models) > 0 {
 		current := ""
@@ -191,7 +191,7 @@ func modelValue(model ai.Model) string { return string(model.Provider) + "/" + m
 func configure(ctx context.Context, runtime *agent.AgentSession, id, value string) error {
 	switch id {
 	case "model":
-		if current := runtime.State().Model; current != nil && modelValue(*current) == value {
+		if current := runtime.Agent().Model(); current != nil && modelValue(*current) == value {
 			return nil
 		}
 		for _, model := range runtime.AvailableModels() {

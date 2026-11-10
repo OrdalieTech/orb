@@ -247,12 +247,13 @@ func page[T any](items []T, cursor string, limits ...int) (pageResult[T], error)
 		return pageResult[T]{}, Fail("cursor_expired")
 	}
 	out := pageResult[T]{Items: []T{}}
+	// size is the encoded length of out.Items: each item, its comma or bracket, and one more bracket.
+	size := 1
 	for i := int(offset); i < len(items) && len(out.Items) < limit; i++ {
-		candidate := append(out.Items, items[i])
-		if len(JSON(candidate)) > protocol.MaxFrame/2 {
+		if size += len(JSON(items[i])) + 1; size > protocol.MaxFrame/2 {
 			break
 		}
-		out.Items = candidate
+		out.Items = append(out.Items, items[i])
 	}
 	next := int(offset) + len(out.Items)
 	if next < len(items) {
