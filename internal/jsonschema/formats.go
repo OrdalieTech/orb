@@ -8,7 +8,8 @@ import (
 	"regexp/syntax"
 	"strconv"
 	"strings"
-	"sync"
+
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
 )
 
 // formatChecks are pi-schema's format checks (adapted from TypeBox 1.3.27).
@@ -39,7 +40,7 @@ var formatChecks = map[string]func(string) bool{
 // lazy compiles a pattern when first matched: most processes check no format, and compiling
 // them all cost every process milliseconds and over a megabyte as it started.
 func lazy(pattern string) func(string) bool {
-	compiled := sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(pattern) })
+	compiled := lazyregexp.New(pattern)
 	return func(value string) bool { return compiled().MatchString(value) }
 }
 
@@ -51,10 +52,10 @@ const (
 	uriReferencePattern = `^(?:[a-z][a-z0-9+\-.]*:(?:\/\/(?:(?:[-a-z0-9._~!$&'()*+,;=:]|%[0-9a-f]{2})*@)?(?:\[(?:(?:(?:[\da-f]{1,4}:){6}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|::(?:[\da-f]{1,4}:){5}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:[\da-f]{1,4})?::(?:[\da-f]{1,4}:){4}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,1}[\da-f]{1,4})?::(?:[\da-f]{1,4}:){3}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,2}[\da-f]{1,4})?::(?:[\da-f]{1,4}:){2}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,3}[\da-f]{1,4})?::[\da-f]{1,4}:(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,4}[\da-f]{1,4})?::(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,5}[\da-f]{1,4})?::[\da-f]{1,4}|(?:(?:[\da-f]{1,4}:){0,6}[\da-f]{1,4})?::)|v[0-9a-f]+\.[-a-z0-9._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)|(?:[-a-z0-9._~!$&'()*+,;=]|%[0-9a-f]{2})*)(?::\d*)?(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*|\/(?:(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:\/\/(?:(?:[-a-z0-9._~!$&'()*+,;=:]|%[0-9a-f]{2})*@)?(?:\[(?:(?:(?:[\da-f]{1,4}:){6}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|::(?:[\da-f]{1,4}:){5}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:[\da-f]{1,4})?::(?:[\da-f]{1,4}:){4}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,1}[\da-f]{1,4})?::(?:[\da-f]{1,4}:){3}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,2}[\da-f]{1,4})?::(?:[\da-f]{1,4}:){2}(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,3}[\da-f]{1,4})?::[\da-f]{1,4}:(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,4}[\da-f]{1,4})?::(?:[\da-f]{1,4}:[\da-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))|(?:(?:[\da-f]{1,4}:){0,5}[\da-f]{1,4})?::[\da-f]{1,4}|(?:(?:[\da-f]{1,4}:){0,6}[\da-f]{1,4})?::)|v[0-9a-f]+\.[-a-z0-9._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)|(?:[-a-z0-9._~!$&'()*+,;=]|%[0-9a-f]{2})*)(?::\d*)?(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*|\/(?:(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:[-a-z0-9._~!$&'()*+,;=@]|%[0-9a-f]{2})+(?:\/(?:[-a-z0-9._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?)(?:\?(?:[-a-z0-9._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?(?:#(?:[-a-z0-9._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?$`
 )
 
-var datePattern = regexp.MustCompile(`^(\d\d\d\d)-(\d\d)-(\d\d)$`)
+var datePattern = lazyregexp.New(`^(\d\d\d\d)-(\d\d)-(\d\d)$`)
 
 func isDate(value string) bool {
-	match := datePattern.FindStringSubmatch(value)
+	match := datePattern().FindStringSubmatch(value)
 	if match == nil {
 		return false
 	}
@@ -68,11 +69,11 @@ func isDate(value string) bool {
 	return month >= 1 && month <= 12 && day >= 1 && day <= days[month]
 }
 
-var timePattern = regexp.MustCompile(`^(\d\d):(\d\d):(\d\d)(?:\.\d+)?(?:([Zz])|([+-])(\d\d):(\d\d))?$`)
+var timePattern = lazyregexp.New(`^(\d\d):(\d\d):(\d\d)(?:\.\d+)?(?:([Zz])|([+-])(\d\d):(\d\d))?$`)
 
 // isTime requires an offset, and a leap second only at 23:59:60 UTC.
 func isTime(value string) bool {
-	match := timePattern.FindStringSubmatch(value)
+	match := timePattern().FindStringSubmatch(value)
 	if match == nil || match[4] == "" && match[5] == "" {
 		return false
 	}
@@ -100,7 +101,7 @@ func isDateTime(value string) bool {
 	return separator >= 0 && !strings.ContainsAny(value[separator+1:], "Tt") && isDate(value[:separator]) && isTime(value[separator+1:])
 }
 
-var hostnameLabel = regexp.MustCompile(`^[a-zA-Z0-9-]*$`)
+var hostnameLabel = lazyregexp.New(`^[a-zA-Z0-9-]*$`)
 
 // isHostname checks LDH labels. An xn-- label is accepted when it is LDH:
 // pi-schema decodes it and checks the Unicode label, which needs IDNA tables.
@@ -109,7 +110,7 @@ func isHostname(value string) bool {
 		return false
 	}
 	for _, label := range strings.Split(value, ".") {
-		if label == "" || len(label) > 63 || !hostnameLabel.MatchString(label) {
+		if label == "" || len(label) > 63 || !hostnameLabel().MatchString(label) {
 			return false
 		}
 		if strings.HasPrefix(strings.ToLower(label), "xn--") {
@@ -137,10 +138,10 @@ func isIRI(value string) bool {
 	return urlParses(value, false)
 }
 
-var malformedScheme = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+\-.]*//`)
+var malformedScheme = lazyregexp.New(`^[a-zA-Z][a-zA-Z0-9+\-.]*//`)
 
 func isIRIReference(value string) bool {
-	if strings.ContainsAny(value, "\\\x7f") || strings.ContainsFunc(value, func(r rune) bool { return r <= 0x20 }) || !validPercents(value) || malformedScheme.MatchString(value) {
+	if strings.ContainsAny(value, "\\\x7f") || strings.ContainsFunc(value, func(r rune) bool { return r <= 0x20 }) || !validPercents(value) || malformedScheme().MatchString(value) {
 		return false
 	}
 	return urlParses(value, true)
@@ -159,7 +160,7 @@ func isHex(char byte) bool {
 	return char >= '0' && char <= '9' || char >= 'a' && char <= 'f' || char >= 'A' && char <= 'F'
 }
 
-var urlScheme = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+\-.]*:`)
+var urlScheme = lazyregexp.New(`^[a-zA-Z][a-zA-Z0-9+\-.]*:`)
 
 // urlParses approximates WHATWG URL.canParse(value), or with relative set
 // URL.canParse(value, "http://example.com"): a scheme is required unless
@@ -167,7 +168,7 @@ var urlScheme = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+\-.]*:`)
 func urlParses(value string, relative bool) bool {
 	value = strings.TrimFunc(value, func(r rune) bool { return r <= 0x20 })
 	value = strings.NewReplacer("\t", "", "\n", "", "\r", "").Replace(value)
-	scheme := urlScheme.FindString(value)
+	scheme := urlScheme().FindString(value)
 	if scheme == "" {
 		if !relative {
 			return false

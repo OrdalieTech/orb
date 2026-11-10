@@ -156,8 +156,7 @@ func (p *Peer) remote(ctx context.Context, peer, method string, params, result a
 // FullGrant is the invitation grant `orb bridge pair invite` proposes: full
 // control of every current and future instance.
 func FullGrant(peer string) bridge.Grant {
-	return bridge.Grant{Principal: bridge.Principal{PeerID: peer, Subject: bridge.Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true,
-		Permissions: []string{"instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage"}}
+	return bridge.ConversationGrant(peer)
 }
 
 // Admin mirrors the owner methods of `orb bridge`. invite advertises locator,

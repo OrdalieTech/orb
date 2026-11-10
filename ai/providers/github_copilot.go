@@ -8,7 +8,6 @@ import (
 var githubCopilotProvider = Provider{
 	ID:   "github-copilot",
 	Name: "GitHub Copilot",
-	Auth: AuthAPIKey,
 	Methods: auth.ProviderAuth{
 		APIKey: auth.EnvAPIKeyAuth{
 			DisplayName: "GitHub Copilot token",

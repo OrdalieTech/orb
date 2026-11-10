@@ -9,6 +9,5 @@ var openAICodexProvider = Provider{
 	ID: "openai-codex",
 	// Sign in with ChatGPT on the openai provider supersedes this one.
 	Name:    "OpenAI Codex (legacy)",
-	Auth:    AuthOAuth,
 	Methods: auth.ProviderAuth{OAuth: oauth.NewOpenAICodex(nil)},
 }

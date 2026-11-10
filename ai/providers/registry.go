@@ -61,7 +61,7 @@ var registry = []Provider{
 
 func envProvider(id ai.ProviderID, name, baseURL, authName string, env []string, apis ...ai.API) Provider {
 	return withProviderMetadata(Provider{
-		ID: id, Name: name, Auth: AuthAPIKey,
+		ID: id, Name: name,
 		Methods: auth.ProviderAuth{APIKey: auth.EnvAPIKeyAuth{DisplayName: authName, EnvVars: env}},
 	}, baseURL, env, env, apis...)
 }
@@ -71,7 +71,6 @@ func withProviderMetadata(value Provider, baseURL string, env, apiKeyEnv []strin
 	value.Env = env
 	value.APIKeyEnv = apiKeyEnv
 	value.APIs = apis
-	value.OAuth = value.Methods.OAuth != nil
 	if len(apis) != 0 {
 		value.API = apis[0]
 	}

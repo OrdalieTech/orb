@@ -5,28 +5,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/auth"
-	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
 type bedrockProviderFixture struct {
-	ID      ai.ProviderID `json:"id"`
-	Name    string        `json:"name"`
-	BaseURL string        `json:"baseUrl"`
-	APIs    []ai.API      `json:"apis"`
-	Auth    struct {
-		Kind  providers.AuthKind `json:"kind"`
-		Name  string             `json:"name"`
-		Env   []string           `json:"env"`
-		Login []struct {
-			Name          string            `json:"name"`
-			Responses     []string          `json:"responses"`
-			Credential    auth.Credential   `json:"credential"`
-			Prompts       []auth.AuthPrompt `json:"prompts"`
-			Notifications []auth.AuthEvent  `json:"notifications"`
-		} `json:"login"`
+	Auth struct {
 		Cases []struct {
 			Name          string            `json:"name"`
 			Env           map[string]string `json:"env"`
@@ -44,15 +28,6 @@ func loadBedrockProviderFixture(t *testing.T) bedrockProviderFixture {
 	return fixture
 }
 
-type bedrockAuthContext map[string]string
-
-func (authContext bedrockAuthContext) Env(_ context.Context, name string) (string, bool) {
-	value, ok := authContext[name]
-	return value, ok
-}
-
-func (bedrockAuthContext) FileExists(context.Context, string) bool { return false }
-
 func TestAmazonBedrockAuthResolutionMatchesUpstreamFixture(t *testing.T) {
 	fixture := loadBedrockProviderFixture(t)
 	provider := mustProvider(t, "amazon-bedrock")
@@ -60,7 +35,7 @@ func TestAmazonBedrockAuthResolutionMatchesUpstreamFixture(t *testing.T) {
 		t.Run(fixtureCase.Name, func(t *testing.T) {
 			result, err := auth.ResolveProviderAuth(
 				context.Background(), string(provider.ID), provider.Methods,
-				auth.NewMemoryStore(nil), bedrockAuthContext(fixtureCase.Env), nil,
+				auth.NewMemoryStore(nil), envMap(fixtureCase.Env), nil,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -87,7 +62,7 @@ func TestAmazonBedrockStoredAuthFeedsRequestEnvironment(t *testing.T) {
 	store := auth.NewMemoryStore(map[string]*auth.Credential{string(provider.ID): profileCredential})
 	result, err := auth.ResolveProviderAuth(
 		context.Background(), string(provider.ID), provider.Methods, store,
-		bedrockAuthContext{"AWS_PROFILE": "ambient-profile"}, nil,
+		envMap{"AWS_PROFILE": "ambient-profile"}, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +80,7 @@ func TestAmazonBedrockStoredAuthFeedsRequestEnvironment(t *testing.T) {
 	store = auth.NewMemoryStore(map[string]*auth.Credential{string(provider.ID): bearer})
 	result, err = auth.ResolveProviderAuth(
 		context.Background(), string(provider.ID), provider.Methods, store,
-		bedrockAuthContext{"AWS_BEARER_TOKEN_BEDROCK": "ambient-bearer"}, nil,
+		envMap{"AWS_BEARER_TOKEN_BEDROCK": "ambient-bearer"}, nil,
 	)
 	if err != nil || result == nil || result.Auth.APIKey == nil || *result.Auth.APIKey != "stored-bearer" || !reflect.DeepEqual(result.Env, bearer.Env) {
 		t.Fatalf("stored bearer resolution = %#v, %v", result, err)

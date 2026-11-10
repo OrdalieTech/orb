@@ -16,9 +16,8 @@ const (
 	dictionaryTrieHasValues = 8
 )
 
-// Only the gzip form is embedded; data/cjdict.dict stays on disk for
-// provenance (see data/PROVENANCE.md) and TestEmbeddedDictionaryMatchesSource
-// fails if the two drift. Regenerate with `gzip -9 -n`.
+// The gzip form (`gzip -9 -n`) of ICU's cjdict.dict; data/PROVENANCE.md has
+// the source and the SHA-256 it decompresses to.
 //
 //go:embed data/cjdict.dict.gz
 var embeddedCompressedDictionary []byte

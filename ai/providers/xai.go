@@ -8,7 +8,6 @@ import (
 var xAIProvider = Provider{
 	ID:   "xai",
 	Name: "xAI",
-	Auth: AuthAPIKey,
 	Methods: auth.ProviderAuth{
 		APIKey: auth.EnvAPIKeyAuth{
 			DisplayName: "xAI API key",

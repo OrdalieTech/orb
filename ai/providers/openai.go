@@ -6,20 +6,12 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth/oauth"
 )
 
-type AuthKind string
-
-const AuthAPIKey AuthKind = "api_key"
-
-const AuthOAuth AuthKind = "oauth"
-
 type Provider struct {
 	ID      ai.ProviderID
 	Name    string
 	API     ai.API
 	APIs    []ai.API
 	BaseURL string
-	Auth    AuthKind
-	OAuth   bool
 	Env     []string
 	// APIKeyEnv is the subset of Env whose value is request authentication.
 	// The remaining names configure ambient credentials or provider endpoints.
@@ -30,7 +22,6 @@ type Provider struct {
 var openAI = Provider{
 	ID:   "openai",
 	Name: "OpenAI",
-	Auth: AuthAPIKey,
 	Methods: auth.ProviderAuth{
 		APIKey: auth.EnvAPIKeyAuth{DisplayName: "OpenAI API key", EnvVars: []string{"OPENAI_API_KEY"}},
 		OAuth:  oauth.NewOpenAIChatGPT(nil),

@@ -72,7 +72,6 @@ func (anthropicAPIKeyAuth) Resolve(
 var anthropicProvider = Provider{
 	ID:   "anthropic",
 	Name: "Anthropic",
-	Auth: AuthAPIKey,
 	Methods: auth.ProviderAuth{
 		APIKey: anthropicAPIKeyAuth{},
 		OAuth:  oauth.NewAnthropic(nil),

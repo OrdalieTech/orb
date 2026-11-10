@@ -1,7 +1,6 @@
 package ai
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -347,29 +346,14 @@ func (event RawAssistantMessageEvent) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	decoder := json.NewDecoder(bytes.NewReader(normalized))
-	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+	object, ok := jsonwire.ParseRawObject(normalized)
+	if !ok {
 		return nil, errors.New("ai: raw assistant message event must be an object")
 	}
-	object := jsonwire.OrderedObject{}
-	for decoder.More() {
-		token, err := decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		name, ok := token.(string)
-		if !ok {
-			return nil, errors.New("ai: raw assistant message event has a non-string member name")
-		}
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
-			return nil, err
-		}
-		object.Set(name, value)
+	partial, err := jsonwire.Marshal(event.Partial)
+	if err != nil {
+		return nil, err
 	}
-	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
-		return nil, errors.New("ai: raw assistant message event is incomplete")
-	}
-	object.Set("partial", event.Partial)
-	return jsonwire.Marshal(object)
+	object.Set("partial", partial)
+	return object.MarshalJSON()
 }

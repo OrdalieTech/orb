@@ -69,3 +69,65 @@ func canonical(t *testing.T, data []byte) string {
 	}
 	return string(normalized)
 }
+
+type schemaGoldenChild struct {
+	Name string  `json:"name" jsonschema:"description=Child name"`
+	Note *string `json:"note,omitempty" jsonschema_description:"Optional note"`
+}
+
+type schemaGoldenFilter struct {
+	Pattern string `json:"pattern"`
+}
+
+type schemaGoldenInput struct {
+	Path     string              `json:"path" jsonschema:"description=Path to inspect <>&"`
+	Children []schemaGoldenChild `json:"children" jsonschema:"description=Nested children"`
+	Labels   []string            `json:"labels,omitempty" jsonschema:"description=Optional labels"`
+	Mode     string              `json:"mode" jsonschema:"enum=read,enum=write,description=Operation mode"`
+	Filter   *schemaGoldenFilter `json:"filter,omitempty"`
+}
+
+type schemaGoldenRequiredOptional struct {
+	Required string `json:"required,omitempty" jsonschema:"required"`
+	Optional string `json:"optional" jsonschema:"optional" jsonschema_description:"one, two"`
+}
+
+func TestFromStructMatchesUpstreamTypeBoxGoldens(t *testing.T) {
+	var fixture struct {
+		Cases []struct {
+			Name   string          `json:"name"`
+			Schema json.RawMessage `json:"schema"`
+		} `json:"cases"`
+	}
+	runner.LoadJSON(t, "F1", "schema.json", &fixture)
+	for _, fixtureCase := range fixture.Cases {
+		var generate func() (jsonschema.Schema, error)
+		switch fixtureCase.Name {
+		case "nested-object":
+			generate = jsonschema.FromStruct[schemaGoldenInput]
+		case "required-optional":
+			generate = jsonschema.FromStruct[schemaGoldenRequiredOptional]
+		case "string-enum":
+			continue // Orb has no producer for a bare TypeBox StringEnum.
+		default:
+			t.Fatalf("unknown TypeBox schema golden %q", fixtureCase.Name)
+		}
+		t.Run(fixtureCase.Name, func(t *testing.T) {
+			got, err := generate()
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotCanonical, err := runner.CanonicalJSONLexemes(got)
+			if err != nil {
+				t.Fatalf("canonicalize generated schema: %v", err)
+			}
+			wantCanonical, err := runner.CanonicalJSONLexemes(fixtureCase.Schema)
+			if err != nil {
+				t.Fatalf("canonicalize TypeBox golden: %v", err)
+			}
+			if diff := runner.ByteDiff(wantCanonical, gotCanonical); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}

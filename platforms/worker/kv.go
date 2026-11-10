@@ -36,6 +36,11 @@ const chunkSize = 4 << 10
 // NUL; the chunk index is decimal, so a key parses back from its last '#'.
 func metaKey(namespace, name string) string { return namespace + "m" + name }
 
+// DocumentKey is the storage key that holds document name's metadata. Its
+// presence tells the JavaScript shim, without booting the runtime, that the
+// object has written that document.
+func DocumentKey(name string) string { return metaKey(documentsNamespace, name) }
+
 func chunkKey(namespace, name string, index int) string {
 	return namespace + "c" + name + "#" + strconv.Itoa(index)
 }

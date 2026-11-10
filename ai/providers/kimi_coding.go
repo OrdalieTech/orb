@@ -8,7 +8,6 @@ import (
 var kimiCodingProvider = Provider{
 	ID:   "kimi-coding",
 	Name: "Kimi For Coding",
-	Auth: AuthAPIKey,
 	Methods: auth.ProviderAuth{
 		APIKey: auth.EnvAPIKeyAuth{
 			DisplayName: "Kimi API key",
