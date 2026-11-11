@@ -472,11 +472,15 @@ func (s *server) prompt(session *live, text string, images []*ai.ImageContent) (
 		}
 		return map[string]string{"stopReason": "end_turn"}, nil
 	}
+	var toolsMu sync.Mutex
 	tools := map[string]bool{}
 	unsubscribe := runtime.Subscribe(func(event any) {
-		if update := translate(event, tools); update != nil {
+		toolsMu.Lock()
+		update := translate(event, tools)
+		if update != nil {
 			s.update(session.id, update)
 		}
+		toolsMu.Unlock()
 	})
 	before := len(runtime.Agent().Messages())
 	err := runtime.PromptWithOptions(s.ctx, text, &agent.PromptOptions{Images: images})

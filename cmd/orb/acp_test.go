@@ -753,3 +753,37 @@ func TestACPSessionLoadReusesOpenSessionWithoutDuplicatingRuntime(t *testing.T) 
 	}
 	client.close()
 }
+
+func TestACPParallelToolCallsDoNotRaceSessionUpdates(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("HOME", root)
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	var calls ai.AssistantContent
+	for index := range 8 {
+		file := filepath.Join(root, fmt.Sprintf("f%d.txt", index))
+		if err := os.WriteFile(file, []byte("ok\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		calls = append(calls, faux.ToolCall("read", map[string]any{"path": file}))
+	}
+	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(calls, faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}),
+		faux.AssistantMessage("All read."),
+	})
+	client := startACP(t, provider)
+	client.call("initialize", map[string]any{"protocolVersion": 2})
+	created, _ := client.call("session/new", map[string]any{"cwd": root, "mcpServers": []any{}})
+	id := created["result"].(map[string]any)["sessionId"]
+	answered, notifications := client.call("session/prompt", map[string]any{
+		"sessionId": id, "prompt": []any{map[string]any{"type": "text", "text": "Read them all."}},
+	})
+	if result, _ := answered["result"].(map[string]any); result["stopReason"] != "end_turn" {
+		t.Fatalf("prompt = %v", answered)
+	}
+	if got := len(updates(notifications, "tool_call_update")); got != 8 {
+		t.Fatalf("tool_call_update count = %d, want 8", got)
+	}
+	client.close()
+}
