@@ -463,7 +463,8 @@ func TestBuiltBinaryServesRPCConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rpcContext, cancelRPC := context.WithTimeout(context.Background(), 10*time.Second)
+	// The deadline only ends a hung binary: a cold start on a loaded Windows runner takes seconds.
+	rpcContext, cancelRPC := context.WithTimeout(context.Background(), time.Minute)
 	defer cancelRPC()
 	command := exec.CommandContext(rpcContext, binary, "--mode", "rpc", "--no-session", "--provider", "faux", "--model", "faux-1")
 	command.Dir = project
@@ -801,7 +802,7 @@ func TestRunCLIRPCMovesEventSubscriptionForExtensionInitiatedReplacement(t *test
 	input, inputWriter := io.Pipe()
 	output, outputWriter := io.Pipe()
 	var stderr bytes.Buffer
-	rpcContext, cancelRPC := context.WithTimeout(context.Background(), 5*time.Second)
+	rpcContext, cancelRPC := context.WithTimeout(context.Background(), time.Minute)
 	defer cancelRPC()
 	done := make(chan int, 1)
 	go func() {

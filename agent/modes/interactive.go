@@ -4008,22 +4008,48 @@ func (mode *InteractiveMode) applyScopedModelSelection(models []ai.Model, unavai
 	mode.ui.RequestRender()
 }
 
+// GitBranch reads HEAD as pi's footer does, so no git process runs unless the
+// repository keeps its branch in a reftable.
 func (mode *InteractiveMode) GitBranch() string {
 	_, cwd := mode.sessionSnapshot()
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "--no-optional-locks", "rev-parse", "--abbrev-ref", "HEAD")
-	cmd.Dir = cwd
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
+	for dir := cwd; ; dir = filepath.Dir(dir) {
+		gitDir := filepath.Join(dir, ".git")
+		info, err := os.Stat(gitDir)
+		if err != nil {
+			if dir == filepath.Dir(dir) {
+				return ""
+			}
+			continue
+		}
+		if !info.IsDir() { // a worktree's .git names its directory
+			content, _ := os.ReadFile(gitDir)
+			target, ok := strings.CutPrefix(strings.TrimSpace(string(content)), "gitdir: ")
+			if !ok {
+				return ""
+			}
+			if gitDir = target; !filepath.IsAbs(gitDir) {
+				gitDir = filepath.Join(dir, gitDir)
+			}
+		}
+		head, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
+		if err != nil {
+			return ""
+		}
+		branch, onBranch := strings.CutPrefix(strings.TrimSpace(string(head)), "ref: refs/heads/")
+		if onBranch && branch == ".invalid" {
+			ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, "git", "--no-optional-locks", "symbolic-ref", "--quiet", "--short", "HEAD")
+			cmd.Dir = dir
+			out, _ := cmd.Output()
+			branch = strings.TrimSpace(string(out))
+			onBranch = branch != ""
+		}
+		if !onBranch {
+			return "detached"
+		}
+		return branch
 	}
-	branch := strings.TrimSpace(string(out))
-	// rev-parse prints the literal "HEAD" on detached HEAD.
-	if branch == "HEAD" {
-		return "detached"
-	}
-	return branch
 }
 
 func (mode *InteractiveMode) AvailableProviderCount() int {

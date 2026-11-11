@@ -312,12 +312,13 @@ func (t *tab) describe() bool {
 	}
 	t.Busy = d.Target.Execution != "" || strings.Contains(strings.ToLower(d.Status), "stream")
 	// Followed, the stream says when a turn ends; unfollowed (the app out of sight), a describe
-	// finding new answers at rest does.
+	// finding new answers at rest does. Answers count at rest only: one counted mid-turn would
+	// be old by the describe that finds the turn over.
 	said := t.said
-	if d.Stats != nil {
+	if d.Stats != nil && !t.Busy {
 		t.said = d.Stats.AssistantMessages
 	}
-	t.ended = t.ended || same && t.said > said && !t.Busy && !t.watched && !t.follows
+	t.ended = t.ended || same && t.said > said && !t.watched && !t.follows
 	t.Cost, t.Context = 0, 0
 	if d.Stats != nil {
 		t.Cost = d.Stats.Cost

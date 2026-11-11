@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/OrdalieTech/orb/ai"
@@ -217,51 +218,55 @@ func TestBashToolSessionEnvironmentExposureAndOptOut(t *testing.T) {
 	}
 }
 
+// The throttle runs on a bubble's clock, so the number of updates does not depend on how fast
+// the machine gets through the output.
 func TestBashToolEmitsInitialAndIncrementalUpdates(t *testing.T) {
-	operations := bashOperationsFunc(func(
-		_ context.Context,
-		_ string,
-		_ string,
-		options BashExecOptions,
-	) (BashExecResult, error) {
-		options.OnData([]byte("first\n"))
-		for range 5000 {
-			options.OnData([]byte("chatty\n"))
+	synctest.Test(t, func(t *testing.T) {
+		operations := bashOperationsFunc(func(
+			_ context.Context,
+			_ string,
+			_ string,
+			options BashExecOptions,
+		) (BashExecResult, error) {
+			options.OnData([]byte("first\n"))
+			for range 5000 {
+				options.OnData([]byte("chatty\n"))
+			}
+			code := 0
+			return BashExecResult{ExitCode: &code}, nil
+		})
+		var updates []engine.AgentToolResult
+		result, err := NewBashTool(t.TempDir(), &BashToolOptions{Operations: operations}).Execute(
+			context.Background(),
+			"call",
+			BashToolInput{Command: "chatty"},
+			func(update engine.AgentToolResult) { updates = append(updates, update) },
+		)
+		if err != nil {
+			t.Fatal(err)
 		}
-		code := 0
-		return BashExecResult{ExitCode: &code}, nil
+		if len(updates) < 2 || len(updates[0].Content) != 0 || updates[0].Details != nil {
+			t.Fatalf("updates = %#v", updates)
+		}
+		initialJSON, err := json.Marshal(updates[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(initialJSON) != `{"content":[]}` {
+			t.Fatalf("initial update JSON = %s", initialJSON)
+		}
+		if len(updates) >= 25 {
+			t.Fatalf("received %d updates, want fewer than 25", len(updates))
+		}
+		if !strings.Contains(bashResultText(t, result), "chatty") {
+			t.Fatalf("result = %q", bashResultText(t, result))
+		}
+		details, ok := result.Details.(BashToolDetails)
+		if !ok || details.Truncation == nil || !details.Truncation.Truncated || details.FullOutputPath == "" {
+			t.Fatalf("details = %#v", result.Details)
+		}
+		t.Cleanup(func() { _ = os.Remove(details.FullOutputPath) })
 	})
-	var updates []engine.AgentToolResult
-	result, err := NewBashTool(t.TempDir(), &BashToolOptions{Operations: operations}).Execute(
-		context.Background(),
-		"call",
-		BashToolInput{Command: "chatty"},
-		func(update engine.AgentToolResult) { updates = append(updates, update) },
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(updates) < 2 || len(updates[0].Content) != 0 || updates[0].Details != nil {
-		t.Fatalf("updates = %#v", updates)
-	}
-	initialJSON, err := json.Marshal(updates[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(initialJSON) != `{"content":[]}` {
-		t.Fatalf("initial update JSON = %s", initialJSON)
-	}
-	if len(updates) >= 25 {
-		t.Fatalf("received %d updates, want fewer than 25", len(updates))
-	}
-	if !strings.Contains(bashResultText(t, result), "chatty") {
-		t.Fatalf("result = %q", bashResultText(t, result))
-	}
-	details, ok := result.Details.(BashToolDetails)
-	if !ok || details.Truncation == nil || !details.Truncation.Truncated || details.FullOutputPath == "" {
-		t.Fatalf("details = %#v", result.Details)
-	}
-	t.Cleanup(func() { _ = os.Remove(details.FullOutputPath) })
 }
 
 func TestBashToolIgnoresLateOutputCallbacks(t *testing.T) {

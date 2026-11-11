@@ -264,7 +264,7 @@ func waitF7Line(t testing.TB, step string, lines <-chan []byte, readErrors <-cha
 		return line
 	case err := <-readErrors:
 		t.Fatalf("step %q: read RPC output: %v", step, err)
-	case <-time.After(5 * time.Second):
+	case <-time.After(time.Minute):
 		t.Fatalf("step %q: timed out waiting for RPC output", step)
 	}
 	return nil

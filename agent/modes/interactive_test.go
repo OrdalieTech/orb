@@ -246,6 +246,12 @@ func TestGitBranchReportsDetachedHead(t *testing.T) {
 	if branch := (&InteractiveMode{cwd: nested}).GitBranch(); branch != "trunk" {
 		t.Fatalf("GitBranch from nested dir = %q, want %q", branch, "trunk")
 	}
+	// A worktree's .git is a file naming its git directory.
+	worktree := filepath.Join(t.TempDir(), "side")
+	git("worktree", "add", "-q", "-b", "side", worktree)
+	if branch := (&InteractiveMode{cwd: worktree}).GitBranch(); branch != "side" {
+		t.Fatalf("GitBranch in a worktree = %q, want %q", branch, "side")
+	}
 	git("checkout", "--detach")
 	// Upstream footer-data-provider labels detached HEAD "detached", never "HEAD".
 	if branch := mode.GitBranch(); branch != "detached" {

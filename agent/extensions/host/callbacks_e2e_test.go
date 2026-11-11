@@ -23,8 +23,7 @@ func TestRealHostToolOutlivesRequestTimeout(t *testing.T) {
 	runtime := requireRuntime(t)
 	cwd := t.TempDir()
 	manager := NewManager(Options{
-		AgentDir: t.TempDir(), CWD: cwd, Version: "test", Runtime: &runtime,
-		RequestTimeout: 5 * time.Second, ShutdownTimeout: time.Second,
+		AgentDir: t.TempDir(), CWD: cwd, Version: "test", Runtime: &runtime, ShutdownTimeout: time.Second,
 		BackoffBase: 10 * time.Millisecond, BackoffMax: 50 * time.Millisecond,
 	})
 	t.Cleanup(func() {
@@ -37,6 +36,8 @@ func TestRealHostToolOutlivesRequestTimeout(t *testing.T) {
 	if len(result.Errors) != 0 || len(result.Diagnostics) != 0 {
 		t.Fatalf("load result = %#v", result)
 	}
+	// Shortened once the host is up: its cold start may take longer than any tool should.
+	manager.options.RequestTimeout = 200 * time.Millisecond
 	runner := extensions.NewRunner(registry, extensions.RunnerOptions{CWD: cwd})
 	slow := runner.ToolDefinition("host_slow")
 	if slow == nil {
@@ -44,7 +45,7 @@ func TestRealHostToolOutlivesRequestTimeout(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	final, err := slow.Execute(ctx, "call-slow", map[string]any{"ms": 5500}, nil, runner.CreateContext())
+	final, err := slow.Execute(ctx, "call-slow", map[string]any{"ms": 600}, nil, runner.CreateContext())
 	if err != nil {
 		t.Fatalf("tool exceeding RequestTimeout failed: %v", err)
 	}
@@ -77,10 +78,8 @@ func TestRealHostPositionalToolSignalFiresOnContextCancel(t *testing.T) {
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if content, readErr := os.ReadFile(marker); readErr == nil {
-			if string(content) != "aborted" {
-				t.Fatalf("marker content = %q", content)
-			}
+		// writeFileSync creates the marker before filling it: empty is not written yet.
+		if content, _ := os.ReadFile(marker); string(content) == "aborted" {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -140,10 +139,8 @@ func TestRealHostCancelRequestCoalescedWithRequestStillAborts(t *testing.T) {
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if content, readErr := os.ReadFile(marker); readErr == nil {
-			if string(content) != "aborted" {
-				t.Fatalf("marker content = %q", content)
-			}
+		// writeFileSync creates the marker before filling it: empty is not written yet.
+		if content, _ := os.ReadFile(marker); string(content) == "aborted" {
 			break
 		}
 		if time.Now().After(deadline) {

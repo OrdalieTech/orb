@@ -268,6 +268,31 @@ func TestAModelIsKnownByItsProvider(t *testing.T) {
 	}
 }
 
+// Out of sight, a describe that lands mid-turn, its answer already written, does not hide the
+// turn's end from the one that finds it over.
+func TestAnAnswerDescribedMidTurnStillEndsUnread(t *testing.T) {
+	describe := ""
+	a := &App{ctx: t.Context(), asked: map[*tab]bool{}, o: Options{Emit: func(any) {}, Call: func(_ context.Context, _ string, _, result any) error {
+		return json.Unmarshal([]byte(describe), result)
+	}}}
+	tb := &tab{a: a, instance: "i"}
+	a.tabs = []*tab{tb}
+	for _, step := range []struct {
+		describe string
+		unread   int
+	}{
+		{`{"target":{"session_id":"s"},"stats":{"assistantMessages":1}}`, 0},
+		{`{"target":{"session_id":"s","execution_id":"x"},"stats":{"assistantMessages":2}}`, 0},
+		{`{"target":{"session_id":"s"},"stats":{"assistantMessages":2}}`, 1},
+		{`{"target":{"session_id":"s"},"stats":{"assistantMessages":2}}`, 1},
+	} {
+		describe = step.describe
+		if !tb.describe() || tb.Unread != step.unread {
+			t.Fatalf("after %s: unread %d, want %d", step.describe, tb.Unread, step.unread)
+		}
+	}
+}
+
 // An app starting has Home read before it says it shows, so Home is there as it does.
 func TestHomeIsReadBeforeTheAppShows(t *testing.T) {
 	c := newClient()
