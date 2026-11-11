@@ -2,6 +2,8 @@ package jsonschema_test
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/conformance/runner"
@@ -58,6 +60,17 @@ func TestF1ToolArgumentValidation(t *testing.T) {
 				t.Fatal(diff)
 			}
 		})
+	}
+}
+
+// A local $ref under a relative root $id with a directory resolves (pi 1.5.1, #11697).
+func TestToolArgumentValidationUnderARelativeRootID(t *testing.T) {
+	schema := jsonschema.Schema(`{"$id":"schemas/tool.json","type":"object","properties":{"a":{"$ref":"#/$defs/n"}},"required":["a"],"$defs":{"n":{"type":"integer"}}}`)
+	if value, err := jsonschema.ValidateToolArgumentsJSON("t", schema, []byte(`{"a":"4"}`), ""); err != nil || fmt.Sprint(value) != "map[a:4]" {
+		t.Fatalf("relative $id: value %v, error %v", value, err)
+	}
+	if _, err := jsonschema.ValidateToolArgumentsJSON("t", schema, []byte(`{"a":"x"}`), ""); err == nil || !strings.Contains(err.Error(), "a: expected integer") {
+		t.Fatalf("relative $id rejects with %v", err)
 	}
 }
 

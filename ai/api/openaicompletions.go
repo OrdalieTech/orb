@@ -40,6 +40,8 @@ type resolvedOpenAICompletionsCompat struct {
 	maxTokensField                              ai.MaxTokensField
 	requiresToolResultName                      bool
 	requiresAssistantAfterToolResult            bool
+	requiresNonNullAssistantContent             bool
+	requiresToolsWithToolHistory                bool
 	requiresThinkingAsText                      bool
 	requiresReasoningContentOnAssistantMessages bool
 	thinkingFormat                              ai.ThinkingFormat
@@ -58,6 +60,7 @@ type resolvedOpenAICompletionsCompat struct {
 	cacheControlFormat                          *ai.CacheControlFormat
 	sendSessionAffinityHeaders                  bool
 	sessionAffinityFormat                       ai.SessionAffinityFormat
+	promptCacheKeyMode                          ai.PromptCacheKeyMode
 	supportsLongCacheRetention                  bool
 }
 
@@ -526,6 +529,12 @@ func resolveOpenAICompletionsCompat(model *ai.Model) (resolvedOpenAICompletionsC
 	if overrides.RequiresAssistantAfterToolResult != nil {
 		resolved.requiresAssistantAfterToolResult = *overrides.RequiresAssistantAfterToolResult
 	}
+	if overrides.RequiresNonNullAssistantContent != nil {
+		resolved.requiresNonNullAssistantContent = *overrides.RequiresNonNullAssistantContent
+	}
+	if overrides.RequiresToolsWithToolHistory != nil {
+		resolved.requiresToolsWithToolHistory = *overrides.RequiresToolsWithToolHistory
+	}
 	if overrides.RequiresThinkingAsText != nil {
 		resolved.requiresThinkingAsText = *overrides.RequiresThinkingAsText
 	}
@@ -580,6 +589,9 @@ func resolveOpenAICompletionsCompat(model *ai.Model) (resolvedOpenAICompletionsC
 	}
 	if overrides.SessionAffinityFormat != nil {
 		resolved.sessionAffinityFormat = *overrides.SessionAffinityFormat
+	}
+	if overrides.PromptCacheKeyMode != nil {
+		resolved.promptCacheKeyMode = *overrides.PromptCacheKeyMode
 	}
 	if overrides.SupportsLongCacheRetention != nil {
 		resolved.supportsLongCacheRetention = *overrides.SupportsLongCacheRetention
@@ -801,8 +813,9 @@ func buildOpenAICompletionsPayload(
 		"messages": messages,
 		"stream":   true,
 	}
-	if (strings.Contains(model.BaseURL, "api.openai.com") && retention != ai.CacheRetentionNone) ||
-		(retention == ai.CacheRetentionLong && compat.supportsLongCacheRetention) {
+	if retention != ai.CacheRetentionNone && (compat.promptCacheKeyMode == ai.PromptCacheKeyEnabled ||
+		compat.promptCacheKeyMode != ai.PromptCacheKeyDisabled && (strings.Contains(model.BaseURL, "api.openai.com") ||
+			retention == ai.CacheRetentionLong && compat.supportsLongCacheRetention)) {
 		if value := clampOpenAIPromptCacheKey(options.SessionID); value != nil {
 			payload["prompt_cache_key"] = value
 		}
@@ -841,7 +854,7 @@ func buildOpenAICompletionsPayload(
 		if compat.zaiToolStream {
 			payload["tool_stream"] = true
 		}
-	} else if hasOpenAICompletionsToolHistory(requestContext.Messages) {
+	} else if compat.requiresToolsWithToolHistory && hasOpenAICompletionsToolHistory(requestContext.Messages) {
 		tools = []any{}
 		payload["tools"] = tools
 	}
@@ -954,11 +967,11 @@ func convertOpenAICompletionsMessages(
 		messages = append(messages, map[string]any{"role": role, "content": sanitizeText(*requestContext.SystemPrompt)})
 	}
 	settings := completionsMessageSettings{
-		assistantAfterToolResult: compat.requiresAssistantAfterToolResult,
-		thinkingAsText:           compat.requiresThinkingAsText,
-		reasoningContent:         compat.requiresReasoningContentOnAssistantMessages && model.Reasoning,
-		toolResultName:           compat.requiresToolResultName,
-		openCodeGo:               model.Provider == "opencode-go",
+		nonNullAssistantContent: compat.requiresAssistantAfterToolResult || compat.requiresNonNullAssistantContent,
+		thinkingAsText:          compat.requiresThinkingAsText,
+		reasoningContent:        compat.requiresReasoningContentOnAssistantMessages && model.Reasoning,
+		toolResultName:          compat.requiresToolResultName,
+		openCodeGo:              model.Provider == "opencode-go",
 	}
 	// For the wire, a message the last request sent at the same place reuses
 	// that request's encoding.
@@ -1090,7 +1103,7 @@ func convertOpenAICompletionsMessages(
 // completionsMessageSettings is all that converting one message reads besides
 // the message, so a message encodes the same way under equal settings.
 type completionsMessageSettings struct {
-	assistantAfterToolResult, thinkingAsText, reasoningContent, toolResultName, openCodeGo bool
+	nonNullAssistantContent, thinkingAsText, reasoningContent, toolResultName, openCodeGo bool
 }
 
 // completionsWireJSON is a message's encoded wire object.
@@ -1162,7 +1175,7 @@ func convertOpenAICompletionsAssistantMessageWithGrammar(
 	grammarToolInputProperties map[string]string,
 ) (map[string]any, bool, error) {
 	contentValue := any(nil)
-	if settings.assistantAfterToolResult {
+	if settings.nonNullAssistantContent {
 		contentValue = ""
 	}
 	converted := map[string]any{"role": "assistant", "content": contentValue}

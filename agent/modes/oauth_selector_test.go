@@ -646,12 +646,12 @@ func TestLOGM4ResolveDefaultModelSelectionDiagnostics(t *testing.T) {
 		t.Fatalf("no-models message = %q", message)
 	}
 	other := []ai.Model{{Provider: "anthropic", ID: "claude-elsewhere"}}
-	if _, message := resolveDefaultModelSelection(label, "anthropic", other); message != `Logged in to Anthropic, but its default model "claude-opus-4-8" is not available. Use /model to select a model.` {
+	if _, message := resolveDefaultModelSelection(label, "anthropic", other); message != `Logged in to Anthropic, but its default model "claude-opus-5-5" is not available. Use /model to select a model.` {
 		t.Fatalf("default-unavailable message = %q", message)
 	}
-	available := []ai.Model{{Provider: "openai", ID: "gpt-5.5"}, {Provider: "anthropic", ID: "claude-opus-4-8"}}
+	available := []ai.Model{{Provider: "openai", ID: "gpt-5.5"}, {Provider: "anthropic", ID: "claude-opus-5-5"}}
 	selected, message := resolveDefaultModelSelection(label, "anthropic", available)
-	if message != "" || selected == nil || selected.ID != "claude-opus-4-8" || selected.Provider != "anthropic" {
+	if message != "" || selected == nil || selected.ID != "claude-opus-5-5" || selected.Provider != "anthropic" {
 		t.Fatalf("selection = %#v, message = %q", selected, message)
 	}
 }

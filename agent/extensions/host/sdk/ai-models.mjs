@@ -1,5 +1,5 @@
-// orb-extension-sdk: @earendil-works/pi-ai/models surface (upstream pi 1.5.0,
-// commit f9a26365, MIT © Mario Zechner). modelsAreEqual is the root's
+// orb-extension-sdk: @earendil-works/pi-ai/models surface (upstream pi 1.5.2,
+// commit b4afdddf, MIT © Mario Zechner). modelsAreEqual is the root's
 // implementation; every other upstream export links and throws
 // OrbUnsupportedCapability on call, construction, or property access.
 import { unsupported } from "./internal/unsupported.mjs";

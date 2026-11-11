@@ -1278,3 +1278,31 @@ func overlayCoordinate(value any) (int, bool) {
 	}
 	return 0, false
 }
+
+func TestResetExtensionUIRemovesEveryCustomOverlay(t *testing.T) {
+	f12UILifecycleInitTheme(t)
+	mode, ui := f12UILifecycleOverlayHarness()
+	builtIn := mode.ui.ShowOverlay(&tui.Text{}, tui.OverlayOptions{})
+	components := []*f12UILifecycleOverlayComponent{{label: "first"}, {label: "hidden"}}
+	outcomes := make([]<-chan f12UILifecycleCustomOutcome, len(components))
+	for index, component := range components {
+		handleReady := make(chan extensions.OverlayHandle, 1)
+		outcomes[index] = f12UILifecycleRunCustom(t.Context(), ui, func(extensions.UIHost, extensions.Theme, extensions.Keybindings, extensions.CustomDone) (extensions.Component, error) {
+			return component, nil
+		}, &extensions.CustomOptions{Overlay: true, OnHandle: func(handle extensions.OverlayHandle) { handleReady <- handle }})
+		handle := f12UILifecycleReceive(t, handleReady, component.label+" handle")
+		if index == 1 {
+			handle.SetHidden(true)
+		}
+	}
+	ui.resetExtensionUI()
+	for index, component := range components {
+		outcome := f12UILifecycleReceive(t, outcomes[index], component.label+" result")
+		if _, disposed, _ := component.state(); outcome.value != nil || outcome.ok || outcome.err != nil || disposed != 1 {
+			t.Errorf("%s overlay after reset = (%v,%t,%v) disposed %d, want released and disposed once", component.label, outcome.value, outcome.ok, outcome.err, disposed)
+		}
+	}
+	if builtIn.IsHidden() || !mode.ui.HasOverlay() {
+		t.Error("reset removed Orb's own overlay")
+	}
+}

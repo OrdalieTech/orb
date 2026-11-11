@@ -17,6 +17,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/truncate"
 	"github.com/OrdalieTech/orb/tui"
 
 	theme "github.com/OrdalieTech/orb/agent/modes/theme"
@@ -1453,6 +1454,8 @@ type BashExecutionComponent struct {
 	expanded    bool
 	hovered     bool
 	excludeCtx  bool
+	truncated   bool // earlier output was discarded, here or by the executor
+	fullOutput  string
 	loader      *tui.Loader
 	ui          tui.RenderRequester
 }
@@ -1477,14 +1480,25 @@ func (c *BashExecutionComponent) AppendOutput(text string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.output.WriteString(text)
+	// The executor keeps the full output on disk; the view keeps the tail the bash tool would.
+	if c.output.Len() > 2*truncate.DefaultMaxBytes {
+		tail := truncate.TruncateTail(c.output.String()).Content
+		c.output.Reset()
+		c.output.WriteString(tail)
+		c.truncated = true
+	}
 	c.rebuild()
 }
 
-func (c *BashExecutionComponent) SetComplete(exitCode *int, cancelled bool) {
+func (c *BashExecutionComponent) SetComplete(exitCode *int, cancelled, truncated bool, fullOutputPath *string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.exitCode = exitCode
 	c.cancelled = cancelled
+	c.truncated = c.truncated || truncated
+	if fullOutputPath != nil {
+		c.fullOutput = *fullOutputPath
+	}
 	c.complete = true
 	if c.loader != nil {
 		c.loader.Stop()
@@ -1567,6 +1581,9 @@ func (c *BashExecutionComponent) rebuild() {
 			statusParts = append(statusParts, theme.FG("warning", "(cancelled)"))
 		} else if c.exitCode != nil && *c.exitCode != 0 {
 			statusParts = append(statusParts, theme.FG("error", fmt.Sprintf("(exit %d)", *c.exitCode)))
+		}
+		if c.truncated && c.fullOutput != "" {
+			statusParts = append(statusParts, theme.FG("warning", "Output truncated. Full output: "+c.fullOutput))
 		}
 		if len(statusParts) > 0 {
 			c.container.AddChild(tui.NewText(strings.Join(statusParts, "\n"), 3, 0, nil))

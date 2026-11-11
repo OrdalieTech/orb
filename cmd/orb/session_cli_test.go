@@ -286,12 +286,12 @@ func TestRunCLIMissingSessionCWDModeSplit(t *testing.T) {
 		code := runCLIWithDependencies(context.Background(), []string{"--session", path}, cliStreams{
 			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: &stderr, StdinTTY: true, StdoutTTY: true,
 		}, cliDependencies{
-			selectMissingSessionCWD: func(_ context.Context, issue *agent.MissingSessionCWDError) (string, bool, error) {
+			selectMissingSessionCWD: func(_ context.Context, issue *agent.MissingSessionCWDError) (agent.MissingSessionCWDChoice, error) {
 				selected = true
 				if issue.SessionCWD != project || issue.FallbackCWD != current || issue.SessionFile != path {
 					t.Fatalf("selector issue = %#v", issue)
 				}
-				return current, true, nil
+				return agent.MissingSessionCWDContinue, nil
 			},
 			createRuntime: func(cwd string, _ CLIArgs, _ engine.AgentMessages) (runtimeInputs, error) {
 				createdCWD = cwd
@@ -308,8 +308,8 @@ func TestRunCLIMissingSessionCWDModeSplit(t *testing.T) {
 		code := runCLIWithDependencies(context.Background(), []string{"--session", path}, cliStreams{
 			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
 		}, cliDependencies{
-			selectMissingSessionCWD: func(context.Context, *agent.MissingSessionCWDError) (string, bool, error) {
-				return "", false, nil
+			selectMissingSessionCWD: func(context.Context, *agent.MissingSessionCWDError) (agent.MissingSessionCWDChoice, error) {
+				return "", nil
 			},
 			createRuntime: func(string, CLIArgs, engine.AgentMessages) (runtimeInputs, error) {
 				created = true
@@ -320,6 +320,88 @@ func TestRunCLIMissingSessionCWDModeSplit(t *testing.T) {
 			t.Fatalf("code=%d created=%t", code, created)
 		}
 	})
+
+	// Fork copies the session into the current cwd with a new ID, so it no longer asks (pi #11060).
+	t.Run("interactive fork copies the session into the current cwd", func(t *testing.T) {
+		var forked []engine.AgentMessages
+		code := runCLIWithDependencies(context.Background(), []string{"--session", path}, cliStreams{
+			Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
+		}, cliDependencies{
+			selectMissingSessionCWD: func(context.Context, *agent.MissingSessionCWDError) (agent.MissingSessionCWDChoice, error) {
+				return agent.MissingSessionCWDFork, nil
+			},
+			createRuntime: func(cwd string, _ CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
+				if cwd != current {
+					t.Errorf("runtime cwd = %q", cwd)
+				}
+				forked = append(forked, prior)
+				return runtimeInputs{}, errors.New("interactive fixture stop")
+			},
+		})
+		currentDir, err := session.DefaultSessionDir(current, agentDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sessions := session.List(current, currentDir, nil, session.WithAgentDir(agentDir))
+		if code != 1 || len(forked) != 1 || len(forked[0]) == 0 || len(sessions) != 1 || sessions[0].ID == stored.GetSessionID() || sessions[0].CWD != current {
+			t.Fatalf("code=%d runs=%d sessions=%#v", code, len(forked), sessions)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("original session not kept: %v", err)
+		}
+	})
+}
+
+// Native (SQLite) sessions fork into the current cwd too (pi #11060).
+func TestRunCLIMissingSessionCWDForksNativeSession(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	project, current, agentDir := filepath.Join(root, "missing-project"), filepath.Join(root, "current"), filepath.Join(root, "agent")
+	for _, dir := range []string{project, current} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(config.EnvAgentDir, agentDir)
+	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
+	state, err := openNativeState(ctx, agentDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = state.Close() }()
+	created, err := state.Sessions().Create(ctx, harness.SessionCreateOptions{CWD: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := session.FromHarnessStorage(created.Storage(), session.WithHarnessRepo(state.Sessions()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stored.AppendMessage(map[string]any{"role": "user", "content": "hello", "timestamp": 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(project); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(current)
+	id := stored.GetSessionID()
+	code := runCLIWithDependencies(context.WithValue(ctx, nativeStateKey{}, state), []string{"--session", id}, cliStreams{
+		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, StdinTTY: true, StdoutTTY: true,
+	}, cliDependencies{
+		selectMissingSessionCWD: func(context.Context, *agent.MissingSessionCWDError) (agent.MissingSessionCWDChoice, error) {
+			return agent.MissingSessionCWDFork, nil
+		},
+		createRuntime: func(cwd string, _ CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
+			if cwd != current || len(prior) == 0 {
+				t.Errorf("runtime cwd = %q, %d messages", cwd, len(prior))
+			}
+			return runtimeInputs{}, errors.New("interactive fixture stop")
+		},
+	})
+	rows, err := state.Sessions().List(ctx, harness.SessionListOptions{CWD: current})
+	if code != 1 || err != nil || len(rows) != 1 || rows[0].ID == id {
+		t.Fatalf("code=%d rows=%#v err=%v", code, rows, err)
+	}
 }
 
 func createCLIStoredSession(t *testing.T, cwd, sessionDir, id string) *session.SessionManager {

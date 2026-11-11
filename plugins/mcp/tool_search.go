@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
@@ -117,7 +120,8 @@ func searchDocument(tool extensions.ToolInfo) toolDocument {
 	parts := []string{tool.Description}
 	var schema any
 	_ = json.Unmarshal(tool.Parameters, &schema)
-	parts = schemaText(schema, parts)
+	root, _ := schema.(map[string]any)
+	parts = schemaText(root, root, parts, map[uintptr]bool{reflect.ValueOf(root).Pointer(): true})
 	kept := parts[:0]
 	for _, part := range parts {
 		if strings.TrimSpace(part) != "" {
@@ -131,28 +135,61 @@ func searchDocument(tool extensions.ToolInfo) toolDocument {
 	return document
 }
 
-func schemaText(schema any, parts []string) []string {
+// schemaText collects a schema's descriptions and property names, following local $refs into root. seen
+// holds the subschemas already reached through a reference, so recursive and shared definitions are read
+// once, and definitions nothing references stay out.
+func schemaText(schema, root any, parts []string, seen map[uintptr]bool) []string {
 	object, ok := schema.(map[string]any)
 	if !ok {
 		return parts
+	}
+	if ref, ok := object["$ref"].(string); ok {
+		if target := resolveSchemaRef(ref, root); target != nil && !seen[reflect.ValueOf(target).Pointer()] {
+			seen[reflect.ValueOf(target).Pointer()] = true
+			parts = schemaText(target, root, parts, seen)
+		}
 	}
 	if description, ok := object["description"].(string); ok {
 		parts = append(parts, description)
 	}
 	if properties, ok := object["properties"].(map[string]any); ok {
 		for name, property := range properties {
-			parts = schemaText(property, append(parts, name))
+			parts = schemaText(property, root, append(parts, name), seen)
 		}
 	}
-	parts = schemaText(object["items"], parts)
+	parts = schemaText(object["items"], root, parts, seen)
 	for _, key := range []string{"anyOf", "oneOf", "allOf"} {
 		if variants, ok := object[key].([]any); ok {
 			for _, variant := range variants {
-				parts = schemaText(variant, parts)
+				parts = schemaText(variant, root, parts, seen)
 			}
 		}
 	}
 	return parts
+}
+
+// resolveSchemaRef resolves a local JSON pointer reference ("#", "#/$defs/name") in root; remote,
+// missing and malformed references resolve to nil.
+func resolveSchemaRef(ref string, root any) map[string]any {
+	if ref != "#" && !strings.HasPrefix(ref, "#/") {
+		return nil
+	}
+	current := root
+	for _, segment := range strings.Split(ref[1:], "/")[1:] {
+		if segment == "" {
+			continue
+		}
+		decoded, err := url.PathUnescape(segment)
+		object, ok := current.(map[string]any)
+		if err != nil || !utf8.ValidString(decoded) || !ok {
+			return nil
+		}
+		if current, ok = object[strings.ReplaceAll(strings.ReplaceAll(decoded, "~1", "/"), "~0", "~")]; !ok {
+			return nil
+		}
+	}
+	object, _ := current.(map[string]any)
+	return object
 }
 
 var stopWords = map[string]bool{

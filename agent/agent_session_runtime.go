@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +16,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
@@ -42,12 +45,26 @@ type AgentSessionRuntime struct {
 	claimSession      func(*sessionstore.SessionManager) (func(), error)
 	afterSessionStart func(*AgentSession) error
 	reload            func(context.Context) error
+	missingCWD        func(context.Context, *MissingSessionCWDError) (MissingSessionCWDChoice, error)
 	disposed          bool
 }
+
+// MissingSessionCWDChoice is how to open a session whose stored cwd is gone;
+// the empty choice cancels.
+type MissingSessionCWDChoice string
+
+const (
+	// MissingSessionCWDContinue runs the session in the current cwd without storing the choice.
+	MissingSessionCWDContinue MissingSessionCWDChoice = "continue"
+	// MissingSessionCWDFork copies it into the current cwd as a new session, so the next resume no longer asks.
+	MissingSessionCWDFork MissingSessionCWDChoice = "fork"
+)
 
 // AgentSessionRuntimeSwitchOptions configures [AgentSessionRuntime.SwitchSession].
 type AgentSessionRuntimeSwitchOptions struct {
 	CWDOverride string
+	// Fork opens a copy of the session in CWDOverride with a new ID, as --fork does.
+	Fork bool
 	// Repo opens the session when the active one has no repository of its own.
 	Repo                       harness.SessionRepo
 	WithSession                func(context.Context, extensions.ReplacedSessionContext) error
@@ -259,6 +276,59 @@ func (runtime *AgentSessionRuntime) SetReload(reload func(context.Context) error
 	runtime.mu.Unlock()
 }
 
+// SetMissingSessionCWD sets how a resume, an import or an extension's session
+// switch opens a session whose stored cwd is gone; without it they fail with
+// [MissingSessionCWDError].
+func (runtime *AgentSessionRuntime) SetMissingSessionCWD(choose func(context.Context, *MissingSessionCWDError) (MissingSessionCWDChoice, error)) {
+	runtime.mu.Lock()
+	runtime.missingCWD = choose
+	runtime.mu.Unlock()
+}
+
+// retryMissingCWD asks how to open the session err reports a missing cwd
+// for, and runs open again in the current cwd, forking there when chosen
+// (pi #11060).
+func (runtime *AgentSessionRuntime) retryMissingCWD(
+	ctx context.Context,
+	result extensions.SessionReplacementResult,
+	err error,
+	open func(cwd string, fork bool) (extensions.SessionReplacementResult, error),
+) (extensions.SessionReplacementResult, error) {
+	runtime.mu.RLock()
+	choose := runtime.missingCWD
+	runtime.mu.RUnlock()
+	var issue *MissingSessionCWDError
+	if choose == nil || !errors.As(err, &issue) {
+		return result, err
+	}
+	choice, err := choose(ctx, issue)
+	if err != nil || choice == "" {
+		return extensions.SessionReplacementResult{Cancelled: true}, err
+	}
+	return open(issue.FallbackCWD, choice == MissingSessionCWDFork)
+}
+
+// ForkSessionInto copies source into cwd as a new session with a new ID, as --fork
+// does; a file-backed fork is written to sessionDir.
+func ForkSessionInto(ctx context.Context, source *sessionstore.SessionManager, cwd, sessionDir string) (*sessionstore.SessionManager, error) {
+	repo := source.HarnessRepo()
+	if repo == nil {
+		return sessionstore.ForkFrom(source.GetSessionFile(), cwd, sessionDir)
+	}
+	metadata, _ := source.HarnessMetadata()
+	leaf := ""
+	if id := source.GetLeafID(); id != nil {
+		leaf = *id
+	}
+	forked, err := repo.Fork(ctx, metadata, harness.SessionForkOptions{
+		SessionCreateOptions: harness.SessionCreateOptions{CWD: cwd}, EntryID: leaf, Position: harness.ForkAt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return sessionstore.FromHarnessStorage(forked.Storage(), sessionstore.WithHarnessRepo(repo), sessionstore.WithCwdOverride(cwd))
+}
+
 // transition runs one replacement under the control guard and the operation
 // lock. The replacement's session_start, the after-start callback and
 // withSession run once both are released, so they may call back into the
@@ -396,6 +466,19 @@ func (runtime *AgentSessionRuntime) SwitchSession(
 	if options == nil {
 		options = &AgentSessionRuntimeSwitchOptions{}
 	}
+	result, err := runtime.switchSession(ctx, path, options)
+	return runtime.retryMissingCWD(ctx, result, err, func(cwd string, fork bool) (extensions.SessionReplacementResult, error) {
+		retry := *options
+		retry.CWDOverride, retry.Fork = cwd, fork
+		return runtime.switchSession(ctx, path, &retry)
+	})
+}
+
+func (runtime *AgentSessionRuntime) switchSession(
+	ctx context.Context,
+	path string,
+	options *AgentSessionRuntimeSwitchOptions,
+) (extensions.SessionReplacementResult, error) {
 	cancelled := false
 	err := runtime.transition(ctx, options.WithSession, func(ctx context.Context, current *AgentSession) (*AgentSession, error) {
 		target := path
@@ -417,6 +500,12 @@ func (runtime *AgentSessionRuntime) SwitchSession(
 			repo = options.Repo
 		}
 		if repo != nil {
+			// A session file's cwd is checked before the store keeps a copy the user may decline.
+			if prepared, openErr := sessionstore.Open(path, ""); openErr == nil && options.CWDOverride == "" {
+				if err := AssertSessionCWD(prepared, manager.GetCWD()); err != nil {
+					return nil, err
+				}
+			}
 			var opened *harness.Session
 			if opener, ok := repo.(harnessRuntimePathOpener); ok {
 				resolvedPath, resolveErr := config.NormalizePath(path)
@@ -465,6 +554,9 @@ func (runtime *AgentSessionRuntime) SwitchSession(
 			return nil, fmt.Errorf("%w: switch session", sessionstore.ErrHarnessStorageReplacement)
 		} else {
 			replacement, err = sessionstore.Open(path, "", openOptions...)
+		}
+		if err == nil && options.Fork {
+			replacement, err = ForkSessionInto(ctx, replacement, options.CWDOverride, manager.GetSessionDir())
 		}
 		if err != nil {
 			return nil, err
@@ -574,6 +666,9 @@ func (runtime *AgentSessionRuntime) Fork(
 // lifecycle.
 func (runtime *AgentSessionRuntime) Rebuild(ctx context.Context) error {
 	return runtime.transition(ctx, nil, func(ctx context.Context, current *AgentSession) (*AgentSession, error) {
+		if err := current.checkReloadable(); err != nil {
+			return nil, err
+		}
 		return runtime.replace(ctx, current, current.Manager(), extensions.SessionShutdownReload, extensions.SessionStartReload, nil)
 	})
 }
@@ -585,6 +680,13 @@ func (runtime *AgentSessionRuntime) ImportFromJSONL(
 	inputPath string,
 	cwdOverride string,
 ) (extensions.SessionReplacementResult, error) {
+	result, err := runtime.importFromJSONL(ctx, inputPath, cwdOverride, false)
+	return runtime.retryMissingCWD(ctx, result, err, func(cwd string, fork bool) (extensions.SessionReplacementResult, error) {
+		return runtime.importFromJSONL(ctx, inputPath, cwd, fork)
+	})
+}
+
+func (runtime *AgentSessionRuntime) importFromJSONL(ctx context.Context, inputPath, cwdOverride string, fork bool) (extensions.SessionReplacementResult, error) {
 	cancelled := false
 	err := runtime.transition(ctx, nil, func(ctx context.Context, current *AgentSession) (*AgentSession, error) {
 		resolvedPath, err := config.NormalizePath(inputPath)
@@ -595,7 +697,8 @@ func (runtime *AgentSessionRuntime) ImportFromJSONL(
 		if err != nil {
 			return nil, err
 		}
-		if _, err := os.Stat(resolvedPath); err != nil {
+		content, err := os.ReadFile(resolvedPath)
+		if err != nil {
 			if os.IsNotExist(err) {
 				return nil, &SessionImportFileNotFoundError{FilePath: resolvedPath}
 			}
@@ -626,6 +729,15 @@ func (runtime *AgentSessionRuntime) ImportFromJSONL(
 		var openOptions []sessionstore.Option
 		if cwdOverride != "" {
 			openOptions = append(openOptions, sessionstore.WithCwdOverride(cwdOverride))
+		} else {
+			// Asked before anything is written: a declined import leaves no copy behind.
+			var header struct{ CWD string }
+			line, _, _ := bytes.Cut(content, []byte("\n"))
+			if json.Unmarshal(line, &header) == nil && header.CWD != "" {
+				if _, err := os.Stat(header.CWD); err != nil {
+					return nil, &MissingSessionCWDError{SessionFile: destination, SessionCWD: header.CWD, FallbackCWD: manager.GetCWD()}
+				}
+			}
 		}
 		var replacement *sessionstore.SessionManager
 		if manager.IsHarnessBacked() {
@@ -641,6 +753,9 @@ func (runtime *AgentSessionRuntime) ImportFromJSONL(
 					}
 				}
 				prepared, err := sessionstore.Open(destination, sessionDir, openOptions...)
+				if err == nil {
+					err = AssertSessionCWD(prepared, manager.GetCWD())
+				}
 				if err != nil {
 					return nil, err
 				}
@@ -648,13 +763,6 @@ func (runtime *AgentSessionRuntime) ImportFromJSONL(
 					return nil, err
 				}
 			} else {
-				content, err := os.ReadFile(resolvedPath)
-				if err != nil {
-					if os.IsNotExist(err) {
-						return nil, &SessionImportFileNotFoundError{FilePath: resolvedPath}
-					}
-					return nil, err
-				}
 				if imported, err = importHarnessRuntimeSession(ctx, repo, content, resolvedPath, destination); err != nil {
 					return nil, err
 				}
@@ -666,12 +774,20 @@ func (runtime *AgentSessionRuntime) ImportFromJSONL(
 				return nil, err
 			}
 		} else {
-			if filepath.Clean(destination) != filepath.Clean(resolvedPath) {
+			// A fork copies the input itself, so the import keeps no copy of the original.
+			source := resolvedPath
+			if !fork && filepath.Clean(destination) != filepath.Clean(resolvedPath) {
 				if err := copyRuntimeSessionFile(resolvedPath, destination); err != nil {
 					return nil, err
 				}
+				source = destination
 			}
-			if replacement, err = sessionstore.Open(destination, sessionDir, openOptions...); err != nil {
+			if replacement, err = sessionstore.Open(source, sessionDir, openOptions...); err != nil {
+				return nil, err
+			}
+		}
+		if fork {
+			if replacement, err = ForkSessionInto(ctx, replacement, cwdOverride, sessionDir); err != nil {
 				return nil, err
 			}
 		}
@@ -698,6 +814,9 @@ func (runtime *AgentSessionRuntime) Dispose(ctx context.Context) {
 	runtime.disposed = true
 	runtime.mu.Unlock()
 	runtime.teardown(runtimeContext(ctx), current, extensions.SessionShutdownEvent{Reason: extensions.SessionShutdownQuit})
+	// An OAuth refresh may already have spent a single-use refresh token; exiting
+	// before the new one is saved would lose the login.
+	aiauth.SettleWrites()
 }
 
 func (runtime *AgentSessionRuntime) current() (*AgentSession, error) {
@@ -734,9 +853,6 @@ func (runtime *AgentSessionRuntime) replace(
 	if shutdownReason != extensions.SessionShutdownReload {
 		previousFile, targetFile = current.Manager().GetSessionFile(), replacement.GetSessionFile()
 	}
-	// Persist an active turn's aborted tool results before replacing its manager.
-	current.Abort()
-	_ = current.WaitForIdle(context.Background())
 	runtime.teardown(ctx, current, extensions.SessionShutdownEvent{
 		Reason: shutdownReason, TargetSessionFile: optionalRuntimeString(targetFile),
 	})
@@ -875,6 +991,7 @@ func (runtime *AgentSessionRuntime) teardown(
 	current *AgentSession,
 	event extensions.SessionShutdownEvent,
 ) {
+	current.settleAborted()
 	runner := current.ExtensionRunner()
 	extensions.EmitSessionShutdown(ctx, runner, event)
 	runtime.mu.RLock()

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -174,7 +175,7 @@ func TestAnthropicRetriesTooManyStrictToolsWithPreferredOnesRelaxed(t *testing.T
 			strict[tool.Name] = tool.Strict
 		}
 		requests = append(requests, strict)
-		if len(requests) == 1 {
+		if len(requests) == 1 && (strict["prefers"] || strict["requires"]) {
 			writer.WriteHeader(status)
 			_, _ = io.WriteString(writer, `{"type":"error","error":{"type":"invalid_request_error","message":"Too many strict tools (24). The maximum number of strict tools is 20."}}`)
 			return
@@ -194,11 +195,12 @@ func TestAnthropicRetriesTooManyStrictToolsWithPreferredOnesRelaxed(t *testing.T
 		return ai.Tool{Name: name, Description: name, Parameters: ai.JSONSchema(`{"type":"object","properties":{"x":{"type":"string"}},"required":["x"],"additionalProperties":false}`),
 			ConstrainedSampling: &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: strict}}
 	}
+	var session *string
 	run := func(tools []ai.Tool) *ai.AssistantMessage {
 		requests = nil
 		key := "key"
 		stream, err := StreamAnthropicMessagesWithOptions(context.Background(), model, ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hi")}}, Tools: &tools},
-			&AnthropicMessagesOptions{StreamOptions: ai.StreamOptions{APIKey: &key}})
+			&AnthropicMessagesOptions{StreamOptions: ai.StreamOptions{APIKey: &key, SessionID: session}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -221,8 +223,22 @@ func TestAnthropicRetriesTooManyStrictToolsWithPreferredOnesRelaxed(t *testing.T
 	if run([]ai.Tool{unbounded, tool("requires", ai.ConstrainedSamplingRequire)}); len(requests) != 1 {
 		t.Fatalf("a request with nothing to relax was retried: %v", requests)
 	}
+	// A session's later requests send them non-strict right away, until its resources are cleaned (#11626).
+	id := t.Name()
+	session = &id
+	t.Cleanup(func() { _ = ai.CleanupSessionResources(id) })
+	preferred := []ai.Tool{tool("prefers", ai.ConstrainedSamplingPrefer)}
+	for _, want := range []int{2, 1} {
+		if message := run(preferred); message.StopReason != ai.StopReasonStop || len(requests) != want || requests[len(requests)-1]["prefers"] {
+			t.Fatalf("session requests = %v, want %d", requests, want)
+		}
+	}
+	_ = ai.CleanupSessionResources(id)
+	if run(preferred); len(requests) != 2 || !requests[0]["prefers"] {
+		t.Fatalf("after cleanup requests = %v", requests)
+	}
 	status = http.StatusForbidden
-	if run([]ai.Tool{tool("prefers", ai.ConstrainedSamplingPrefer)}); len(requests) != 1 {
+	if run(preferred); len(requests) != 1 {
 		t.Fatalf("a 403 was retried: %v", requests)
 	}
 }
@@ -282,5 +298,265 @@ func TestAnthropicManagedEffortModelWithThinkingOff(t *testing.T) {
 	got, _ := json.Marshal(map[string]any{"thinking": payload.Thinking, "output_config": payload.OutputConfig, "messages": len(payload.Messages)})
 	if string(got) != `{"messages":1,"output_config":null,"thinking":{"type":"disabled"}}` {
 		t.Fatalf("payload = %s", got)
+	}
+}
+
+// anthropicThreadServer is a fake Anthropic endpoint for message threads: it records each request's
+// body and betas and answers from queue, else with a reply whose id is msg_<request number>.
+type anthropicThreadServer struct {
+	t        *testing.T
+	requests []anthropicThreadRequest
+	queue    []func(http.ResponseWriter, anthropicThreadRequest)
+	options  AnthropicMessagesOptions
+	model    *ai.Model
+}
+
+type anthropicThreadRequest struct {
+	Model    string            `json:"model"`
+	Messages []json.RawMessage `json:"messages"`
+	System   json.RawMessage   `json:"system"`
+	Tools    json.RawMessage   `json:"tools"`
+	Thread   *struct {
+		Type              string `json:"type"`
+		PreviousMessageID string `json:"previous_message_id"`
+	} `json:"thread"`
+	betas string
+}
+
+func (request anthropicThreadRequest) thread() string {
+	if request.Thread == nil {
+		return ""
+	}
+	return strings.TrimSpace(request.Thread.Type + " " + request.Thread.PreviousMessageID)
+}
+
+func anthropicThreadReply(writer http.ResponseWriter, id, model string, toolCall bool) { // a model other than the request's is a fallback reply
+	writer.Header().Set("Content-Type", "text/event-stream")
+	events := `{"type":"message_start","message":{"id":"` + id + `","model":"` + model + `","usage":{"input_tokens":1,"output_tokens":0}}}` +
+		"\n" + `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` +
+		"\n" + `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"answer"}}` +
+		"\n" + `{"type":"content_block_stop","index":0}`
+	stop := "end_turn"
+	if toolCall {
+		stop = "tool_use"
+		events += "\n" + `{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"Read","input":{}}}` +
+			"\n" + `{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"value\":\"x\"}"}}` +
+			"\n" + `{"type":"content_block_stop","index":1}`
+	}
+	events += "\n" + `{"type":"message_delta","delta":{"stop_reason":"` + stop + `"},"usage":{"output_tokens":1}}` + "\n" + `{"type":"message_stop"}`
+	for _, event := range strings.Split(events, "\n") {
+		var head struct{ Type string }
+		_ = json.Unmarshal([]byte(event), &head)
+		_, _ = io.WriteString(writer, "event: "+head.Type+"\ndata: "+event+"\n\n")
+	}
+}
+
+func anthropicThreadError(status int, message, code string) func(http.ResponseWriter, anthropicThreadRequest) {
+	return func(writer http.ResponseWriter, _ anthropicThreadRequest) {
+		details := ""
+		if code != "" {
+			details = `,"details":{"error_code":"` + code + `"}`
+		}
+		writer.WriteHeader(status)
+		_, _ = io.WriteString(writer, `{"type":"error","error":{"type":"invalid_request_error","message":"`+message+`"`+details+`}}`)
+	}
+}
+
+func newAnthropicThreadServer(t *testing.T) *anthropicThreadServer {
+	harness := &anthropicThreadServer{t: t}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var body anthropicThreadRequest
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		body.betas = request.Header.Get("anthropic-beta")
+		harness.requests = append(harness.requests, body)
+		if len(harness.queue) > 0 {
+			next := harness.queue[0]
+			harness.queue = harness.queue[1:]
+			next(writer, body)
+			return
+		}
+		anthropicThreadReply(writer, fmt.Sprintf("msg_%d", len(harness.requests)), body.Model, false)
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(func() { _ = ai.CleanupSessionResources() })
+	key, session, retries := "key", t.Name(), 0
+	harness.options = AnthropicMessagesOptions{StreamOptions: ai.StreamOptions{APIKey: &key, SessionID: &session, HTTPClient: server.Client(), MaxRetries: &retries}}
+	harness.model = anthropicTestModel()
+	harness.model.Reasoning, harness.model.BaseURL, harness.model.Compat = false, server.URL, json.RawMessage(`{"supportsMessageThreads":true}`)
+	return harness
+}
+
+func (harness *anthropicThreadServer) turn(messages *ai.MessageList, system string, tools []ai.Tool, edit func(*ai.Model, *AnthropicMessagesOptions)) *ai.AssistantMessage {
+	harness.t.Helper()
+	model, options := *harness.model, harness.options
+	if edit != nil {
+		edit(&model, &options)
+	}
+	if tools == nil {
+		tools = []ai.Tool{{Name: "read", Description: "read", Parameters: ai.JSONSchema(`{"type":"object","properties":{"value":{"type":"string"}}}`)}}
+	}
+	stream, err := StreamAnthropicMessagesWithOptions(context.Background(), &model, ai.Context{SystemPrompt: &system, Messages: *messages, Tools: &tools}, &options)
+	if err != nil {
+		harness.t.Fatal(err)
+	}
+	message, _ := ai.Collect(stream)
+	*messages = append(*messages, message)
+	return message
+}
+
+func anthropicThreadUser(text string) *ai.UserMessage {
+	return &ai.UserMessage{Content: ai.NewUserText(text), Timestamp: 1}
+}
+
+// pi 1.5.1 message threads (#11545): a session's request continues the thread with only the new
+// messages, and anything that changed earlier in the request sends the full request.
+func TestAnthropicMessageThreadsContinueOnlyUnchangedConversations(t *testing.T) {
+	if compat, _ := getAnthropicCompat(anthropicTestModel()); !compat.supportsMessageThreads {
+		t.Fatal("api.anthropic.com does not default to message threads")
+	}
+	if compat, _ := getAnthropicCompat(&ai.Model{Provider: "openrouter", BaseURL: "https://openrouter.ai/api"}); compat.supportsMessageThreads {
+		t.Fatal("a gateway defaults to message threads")
+	}
+
+	h := newAnthropicThreadServer(t)
+	messages := ai.MessageList{anthropicThreadUser("first")}
+	h.turn(&messages, "system", nil, nil)
+	messages = append(messages, anthropicThreadUser("second"))
+	if result := h.turn(&messages, "system", nil, nil); result.StopReason != ai.StopReasonStop {
+		t.Fatalf("continued turn = %#v", result)
+	}
+	create, next := h.requests[0], h.requests[1]
+	if create.thread() != "create" || create.System == nil || create.Tools == nil || !strings.Contains(create.betas, "message-threads-2026-08-12") {
+		t.Fatalf("first request = %+v", create)
+	}
+	if next.thread() != "continue msg_1" || next.System != nil || next.Tools != nil || next.betas != create.betas ||
+		len(next.Messages) != 1 || string(next.Messages[0]) != `{"role":"user","content":[{"type":"text","text":"second","cache_control":{"type":"ephemeral"}}]}` {
+		t.Fatalf("continue request = %+v %s", next, next.Messages)
+	}
+
+	for _, test := range []struct {
+		name   string
+		system string
+		tools  []ai.Tool
+		edit   func(*ai.Model, *AnthropicMessagesOptions)
+	}{
+		{name: "system prompt", system: "other"},
+		{name: "tools", tools: []ai.Tool{{Name: "other", Description: "other", Parameters: ai.JSONSchema(`{"type":"object"}`)}}},
+		{name: "model", edit: func(model *ai.Model, _ *AnthropicMessagesOptions) { model.ID = "claude-other" }},
+		{name: "cache retention", edit: func(_ *ai.Model, options *AnthropicMessagesOptions) {
+			long := ai.CacheRetentionLong
+			options.CacheRetention = &long
+		}},
+	} {
+		h.requests = nil
+		system := cmp.Or(test.system, "system")
+		messages = append(messages, anthropicThreadUser(test.name))
+		h.turn(&messages, system, test.tools, test.edit)
+		messages = append(messages, anthropicThreadUser("again"))
+		h.turn(&messages, "system", nil, nil)
+		if h.requests[0].thread() != "create" || len(h.requests[0].Messages) != len(messages)-3 || !strings.HasPrefix(h.requests[1].thread(), "create") {
+			t.Fatalf("%s change: threads %q %q", test.name, h.requests[0].thread(), h.requests[1].thread())
+		}
+	}
+
+	// After cleanup, and with caching off, there is nothing to continue.
+	_ = ai.CleanupSessionResources(t.Name())
+	h.requests = nil
+	messages = append(messages, anthropicThreadUser("after cleanup"))
+	h.turn(&messages, "system", nil, nil)
+	none := ai.CacheRetentionNone
+	h.turn(&messages, "system", nil, func(_ *ai.Model, options *AnthropicMessagesOptions) { options.CacheRetention = &none })
+	if h.requests[0].thread() != "create" || h.requests[1].Thread != nil || strings.Contains(h.requests[1].betas, "message-threads") {
+		t.Fatalf("after cleanup %q, without caching %q %q", h.requests[0].thread(), h.requests[1].thread(), h.requests[1].betas)
+	}
+}
+
+// A reply's conversion for the next request must match how that request sends it: tool calls (with
+// Claude Code names under OAuth) and per-message effort markers.
+func TestAnthropicMessageThreadsContinueAfterToolCallsAndEffortChanges(t *testing.T) {
+	h := newAnthropicThreadServer(t)
+	h.queue = append(h.queue, func(writer http.ResponseWriter, _ anthropicThreadRequest) {
+		anthropicThreadReply(writer, "msg_tool", "claude-test", true)
+	})
+	oauth := func(_ *ai.Model, options *AnthropicMessagesOptions) {
+		key := "sk-ant-oat-test"
+		options.APIKey = &key
+	}
+	messages := ai.MessageList{anthropicThreadUser("read it")}
+	if first := h.turn(&messages, "system", nil, oauth); first.StopReason != ai.StopReasonToolUse {
+		t.Fatalf("tool turn = %#v", first)
+	}
+	messages = append(messages, &ai.ToolResultMessage{ToolCallID: "toolu_1", ToolName: "read", Content: ai.ToolResultContent{&ai.TextContent{Text: "result"}}, Timestamp: 1})
+	h.turn(&messages, "system", nil, oauth)
+	if next := h.requests[1]; next.thread() != "continue msg_tool" || len(next.Messages) != 1 || !strings.Contains(string(next.Messages[0]), `"tool_use_id":"toolu_1"`) {
+		t.Fatalf("after tool calls: %q %s", next.thread(), next.Messages)
+	}
+
+	h.requests = nil
+	effort := func(level AnthropicEffort) func(*ai.Model, *AnthropicMessagesOptions) {
+		return func(model *ai.Model, options *AnthropicMessagesOptions) {
+			enabled := true
+			model.Reasoning, model.Compat = true, json.RawMessage(`{"supportsMessageThreads":true,"forceAdaptiveThinking":true,"supportsMidConvoEffort":true}`)
+			options.ThinkingEnabled, options.Effort = &enabled, &level
+		}
+	}
+	messages = ai.MessageList{anthropicThreadUser("first")}
+	h.turn(&messages, "system", nil, effort(AnthropicEffortHigh))
+	messages = append(messages, anthropicThreadUser("second"))
+	h.turn(&messages, "system", nil, effort(AnthropicEffortLow))
+	if next := h.requests[1]; next.thread() != "continue msg_1" || len(next.Messages) != 2 || !strings.Contains(string(next.Messages[1]), `"effort":"low"`) {
+		t.Fatalf("after an effort change: %q %s", next.thread(), next.Messages)
+	}
+}
+
+// Thread rejections are resent once in full; other errors are passed on.
+func TestAnthropicMessageThreadsFallBackToTheFullRequest(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		respond      func(http.ResponseWriter, anthropicThreadRequest)
+		resent, last string // thread of the resend ("-" when none) and of the turn after
+		failed       bool
+	}{
+		{name: "expired", respond: anthropicThreadError(404, "not found", "thread_not_found"), resent: "create", last: "continue msg_3"},
+		{name: "in flight", respond: anthropicThreadError(400, "in flight", "thread_continue_in_flight"), resent: "create", last: "continue msg_3"},
+		{name: "unsupported", respond: anthropicThreadError(400, "rejected", "thread_unsupported_request"), resent: "", last: ""},
+		{name: "unknown field", respond: anthropicThreadError(400, "thread: Extra inputs are not permitted", ""), resent: "", last: ""},
+		{name: "not about the thread", respond: anthropicThreadError(400, "prompt is too long", ""), resent: "-", last: "create", failed: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newAnthropicThreadServer(t)
+			messages := ai.MessageList{anthropicThreadUser("first")}
+			h.turn(&messages, "system", nil, nil)
+			messages = append(messages, anthropicThreadUser("second"))
+			h.queue = append(h.queue, test.respond)
+			result := h.turn(&messages, "system", nil, nil)
+			if test.failed {
+				messages = messages[:len(messages)-1]
+				if result.StopReason != ai.StopReasonError || result.Diagnostics != nil || len(h.requests) != 2 {
+					t.Fatalf("failed turn = %#v after %d requests", result, len(h.requests))
+				}
+			} else if result.StopReason != ai.StopReasonStop || result.Diagnostics == nil || (*result.Diagnostics)[0].Type != "anthropic_thread_fallback" ||
+				len(h.requests) != 3 || len(h.requests[2].Messages) != 3 || h.requests[2].thread() != test.resent {
+				t.Fatalf("resent %q after %d requests: %#v", h.requests[len(h.requests)-1].thread(), len(h.requests), result)
+			}
+			messages = append(messages, anthropicThreadUser("third"))
+			h.turn(&messages, "system", nil, nil)
+			if last := h.requests[len(h.requests)-1]; last.thread() != test.last || last.betas != h.requests[0].betas {
+				t.Fatalf("next turn thread = %q, betas %q", last.thread(), last.betas)
+			}
+		})
+	}
+}
+
+// Non-strict schemas keep root $defs and definitions so property $refs resolve (#9557), and still
+// drop root keywords Anthropic rejects.
+func TestAnthropicNonStrictToolSchemaKeepsSharedDefinitions(t *testing.T) {
+	tools := []ai.Tool{{Name: "t", Description: "t", Parameters: ai.JSONSchema(`{"type":"object","anyOf":[{"required":["a"]}],"properties":{"a":{"$ref":"#/$defs/A"},"b":{"$ref":"#/definitions/B"}},"$defs":{"A":{"type":"object"}},"definitions":{"B":{"type":"string"}}}`)}}
+	converted, err := convertAnthropicTools(tools, false, false, false, false, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(converted[0].InputSchema), `{"type":"object","properties":{"a":{"$ref":"#/$defs/A"},"b":{"$ref":"#/definitions/B"}},"required":[],"$defs":{"A":{"type":"object"}},"definitions":{"B":{"type":"string"}}}`; got != want {
+		t.Fatalf("input_schema = %s, want %s", got, want)
 	}
 }

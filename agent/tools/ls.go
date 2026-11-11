@@ -139,7 +139,8 @@ func (tool *lsTool) execute(ctx context.Context, input LsToolInput) (engine.Agen
 	}
 	effectiveLimit := float64(defaultLsLimit)
 	if input.Limit != nil {
-		effectiveLimit = *input.Limit
+		// A limit of 0 would list nothing and report "(empty directory)", so it means 1.
+		effectiveLimit = math.Max(1, math.Floor(*input.Limit))
 	}
 
 	exists, err := tool.operations.Exists(ctx, directoryPath)
@@ -167,10 +168,8 @@ func (tool *lsTool) execute(ctx context.Context, input LsToolInput) (engine.Agen
 	})
 
 	capacity := len(entries)
-	if effectiveLimit <= 0 {
-		capacity = 0
-	} else if effectiveLimit < float64(capacity) {
-		capacity = int(math.Ceil(effectiveLimit))
+	if effectiveLimit < float64(capacity) {
+		capacity = int(effectiveLimit)
 	}
 	results := make([]string, 0, capacity)
 	entryLimitReached := false

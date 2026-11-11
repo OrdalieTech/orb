@@ -98,6 +98,8 @@ type SessionRuntime struct {
 	nextErrorListenerID  uint64
 	steering             []string
 	followUps            []string
+	queuedTexts          map[*ai.UserMessage]string // what the queue lists; image hints change the message's own text
+	promptPreflights     int                        // prompts in input hooks or auth checks, which tree navigation waits for
 	lastAssistant        *ai.AssistantMessage
 	retryAttempt         int
 	overflowAttempted    bool
@@ -515,9 +517,8 @@ func (runtime *SessionRuntime) dispose(emitExtensionShutdown bool) {
 	if runtime == nil {
 		return
 	}
+	runtime.settleAborted()
 	runtime.disposeExtensions(emitExtensionShutdown)
-	runtime.Abort()
-	runtime.AbortBash()
 	runtime.disconnectFromAgent()
 	runtime.mu.Lock()
 	runtime.disposed = true
@@ -535,6 +536,17 @@ func (runtime *SessionRuntime) dispose(emitExtensionShutdown bool) {
 	}
 	// Provider session caches are process-scoped; upstream treats teardown as best-effort.
 	_ = ai.CleanupSessionResources(runtime.manager.GetSessionID())
+}
+
+// settleAborted aborts active work and waits for its tools to settle, so their results are recorded
+// before extensions are torn down. The wait is bounded: a tool that ignores its abort does not hold
+// the exit.
+func (runtime *SessionRuntime) settleAborted() {
+	runtime.Abort()
+	runtime.AbortBash()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = runtime.WaitForIdle(ctx)
 }
 
 // ErrSessionDisposed is returned instead of starting or queueing work on a
@@ -707,10 +719,35 @@ func (runtime *SessionRuntime) queueLocked(message engine.AgentMessage, text *st
 	case text != nil:
 		runtime.steering = append(runtime.steering, *text)
 	}
+	if user, ok := message.(*ai.UserMessage); ok && text != nil {
+		if runtime.queuedTexts == nil {
+			runtime.queuedTexts = map[*ai.UserMessage]string{}
+		}
+		runtime.queuedTexts[user] = *text
+	}
 	if followUp {
 		runtime.agent.FollowUp(message)
 	} else {
 		runtime.agent.Steer(message)
+	}
+}
+
+// unlistQueued removes a delivered queued message from the listed queue.
+func (runtime *SessionRuntime) unlistQueued(message engine.AgentMessage) {
+	user, _ := message.(*ai.UserMessage)
+	runtime.mu.Lock()
+	text, queued := runtime.queuedTexts[user]
+	if queued {
+		delete(runtime.queuedTexts, user)
+		if index := slices.Index(runtime.steering, text); index >= 0 {
+			runtime.steering = append(runtime.steering[:index], runtime.steering[index+1:]...)
+		} else if index := slices.Index(runtime.followUps, text); index >= 0 {
+			runtime.followUps = append(runtime.followUps[:index], runtime.followUps[index+1:]...)
+		}
+	}
+	runtime.mu.Unlock()
+	if queued {
+		runtime.emitQueueUpdate()
 	}
 }
 
@@ -728,6 +765,7 @@ func (runtime *SessionRuntime) RunQueued(ctx context.Context) error {
 	if message == nil {
 		return nil
 	}
+	runtime.unlistQueued(message)
 	if user, ok := message.(*ai.UserMessage); ok && runtime.extensionState != nil {
 		text, images := userTextAndImages(user.Content)
 		return runtime.runOpening(ctx, runtime.extensionState, text, images, nil)
@@ -757,9 +795,30 @@ func (runtime *SessionRuntime) IsIdle() bool {
 		return true
 	}
 	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return runtime.idleLocked()
+}
+
+func (runtime *SessionRuntime) idleLocked() bool {
 	active := runtime.activeRuns != 0 || runtime.compactionCancel != nil || runtime.autoCompactionCancel != nil || runtime.branchCancel != nil || runtime.retryCancel != nil
-	runtime.mu.Unlock()
 	return !active && runtime.agent.IsIdle()
+}
+
+// beginPromptPreflight reserves the context through a prompt's input hooks and
+// auth checks, so tree navigation cannot install another one meanwhile, and
+// refuses a prompt while navigation summarizes a branch (upstream #9155).
+func (runtime *SessionRuntime) beginPromptPreflight() (func(), error) {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if runtime.branchCancel != nil {
+		return nil, errors.New("Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.") //nolint:staticcheck // Upstream session error is observable.
+	}
+	runtime.promptPreflights++
+	return func() {
+		runtime.mu.Lock()
+		runtime.promptPreflights--
+		runtime.mu.Unlock()
+	}, nil
 }
 
 func (runtime *SessionRuntime) PromptAfterPreflight(ctx context.Context, input any, images ...*ai.ImageContent) error {
@@ -775,6 +834,9 @@ func (runtime *SessionRuntime) PromptAfterPreflight(ctx context.Context, input a
 			return nil
 		}
 		input = expanded
+		if len(images) > 0 {
+			input, images = runtime.userMessage(expanded, images), nil
+		}
 	}
 	return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, input, images...) })
 }
@@ -922,6 +984,7 @@ func (runtime *SessionRuntime) ClearQueue() QueueUpdateEvent {
 	}
 	runtime.steering = []string{}
 	runtime.followUps = []string{}
+	clear(runtime.queuedTexts)
 	runtime.mu.Unlock()
 	runtime.agent.ClearAllQueues()
 	runtime.emitQueueUpdate()
@@ -974,6 +1037,26 @@ func (runtime *SessionRuntime) WaitForIdle(ctx context.Context) error {
 		}
 	}
 	return runtime.agent.WaitForIdle(ctx)
+}
+
+// recordThinkingLevel records the live thinking level on the current branch
+// when the branch implies another one: tree navigation can leave the latest
+// thinking_level_change on another branch (upstream #11451). The recorded level
+// is compared clamped to the model, so a level clamped on resume is not
+// recorded over the requested one.
+func (runtime *SessionRuntime) recordThinkingLevel() error {
+	for _, entry := range slices.Backward(runtime.manager.GetBranch()) {
+		if entry.Type != "thinking_level_change" {
+			continue
+		}
+		state := runtime.agent.StateWithoutMessages()
+		if ai.ClampThinkingLevel(state.Model, ai.ModelThinkingLevel(entry.ThinkingLevel)) == state.ThinkingLevel {
+			return nil
+		}
+		_, err := runtime.manager.AppendThinkingLevelChange(string(state.ThinkingLevel))
+		return err
+	}
+	return nil
 }
 
 func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() error) (err error) {
@@ -1029,6 +1112,9 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 			err = flushErr
 		}
 	}()
+	if err := runtime.recordThinkingLevel(); err != nil {
+		return err
+	}
 	for {
 		if err := start(); err != nil {
 			return err
@@ -1153,21 +1239,7 @@ func (runtime *SessionRuntime) handleAgentEvent(ctx context.Context, event engin
 			runtime.overflowAttempted = false
 			runtime.mu.Unlock()
 		}
-		if text := userMessageText(start.Message); text != "" {
-			changed := false
-			runtime.mu.Lock()
-			if index := slices.Index(runtime.steering, text); index >= 0 {
-				runtime.steering = append(runtime.steering[:index], runtime.steering[index+1:]...)
-				changed = true
-			} else if index := slices.Index(runtime.followUps, text); index >= 0 {
-				runtime.followUps = append(runtime.followUps[:index], runtime.followUps[index+1:]...)
-				changed = true
-			}
-			runtime.mu.Unlock()
-			if changed {
-				runtime.emitQueueUpdate()
-			}
-		}
+		runtime.unlistQueued(start.Message)
 	}
 	ephemeral := engine.IsEphemeralAgentEvent(ctx)
 	event = runtime.extensionLifecycleEvent(ctx, event)
@@ -1753,9 +1825,28 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 		}
 		defer finish()
 	}
-	if !runtime.IsIdle() {
+	branchContext, cancel := context.WithCancel(ctx)
+	runtime.mu.Lock()
+	idle := runtime.idleLocked() && runtime.promptPreflights == 0
+	if idle {
+		runtime.branchCancel = cancel
+		runtime.refreshIdleWaitLocked()
+	}
+	runtime.mu.Unlock()
+	if !idle {
+		cancel()
 		return NavigateTreeResult{}, errors.New("Wait for the current response to finish before navigating the session tree.")
 	}
+	release := sync.OnceFunc(func() {
+		runtime.mu.Lock()
+		runtime.branchCancel = nil
+		runtime.refreshIdleWaitLocked()
+		runtime.mu.Unlock()
+	})
+	defer func() {
+		cancel()
+		release()
+	}()
 	oldLeaf := runtime.manager.GetLeafID()
 	if oldLeaf != nil && *oldLeaf == targetID {
 		return NavigateTreeResult{}, nil
@@ -1777,18 +1868,6 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 		}
 	}
 	collected.Entries = projectSessionEntries(onBranch)
-	branchContext, cancel := context.WithCancel(ctx)
-	runtime.mu.Lock()
-	runtime.branchCancel = cancel
-	runtime.refreshIdleWaitLocked()
-	runtime.mu.Unlock()
-	defer func() {
-		cancel()
-		runtime.mu.Lock()
-		runtime.branchCancel = nil
-		runtime.refreshIdleWaitLocked()
-		runtime.mu.Unlock()
-	}()
 
 	var summary string
 	var details any = harness.BranchSummaryDetails{}
@@ -1912,6 +1991,8 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	}
 	runtime.RefreshContext()
 	runtime.restoreBranchTools()
+	// The selected context is installed; session_tree handlers may prompt or navigate again.
+	release()
 	if state := runtime.extensionState; state != nil && state.runner != nil && state.runner.HasHandlers(extensions.EventSessionTree) {
 		var fromExtensionValue *bool
 		if summary != "" {

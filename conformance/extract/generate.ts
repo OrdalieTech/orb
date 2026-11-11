@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { stubGrokMermaid } from "./stub-grok-mermaid.ts";
+import { stubMermaid } from "./stub-mermaid.ts";
 
 import { generateF1 } from "./f1-messages.ts";
 import { generateF1PartialJSON } from "./f1-partialjson.ts";
@@ -68,7 +68,7 @@ if (!upstreamCommit) {
 	throw new Error("upstream commit argument is required");
 }
 
-await stubGrokMermaid(upstreamRoot);
+await stubMermaid(upstreamRoot);
 
 const generators = [
 	generateF1,

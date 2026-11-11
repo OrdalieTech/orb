@@ -1845,3 +1845,64 @@ func TestAbortedQueuedNestedToolCallEmitsEndEventToExtensionsAndSubscribers(t *t
 		t.Fatalf("outcome=%+v extensionSawEnd=%v endEvents=%+v", outcome, extensionSawEnd, endEvents)
 	}
 }
+
+// A prompt reserves the context through its asynchronous input hooks, so tree
+// navigation cannot install another one meanwhile, and a prompt waits out a
+// navigation's branch summary (upstream #9155).
+func TestPromptsAndTreeNavigationDoNotOverlap(t *testing.T) {
+	cwd := t.TempDir()
+	manager, settings := extensionRuntimeDependencies(t, cwd)
+	registry := extensions.NewRegistry(cwd)
+	hooked, release := make(chan struct{}), make(chan struct{})
+	if err := registry.Register("<inline:slow-input>", func(api extensions.API) error {
+		api.On(extensions.EventInput, func(context.Context, extensions.Event, extensions.Context) (any, error) {
+			close(hooked)
+			<-release
+			return extensions.InputResult{Action: extensions.InputHandled}, nil
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider := faux.New()
+	created := engine.NewAgent(provider.StreamSimple, engine.WithInitialState(engine.AgentState{SystemPrompt: "base", Model: provider.GetModel()}), engine.WithConvertToLLM(ConvertToLLM))
+	runtime, err := NewSessionRuntime(SessionRuntimeConfig{Agent: created, SessionManager: manager, Settings: settings, ExtensionRegistry: registry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Dispose()
+	first, _ := manager.AppendMessage(userMessage("first"))
+	_, _ = manager.AppendMessage(faux.AssistantMessage("answer"))
+	runtime.RefreshContext()
+
+	done := make(chan error, 1)
+	go func() { done <- runtime.Prompt(context.Background(), "hooked") }()
+	<-hooked
+	if _, err := runtime.NavigateTree(context.Background(), first, NavigateTreeOptions{}); err == nil {
+		t.Fatal("navigation started during a prompt's input hook")
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+
+	summarizing, finish := make(chan struct{}), make(chan struct{})
+	runtime.complete = func(ctx context.Context, _ *ai.Model, _ ai.Context, _ *ai.SimpleStreamOptions) (*ai.AssistantMessage, error) {
+		close(summarizing)
+		<-finish
+		return faux.AssistantMessage("summary"), nil
+	}
+	navigated := make(chan error, 1)
+	go func() {
+		_, err := runtime.NavigateTree(context.Background(), first, NavigateTreeOptions{Summarize: true})
+		navigated <- err
+	}()
+	<-summarizing
+	if err := runtime.Prompt(context.Background(), "during summary"); err == nil {
+		t.Fatal("prompt started during a branch summary")
+	}
+	close(finish)
+	if err := <-navigated; err != nil {
+		t.Fatal(err)
+	}
+}

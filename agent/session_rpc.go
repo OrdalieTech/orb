@@ -139,6 +139,11 @@ func (runtime *SessionRuntime) PromptPreflight(ctx context.Context) error {
 		return err
 	}
 	defer finish()
+	finishPreflight, err := runtime.beginPromptPreflight()
+	if err != nil {
+		return err
+	}
+	defer finishPreflight()
 	if runtime.agent.UsesSessionLoop() {
 		return nil
 	}
@@ -254,6 +259,7 @@ func (runtime *SessionRuntime) DequeueMessages() []string {
 	messages := append([]string(nil), runtime.steering...)
 	messages = append(messages, runtime.followUps...)
 	runtime.steering, runtime.followUps = nil, nil
+	clear(runtime.queuedTexts)
 	runtime.mu.Unlock()
 	runtime.agent.ClearSteeringQueue()
 	runtime.agent.ClearFollowUpQueue()
@@ -646,6 +652,22 @@ func (runtime *SessionRuntime) CycleModelBackward(ctx context.Context) (*ModelCy
 
 // step is +1 (forward) or -1 (backward); wraparound matches upstream
 // (currentIndex + step + len) % len with an absent current model treated as index 0.
+// nextCycleIndex is the index to cycle to from current (-1 when the active
+// model is not in the list): forward from outside the list picks the first
+// entry and backward the last, so a one-entry list still selects its only
+// model (upstream #11806).
+func nextCycleIndex(current, length, step int) (int, bool) {
+	switch {
+	case length == 0, current >= 0 && length == 1:
+		return 0, false
+	case current < 0 && step > 0:
+		return 0, true
+	case current < 0:
+		return length - 1, true
+	}
+	return (current + step + length) % length, true
+}
+
 func (runtime *SessionRuntime) cycleModel(ctx context.Context, step int) (*ModelCycleResult, error) {
 	if runtime == nil {
 		return nil, errors.New("agent: nil session runtime")
@@ -662,17 +684,14 @@ func (runtime *SessionRuntime) cycleModel(ctx context.Context, step int) (*Model
 			}
 			models = append(models, scoped)
 		}
-		if len(models) <= 1 {
+		state := runtime.agent.StateWithoutMessages()
+		index, ok := nextCycleIndex(slices.IndexFunc(models, func(scoped ScopedModel) bool {
+			return state.Model != nil && scoped.Model.Provider == state.Model.Provider && scoped.Model.ID == state.Model.ID
+		}), len(models), step)
+		if !ok {
 			return nil, nil
 		}
-		state := runtime.agent.StateWithoutMessages()
-		index := slices.IndexFunc(models, func(scoped ScopedModel) bool {
-			return state.Model != nil && scoped.Model.Provider == state.Model.Provider && scoped.Model.ID == state.Model.ID
-		})
-		if index < 0 {
-			index = 0
-		}
-		next := models[(index+step+len(models))%len(models)]
+		next := models[index]
 		if err := runtime.setModel(ctx, next.Model, next.ThinkingLevel, false, extensions.ModelSelectCycle); err != nil {
 			return nil, err
 		}
@@ -681,17 +700,14 @@ func (runtime *SessionRuntime) cycleModel(ctx context.Context, step int) (*Model
 		}, nil
 	}
 	models := runtime.AvailableModels()
-	if len(models) <= 1 {
+	state := runtime.agent.StateWithoutMessages()
+	index, ok := nextCycleIndex(slices.IndexFunc(models, func(model ai.Model) bool {
+		return state.Model != nil && model.Provider == state.Model.Provider && model.ID == state.Model.ID
+	}), len(models), step)
+	if !ok {
 		return nil, nil
 	}
-	state := runtime.agent.StateWithoutMessages()
-	index := slices.IndexFunc(models, func(model ai.Model) bool {
-		return state.Model != nil && model.Provider == state.Model.Provider && model.ID == state.Model.ID
-	})
-	if index < 0 {
-		index = 0
-	}
-	next := models[(index+step+len(models))%len(models)]
+	next := models[index]
 	if err := runtime.setModel(ctx, next, nil, true, extensions.ModelSelectCycle); err != nil {
 		return nil, err
 	}

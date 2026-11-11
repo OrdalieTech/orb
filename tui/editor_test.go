@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -428,6 +429,35 @@ func TestEditorPasteRegistryTracksMarkerDeletion(t *testing.T) {
 		press(editor, "\x05", "\x7f")
 		if got := editor.GetExpandedText(); got != pasteC+pasteB {
 			t.Fatalf("expanded after renumber = %q, want reordered pastes", got)
+		}
+	})
+
+	t.Run("short markers", func(t *testing.T) {
+		editor := newTestEditor()
+		pasteA, pasteB := taggedPaste("alpha"), taggedPaste("beta")
+		editor.HandleInput(keyEventFor("\x1b[200~" + pasteA + "\x1b[201~"))
+		editor.HandleInput(keyEventFor("\x1b[200~" + pasteB + "\x1b[201~"))
+		press(editor, "\x15")
+		for _, char := range "[paste #1][paste #2]" {
+			press(editor, string(char))
+		}
+		press(editor, "\x1b[D", "\x7f")
+		wantText(t, editor, "[paste #1]")
+		if got := editor.GetExpandedText(); got != pasteB {
+			t.Fatalf("expanded = %q, want %q", got, pasteB)
+		}
+	})
+
+	t.Run("cursor after shorter renumber", func(t *testing.T) {
+		editor := newTestEditor()
+		for index := range 9 {
+			editor.HandleInput(keyEventFor("\x1b[200~" + taggedPaste(strconv.Itoa(index)) + "\x1b[201~"))
+		}
+		press(editor, "\x01")
+		editor.HandleInput(keyEventFor("\x1b[200~" + taggedPaste("tenth") + "\x1b[201~"))
+		press(editor, "\x01", "\x1b[C", "\x1b[C", "\x7f", "x")
+		if got := editor.GetText(); !strings.HasPrefix(got, "[paste #9 +12 lines]x[paste #1 +12 lines]") {
+			t.Fatalf("text = %q, want x typed between the renumbered markers", got)
 		}
 	})
 

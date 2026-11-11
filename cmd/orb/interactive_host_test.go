@@ -363,8 +363,9 @@ func TestInteractiveHostSwitchSessionRestoresModelAndRollsBackMissingCwd(t *test
 		t.Fatalf("switch session_shutdown events = %#v", shutdowns)
 	}
 
-	// A session whose stored cwd no longer exists fails with upstream text and
-	// keeps the current runtime; a cwd override recovers.
+	// A session whose stored cwd no longer exists asks how to open it; with no
+	// answer the switch is cancelled and keeps the current runtime, and a cwd
+	// override recovers.
 	missingRoot := filepath.Join(fixture.root, "gone")
 	if err := os.MkdirAll(missingRoot, 0o755); err != nil {
 		t.Fatal(err)
@@ -379,16 +380,8 @@ func TestInteractiveHostSwitchSessionRestoresModelAndRollsBackMissingCwd(t *test
 		t.Fatal(err)
 	}
 	current := host.Session()
-	_, err = host.SwitchSession(context.Background(), missingFile, "", nil)
-	var missingErr *agent.MissingSessionCWDError
-	if !errors.As(err, &missingErr) {
-		t.Fatalf("expected agent.MissingSessionCWDError, got %v", err)
-	}
-	if !strings.HasPrefix(err.Error(), "Stored session working directory does not exist: ") || !strings.Contains(err.Error(), "Current working directory: ") {
-		t.Fatalf("error text = %q", err.Error())
-	}
-	if host.Session() != current {
-		t.Fatal("failed switch replaced the runtime")
+	if result, err := host.SwitchSession(context.Background(), missingFile, "", nil); err != nil || !result.Cancelled || host.Session() != current {
+		t.Fatalf("unanswered missing-cwd switch = %+v, %v", result, err)
 	}
 	if result, err := host.SwitchSession(context.Background(), missingFile, fixture.root, nil); err != nil || result.Cancelled {
 		t.Fatalf("switch with cwd override = %+v, %v", result, err)

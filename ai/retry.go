@@ -51,8 +51,12 @@ var retryableProviderPatterns = anyOf([]string{
 	`exceeded request buffer limit while retrying upstream`,
 	// A gateway failing to relay the upstream stream, sent as a Responses response.failed without a code.
 	`unable to forward upstream`, `upstream.?request.?failed`, `upstream_stream_read_error`, `stream was interrupted`, `http/?2 stream failed`,
-	// Codex CLI proxies relaying a mid-stream disconnect; a failed Google ADC token refresh.
-	`stream disconnected before completion`, `request to \S+ failed, reason:`,
+	// Codex CLI proxies relaying a mid-stream disconnect; a gateway relaying a dropped Anthropic stream
+	// (upstream #11879); a failed Google ADC token refresh.
+	`stream disconnected before completion`, `cut short after the reply had begun`, `request to \S+ failed, reason:`,
+	// Go's net/http on a response body dropped mid-stream: a cut chunked or sized body, an HTTP/2
+	// stream reset or a GOAWAY.
+	`unexpected EOF`, `stream error: stream ID`, `GOAWAY`,
 	`network.?error`, `connection.?error`, `connection.?refused`, `connection.?lost`, `other side closed`,
 	`fetch failed`, `upstream.?connect`, `reset before headers`, `socket hang up`,
 	// DNS transport failures (upstream 33e40c3e). The first three are Node's

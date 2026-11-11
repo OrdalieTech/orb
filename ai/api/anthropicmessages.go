@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	claudeCodeVersion = "2.1.280"
+	claudeCodeVersion = "2.1.322"
 	// anthropicSDKVersion is the Anthropic TypeScript SDK upstream pins; its
 	// token exchanges send it as the user agent.
 	anthropicSDKVersion                           = "0.124.0"
@@ -205,6 +205,7 @@ type resolvedAnthropicCompat struct {
 	supportsMidConvoSystemMessages  bool
 	supportsMidConvoToolChanges     bool
 	supportsMidConvoEffort          bool
+	supportsMessageThreads          bool
 	fallbackModels                  []ai.AnthropicAllowedFallbackModel
 }
 
@@ -299,6 +300,10 @@ func StreamAnthropicMessagesWithOptions(
 			fail(compatErr)
 			return
 		}
+		// Sessions where the endpoint rejected threads keep the threads beta, which the resend that turned
+		// them off was accepted with; postAnthropicThread then sends no thread.
+		threadSession := anthropicThreadSession(compat, streamOptions)
+		var threaded jsonwire.RawObject // the full body of the thread request that answered
 		send := func(relaxPreferredStrict bool) (*http.Response, bool, error) {
 			payload, isOAuth, err := buildAnthropicMessagesPayload(model, compat, requestContext, options, relaxPreferredStrict)
 			if err != nil {
@@ -316,18 +321,39 @@ func StreamAnthropicMessagesWithOptions(
 					}
 				}
 			}
-			response, err := postAnthropicStream(ctx, model, compat, requestContext, streamOptions, hookedPayload, isOAuth, nativeToolChanges, options)
+			post := func(payload any) (*http.Response, error) {
+				return postAnthropicStream(ctx, model, compat, requestContext, streamOptions, payload, isOAuth, nativeToolChanges, options)
+			}
+			if threadSession == "" {
+				response, err := post(hookedPayload)
+				return response, isOAuth, err
+			}
+			encoded, err := ai.Marshal(hookedPayload)
+			if err != nil {
+				return nil, false, fmt.Errorf("encode Anthropic request: %w", err)
+			}
+			body, ok := jsonwire.ParseRawObject(encoded)
+			if !ok {
+				return nil, false, errors.New("encode Anthropic request: not a JSON object")
+			}
+			response, isThread, err := postAnthropicThread(ctx, model, threadSession, body, output, post)
+			threaded = nil
+			if isThread {
+				threaded = body
+			}
 			return response, isOAuth, err
 		}
-		response, isOAuth, err := send(false)
+		relaxed := strictToolLimitsExceeded(streamOptions)
+		response, isOAuth, err := send(relaxed)
 		var limit anthropicStrictToolLimitError
-		if errors.As(err, &limit) && ctx.Err() == nil && requestContext.Tools != nil && slices.ContainsFunc(*requestContext.Tools, func(tool ai.Tool) bool {
+		if !relaxed && errors.As(err, &limit) && ctx.Err() == nil && requestContext.Tools != nil && slices.ContainsFunc(*requestContext.Tools, func(tool ai.Tool) bool {
 			strict, _, strictErr := resolveJSONSchemaStrictSampling(tool, true, anthropicStrictRejects)
 			return strictErr == nil && strict != nil && *strict && tool.ConstrainedSampling.Strict != ai.ConstrainedSamplingRequire
 		}) {
 			// Anthropic refused the strict tool set as too large; once more with tools that only
 			// prefer strict sampling sent non-strict (upstream 1.2.0 #10409).
 			appendStrictToolsFallback(output, "anthropic", err.Error())
+			markStrictToolLimitsExceeded(streamOptions)
 			response, isOAuth, err = send(true)
 		}
 		if err != nil {
@@ -378,6 +404,9 @@ func StreamAnthropicMessagesWithOptions(
 			ai.SetAssistantMessageRawStopBeforeDiagnostics(output, true)
 			details, _ := ai.Marshal(map[string]any{"transformations": processor.inputTransformations})
 			appendDiagnostic(output, ai.AssistantMessageDiagnostic{Type: "anthropic_input_transformations", Timestamp: openAINowUnixMilli(), Details: details})
+		}
+		if threaded != nil {
+			recordAnthropicThread(model, threadSession, threaded, output, isOAuth, compat.allowEmptySignature)
 		}
 		sink(ai.DoneEvent{Reason: output.StopReason, Message: output})
 	}, nil
@@ -440,6 +469,9 @@ func getAnthropicCompat(model *ai.Model) (resolvedAnthropicCompat, error) {
 		forceAdaptiveThinking:           raw.ForceAdaptiveThinking,
 		supportsToolReferences:          defaultAnthropicToolReferences(model),
 		supportsMidConvoEffort:          raw.SupportsMidConvoEffort != nil && *raw.SupportsMidConvoEffort,
+		// Gateways that drop unknown request fields would turn a continue into a request without the
+		// earlier conversation, so only Anthropic's own endpoint defaults to threads.
+		supportsMessageThreads: model.Provider == "anthropic" && strings.Contains(model.BaseURL, "api.anthropic.com"),
 	}
 	if raw.AllowedFallbackModels != nil {
 		compat.fallbackModels = *raw.AllowedFallbackModels
@@ -479,6 +511,9 @@ func getAnthropicCompat(model *ai.Model) (resolvedAnthropicCompat, error) {
 	}
 	if raw.SupportsToolReferences != nil {
 		compat.supportsToolReferences = *raw.SupportsToolReferences
+	}
+	if raw.SupportsMessageThreads != nil {
+		compat.supportsMessageThreads = *raw.SupportsMessageThreads
 	}
 	return compat, nil
 }
@@ -780,11 +815,7 @@ func convertAnthropicTools(
 		if err != nil {
 			return nil, err
 		}
-		properties, required, err := anthropicSchemaParts(tool.Name, parameters)
-		if err != nil {
-			return nil, err
-		}
-		inputSchema, err := buildAnthropicInputSchema(tool.Name, parameters, properties, required, strict != nil && *strict)
+		inputSchema, err := anthropicInputSchema(tool.Name, parameters, strict != nil && *strict)
 		if err != nil {
 			return nil, err
 		}
@@ -810,22 +841,10 @@ func convertAnthropicTools(
 	return result, nil
 }
 
-func buildAnthropicInputSchema(
-	toolName string,
-	parameters jsonschema.Schema,
-	properties json.RawMessage,
-	required []string,
-	strict bool,
-) (json.RawMessage, error) {
-	legacy := jsonwire.OrderedObject{
-		{Name: "type", Value: "object"},
-		{Name: "properties", Value: properties},
-		{Name: "required", Value: required},
-	}
-	if !strict {
-		encoded, err := ai.Marshal(legacy)
-		return json.RawMessage(encoded), err
-	}
+// anthropicInputSchema keeps the root properties, required and shared definitions, so property $refs
+// still resolve; other root keywords stay out of non-strict schemas, since Anthropic rejects root
+// anyOf/oneOf/allOf with a 400. A strict schema keeps the whole schema under those.
+func anthropicInputSchema(toolName string, parameters jsonschema.Schema, strict bool) (json.RawMessage, error) {
 	data, err := ai.Marshal(parameters)
 	if err != nil {
 		return nil, fmt.Errorf("marshal Anthropic tool %q schema: %w", toolName, err)
@@ -834,36 +853,29 @@ func buildAnthropicInputSchema(
 	if !ok {
 		return nil, fmt.Errorf("decode Anthropic tool %q schema: expected object", toolName)
 	}
-	schema := make(jsonwire.OrderedObject, len(members))
-	for index, member := range members {
-		schema[index] = jsonwire.OrderedMember{Name: member.Name, Value: member.Value}
+	properties, _ := members.Get("properties")
+	if len(properties) == 0 || string(properties) == "null" {
+		properties = json.RawMessage(`{}`)
 	}
-	for _, member := range legacy {
-		schema.Set(member.Name, member.Value)
+	required, _ := members.Get("required")
+	if len(required) == 0 || string(required) == "null" {
+		required = json.RawMessage(`[]`)
+	}
+	legacy := jsonwire.RawObject{{Name: "type", Value: json.RawMessage(`"object"`)}, {Name: "properties", Value: properties}, {Name: "required", Value: required}}
+	for _, name := range []string{"$defs", "definitions"} {
+		if value, ok := members.Get(name); ok {
+			legacy = append(legacy, jsonwire.RawMember{Name: name, Value: value})
+		}
+	}
+	schema := legacy
+	if strict {
+		schema = members
+		for _, member := range legacy {
+			schema.Set(member.Name, member.Value)
+		}
 	}
 	encoded, err := ai.Marshal(schema)
 	return json.RawMessage(encoded), err
-}
-
-func anthropicSchemaParts(name string, parameters jsonschema.Schema) (json.RawMessage, []string, error) {
-	var fields struct {
-		Properties json.RawMessage `json:"properties"`
-		Required   []string        `json:"required"`
-	}
-	data, err := json.Marshal(parameters)
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal Anthropic tool %q schema: %w", name, err)
-	}
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return nil, nil, fmt.Errorf("decode Anthropic tool %q schema: %w", name, err)
-	}
-	if len(fields.Properties) == 0 || string(fields.Properties) == "null" {
-		fields.Properties = json.RawMessage(`{}`)
-	}
-	if fields.Required == nil {
-		fields.Required = []string{}
-	}
-	return fields.Properties, fields.Required, nil
 }
 
 func convertAnthropicMessages(
@@ -1239,7 +1251,7 @@ func anthropicResponseError(status int, contents []byte) error {
 	if status == http.StatusBadRequest && bytes.Contains(contents, []byte("invalid_request_error")) && anthropicStrictToolLimit(string(contents)) {
 		return anthropicStrictToolLimitError{err}
 	}
-	return err
+	return classifyAnthropicThreadRejection(err, status, contents)
 }
 
 // anthropicStrictToolLimitError is Anthropic's 400 refusing a request whose strict tools exceed its grammar
@@ -1733,6 +1745,9 @@ func anthropicBetaFeatures(model *ai.Model, compat resolvedAnthropicCompat, requ
 	}
 	if nativeToolChanges {
 		features = append(features, "mid-conversation-tool-changes-2026-07-01")
+	}
+	if anthropicThreadSession(compat, anthropicStreamOptions(options)) != "" {
+		features = append(features, "message-threads-2026-08-12")
 	}
 	return features
 }

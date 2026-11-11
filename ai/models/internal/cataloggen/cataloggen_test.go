@@ -157,3 +157,35 @@ func TestCatalogTakesPiProviderFixes(t *testing.T) {
 		t.Fatalf("MiMo thinking levels = %v", levels)
 	}
 }
+
+// pi 1.5.1 catalog changes the F2 compat fixture does not cover.
+func TestCatalogTakesPi151Changes(t *testing.T) {
+	catalog, err := Generate(pinnedSources(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct{ provider, id, compat string }{
+		{"anthropic", "claude-fable-5-2", `"supportsMidConvoEffort":true`},
+		{"anthropic", "claude-fable-5-2", `"supportsMidConvoSystemMessages":true`},
+		{"anthropic", "claude-fable-5-2", `"allowedFallbackModels":[{"provider":"anthropic","model":"claude-opus-5"`},
+		{"anthropic", "claude-sonnet-5", `"supportsTemperature":false`},
+		{"opencode-go", "claude-haiku-5-5", `"supportsMidConvoEffort":true`},
+		{"opencode", "claude-opus-5", `"supportsMidConvoEffort":true`},
+		{"opencode", "claude-fable-5-1", `"supportsMidConvoEffort":true`},
+		{"qwen-token-plan-individual", "glm-5.3", `"thinkingFormat":"qwen"`},
+		{"qwen-token-plan-individual-cn", "glm-5.3", `"thinkingFormat":"qwen"`},
+	} {
+		m, ok := catalog[item.provider][item.id]
+		if !ok || !strings.Contains(string(m.Compat), item.compat) {
+			t.Errorf("%s/%s compat = %s, want %s", item.provider, item.id, m.Compat, item.compat)
+		}
+	}
+	if m := catalog["qwen-token-plan-individual-cn"]["glm-5.3"]; m.BaseURL != "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1" || len(catalog["qwen-token-plan-individual-cn"]) != 10 {
+		t.Errorf("qwen-token-plan-individual-cn = %d models, base URL %q", len(catalog["qwen-token-plan-individual-cn"]), m.BaseURL)
+	}
+	for _, id := range []string{"gpt-6-astra", "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-6.1-terra"} {
+		if m := catalog["azure"][id]; m.ContextWindow != 1050000 || m.Cost.Tiers == nil || len(*m.Cost.Tiers) == 0 {
+			t.Errorf("azure/%s = %v context, tiers %v", id, m.ContextWindow, m.Cost.Tiers)
+		}
+	}
+}

@@ -36,6 +36,28 @@ func TestLsToolListsDotfilesAndDirectoriesInOrder(t *testing.T) {
 	}
 }
 
+// Limits below 1 mean 1, and exactly limit entries report no limit (#7121).
+func TestLsToolLimits(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for limit, want := range map[float64]string{
+		0: "a.txt\n\n[1 entries limit reached. Use limit=2 for more]", -5: "a.txt\n\n[1 entries limit reached. Use limit=2 for more]",
+		1.9: "a.txt\n\n[1 entries limit reached. Use limit=2 for more]", 3: "a.txt\nb.txt\nc.txt",
+	} {
+		result, err := NewLsTool(dir, nil).Execute(context.Background(), "call", map[string]any{"limit": limit}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := toolResultText(t, result); got != want {
+			t.Fatalf("limit %v: output = %q, want %q", limit, got, want)
+		}
+	}
+}
+
 func TestLsToolHandlesEmptyMissingAndFilePaths(t *testing.T) {
 	dir := t.TempDir()
 	tool := NewLsTool(dir, nil)

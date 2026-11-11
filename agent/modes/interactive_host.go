@@ -112,8 +112,18 @@ type InteractiveAuthOptions struct {
 	Logout []InteractiveAuthProvider
 }
 
-// MissingSessionCWDPrompt asks whether to continue a session whose stored cwd
-// no longer exists in the fallback cwd.
-func MissingSessionCWDPrompt(err *agent.MissingSessionCWDError) string {
-	return "cwd from session file does not exist\n" + err.SessionCWD + "\n\ncontinue in current cwd\n" + err.FallbackCWD
+// MissingSessionCWDPrompt asks how to open a session whose stored cwd no longer
+// exists; choices lists the options' labels by choice, the empty one cancelling.
+func MissingSessionCWDPrompt(err *agent.MissingSessionCWDError) (title string, choices []MissingSessionCWDOption) {
+	return "Session cwd does not exist: " + err.SessionCWD, []MissingSessionCWDOption{
+		{"Continue in " + err.FallbackCWD + " (asks again next time)", agent.MissingSessionCWDContinue},
+		{"Fork into " + err.FallbackCWD + " (new session ID, original kept)", agent.MissingSessionCWDFork},
+		{"Cancel", ""},
+	}
+}
+
+// MissingSessionCWDOption is one answer to [MissingSessionCWDPrompt].
+type MissingSessionCWDOption struct {
+	Label  string
+	Choice agent.MissingSessionCWDChoice
 }

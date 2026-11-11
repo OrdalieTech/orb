@@ -405,7 +405,7 @@ func buildOpenAIResponsesPayload(
 		Stream: true,
 		Store:  false,
 	}
-	if cacheRetention != ai.CacheRetentionNone && streamOptions != nil && streamOptions.SessionID != nil {
+	if cacheRetention != ai.CacheRetentionNone && !compat.omitPromptCacheKey && streamOptions != nil && streamOptions.SessionID != nil {
 		value := clampOpenAIPromptCacheKey(streamOptions.SessionID)
 		if key, ok := value.(string); ok {
 			payload.PromptCacheKey = &key
@@ -505,6 +505,7 @@ type openAIResponsesCompat struct {
 	supportsDeveloperRole           bool
 	supportsMidConvoSystemMessages  bool
 	sessionAffinityFormat           ai.SessionAffinityFormat
+	omitPromptCacheKey              bool
 	supportsLongCacheRetention      bool
 	supportsStrictMode              bool
 	supportsOpenAIGrammarTools      bool
@@ -542,6 +543,7 @@ func getOpenAIResponsesCompat(model *ai.Model, strictDefault bool) (openAIRespon
 	if raw.SessionAffinityFormat != nil {
 		compat.sessionAffinityFormat = *raw.SessionAffinityFormat
 	}
+	compat.omitPromptCacheKey = raw.PromptCacheKeyMode != nil && *raw.PromptCacheKeyMode == ai.PromptCacheKeyDisabled
 	if raw.SupportsLongCacheRetention != nil {
 		compat.supportsLongCacheRetention = *raw.SupportsLongCacheRetention
 	}
@@ -587,7 +589,7 @@ func buildOpenAIResponsesHeaders(
 		case ai.SessionAffinityOpenRouter:
 			headers.Set("x-session-id", sessionID)
 		case ai.SessionAffinityOpenAI:
-			headers.Set("session_id", sessionID)
+			headers.Set("session-id", sessionID)
 			headers.Set("x-client-request-id", sessionID)
 		case ai.SessionAffinityOpenAINoSession:
 			headers.Set("x-client-request-id", sessionID)

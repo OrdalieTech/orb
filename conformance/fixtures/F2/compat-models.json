@@ -988,9 +988,18 @@
           "input": 1,
           "output": 5,
           "cacheRead": 0.05,
-          "cacheWrite": 1.25
+          "cacheWrite": 1.25,
+          "tiers": [
+            {
+              "inputTokensAbove": 272000,
+              "input": 2,
+              "output": 7.5,
+              "cacheRead": 0.1,
+              "cacheWrite": 2.5
+            }
+          ]
         },
-        "contextWindow": 272000,
+        "contextWindow": 1050000,
         "maxTokens": 128000,
         "thinkingLevelMap": {
           "off": "none",

@@ -122,33 +122,30 @@ func (tool *editTool) Execute(
 		}
 
 		bom, content := StripBOM(rawContent)
-		lineEnding := DetectLineEnding(content)
 		applied, err := ApplyEditsToNormalizedContent(NormalizeToLF(content), input.Edits, input.Path)
 		if err != nil {
 			return engine.AgentToolResult{}, err
 		}
-		if err := checkAborted(ctx); err != nil {
-			return engine.AgentToolResult{}, err
-		}
-
-		finalContent := bom + RestoreLineEndings(applied.NewContent, lineEnding)
-		if err := tool.operations.WriteFile(ctx, absolutePath, finalContent); err != nil {
-			return engine.AgentToolResult{}, err
-		}
-		if err := checkAborted(ctx); err != nil {
-			return engine.AgentToolResult{}, err
-		}
-
-		diff := GenerateDiffString(applied.BaseContent, applied.NewContent, 4)
-		patch, err := GenerateUnifiedPatch(input.Path, applied.BaseContent, applied.NewContent, 4)
+		// Diff before writing, so a diff failure cannot follow a written file.
+		details, err := GenerateEditDiff(input.Path, applied)
 		if err != nil {
+			return engine.AgentToolResult{}, err
+		}
+		if err := checkAborted(ctx); err != nil {
+			return engine.AgentToolResult{}, err
+		}
+
+		if err := tool.operations.WriteFile(ctx, absolutePath, bom+ApplyReplacementsToOriginal(content, applied)); err != nil {
+			return engine.AgentToolResult{}, err
+		}
+		if err := checkAborted(ctx); err != nil {
 			return engine.AgentToolResult{}, err
 		}
 		return engine.AgentToolResult{
 			Content: ai.ToolResultContent{&ai.TextContent{Text: fmt.Sprintf(
 				"Successfully replaced %d block(s) in %s.", len(input.Edits), input.Path,
 			)}},
-			Details: EditToolDetails{Diff: diff.Diff, Patch: patch, FirstChangedLine: diff.FirstChangedLine},
+			Details: details,
 		}, nil
 	})
 }
@@ -408,5 +405,6 @@ func ComputeEditsDiff(path string, edits []Edit, cwd string) (DiffResult, error)
 	if err != nil {
 		return DiffResult{}, err
 	}
-	return GenerateDiffString(applied.BaseContent, applied.NewContent, 4), nil
+	details, err := GenerateEditDiff(path, applied)
+	return DiffResult{Diff: details.Diff, FirstChangedLine: details.FirstChangedLine}, err
 }

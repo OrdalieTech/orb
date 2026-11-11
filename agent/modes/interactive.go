@@ -340,6 +340,7 @@ func (mode *InteractiveMode) newBashExecutionComponent(command string, excludeFr
 	requester := &chatRenderRequester{mode: mode}
 	component := NewBashExecutionComponent(command, requester, excludeFromContext)
 	requester.Bind(component)
+	mode.addExpandable(component)
 	return component
 }
 
@@ -982,7 +983,7 @@ func (mode *InteractiveMode) Invalidate() {
 }
 
 func (mode *InteractiveMode) installEditorFactory(factory extensions.EditorFactory) {
-	currentText := mode.activeEditorText(false)
+	currentText := mode.activeEditorText(true)
 	if factory != nil {
 		replacement := factory(mode, themeAdapter{value: theme.Current()}, extensionKeybindings{mode.keybindings})
 		replacement.SetText(currentText)
@@ -1615,11 +1616,16 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 
 	mode.editor.OnPasteImage = func() {
 		mode.attachImage(func() ([]byte, string, error) {
-			image := clipboard.ReadImage()
-			if image == nil {
-				return nil, "", errors.New("no image found on clipboard")
+			if image := clipboard.ReadImage(); image != nil {
+				return image.Bytes, image.MimeType, nil
 			}
-			return image.Bytes, image.MimeType, nil
+			text := clipboard.ReadText()
+			if text == "" {
+				return nil, "", errors.New("nothing to paste on the clipboard")
+			}
+			mode.editor.HandleInput(tui.KeyEvent{Raw: "\x1b[200~" + text + "\x1b[201~"})
+			mode.ui.RequestRender()
+			return nil, "", nil
 		})
 	}
 	mode.editor.OnPaste = func(text string) bool {
@@ -1680,13 +1686,13 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 	})
 
 	mode.editor.OnAction("app.message.followUp", func() {
-		text := mode.editor.GetText()
+		text := strings.TrimSpace(mode.editor.GetExpandedText())
 		if text == "" {
 			return
 		}
 		mode.editor.SetText("")
 		// Like Enter, through the prompt loop: on an idle session it starts the turn.
-		mode.inputCh <- inputEntry{text: text, followUp: true}
+		mode.submitPrompt(text, true)
 	})
 
 	mode.editor.OnAction("app.message.dequeue", func() {
@@ -1775,25 +1781,30 @@ func (mode *InteractiveMode) setupEditorSubmitHandler() {
 			return
 		}
 
-		// Normal message submission
-		prompt := text
-		if skills, ok := mode.autocomplete().(*skillAutocompleteProvider); ok {
-			prompt = exporthtml.SkillSubmission(text, skills.known)
-		}
-		mode.mu.Lock()
-		images := make([]*ai.ImageContent, 0, len(mode.pendingImages))
-		for index, image := range mode.pendingImages {
-			if strings.Contains(text, fmt.Sprintf("[Image #%d]", index+1)) {
-				images = append(images, image)
-			}
-		}
-		mode.pendingImages = nil
-		mode.imageDraftVersion++
-		mode.mu.Unlock()
-
-		mode.inputCh <- inputEntry{text: prompt, images: images}
-		mode.editor.AddToHistory(text)
+		mode.submitPrompt(text, false)
 	}
+}
+
+// submitPrompt sends a message with the images its markers reference, as a
+// follow-up when asked.
+func (mode *InteractiveMode) submitPrompt(text string, followUp bool) {
+	prompt := text
+	if skills, ok := mode.autocomplete().(*skillAutocompleteProvider); ok {
+		prompt = exporthtml.SkillSubmission(text, skills.known)
+	}
+	mode.mu.Lock()
+	images := make([]*ai.ImageContent, 0, len(mode.pendingImages))
+	for index, image := range mode.pendingImages {
+		if strings.Contains(text, fmt.Sprintf("[Image #%d]", index+1)) {
+			images = append(images, image)
+		}
+	}
+	mode.pendingImages = nil
+	mode.imageDraftVersion++
+	mode.mu.Unlock()
+
+	mode.inputCh <- inputEntry{text: prompt, images: images, followUp: followUp}
+	mode.editor.AddToHistory(text)
 }
 
 const maxImageInputBytes = 20 << 20
@@ -1856,6 +1867,9 @@ func (mode *InteractiveMode) attachImage(load func() ([]byte, string, error)) {
 		if err != nil {
 			mode.showStatusMessage("Image attachment failed: " + err.Error())
 			return
+		}
+		if data == nil {
+			return // the load pasted text instead
 		}
 		if len(data) > maxImageInputBytes {
 			mode.showStatusMessage("Image exceeds 20 MB")
@@ -2120,9 +2134,9 @@ func (mode *InteractiveMode) executeUserBash(command string, excludeFromContext 
 		)
 		if err != nil {
 			exitCode := 1
-			comp.SetComplete(&exitCode, false)
+			comp.SetComplete(&exitCode, false, false, nil)
 		} else {
-			comp.SetComplete(result.ExitCode, result.Cancelled)
+			comp.SetComplete(result.ExitCode, result.Cancelled, result.Truncated, result.FullOutput)
 		}
 		mode.requestChatRender(comp)
 	}()
@@ -2946,7 +2960,7 @@ func (mode *InteractiveMode) restoreToEditor(unsent *string, queued []string) {
 			parts = append(parts, message)
 		}
 	}
-	if current := mode.activeEditorText(false); strings.TrimSpace(current) != "" {
+	if current := mode.activeEditorText(true); strings.TrimSpace(current) != "" {
 		parts = append(parts, current)
 	}
 	if len(parts) == 0 {
@@ -3236,44 +3250,18 @@ func (mode *InteractiveMode) showSessionSelector() {
 	mode.ui.RequestRender()
 }
 
+// resumeSelectedSession switches to path; the host asks how to open a session
+// whose stored cwd is gone.
 func (mode *InteractiveMode) resumeSelectedSession(path string) {
-	ctx := context.Background()
-	result, retried, ok := mode.replaceSession(ctx, "Resume cancelled", func(cwd string) (extensions.SessionReplacementResult, error) {
-		return mode.options.Host.SwitchSession(ctx, path, cwd, nil)
-	})
-	if !ok || result.Cancelled {
-		return
-	}
-	if retried {
-		mode.showStatusMessage("Resumed session in current cwd")
-		return
-	}
-	mode.showStatusMessage("Resumed session")
-}
-
-// replaceSession runs call without a cwd override and, when the session's
-// stored cwd is gone and the user agrees, once more in the fallback cwd.
-// ok is false once the failure or the cancelled status has been shown.
-func (mode *InteractiveMode) replaceSession(ctx context.Context, cancelled string, call func(cwd string) (extensions.SessionReplacementResult, error)) (result extensions.SessionReplacementResult, retried, ok bool) {
-	result, err := call("")
-	var missingCWD *agent.MissingSessionCWDError
-	if errors.As(err, &missingCWD) {
-		var confirmed bool
-		confirmed, err = mode.interactiveUI.Confirm(ctx, "Session cwd not found", MissingSessionCWDPrompt(missingCWD), nil)
-		if err == nil && !confirmed {
-			mode.showStatusMessage(cancelled)
-			return result, false, false
-		}
-		if err == nil {
-			retried = true
-			result, err = call(missingCWD.FallbackCWD)
-		}
-	}
-	if err != nil {
+	result, err := mode.options.Host.SwitchSession(context.Background(), path, "", nil)
+	switch {
+	case err != nil:
 		mode.showError(err)
-		return result, retried, false
+	case result.Cancelled:
+		mode.showStatusMessage("Resume cancelled")
+	default:
+		mode.showStatusMessage("Resumed session")
 	}
-	return result, retried, true
 }
 
 func (mode *InteractiveMode) handleImportCommand(text string) {
@@ -3296,11 +3284,9 @@ func (mode *InteractiveMode) handleImportCommand(text string) {
 			return
 		}
 		mode.clearStatusIndicator()
-		ctx := context.Background()
-		result, _, ok := mode.replaceSession(ctx, "Import cancelled", func(cwd string) (extensions.SessionReplacementResult, error) {
-			return mode.options.Host.ImportSession(ctx, path, cwd)
-		})
-		if !ok {
+		result, err := mode.options.Host.ImportSession(context.Background(), path, "")
+		if err != nil {
+			mode.showError(err)
 			return
 		}
 		if result.Cancelled {
@@ -3840,7 +3826,7 @@ func (interaction tuiAuthInteraction) Notify(event aiauth.AuthEvent) {
 // configured" warning.
 func (mode *InteractiveMode) handleOpenExternalEditor() {
 	command := mode.session.InteractiveModeSettings().ExternalEditor
-	content := mode.editor.GetText()
+	content := mode.editor.GetExpandedText()
 	if err := mode.ui.Stop(); err != nil {
 		mode.showError(err)
 		return
@@ -5079,8 +5065,7 @@ func (mode *InteractiveMode) renderBashMessage(message harness.BashExecutionMess
 	if message.Output != "" {
 		component.AppendOutput(message.Output)
 	}
-	component.SetComplete(message.ExitCode, message.Cancelled)
-	mode.addExpandable(component)
+	component.SetComplete(message.ExitCode, message.Cancelled, message.Truncated, message.FullOutputPath)
 	mode.chat.AddChild(component)
 }
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -114,6 +115,25 @@ func TestLocalBashOperationsSerializesStdoutAndStderrCallbacks(t *testing.T) {
 	}
 	if overlap.Load() {
 		t.Fatal("OnData callbacks overlapped")
+	}
+}
+
+// A timeout that hits after the shell exited, while a background process it started keeps
+// writing, also reports the shell's exit (#11613).
+func TestBashTimeoutReportsAnEarlierShellExit(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir()) // the flood below spills to a full-output file
+	tool := NewBashTool(t.TempDir(), &BashToolOptions{Operations: localBashOperationsForTest("/bin/sh")})
+	for command, want := range map[string]*regexp.Regexp{
+		// The writer forks nothing: a pause between two processes on a loaded machine would
+		// outlast the grace that follows the shell's exit.
+		"(while :; do echo tick; done) & sleep 0.1; exit 3": regexp.MustCompile(
+			`Command timed out after 0\.6 seconds\. The shell exited with code 3 after 0\.\d seconds, but background processes it started kept writing output until the timeout\.$`),
+		"echo started; sleep 30": regexp.MustCompile(`started\s+Command timed out after 0\.6 seconds$`),
+	} {
+		_, err := tool.Execute(context.Background(), "call", map[string]any{"command": command, "timeout": 0.6}, nil)
+		if err == nil || !want.MatchString(err.Error()) {
+			t.Fatalf("%s: error = %v", command, err)
+		}
 	}
 }
 

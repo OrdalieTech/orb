@@ -77,6 +77,15 @@ const (
 type Error struct {
 	Kind Kind
 	Err  error
+	// ShellExit is set on a timeout that hit after the shell itself exited, while background
+	// processes it started kept writing to its output.
+	ShellExit *ShellExit
+}
+
+// ShellExit is the shell's own exit: its status and when it exited after the start.
+type ShellExit struct {
+	Code  int
+	After time.Duration
 }
 
 func (err *Error) Error() string { return err.Err.Error() }
@@ -151,7 +160,7 @@ func Run(ctx context.Context, command Command) (int, error) {
 		}
 		return 0, &Error{Kind: Spawn, Err: err}
 	}
-	pid := child.Process.Pid
+	pid, startedAt := child.Process.Pid, time.Now()
 	// Set before the shell has had time to start the command's own processes,
 	// which inherit it.
 	expendable(pid)
@@ -191,20 +200,26 @@ func Run(ctx context.Context, command Command) (int, error) {
 		defer timer.Stop()
 		expired = timer.C
 	}
+	var shellExited, exitedBeforeDeadline atomic.Bool
 	go func() {
 		select {
 		case <-ctx.Done():
 			kill(aborted)
 		case <-expired:
+			exitedBeforeDeadline.Store(shellExited.Load())
+			// Also after the shell exited: the group kill still reaches the background processes
+			// holding its pipes.
 			kill(timedOut)
 		case <-finished:
 		}
 	}()
 	waitErr := child.Wait()
+	shellExited.Store(true)
+	exitedAfter := time.Since(startedAt)
 	pipes.wait(stdoutRead, stderrRead)
 	close(finished)
 
-	var exitErr *exec.ExitError
+	code, err := exitStatus(waitErr)
 	switch {
 	case stop.Load() == callbackFailed:
 		return 0, callbackErr
@@ -212,10 +227,22 @@ func Run(ctx context.Context, command Command) (int, error) {
 		return 0, failure(Aborted, "aborted")
 	case stop.Load() == timedOut:
 		seconds, _ := json.Marshal(*command.Timeout)
-		return 0, failure(Timeout, "timeout:%s", seconds)
-	case waitErr == nil:
+		timeoutErr := &Error{Kind: Timeout, Err: fmt.Errorf("timeout:%s", seconds)}
+		if exitedBeforeDeadline.Load() && err == nil {
+			timeoutErr.ShellExit = &ShellExit{Code: code, After: exitedAfter}
+		}
+		return 0, timeoutErr
+	}
+	return code, err
+}
+
+// exitStatus is the shell's exit status, 128 plus the signal number when a signal ended it.
+func exitStatus(waitErr error) (int, error) {
+	var exitErr *exec.ExitError
+	if waitErr == nil {
 		return 0, nil
-	case !errors.As(waitErr, &exitErr):
+	}
+	if !errors.As(waitErr, &exitErr) {
 		return 0, &Error{Kind: Spawn, Err: waitErr}
 	}
 	code := exitErr.ExitCode()

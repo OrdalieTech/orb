@@ -151,35 +151,43 @@ func LoadPromptTemplates(options LoadPromptTemplatesOptions) ([]PromptTemplate, 
 	return templates, diagnostics
 }
 
-// ParseCommandArgs tokenizes template arguments with upstream's deliberately small quote grammar.
+// ParseCommandArgs tokenizes template arguments with upstream's deliberately small quote grammar:
+// a quote opens only at the start of an argument, `\"` inside "..." (and `\'` inside '...') is a
+// literal quote, and an unclosed quote is re-read as literal text.
 func ParseCommandArgs(argsString string) []string {
+	chars := []rune(argsString)
 	args := make([]string, 0)
 	var current strings.Builder
 	var quote rune
+	quoteStart := 0
 	token := false // a quoted "" or '' starts an argument, kept empty
-	for _, character := range argsString {
-		if quote != 0 {
-			if character == quote {
-				quote = 0
-			} else {
-				current.WriteRune(character)
-			}
-			continue
-		}
-		if character == '\'' || character == '"' {
-			quote, token = character, true
-			continue
-		}
-		if jstrim.IsSpace(character) {
+	for i := 0; i < len(chars); i++ {
+		character := chars[i]
+		switch {
+		case quote != 0 && character == '\\' && i+1 < len(chars) && chars[i+1] == quote:
+			current.WriteRune(quote)
+			i++
+		case quote != 0 && character == quote:
+			quote = 0
+		case quote != 0:
+			current.WriteRune(character)
+		case (character == '\'' || character == '"') && !token:
+			quote, quoteStart, token = character, i, true
+		case jstrim.IsSpace(character):
 			if token {
 				args = append(args, current.String())
 				current.Reset()
 				token = false
 			}
-			continue
+		default:
+			current.WriteRune(character)
+			token = true
 		}
-		current.WriteRune(character)
-		token = true
+		if quote != 0 && i == len(chars)-1 {
+			quote, i = 0, quoteStart
+			current.Reset()
+			current.WriteRune(chars[quoteStart])
+		}
 	}
 	if token {
 		args = append(args, current.String())

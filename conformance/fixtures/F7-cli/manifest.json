@@ -1,6 +1,6 @@
 {
   "family": "F7-cli",
-  "upstreamCommit": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "upstreamCommit": "b4afdddf44e059c67ccf5097e5317d913521b470",
   "generator": "conformance/extract/f7-cli.ts",
   "source": "packages/coding-agent/src/main.ts + src/core/agent-session.ts + src/modes/{print-mode,rpc/rpc-mode}.ts + test/{print-mode,stdout-cleanliness,initial-message}.test.ts",
   "format": "black-box-cli-stdout-stderr-v1",

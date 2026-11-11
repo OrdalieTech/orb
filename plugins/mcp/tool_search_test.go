@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -89,5 +90,23 @@ func TestToolSearchRanksNamesAboveMentions(t *testing.T) {
 	}
 	if got := rankBM25("café", documents, 1); len(got) != 1 || got[0] != 2 {
 		t.Fatalf("decomposed café = %v", got)
+	}
+}
+
+// Names and descriptions behind local $refs are searchable, each definition read once (#11803).
+func TestSearchDocumentFollowsLocalReferences(t *testing.T) {
+	for schema, want := range map[string]string{
+		`{"properties":{"options":{"$ref":"#/$defs/options"}},"$defs":{"options":{"properties":{"mode":{"description":"reconciliation"}}}}}`:                                                                                                                                         "options mode reconciliation",
+		`{"properties":{"range":{"$ref":"#/definitions/date~1range"}},"definitions":{"date/range":{"description":"fiscal period"}}}`:                                                                                                                                                 "range fiscal period",
+		`{"properties":{"root":{"$ref":"#/$defs/node"},"other":{"$ref":"#/$defs/node"},"self":{"$ref":"#"}},"$defs":{"node":{"description":"tree node","properties":{"children":{"items":{"$ref":"#/$defs/node"}}}}}}`:                                                               "root tree node children other self",
+		`{"properties":{"remote":{"$ref":"https://example.com/s.json#/$defs/x"},"missing":{"$ref":"#/$defs/missing"},"malformed":{"$ref":"#/$defs/%E0%A4%A"},"invalid":{"$ref":"#/$defs/%E0"}},"$defs":{"unused":{"description":"reconciliation"},"\u00e0":{"description":"utf8"}}}`: "remote missing malformed invalid",
+	} {
+		document := searchDocument(extensions.ToolInfo{Name: "mcp__ledger__inspect", Description: "Inspect records", Parameters: ai.JSONSchema(schema)})
+		got, wantWords := strings.Fields(document.text), strings.Fields("Inspect records "+want)
+		slices.Sort(got)
+		slices.Sort(wantWords)
+		if !slices.Equal(got, wantWords) {
+			t.Errorf("%s: text = %q, want the words of %q", schema, document.text, want)
+		}
 	}
 }

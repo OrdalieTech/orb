@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestANSITokens(t *testing.T) {
@@ -89,6 +90,21 @@ func TestANSITokensWrapRegression(t *testing.T) {
 	for _, tc := range cases {
 		if got := WrapTextWithANSI(tc.text, tc.width); !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("WrapTextWithANSI(%q, %d) = %#v, want %#v", tc.text, tc.width, got, tc.want)
+		}
+	}
+}
+
+// Truncation never splits a non-BMP character (pi #7121).
+func TestTruncationKeepsNonBMPCharactersWhole(t *testing.T) {
+	const text = "a😀b𝒳c👩‍💻d"
+	for width := 0; width <= VisibleWidth(text); width++ {
+		results := []string{TruncateToWidth(text, width, "…", false), SliceByColumn(text, 1, width, false)}
+		results = append(results, WrapTextWithANSI(text, max(1, width))...)
+		results = append(results, TruncateToVisualLines(text, 1, max(1, width), 0).VisualLines...)
+		for _, result := range results {
+			if !utf8.ValidString(result) {
+				t.Fatalf("width %d produced invalid UTF-8 %q", width, result)
+			}
 		}
 	}
 }

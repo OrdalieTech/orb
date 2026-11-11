@@ -198,8 +198,8 @@ func TestCycleModelUsesAuthenticatedScopeAndScopedThinking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result == nil || result.Model.ID != "b" {
-		t.Fatalf("out-of-scope cycle = %#v, want second scoped model", result)
+	if result == nil || result.Model.ID != "a" {
+		t.Fatalf("out-of-scope cycle = %#v, want first scoped model (upstream #11806)", result)
 	}
 	keys[modelB.Provider] = false
 	result, err = runtime.CycleModel(context.Background())
@@ -208,6 +208,16 @@ func TestCycleModelUsesAuthenticatedScopeAndScopedThinking(t *testing.T) {
 	}
 	if result == nil || result.Model.ID != "c" {
 		t.Fatalf("auth-filtered cycle = %#v", result)
+	}
+
+	// With one model in scope and another active, cycling switches to it, then stays (upstream #11806).
+	keys[modelC.Provider] = false
+	created.SetModel(&outside)
+	if result, err = runtime.CycleModel(context.Background()); err != nil || result == nil || result.Model.ID != "a" {
+		t.Fatalf("single-scope cycle = %#v, %v", result, err)
+	}
+	if result, err = runtime.CycleModel(context.Background()); err != nil || result != nil {
+		t.Fatalf("cycle on the only scoped model = %#v, %v", result, err)
 	}
 }
 
@@ -404,5 +414,19 @@ func rpcTestModel(provider, id string) ai.Model {
 	return ai.Model{
 		ID: id, Name: id, API: ai.API("faux"), Provider: ai.ProviderID(provider),
 		Reasoning: true, Input: ai.InputModalities{ai.InputText}, ContextWindow: 128_000, MaxTokens: 16_384,
+	}
+}
+
+func TestNextCycleIndex(t *testing.T) {
+	for _, test := range []struct{ current, length, step, want int }{
+		{-1, 1, 1, 0}, {-1, 3, 1, 0}, {-1, 3, -1, 2}, {0, 3, -1, 2}, {2, 3, 1, 0}, {0, 1, 1, -1}, {-1, 0, 1, -1},
+	} {
+		index, ok := nextCycleIndex(test.current, test.length, test.step)
+		if !ok {
+			index = -1
+		}
+		if index != test.want {
+			t.Errorf("nextCycleIndex(%d, %d, %d) = %d, want %d", test.current, test.length, test.step, index, test.want)
+		}
 	}
 }

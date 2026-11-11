@@ -46,8 +46,9 @@ var registry = []Provider{
 	withProviderMetadata(openRouterProvider, "https://openrouter.ai/api/v1", []string{"OPENROUTER_API_KEY"}, []string{"OPENROUTER_API_KEY"}, ai.APIAnthropicMessages, ai.APIOpenAICompletions),
 	envProvider("qwen-token-plan", "Qwen Token Plan", "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", "Qwen Token Plan API key", []string{"QWEN_TOKEN_PLAN_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("qwen-token-plan-cn", "Qwen Token Plan CN", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", "Qwen Token Plan CN API key", []string{"QWEN_TOKEN_PLAN_CN_API_KEY"}, ai.APIOpenAICompletions),
-	// The Individual plan shares the international endpoint and API key.
+	// The Individual plans share their region's endpoint and API key.
 	envProvider("qwen-token-plan-individual", "Qwen Token Plan Individual", "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", "Qwen Token Plan Individual API key", []string{"QWEN_TOKEN_PLAN_API_KEY"}, ai.APIOpenAICompletions),
+	envProvider("qwen-token-plan-individual-cn", "Qwen Token Plan Individual CN", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", "Qwen Token Plan Individual CN API key", []string{"QWEN_TOKEN_PLAN_CN_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("together", "Together", "https://api.together.ai/v1", "Together API key", []string{"TOGETHER_API_KEY"}, ai.APIOpenAICompletions),
 	envProvider("vercel-ai-gateway", "Vercel AI Gateway", "https://ai-gateway.vercel.sh", "Vercel AI Gateway API key", []string{"AI_GATEWAY_API_KEY"}, ai.APIAnthropicMessages),
 	withProviderMetadata(xAIProvider, "https://api.x.ai/v1", []string{"XAI_API_KEY"}, []string{"XAI_API_KEY"}, ai.APIOpenAIResponses),

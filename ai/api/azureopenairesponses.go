@@ -269,9 +269,13 @@ func buildAzureOpenAIResponsesPayload(
 		return nil, nil, err
 	}
 	payload := &OpenAIResponsesPayload{Model: deploymentName, Input: input, Stream: true, Store: false}
+	compat, err := decodeCompat[ai.OpenAIResponsesCompat](model)
+	if err != nil {
+		return nil, nil, err
+	}
 	streamOptions := azureOpenAIStreamOptions(options)
 	if streamOptions != nil {
-		if streamOptions.SessionID != nil {
+		if streamOptions.SessionID != nil && (compat.PromptCacheKeyMode == nil || *compat.PromptCacheKeyMode != ai.PromptCacheKeyDisabled) {
 			if value, ok := clampOpenAIPromptCacheKey(streamOptions.SessionID).(string); ok {
 				payload.PromptCacheKey = &value
 			}

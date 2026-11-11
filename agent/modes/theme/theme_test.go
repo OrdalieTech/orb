@@ -306,3 +306,16 @@ func ThemeForRGB(r, g, b int) TerminalTheme {
 	}
 	return Dark
 }
+
+func TestHighlightsDartNixGroovyAndGradle(t *testing.T) {
+	dark, _ := Load(LoadOptions{NoThemes: true, Mode: TrueColor}).Get("dark")
+	for path, code := range map[string]string{
+		"main.dart": "void main() { print('hi'); }", "flake.nix": "{ pkgs }: { x = 1; }",
+		"build.groovy": "def x = 'hi'", "build.gradle": "def x = 'hi'",
+	} {
+		language := LanguageFromPath(path)
+		if lines := Highlight(code, language, dark); language == "" || len(lines) != 1 || !strings.Contains(lines[0], "\x1b[") {
+			t.Errorf("%s: language %q highlighted %q", path, language, lines)
+		}
+	}
+}

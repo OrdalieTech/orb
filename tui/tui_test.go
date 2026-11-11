@@ -606,3 +606,44 @@ func TestTUIClipsOverflowWithoutStopping(t *testing.T) {
 		}
 	}
 }
+
+func TestTUINeverWritesCursorMarkers(t *testing.T) {
+	if got := SliceByColumn("ab"+CursorMarker+"cd", 3, 1, false); got != "d" {
+		t.Errorf("slice after a cursor marker = %q, want %q", got, "d")
+	}
+	for _, viewport := range []bool{false, true} {
+		terminal := newFakeTerminal(10, 2)
+		ui := NewTUI(terminal)
+		body := &mutableLines{lines: []string{
+			"above" + CursorMarker,
+			"a" + CursorMarker + "b" + CursorMarker,
+			strings.Repeat("x", 12) + CursorMarker,
+		}}
+		if viewport {
+			ui.SetViewport(body, &mutableLines{})
+		} else {
+			ui.AddChild(body)
+		}
+		ui.setStopped(false)
+		ui.RenderNow()
+		if output := terminal.output(); strings.Contains(output, CursorMarker) {
+			t.Errorf("viewport=%t: cursor marker reached the terminal: %q", viewport, output)
+		}
+	}
+}
+
+// The scrollbar leaves the rows a Kitty image covers blank, so no row is written after the image (pi #11835).
+func TestTUIViewportScrollbarSkipsKittyImageRows(t *testing.T) {
+	ui := NewTUI(newFakeTerminal(20, 6))
+	image := "\x1b_Ga=T,f=100,i=7,r=3;AAAA\x1b\\"
+	body := &mutableLines{lines: []string{"0", "1", "2", "3", image, "", "", "7", "8"}}
+	ui.SetViewport(body, &mutableLines{})
+	frame := ui.renderViewport(20, 6)
+	start := slices.Index(frame, image)
+	if start < 0 || start+3 > len(frame) || !strings.Contains(strings.Join(frame, ""), scrollbarThumb) {
+		t.Fatalf("frame does not show the image with a scrollbar: %q", frame)
+	}
+	if covered := frame[start+1 : start+3]; covered[0] != "" || covered[1] != "" {
+		t.Fatalf("image rows carry the scrollbar: %q", frame)
+	}
+}

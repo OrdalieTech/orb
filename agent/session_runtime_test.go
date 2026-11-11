@@ -1,9 +1,13 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -918,36 +922,69 @@ func TestSessionRuntimeRetryExhaustionAndCancellation(t *testing.T) {
 	}
 }
 
+// Delivered steering leaves the queue whatever its text: image-only, or with
+// hints an image added (upstream #8612).
 func TestSessionRuntimeQueueUpdatesDrainBeforeQueuedMessageStart(t *testing.T) {
-	provider := testFaux(1000)
-	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "first", 10), runtimeAssistant(provider, "second", 20)})
-	runtime, _ := newTestRuntime(t, provider, map[string]any{
-		"compaction": map[string]any{"enabled": false}, "retry": map[string]any{"enabled": false},
-	})
-	var queueLengths []int
-	queued := false
-	runtime.Subscribe(func(event any) {
-		if queue, ok := event.(QueueUpdateEvent); ok {
-			queueLengths = append(queueLengths, len(queue.Steering))
-		}
-		if start, ok := event.(engine.MessageStartEvent); ok {
-			if _, assistantStart := start.Message.(*ai.AssistantMessage); assistantStart && !queued {
-				queued = true
-				if err := runtime.Steer("queued"); err != nil {
-					t.Errorf("steer: %v", err)
-				}
-			}
-		}
-	})
-	if err := runtime.Prompt(context.Background(), "initial"); err != nil {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(queueLengths, []int{1, 0}) {
-		t.Fatalf("queue lengths = %#v", queueLengths)
+	valid := &ai.ImageContent{Data: base64.StdEncoding.EncodeToString(encoded.Bytes()), MimeType: "image/png"}
+	broken := &ai.ImageContent{Data: "AA==", MimeType: "image/png"}
+	for name, steer := range map[string]struct {
+		text   string
+		images []*ai.ImageContent
+	}{"text": {"queued", nil}, "image only": {"", []*ai.ImageContent{valid}}, "image hint": {"look", []*ai.ImageContent{broken}}} {
+		t.Run(name, func(t *testing.T) {
+			provider := testFaux(1000)
+			provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "first", 10), runtimeAssistant(provider, "second", 20)})
+			runtime, _ := newTestRuntime(t, provider, map[string]any{
+				"compaction": map[string]any{"enabled": false}, "retry": map[string]any{"enabled": false},
+			})
+			var queueLengths []int
+			queued := false
+			runtime.Subscribe(func(event any) {
+				if queue, ok := event.(QueueUpdateEvent); ok {
+					queueLengths = append(queueLengths, len(queue.Steering))
+				}
+				if start, ok := event.(engine.MessageStartEvent); ok {
+					if _, assistantStart := start.Message.(*ai.AssistantMessage); assistantStart && !queued {
+						queued = true
+						if err := runtime.SteerImages(steer.text, steer.images); err != nil {
+							t.Errorf("steer: %v", err)
+						}
+					}
+				}
+			})
+			if err := runtime.Prompt(context.Background(), "initial"); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(queueLengths, []int{1, 0}) || runtime.PendingMessageCount() != 0 {
+				t.Fatalf("queue lengths = %#v, pending %d", queueLengths, runtime.PendingMessageCount())
+			}
+			if provider.State().CallCount != 2 {
+				t.Fatalf("provider calls = %d", provider.State().CallCount)
+			}
+		})
 	}
-	if provider.State().CallCount != 2 {
-		t.Fatalf("provider calls = %d", provider.State().CallCount)
+}
+
+// Prompt images are normalized without extensions too (upstream #11738).
+func TestSessionRuntimePromptNormalizesImagesWithoutExtensions(t *testing.T) {
+	provider := testFaux(1000)
+	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "done", 10)})
+	runtime, _ := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
+	if err := runtime.Prompt(context.Background(), "look", &ai.ImageContent{Data: "AA==", MimeType: "image/png"}); err != nil {
+		t.Fatal(err)
 	}
+	for _, message := range runtime.State().Messages {
+		if text := userMessageText(message); text != "" && !strings.HasPrefix(text, "look\n\n") {
+			t.Fatalf("prompt text = %q, want the image's note appended", text)
+		} else if text != "" {
+			return
+		}
+	}
+	t.Fatal("no prompt recorded")
 }
 
 func TestSessionRuntimePromptCompactsResumedOversizedAssistantBeforeRequest(t *testing.T) {
@@ -1353,6 +1390,32 @@ func TestNavigateTreeCreatesBranchSummary(t *testing.T) {
 	}
 	if label := manager.GetLabel(result.SummaryEntry.ID); label == nil || *label != "return" {
 		t.Fatalf("label = %#v", label)
+	}
+}
+
+// After /tree moves to before a thinking change, the next prompt records the
+// live level on the new branch, so a resume restores it (upstream #11451).
+func TestPromptRecordsThinkingLevelAfterTreeNavigation(t *testing.T) {
+	contextWindow, maxTokens := float64(100000), float64(100)
+	provider := faux.New(faux.Options{API: "faux", Provider: "faux", Models: []faux.ModelDefinition{{ID: "faux-1", Reasoning: true, ContextWindow: &contextWindow, MaxTokens: &maxTokens}}})
+	provider.SetResponses([]faux.ResponseStep{runtimeAssistant(provider, "answer", 10)})
+	runtime, manager := newTestRuntime(t, provider, map[string]any{"compaction": map[string]any{"enabled": false}})
+	if err := runtime.SetThinkingLevel(ai.ModelThinkingLow); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := manager.AppendMessage(userMessage("first"))
+	_, _ = manager.AppendMessage(runtimeAssistant(provider, "first answer", 10))
+	if err := runtime.SetThinkingLevel(ai.ModelThinkingHigh); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.NavigateTree(context.Background(), first, NavigateTreeOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Prompt(context.Background(), "again"); err != nil {
+		t.Fatal(err)
+	}
+	if level := manager.BuildSessionContext().ThinkingLevel; level != string(ai.ModelThinkingHigh) {
+		t.Fatalf("branch thinking level = %q, want high", level)
 	}
 }
 

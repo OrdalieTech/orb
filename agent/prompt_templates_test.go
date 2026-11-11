@@ -3,6 +3,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -34,5 +35,26 @@ func TestPromptTemplateLoadingAndExpansion(t *testing.T) {
 	}
 	if got := ExpandPromptTemplate("/missing x", templates); got != "/missing x" {
 		t.Fatalf("unknown template = %q", got)
+	}
+}
+
+func TestParseCommandArgsQuoteGrammar(t *testing.T) {
+	for input, want := range map[string][]string{
+		`"quoted \"text\""`:                 {`quoted "text"`},
+		`'it\'s here' next`:                 {"it's here", "next"},
+		`"C:\dir\file" '\\server\share'`:    {`C:\dir\file`, `\\server\share`},
+		`"it's" 'a\"b'`:                     {"it's", `a\"b`},
+		`say \"hi`:                          {"say", `\"hi`},
+		"why doesn't the user's cache work": {"why", "doesn't", "the", "user's", "cache", "work"},
+		"'tis the season":                   {"'tis", "the", "season"},
+		`say "hello world`:                  {"say", `"hello`, "world"},
+		"a '":                               {"a", "'"},
+		`"abc\"`:                            {`"abc\"`},
+		`"it's" 'x`:                         {"it's", "'x"},
+		`"" ''  b`:                          {"", "", "b"},
+	} {
+		if got := ParseCommandArgs(input); !slices.Equal(got, want) {
+			t.Errorf("ParseCommandArgs(%q) = %q, want %q", input, got, want)
+		}
 	}
 }

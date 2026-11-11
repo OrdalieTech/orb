@@ -101,6 +101,27 @@ func TestFileUpdateKeepsSymlinkAndNarrowedMode(t *testing.T) {
 	}
 }
 
+// With LockResolved, symlinked aliases of a file share the resolved file's lock.
+func TestFileUpdateLocksResolvedFile(t *testing.T) {
+	dir := t.TempDir()
+	target, link := filepath.Join(dir, "auth.json"), filepath.Join(dir, "alias.json")
+	if err := os.WriteFile(target, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip(err)
+	}
+	err := File{Path: link, Perm: 0o600, LockResolved: true}.Update(t.Context(), func(current []byte) ([]byte, error) {
+		if _, err := os.Stat(target + ".lock"); err != nil {
+			t.Errorf("resolved file not locked: %v", err)
+		}
+		return current, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 // A change that ran is written even when its caller gave up meanwhile: it may
 // have rotated a credential the old file no longer redeems.
 func TestFileUpdateWritesAChangeWhoseCallerGaveUp(t *testing.T) {

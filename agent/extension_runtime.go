@@ -362,6 +362,9 @@ func (runtime *SessionRuntime) StartExtensions() {
 // Reload rebuilds the session's native extension instance from its registered
 // factories, then emits the reload lifecycle on the fresh context.
 func (runtime *SessionRuntime) Reload(ctx context.Context) error {
+	if err := runtime.checkReloadable(); err != nil {
+		return err
+	}
 	if runtime.beginReload != nil {
 		if err := runtime.beginReload(); err != nil {
 			return err
@@ -379,6 +382,18 @@ func (runtime *SessionRuntime) Reload(ctx context.Context) error {
 		}
 	}
 	return runtime.BindExtensions(ctx)
+}
+
+// checkReloadable asks the caller to wait instead of replacing extensions
+// while a response or compaction runs (upstream #9222).
+func (runtime *SessionRuntime) checkReloadable() error {
+	switch {
+	case runtime.IsCompacting():
+		return errors.New("Wait for compaction to finish before reloading.") //nolint:staticcheck // Upstream session error is observable.
+	case !runtime.IsIdle():
+		return errors.New("Wait for the current response to finish before reloading.") //nolint:staticcheck // Upstream session error is observable.
+	}
+	return nil
 }
 
 func (runtime *SessionRuntime) reloadExtensions(ctx context.Context) error {
@@ -1796,6 +1811,11 @@ func (runtime *SessionRuntime) promptExtensionInput(
 			return nil
 		}
 	}
+	finishPreflight, err := runtime.beginPromptPreflight()
+	if err != nil {
+		return err
+	}
+	defer finishPreflight()
 	if state.runner.HasHandlers(extensions.EventInput) {
 		eventStreamingBehavior := streamingBehavior
 		if runtime.runIdle() {

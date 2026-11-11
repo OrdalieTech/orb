@@ -338,7 +338,7 @@ func renderToolOutputPreviewCases(width int) []toolOutputPreviewCase {
 	bash.SetExpanded(true)
 	capture("bang-bash-partial-expanded", bash)
 	exitCode := 0
-	bash.SetComplete(&exitCode, false)
+	bash.SetComplete(&exitCode, false, false, nil)
 	capture("bang-bash-final-expanded", bash)
 	bash.SetExpanded(false)
 	capture("bang-bash-final-collapsed", bash)
@@ -520,5 +520,17 @@ func TestReasoningSpacing(t *testing.T) {
 	tool.headed = true
 	if lines := tool.Render(40); len(lines) == 0 || lines[0] == "" {
 		t.Fatalf("a headed tool kept its blank line: %q", lines)
+	}
+}
+
+// Orb draws changed rows whole, without a word-level pass, so an insertion at
+// a line's start keeps the shared indentation (pi #9274).
+func TestEditDiffKeepsIndentationOfLineStartInsertions(t *testing.T) {
+	initTestTheme(t)
+	rendered := tui.StripANSI(strings.Join(NewEditDiffView("-1     return x\n+1     y := 1; return x", "a.txt", "").Render(80), "\n"))
+	for _, want := range []string{"- " + "    return x", "+ " + "    y := 1; return x"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("diff %q lost the indentation of %q", rendered, want)
+		}
 	}
 }

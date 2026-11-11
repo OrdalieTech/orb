@@ -3,12 +3,14 @@ package tools
 import (
 	"context"
 	"fmt"
+	"math"
 	"path/filepath"
 	"strings"
 
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/truncate"
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 const defaultFindLimit = 1000
@@ -89,9 +91,10 @@ func (tool *findTool) Execute(
 	if err != nil {
 		return engine.AgentToolResult{}, err
 	}
-	effectiveLimit := float64(defaultFindLimit)
+	effectiveLimit := defaultFindLimit
 	if input.Limit != nil {
-		effectiveLimit = *input.Limit
+		// fd treats --max-results 0 as unlimited, so a limit below 1 means 1.
+		effectiveLimit = int(math.Min(math.Max(1, math.Floor(*input.Limit)), truncate.MaxSafeInteger-1))
 	}
 	if tool.operations != nil {
 		return tool.executeCustom(ctx, input.Pattern, searchPath, effectiveLimit)
@@ -103,7 +106,7 @@ func (tool *findTool) executeCustom(
 	ctx context.Context,
 	pattern string,
 	searchPath string,
-	effectiveLimit float64,
+	effectiveLimit int,
 ) (engine.AgentToolResult, error) {
 	exists, err := runCancelable(ctx, func() (bool, error) {
 		return tool.operations.Exists(ctx, searchPath)
@@ -117,10 +120,11 @@ func (tool *findTool) executeCustom(
 	if err := checkAborted(ctx); err != nil {
 		return engine.AgentToolResult{}, err
 	}
+	// One result past the limit tells "exactly N matches" apart from "more than N".
 	results, err := runCancelable(ctx, func() ([]string, error) {
 		return tool.operations.Glob(ctx, pattern, searchPath, FindGlobOptions{
 			Ignore: []string{"**/node_modules/**", "**/.git/**"},
-			Limit:  effectiveLimit,
+			Limit:  float64(effectiveLimit + 1),
 		})
 	})
 	if err != nil {
@@ -132,11 +136,13 @@ func (tool *findTool) executeCustom(
 	if len(results) == 0 {
 		return textToolResult("No files found matching pattern", nil), nil
 	}
-	relativized := make([]string, len(results))
-	for index, path := range results {
-		relativized[index] = relativizeFindResultPath(path, searchPath)
+	limitReached := len(results) > effectiveLimit
+	relativized := make([]string, min(len(results), effectiveLimit))
+	for index := range relativized {
+		relativized[index] = relativizeFindResultPath(results[index], searchPath)
 	}
-	return formatFindResult(relativized, effectiveLimit, false), nil
+	truncation := truncate.TruncateHead(strings.Join(relativized, "\n"), truncate.Options{MaxLines: truncate.Int(truncate.MaxSafeInteger)})
+	return formatFindResult(truncation, effectiveLimit, limitReached, false), nil
 }
 
 // relativizeFindResultPath mirrors upstream relativizeFindResultPath: absolute
@@ -165,19 +171,16 @@ func relativizeFindResultPath(resultPath, searchPath string) string {
 	return posixPath
 }
 
-func formatFindResult(paths []string, effectiveLimit float64, actionable bool) engine.AgentToolResult {
-	resultLimitReached := float64(len(paths)) >= effectiveLimit
-	rawOutput := strings.Join(paths, "\n")
-	truncation := truncate.TruncateHead(rawOutput, truncate.Options{MaxLines: truncate.Int(truncate.MaxSafeInteger)})
+func formatFindResult(truncation truncate.Result, effectiveLimit int, resultLimitReached, actionable bool) engine.AgentToolResult {
 	output := truncation.Content
 	details := FindToolDetails{}
 	notices := make([]string, 0, 2)
 	if resultLimitReached {
-		limit := effectiveLimit
+		limit := float64(effectiveLimit)
 		details.ResultLimitReached = &limit
-		notice := fmt.Sprintf("%s results limit reached", formatSearchNumber(limit))
+		notice := fmt.Sprintf("%d results limit reached", effectiveLimit)
 		if actionable {
-			notice += fmt.Sprintf(". Use limit=%s for more, or refine pattern", formatSearchNumber(limit*2))
+			notice += fmt.Sprintf(". Use limit=%d for more, or refine pattern", effectiveLimit*2)
 		}
 		notices = append(notices, notice)
 	}
@@ -193,6 +196,23 @@ func formatFindResult(paths []string, effectiveLimit float64, actionable bool) e
 		resultDetails = details
 	}
 	return textToolResult(output, resultDetails)
+}
+
+// findPathMatcher matches fd's glob behavior for a path pattern: '*' matches dotfiles, an
+// all-lowercase pattern matches case-insensitively (smart case), and 'src/**' does not match
+// 'src' itself.
+func findPathMatcher(pattern string) func(string) bool {
+	if strings.HasSuffix(pattern, "/**") {
+		pattern += "/*"
+	}
+	foldCase := pattern == strings.ToLower(pattern)
+	return func(path string) bool {
+		if foldCase {
+			path = strings.ToLower(path)
+		}
+		matched, _ := doublestar.Match(pattern, path)
+		return matched
+	}
 }
 
 func findInput(params any) (FindToolInput, error) {

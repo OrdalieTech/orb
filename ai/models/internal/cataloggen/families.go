@@ -21,8 +21,8 @@ func containsAny(value string, needles ...string) bool {
 
 var (
 	claudePrefixPattern         = lazyregexp.New(`^~?anthropic/`)
-	claudeMidConvoEffortPattern = lazyregexp.New(`^(?:claude-opus-(?:5|5[.-]5)|claude-(?:sonnet|haiku)-5[.-]5|claude-(?:fable|mythos)-5[.-]1)(?:-\d{8})?$`)
-	claudeMidConvoSystemPattern = lazyregexp.New(`^(?:claude-opus-(?:4[.-]8|5(?:[.-]5)?)|claude-(?:sonnet|haiku)-5[.-]5|claude-(?:fable|mythos)-5(?:[.-]1)?)(?:-\d{8})?$`)
+	claudeMidConvoEffortPattern = lazyregexp.New(`^(?:claude-opus-(?:5|5[.-]5)|claude-(?:sonnet|haiku)-5[.-]5|claude-(?:fable|mythos)-5[.-][12])(?:-\d{8})?$`)
+	claudeMidConvoSystemPattern = lazyregexp.New(`^(?:claude-opus-(?:4[.-]8|5(?:[.-]5)?)|claude-(?:sonnet|haiku)-5[.-]5|claude-(?:fable|mythos)-5(?:[.-][12])?)(?:-\d{8})?$`)
 	claudeDatedSuffixPattern    = lazyregexp.New(`-\d{8}$`)
 	claudeLatestAliasPattern    = lazyregexp.New(`^~anthropic/claude-[a-z]+-latest$`)
 	gptMajorPattern             = lazyregexp.New(`^gpt-(\d+)`)
@@ -46,8 +46,8 @@ func supportsClaudeMidConvoSystemMessages(id string) bool {
 }
 
 // enableClaudeMidConvoEffort enables per-message effort changes; models that
-// cannot disable thinking with it lose "off". Opus 5.5, Sonnet 5.5, Fable 5.1
-// and Mythos 5.1 reject thinking disabled.
+// cannot disable thinking with it lose "off". Opus 5.5, Sonnet 5.5, Fable 5.1/5.2
+// and Mythos 5.1/5.2 reject thinking disabled.
 func enableClaudeMidConvoEffort(m *model) {
 	m.mergeCompat(compat("supportsMidConvoEffort", true))
 	bare := claudeDatedSuffixPattern().ReplaceAllString(stripClaudePrefix(m.ID), "")
@@ -77,7 +77,7 @@ func applyClaudeFamilyRules(m *model) {
 		"sonnet-4-6", "sonnet-4.6", "sonnet-5", "sonnet.5", "haiku-5", "haiku.5", "fable-5", "mythos-5") {
 		m.mergeCompat(compat("forceAdaptiveThinking", true))
 	}
-	if containsAny(strings.ToLower(m.ID), "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "opus-5", "opus.5", "sonnet-5-5", "sonnet-5.5", "haiku-5-5", "haiku-5.5") {
+	if containsAny(strings.ToLower(m.ID), "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "opus-5", "opus.5", "sonnet-5", "sonnet.5", "haiku-5-5", "haiku-5.5") {
 		m.mergeCompat(compat("supportsTemperature", false))
 	}
 }
@@ -205,7 +205,7 @@ func isDeepSeekV4(m *model) bool {
 // host; Qwen Token Plan uses its own thinking format, and OpenRouter and
 // OpenCode take native reasoning efforts.
 func applyDeepSeekCompatRules(m *model) {
-	if !isDeepSeekV4(m) || isQwenTokenPlan(string(m.Provider)) {
+	if !isDeepSeekV4(m) || strings.HasPrefix(string(m.Provider), "qwen-token-plan") {
 		return
 	}
 	if m.Provider == "openrouter" || m.Provider == "opencode" {
@@ -232,10 +232,6 @@ func applyDeepSeekFamilyRules(m *model) {
 	default:
 		m.mergeThinking(deepSeekV4Levels)
 	}
-}
-
-func isQwenTokenPlan(provider string) bool {
-	return provider == "qwen-token-plan" || provider == "qwen-token-plan-cn" || provider == "qwen-token-plan-individual"
 }
 
 // googleThinkingLevels takes Gemini effort levels from models.dev, with a Gemma 4 fallback.

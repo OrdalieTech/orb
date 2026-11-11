@@ -1,6 +1,6 @@
 {
   "family": "F4",
-  "upstreamCommit": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "upstreamCommit": "b4afdddf44e059c67ccf5097e5317d913521b470",
   "generator": "conformance/extract/f4-edit.ts",
   "source": "packages/coding-agent/src/core/tools/edit-diff.ts",
   "files": [

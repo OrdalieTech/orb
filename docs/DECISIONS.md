@@ -277,7 +277,7 @@ Each holds until changed by owner-signed decision.
   container per agent), and makes each conversation a full session of the agent, built as its ACP
   sessions are. The local provider is single-process; clusters supply fenced conversation
   ownership. Chat tests are plain `go test` goldens under `chat/`, never `conformance/`.
-- **D28 — Chat platforms.** Telegram, WhatsApp, Slack, Teams, Discord (hand-rolled RFC 6455),
+- **D28 — Chat platforms.** Telegram, WhatsApp, Slack, Teams, Discord (its gateway over `coder/websocket`, in the build for Bridge),
   Messenger and Google Chat; official platform APIs only, stdlib-only clients, shared helpers in
   `chat/internal/`, zero new go.mod dependencies. Bridge-based platforms and E2EE Matrix stay
   excluded.
@@ -536,3 +536,7 @@ Each holds until changed by owner-signed decision.
 | No `/bug`; `/share` is a GitHub gist | omission | pi's `/bug` reports to pi's developers and its `/share` can upload to pi's Radius service. F8's and F12's built-in command lists drop `bug` and keep the gist description (`orbCommands`) |
 | `samplingParamsByThinkingLevel` is ignored | gap | pi 1.0.2 reads it from `models.json`; Orb accepts the key without applying it, since no agent configures per-level sampling |
 | `durationMs` goldens use a frozen clock | harness adaptation | pi records `durationMs` on assistant messages (from `Registry.StreamSimple`; faux streams time themselves), tool results and `tool_execution_end`. The extractor freezes `performance.now`, and `runner.ByteDiff` compares measured durations as zero, so presence, position and type stay checked |
+| No cache warming | not yet adopted | pi keeps eligible prompt caches warm between requests (`cacheWarming`, idle by default since 1.5.1); Orb sends no request a turn did not ask for, since several Orbs idle under one Bridge and every warm is billed. The pi-ai cache-warming exports are SDK stubs, and Anthropic message threads need no `disableContinuation` |
+| Disposal waits five seconds for aborted tools | behavior | pi waits without bound for aborted tools to settle before extensions shut down; Orb waits five seconds, so a tool that ignores its abort cannot hold the exit |
+| Extension overlays closed by a reload settle their call | Go API adaptation | pi leaves the `ctx.ui.custom()` promise of an overlay removed by `/reload` or a session switch pending; in Orb the call returns without a result, since a pending call is a goroutine and an open host request |
+| MCP stdio servers keep their tree on Windows | platform adaptation | pi 1.5.1 ends a stdio server's process group on disconnect (POSIX); Windows has no group and reuses a waited PID at once, so Orb ends the tree only where a group exists |

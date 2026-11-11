@@ -30,6 +30,7 @@ import (
 	"time"
 
 	configpkg "github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/oauth"
 	"github.com/OrdalieTech/orb/internal/filelock"
 )
@@ -266,6 +267,9 @@ type oauthFlow struct {
 type flowOptions struct {
 	code, iss, scope, resourceMetadataURL string
 	skipRefresh                           bool
+	// refreshOnly neither registers a client nor prepares an authorization
+	// request, so a sign-in in progress keeps its state and PKCE verifier.
+	refreshOnly bool
 }
 
 func (flow oauthFlow) clientMetadata() map[string]any {
@@ -300,7 +304,13 @@ func (flow oauthFlow) authorize(ctx context.Context, options flowOptions) (bool,
 	if errors.As(err, &oauthErr) {
 		switch oauthErr.code {
 		case "invalid_client", "unauthorized_client":
-			_ = flow.update(func(state *oauthState) { *state = oauthState{ServerURL: state.ServerURL} })
+			_ = flow.update(func(state *oauthState) {
+				if options.refreshOnly {
+					state.ClientInformation, state.Tokens, state.TokensExpireAt, state.Discovery = nil, nil, nil, nil
+				} else {
+					*state = oauthState{ServerURL: state.ServerURL}
+				}
+			})
 			return flow.run(ctx, options)
 		case "invalid_grant":
 			_ = flow.update(func(state *oauthState) { state.Tokens, state.TokensExpireAt = nil, nil })
@@ -363,6 +373,9 @@ func (flow oauthFlow) run(ctx context.Context, options flowOptions) (bool, error
 		client = &oauthClient{ClientID: flow.settings.ClientID, ClientSecret: flow.settings.ClientSecret}
 	}
 	if client == nil {
+		if options.refreshOnly {
+			return false, nil
+		}
 		if options.code != "" {
 			return false, errors.New("OAuth client information is missing during code exchange")
 		}
@@ -409,6 +422,9 @@ func (flow oauthFlow) run(ctx context.Context, options flowOptions) (bool, error
 		if errors.As(err, &oauthErr) && oauthErr.code != "server_error" {
 			return false, err
 		}
+	}
+	if options.refreshOnly {
+		return false, nil
 	}
 	if metadata != nil && !slices.Contains(metadata.ResponseTypesSupported, "code") {
 		return false, errors.New("authorization server does not support authorization codes")
@@ -922,8 +938,25 @@ func (transport *oauthTransport) token(ctx context.Context) string {
 }
 
 // refresh replaces stale, the token that expired or was rejected, unless
-// another request or process replaced it meanwhile.
+// another request or process replaced it meanwhile. The refresh and its save
+// finish even when ctx ends: the server may already have spent the old
+// refresh token.
 func (transport *oauthTransport) refresh(ctx context.Context, stale string, challenged challenge) error {
+	done := make(chan error, 1)
+	auth.DetachWrite(func() {
+		refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
+		defer cancel()
+		done <- transport.refreshLocked(refreshCtx, stale, challenged)
+	})
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (transport *oauthTransport) refreshLocked(ctx context.Context, stale string, challenged challenge) error {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
 	return transport.flow.store.withRefreshLock(transport.flow.name, transport.flow.serverURL, func() error {
@@ -944,14 +977,11 @@ func (transport *oauthTransport) refresh(ctx context.Context, stale string, chal
 		} else if state.ClientInformation != nil && len(state.ClientInformation.RedirectURIs) > 0 {
 			flow.redirectURL = state.ClientInformation.RedirectURIs[0]
 		}
-		redirected := false
-		flow.onRedirect = func(string) { redirected = true }
-		refreshCtx, cancel := context.WithTimeout(ctx, refreshTimeout)
-		defer cancel()
-		if _, err := flow.authorize(refreshCtx, flowOptions{resourceMetadataURL: challenged.ResourceMetadataURL, scope: challenged.Scope}); err != nil {
+		authorized, err := flow.authorize(ctx, flowOptions{resourceMetadataURL: challenged.ResourceMetadataURL, scope: challenged.Scope, refreshOnly: true})
+		if err != nil {
 			return err
 		}
-		if redirected {
+		if !authorized {
 			return errSignInRequired
 		}
 		return nil

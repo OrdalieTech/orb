@@ -204,8 +204,8 @@ func isWSL(deps imageDependencies) bool {
 	return strings.Contains(lowered, "microsoft") || strings.Contains(lowered, "wsl")
 }
 
-// readImageViaPowerShell reads the Windows clipboard from inside WSL, where
-// the Linux clipboard does not receive Windows screenshot data.
+// readImageViaPowerShell reads the Windows clipboard natively, or from inside
+// WSL, where the Linux clipboard does not receive Windows screenshot data.
 func readImageViaPowerShell(deps imageDependencies) *Image {
 	suffix := make([]byte, 16)
 	if _, err := rand.Read(suffix); err != nil {
@@ -213,11 +213,14 @@ func readImageViaPowerShell(deps imageDependencies) *Image {
 	}
 	tmpFile := filepath.Join(deps.tempDir(), "pi-wsl-clip-"+hex.EncodeToString(suffix)+".png")
 	defer func() { _ = os.Remove(tmpFile) }()
-	winPathOutput, ok := deps.runOutput("wslpath", []string{"-w", tmpFile}, listTimeout)
-	if !ok {
-		return nil
+	winPath := tmpFile
+	if deps.platform != "windows" {
+		winPathOutput, ok := deps.runOutput("wslpath", []string{"-w", tmpFile}, listTimeout)
+		if !ok {
+			return nil
+		}
+		winPath = strings.TrimSpace(string(winPathOutput))
 	}
-	winPath := strings.TrimSpace(string(winPathOutput))
 	if winPath == "" {
 		return nil
 	}
@@ -261,10 +264,13 @@ func readImage(deps imageDependencies) *Image {
 	if deps.getenv("TERMUX_VERSION") != "" {
 		return nil
 	}
-	if deps.platform == "darwin" {
+	switch deps.platform {
+	case "darwin":
 		return readImageViaMacOS(deps)
-	}
-	if deps.platform != "linux" {
+	case "windows":
+		return readImageViaPowerShell(deps)
+	case "linux":
+	default:
 		return nil
 	}
 	wsl := isWSL(deps)
@@ -293,4 +299,50 @@ func readImage(deps imageDependencies) *Image {
 		return &Image{Bytes: converted, MimeType: "image/png"}
 	}
 	return result
+}
+
+// The script prints base64 so the console code page cannot alter the text.
+const powerShellReadTextScript = "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string](Get-Clipboard -Raw)))"
+
+// ReadText reads clipboard text with the platform's command-line tools; the
+// first tool that runs decides, as upstream readClipboardText.
+func ReadText() string { return readText(defaultImageDependencies()) }
+
+func readText(deps imageDependencies) string {
+	type command struct {
+		name      string
+		arguments []string
+	}
+	var commands []command
+	if deps.getenv("TERMUX_VERSION") != "" {
+		commands = append(commands, command{"termux-clipboard-get", nil})
+	}
+	powerShell := command{"powershell.exe", []string{"-NoProfile", "-Command", powerShellReadTextScript}}
+	switch deps.platform {
+	case "darwin":
+		commands = append(commands, command{"pbpaste", nil})
+	case "windows":
+		commands = append(commands, powerShell)
+	case "linux":
+		if deps.getenv("WAYLAND_DISPLAY") != "" {
+			commands = append(commands, command{"wl-paste", []string{"--no-newline", "--type", "text"}})
+		}
+		if deps.getenv("DISPLAY") != "" {
+			commands = append(commands, command{"xclip", []string{"-selection", "clipboard", "-out"}}, command{"xsel", []string{"--clipboard", "--output"}})
+		}
+		if isWSL(deps) {
+			commands = append(commands, powerShell)
+		}
+	}
+	for _, command := range commands {
+		output, ok := deps.runOutput(command.name, command.arguments, readTimeout)
+		if !ok {
+			continue
+		}
+		if command.name == powerShell.name {
+			output, _ = base64.StdEncoding.DecodeString(strings.TrimSpace(string(output)))
+		}
+		return string(output)
+	}
+	return ""
 }

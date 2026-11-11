@@ -2,7 +2,7 @@
   "providers": [
     {
       "id": "openai-codex",
-      "name": "OpenAI Codex (legacy)",
+      "name": "OpenAI Codex",
       "baseUrl": "https://chatgpt.com/backend-api",
       "apis": [
         "openai-codex-responses"

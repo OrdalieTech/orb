@@ -83,7 +83,7 @@ func TestBedrockRetriesStrictToolLimitWithPreferredOnesRelaxed(t *testing.T) {
 		return bedrockTransportFunc(func(_ context.Context, payload *BedrockConverseStreamPayload) (BedrockResponse, error) {
 			tools := payload.ToolConfig.Tools
 			strict = append(strict, [2]bool{tools[0].ToolSpec.Strict != nil, tools[1].ToolSpec.Strict != nil})
-			if len(strict) == 1 {
+			if tools[0].ToolSpec.Strict != nil {
 				return nil, bedrockCodedError{"ValidationException", "Too many strict tools (24). The maximum number of strict tools is 20."}
 			}
 			return &fixtureBedrockResponse{items: []BedrockStreamItem{{Kind: BedrockItemMessageStart, Role: "assistant"}, {Kind: BedrockItemMessageStop, StopReason: "end_turn"}}}, nil
@@ -96,18 +96,33 @@ func TestBedrockRetriesStrictToolLimitWithPreferredOnesRelaxed(t *testing.T) {
 			ConstrainedSampling: &ai.ConstrainedSamplingConfig{Type: ai.ConstrainedSamplingJSONSchema, Strict: mode}}
 	}
 	tools := []ai.Tool{tool("prefers", ai.ConstrainedSamplingPrefer), tool("requires", ai.ConstrainedSamplingRequire)}
-	stream, err := StreamBedrockConverseWithOptions(context.Background(), model, ai.Context{
-		Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}}, Tools: &tools,
-	}, &BedrockConverseStreamOptions{Backend: backend})
-	if err != nil {
-		t.Fatal(err)
+	session := t.Name()
+	t.Cleanup(func() { _ = ai.CleanupSessionResources(session) })
+	run := func() *ai.AssistantMessage {
+		strict = nil
+		stream, err := StreamBedrockConverseWithOptions(context.Background(), model, ai.Context{
+			Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello")}}, Tools: &tools,
+		}, &BedrockConverseStreamOptions{StreamOptions: ai.StreamOptions{SessionID: &session}, Backend: backend})
+		if err != nil {
+			t.Fatal(err)
+		}
+		message, _ := ai.Collect(stream)
+		return message
 	}
-	message, _ := ai.Collect(stream)
+	message := run()
 	if message.StopReason != ai.StopReasonStop || len(strict) != 2 || strict[0] != [2]bool{true, true} || strict[1] != [2]bool{false, true} {
 		t.Fatalf("stop = %s, strict per request = %v", message.StopReason, strict)
 	}
 	if message.Diagnostics == nil || (*message.Diagnostics)[0].Type != "bedrock_strict_tools_fallback" ||
 		(*message.Diagnostics)[0].Error.Message != "Too many strict tools (24). The maximum number of strict tools is 20." {
 		t.Fatalf("diagnostics = %#v", message.Diagnostics)
+	}
+	// The session's later requests send them non-strict right away, until its resources are cleaned (#11626).
+	if run(); len(strict) != 1 || strict[0] != [2]bool{false, true} {
+		t.Fatalf("later request strict = %v", strict)
+	}
+	_ = ai.CleanupSessionResources(session)
+	if run(); len(strict) != 2 || strict[0] != [2]bool{true, true} {
+		t.Fatalf("after cleanup strict = %v", strict)
 	}
 }

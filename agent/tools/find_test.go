@@ -53,20 +53,76 @@ func TestFindAcceptsNonzeroExitWhenFDProducedOutput(t *testing.T) {
 	}
 	installFakeManagedTool(t, "fd", strings.Join(paths, "\n"), "warning from fd", 1, "")
 
-	result, err := NewFindTool(root, nil).Execute(context.Background(), "call", map[string]any{
-		"pattern": "*.txt",
-		"path":    root,
-		"limit":   2,
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
+	// Exactly limit results report no limit; limits below 1 mean 1 (#7121).
+	for _, test := range []struct {
+		limit float64
+		want  string
+	}{
+		{2, "visible.txt\n.secret/hidden.txt"},
+		{1.9, "visible.txt\n\n[1 results limit reached. Use limit=2 for more, or refine pattern]"},
+		{0, "visible.txt\n\n[1 results limit reached. Use limit=2 for more, or refine pattern]"},
+	} {
+		result, err := NewFindTool(root, nil).Execute(context.Background(), "call", map[string]any{
+			"pattern": "*.txt", "path": root, "limit": test.limit,
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := toolResultText(t, result); got != test.want {
+			t.Fatalf("limit %v: output = %q, want %q", test.limit, got, test.want)
+		}
+		details, _ := result.Details.(FindToolDetails)
+		if limited := details.ResultLimitReached != nil; limited != (test.limit < 2) || limited && *details.ResultLimitReached != 1 {
+			t.Fatalf("limit %v: details = %#v", test.limit, result.Details)
+		}
 	}
-	want := "visible.txt\n.secret/hidden.txt\n\n[2 results limit reached. Use limit=4 for more, or refine pattern]"
-	if got := toolResultText(t, result); got != want {
-		t.Fatalf("output = %q, want %q", got, want)
+}
+
+func TestFindCustomGlobGetsOneResultPastTheLimit(t *testing.T) {
+	operations := &recordingFindOperations{results: []string{"a.txt", "b.txt", "c.txt"}}
+	tool := NewFindTool(hostPath("remote"), &FindToolOptions{Operations: operations})
+	for limit, want := range map[float64]string{3: "a.txt\nb.txt\nc.txt", 2: "a.txt\nb.txt\n\n[2 results limit reached]"} {
+		result, err := tool.Execute(context.Background(), "call", map[string]any{"pattern": "*.txt", "limit": limit}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := toolResultText(t, result); got != want || operations.limit != limit+1 {
+			t.Fatalf("limit %v: output = %q, requested %v", limit, got, operations.limit)
+		}
 	}
-	details, ok := result.Details.(FindToolDetails)
-	if !ok || details.ResultLimitReached == nil || *details.ResultLimitReached != 2 {
-		t.Fatalf("details = %#v", result.Details)
+}
+
+type recordingFindOperations struct {
+	results []string
+	limit   float64
+}
+
+func (*recordingFindOperations) Exists(context.Context, string) (bool, error) { return true, nil }
+
+func (operations *recordingFindOperations) Glob(_ context.Context, _, _ string, options FindGlobOptions) ([]string, error) {
+	operations.limit = options.Limit
+	return operations.results[:min(len(operations.results), int(options.Limit))], nil
+}
+
+// Windows path patterns are matched in-process because fd's --full-path globs differ by
+// version there (#9262).
+func TestFindPathMatcherMatchesLikeFD(t *testing.T) {
+	for _, test := range []struct {
+		pattern, path string
+		want          bool
+	}{
+		{"**/src/**/*.ts", "C:/repo/src/a.ts", true},
+		{"**/src/**/*.ts", "C:/repo/src/deep/b.ts", true},
+		{"**/src/*.ts", "C:/repo/src/deep/b.ts", false},
+		{"**/src/*.ts", "C:/repo/src/.hidden.ts", true},
+		{"**/src/**", "C:/repo/src", false},
+		{"**/src/**", "C:/repo/src/a.ts", true},
+		{"**/src/*.ts", "C:/Repo/SRC/A.TS", true},
+		{"**/Src/*.ts", "C:/repo/src/a.ts", false},
+		{"**/+(a|b).ts", "C:/repo/a.ts", false},
+	} {
+		if got := findPathMatcher(test.pattern)(test.path); got != test.want {
+			t.Errorf("findPathMatcher(%q)(%q) = %v, want %v", test.pattern, test.path, got, test.want)
+		}
 	}
 }

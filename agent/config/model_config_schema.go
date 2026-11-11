@@ -312,13 +312,14 @@ func validCompatObject(compat map[string]any) bool {
 }
 
 func validOpenAICompletionsCompat(compat map[string]any) bool {
-	if !optionalBools(compat, "supportsStore", "supportsDeveloperRole", "supportsReasoningEffort", "supportsUsageInStreaming", "supportsFinishReason", "requiresToolResultName", "requiresAssistantAfterToolResult", "requiresThinkingAsText", "requiresReasoningContentOnAssistantMessages", "supportsOpenAIGrammarTools", "supportsMidConvoSystemMessages", "supportsMidConvoToolAdditions", "supportsStrictMode", "sendSessionAffinityHeaders", "supportsLongCacheRetention") {
+	if !optionalBools(compat, "supportsStore", "supportsDeveloperRole", "supportsReasoningEffort", "supportsUsageInStreaming", "supportsFinishReason", "requiresToolResultName", "requiresAssistantAfterToolResult", "requiresNonNullAssistantContent", "requiresToolsWithToolHistory", "requiresThinkingAsText", "requiresReasoningContentOnAssistantMessages", "supportsOpenAIGrammarTools", "supportsMidConvoSystemMessages", "supportsMidConvoToolAdditions", "supportsStrictMode", "sendSessionAffinityHeaders", "supportsLongCacheRetention") {
 		return false
 	}
 	if !optionalEnum(compat, "maxTokensField", "max_completion_tokens", "max_tokens") ||
 		!optionalEnum(compat, "thinkingFormat", "openai", "openrouter", "together", "deepseek", "zai", "qwen", "chat-template", "qwen-chat-template", "string-thinking", "ant-ling") ||
 		!optionalEnum(compat, "cacheControlFormat", "anthropic") || !optionalEnum(compat, "deferredToolsMode", "kimi") ||
-		!optionalEnum(compat, "sessionAffinityFormat", "openai", "openai-nosession", "openrouter") {
+		!optionalEnum(compat, "sessionAffinityFormat", "openai", "openai-nosession", "openrouter") ||
+		!optionalEnum(compat, "promptCacheKeyMode", "auto", "enabled", "disabled") {
 		return false
 	}
 	if validateOptionalNumber(compat, "vllmPriority", "compat") != nil {
@@ -338,11 +339,12 @@ func validOpenAICompletionsCompat(compat map[string]any) bool {
 
 func validOpenAIResponsesCompat(compat map[string]any) bool {
 	return optionalBools(compat, "supportsDeveloperRole", "supportsMidConvoSystemMessages", "supportsLongCacheRetention", "supportsStrictMode", "supportsOpenAIGrammarTools", "supportsAdditionalTools", "supportsToolSearch", "supportsExplicitPromptCacheMode", "supportsMaxOutputTokens") &&
-		optionalEnum(compat, "sessionAffinityFormat", "openai", "openai-nosession", "openrouter")
+		optionalEnum(compat, "sessionAffinityFormat", "openai", "openai-nosession", "openrouter") &&
+		optionalEnum(compat, "promptCacheKeyMode", "auto", "enabled", "disabled")
 }
 
 func validAnthropicCompat(compat map[string]any) bool {
-	return optionalBools(compat, "supportsEagerToolInputStreaming", "supportsLongCacheRetention", "sendSessionAffinityHeaders", "supportsCacheControlOnTools", "supportsTemperature", "forceAdaptiveThinking", "allowEmptySignature", "supportsStrictTools", "supportsMidConvoEffort", "supportsMidConvoSystemMessages", "supportsMidConvoToolChanges", "supportsToolReferences") &&
+	return optionalBools(compat, "supportsEagerToolInputStreaming", "supportsLongCacheRetention", "sendSessionAffinityHeaders", "supportsCacheControlOnTools", "supportsTemperature", "forceAdaptiveThinking", "allowEmptySignature", "supportsStrictTools", "supportsMidConvoEffort", "supportsMidConvoSystemMessages", "supportsMidConvoToolChanges", "supportsToolReferences", "supportsMessageThreads") &&
 		optionalEnum(compat, "sessionAffinityFormat", "openrouter")
 }
 

@@ -1,5 +1,5 @@
 // orb-extension-sdk: @earendil-works/pi-tui surface.
-// Implemented symbols are ported from pi-tui (pi 1.5.0, commit f9a26365,
+// Implemented symbols are ported from pi-tui (pi 1.5.2, commit b4afdddf,
 // MIT © Mario Zechner), trimmed to the D15 Component contract published
 // extensions exercise: render(width) → string[] flowing through the host's
 // ui_component_render push bridge — no per-frame RPC, no terminal ownership.

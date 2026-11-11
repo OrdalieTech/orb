@@ -203,6 +203,33 @@ export default function (pi: any) {
 	}
 }
 
+// An extension loaded through a symlinked entry resolves its dependencies from
+// the entry file's real path (upstream #8112).
+func TestRealHostResolvesDependenciesFromSymlinkedEntry(t *testing.T) {
+	root := realTempDir(t)
+	packageDir := filepath.Join(root, "real", "linked-package")
+	writeFile(t, filepath.Join(packageDir, "node_modules", "linked-dependency", "package.json"), `{"name":"linked-dependency","type":"module","exports":"./index.js"}`, 0o600)
+	writeFile(t, filepath.Join(packageDir, "node_modules", "linked-dependency", "index.js"), `export const name = "linked_dependency";`, 0o600)
+	writeFile(t, filepath.Join(packageDir, "index.ts"), `
+import { name } from "linked-dependency";
+export default function (pi: any) {
+  pi.registerTool({ name, label: name, description: name, parameters: { type: "object", properties: {} },
+    async execute() { return { content: [{ type: "text", text: "ok" }] }; } });
+}
+`, 0o600)
+	entry := filepath.Join(root, "extensions", "linked.ts")
+	if err := os.MkdirAll(filepath.Dir(entry), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(packageDir, "index.ts"), entry); err != nil {
+		t.Skip("symlink creation is not generally available")
+	}
+	_, _, runner, result, _ := startFixtureManager(t, entry)
+	if len(result.Errors) != 0 || runner.ToolDefinition("linked_dependency") == nil {
+		t.Fatalf("load result = %#v", result)
+	}
+}
+
 // An extension that imports the coding-agent family without declaring it is
 // served by the embedded orb-extension-sdk alone. Neither the installed pi on
 // PATH — a complete one, whose own pi-tui says something else — nor a leftover

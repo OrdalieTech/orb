@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -117,13 +117,15 @@ func TestRPCUnknownCommandCanonicalizesEchoedJSON(t *testing.T) {
 	}
 }
 
-func TestRPCExtensionShutdownHonoredAfterCommand(t *testing.T) {
+// An extension's ctx.shutdown() while idle, for example from a timer, shuts
+// down right away instead of waiting for the next command (upstream #11599).
+func TestRPCExtensionShutdownWhileIdleIsImmediate(t *testing.T) {
 	runtime := newRPCDispatchRuntime(t, "extension-shutdown")
 	var stdout bytes.Buffer
 	rpcContext, cancel := context.WithCancel(context.Background())
 	mode := &server{
 		ctx: rpcContext, cancel: cancel, host: &rpcTestHost{runtime: runtime},
-		output: NewFrameWriter(&stdout),
+		output: NewFrameWriter(&stdout), inputReady: true,
 	}
 	mode.ui = newExtensionUI(mode.writeObject)
 	if err := mode.bindReplacement(mode.host.Session()); err != nil {
@@ -133,22 +135,52 @@ func TestRPCExtensionShutdownHonoredAfterCommand(t *testing.T) {
 		mode.dispose()
 		_ = mode.output.Close()
 	}()
-
-	// The RPC shutdownHandler only records the request (rpc-mode.ts:344-346).
 	mode.requestExtensionShutdown()
-	select {
-	case <-rpcContext.Done():
-		t.Fatal("shutdown ran before the next command settled")
-	default:
+	if rpcContext.Err() == nil {
+		t.Fatal("idle shutdown request not honored")
 	}
+}
 
-	var commands sync.WaitGroup
-	mode.handleLine([]byte(`{"id":"s","type":"get_state"}`), &commands)
-	commands.Wait()
-	select {
-	case <-rpcContext.Done():
-	default:
-		t.Fatal("shutdown request not honored after command completed")
+// A shutdown an extension command requests waits until the command's
+// response is written (upstream #11599).
+func TestRPCExtensionCommandShutdownWaitsForItsResponse(t *testing.T) {
+	root := t.TempDir()
+	settings, err := config.NewSettingsManager(root, config.WithAgentDir(filepath.Join(root, "agent")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := sessionstore.InMemory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := extensions.NewRegistry(root)
+	early := false
+	if err := registry.Register("<inline:bye>", func(api extensions.API) error {
+		api.RegisterCommand("bye", extensions.Command{Handler: func(ctx context.Context, _ string, commandContext extensions.CommandContext) error {
+			commandContext.Shutdown()
+			early = ctx.Err() != nil
+			return nil
+		}})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := agent.NewSessionRuntime(agent.SessionRuntimeConfig{
+		Agent: engine.NewAgent(nil), SessionManager: manager, Settings: settings,
+		ExtensionRegistry: registry, ExtensionMode: extensions.ModeRPC,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, inputWriter := io.Pipe()
+	defer func() { _ = inputWriter.Close() }()
+	go func() { _, _ = io.WriteString(inputWriter, `{"id":"1","type":"prompt","message":"/bye"}`+"\n") }()
+	var stdout bytes.Buffer
+	if code := Serve(context.Background(), &rpcTestHost{runtime: runtime}, Options{Input: input, Output: &stdout}); code != 0 || early {
+		t.Fatalf("exit %d, shut down before the command returned: %v", code, early)
+	}
+	if !strings.Contains(stdout.String(), `"id":"1","type":"response","command":"prompt","success":true`) {
+		t.Fatalf("prompt response missing: %s", stdout.String())
 	}
 }
 
@@ -196,36 +228,5 @@ func TestRPCBashHonorsUserBashInterception(t *testing.T) {
 	recorded, ok := messages[len(messages)-1].(harness.BashExecutionMessage)
 	if !ok || recorded.Command != "printf local" || recorded.Output != "handled" {
 		t.Fatalf("recorded bash = %#v", messages[len(messages)-1])
-	}
-}
-
-// Upstream awaits checkShutdownRequested after EVERY handled command,
-// including the unknown default (rpc-mode.ts:766-771), so a pending extension
-// shutdown must not be deferred past an untyped frame.
-func TestRPCExtensionShutdownHonoredAfterUntypedCommand(t *testing.T) {
-	runtime := newRPCDispatchRuntime(t, "extension-shutdown-untyped")
-	var stdout bytes.Buffer
-	rpcContext, cancel := context.WithCancel(context.Background())
-	mode := &server{
-		ctx: rpcContext, cancel: cancel, host: &rpcTestHost{runtime: runtime},
-		output: NewFrameWriter(&stdout),
-	}
-	mode.ui = newExtensionUI(mode.writeObject)
-	if err := mode.bindReplacement(mode.host.Session()); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		mode.dispose()
-		_ = mode.output.Close()
-	}()
-
-	mode.requestExtensionShutdown()
-	var commands sync.WaitGroup
-	mode.handleLine([]byte(`{"type":5}`), &commands)
-	commands.Wait()
-	select {
-	case <-rpcContext.Done():
-	default:
-		t.Fatal("shutdown request not honored after untyped command")
 	}
 }

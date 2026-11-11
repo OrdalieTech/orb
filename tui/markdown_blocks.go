@@ -26,6 +26,9 @@ func (markdown *Markdown) renderList(list *ast.List, source []byte, depth, width
 		rendered := false
 		var previous ast.Node
 		for block := item.FirstChild(); block != nil; block = block.NextSibling() {
+			if isHTMLComment(block, source) {
+				continue
+			}
 			if rendered && blankLineBetween(previous, block, source) {
 				lines = append(lines, "")
 			}

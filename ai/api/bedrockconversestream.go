@@ -329,7 +329,7 @@ func StreamBedrockConverseWithOptions(
 			payload, err = coerceBedrockPayload(hooked)
 			return payload, preferredStrict, err
 		}
-		payload, preferredStrict, err := build(false)
+		payload, preferredStrict, err := build(strictToolLimitsExceeded(streamOptions))
 		if err != nil {
 			fail(err)
 			return
@@ -366,6 +366,7 @@ func StreamBedrockConverseWithOptions(
 				message = apiError.ErrorMessage()
 			}
 			appendStrictToolsFallback(output, "bedrock", message)
+			markStrictToolLimitsExceeded(streamOptions)
 			if payload, _, err = build(true); err == nil {
 				response, err = transport.Send(ctx, payload)
 			}

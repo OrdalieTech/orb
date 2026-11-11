@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/OrdalieTech/orb/ai/auth"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -211,6 +213,53 @@ func TestOAuthSignInConnectsAndRefreshes(t *testing.T) {
 
 	if removed, err := RemoveCredentials(agentDir, "protected", entry.Config.URL); err != nil || !removed {
 		t.Fatalf("logout: %v, %v", removed, err)
+	}
+}
+
+// A failed refresh neither registers a client nor replaces the PKCE verifier
+// of a sign-in in progress (upstream 1.5.1).
+func TestFailedRefreshKeepsASignInInProgress(t *testing.T) {
+	fake := newFakeOAuthServer(t)
+	for name, client := range map[string]*oauthClient{"stored client": {ClientID: "client-1"}, "no client": nil} {
+		t.Run(name, func(t *testing.T) {
+			store := newCredentialStore(t.TempDir())
+			serverURL := fake.URL + "/mcp"
+			if err := store.update("protected", serverURL, func(state *oauthState) {
+				state.ClientInformation, state.CodeVerifier, state.OAuthState = client, "pending-verifier", "pending-state"
+				state.Tokens = &oauthTokens{AccessToken: "stale", TokenType: "Bearer", RefreshToken: "spent"}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			transport := &oauthTransport{flow: oauthFlow{name: "protected", serverURL: serverURL, store: store, client: http.DefaultClient}}
+			if err := transport.refresh(context.Background(), "stale", challenge{}); !errors.Is(err, errSignInRequired) {
+				t.Fatalf("refresh = %v", err)
+			}
+			state, _ := store.load("protected", serverURL)
+			if state.CodeVerifier != "pending-verifier" || state.OAuthState != "pending-state" || len(fake.registered) != 0 {
+				t.Fatalf("state %#v, registrations %d", state, len(fake.registered))
+			}
+		})
+	}
+}
+
+// A refresh whose caller gives up is still saved, and auth.SettleWrites waits
+// for it: the server may already have spent the old refresh token.
+func TestAbandonedRefreshIsSaved(t *testing.T) {
+	fake := newFakeOAuthServer(t)
+	store, serverURL := newCredentialStore(t.TempDir()), fake.URL+"/mcp"
+	if err := store.update("protected", serverURL, func(state *oauthState) {
+		state.ClientInformation = &oauthClient{ClientID: "client-1"}
+		state.Tokens = &oauthTokens{AccessToken: "stale", TokenType: "Bearer", RefreshToken: "refresh"}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	transport := &oauthTransport{flow: oauthFlow{name: "protected", serverURL: serverURL, store: store, client: http.DefaultClient}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_ = transport.refresh(ctx, "stale", challenge{})
+	auth.SettleWrites()
+	if state, _ := store.load("protected", serverURL); state.Tokens == nil || state.Tokens.AccessToken == "stale" {
+		t.Fatalf("refreshed tokens not saved: %#v", state.Tokens)
 	}
 }
 

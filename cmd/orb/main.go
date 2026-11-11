@@ -51,8 +51,8 @@ import (
 var version = "dev"
 
 const (
-	upstreamVersion     = "1.5.0"
-	upstreamCommit      = "f9a26365568127461c47a07a37dcb42c140a3ac5"
+	upstreamVersion     = "1.5.2"
+	upstreamCommit      = "b4afdddf44e059c67ccf5097e5317d913521b470"
 	latestReleaseURL    = selfupdate.LatestReleaseURL
 	versionCheckTimeout = 10 * time.Second
 )
@@ -74,7 +74,7 @@ type cliDependencies struct {
 	refreshModels           func(context.Context, string) error
 	runInteractive          func(context.Context, *agent.SessionRuntime, modes.InteractiveModeOptions) int
 	selectSession           SessionSelector
-	selectMissingSessionCWD func(context.Context, *agent.MissingSessionCWDError) (string, bool, error)
+	selectMissingSessionCWD func(context.Context, *agent.MissingSessionCWDError) (agent.MissingSessionCWDChoice, error)
 	runRPCFixture           func(context.Context, CLIArgs, cliStreams, string) (handled bool, code int)
 	selfUpdate              func(context.Context, io.Writer, bool, bool) int
 }
@@ -229,14 +229,14 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 	}
 	if dependencies.selectMissingSessionCWD == nil {
-		dependencies.selectMissingSessionCWD = func(ctx context.Context, issue *agent.MissingSessionCWDError) (string, bool, error) {
-			return modes.RunStartupSelector(ctx, modes.StartupSelectorOptions{
-				Title: modes.MissingSessionCWDPrompt(issue),
-				Choices: []modes.StartupChoice{
-					{Label: "Continue", Value: issue.FallbackCWD},
-					{Label: "Cancel", Cancel: true},
-				},
-			})
+		dependencies.selectMissingSessionCWD = func(ctx context.Context, issue *agent.MissingSessionCWDError) (agent.MissingSessionCWDChoice, error) {
+			title, options := modes.MissingSessionCWDPrompt(issue)
+			choices := make([]modes.StartupChoice, len(options))
+			for index, option := range options {
+				choices[index] = modes.StartupChoice{Label: option.Label, Value: string(option.Choice), Cancel: option.Choice == ""}
+			}
+			choice, _, err := modes.RunStartupSelector(ctx, modes.StartupSelectorOptions{Title: title, Choices: choices})
+			return agent.MissingSessionCWDChoice(choice), err
 		}
 	}
 	if len(argv) > 0 && argv[0] == "bridge" {
@@ -472,25 +472,39 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		if !isInteractive {
 			return reportCLIError(streams.Stderr, issue)
 		}
-		selectedCWD, selected, selectErr := dependencies.selectMissingSessionCWD(ctx, issue)
+		choice, selectErr := dependencies.selectMissingSessionCWD(ctx, issue)
 		if selectErr != nil {
 			return reportCLIError(streams.Stderr, selectErr)
 		}
-		if !selected {
+		if choice == "" {
 			return 0
 		}
 		agentDir, dirErr := config.GetAgentDir()
 		if dirErr != nil {
 			return reportCLIError(streams.Stderr, dirErr)
 		}
-		if args.native != nil {
+		switch {
+		case choice == agent.MissingSessionCWDFork:
+			// Forked like --fork, so the next resume opens the fork here without asking (pi #11060).
+			var settings *config.SettingsManager
+			var sessionDir string
+			if settings, err = config.NewSettingsManager(cwd, config.WithAgentDir(agentDir)); err == nil {
+				sessionDir, err = resolveCLISessionDir(args, settings)
+			}
+			if err == nil {
+				manager, err = agent.ForkSessionInto(ctx, manager, cwd, sessionDir)
+			}
+			if err == nil && args.native != nil {
+				err = args.native.BindSession(manager)
+			}
+		case args.native != nil:
 			var opened *harness.Session
 			opened, err = args.native.Sessions().OpenPath(ctx, manager.GetSessionID())
 			if err == nil {
-				manager, err = session.FromHarnessStorage(opened.Storage(), session.WithHarnessRepo(args.native.Sessions()), session.WithCwdOverride(selectedCWD))
+				manager, err = session.FromHarnessStorage(opened.Storage(), session.WithHarnessRepo(args.native.Sessions()), session.WithCwdOverride(cwd))
 			}
-		} else {
-			manager, err = session.Open(issue.SessionFile, manager.GetSessionDir(), session.WithAgentDir(agentDir), session.WithCwdOverride(selectedCWD))
+		default:
+			manager, err = session.Open(issue.SessionFile, manager.GetSessionDir(), session.WithAgentDir(agentDir), session.WithCwdOverride(cwd))
 		}
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
@@ -594,7 +608,11 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		sessionHost.Dispose(ctx)
 		return reportCLIError(streams.Stderr, err)
 	}
-	defer sessionHost.Dispose(ctx)
+	defer func() {
+		// A signal during the final disposal does not cut it short; a second one exits at once.
+		defer catchShutdownSignals(nil)()
+		sessionHost.Dispose(ctx)
+	}()
 
 	var stdinContent *string
 	if !streams.StdinTTY {

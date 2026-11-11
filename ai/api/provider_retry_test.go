@@ -3,7 +3,11 @@ package api
 import (
 	"context"
 	"errors"
+	"io"
+	"log"
 	"net/http"
+	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -181,6 +185,82 @@ func TestProviderRetryDelayReadsServerHeaders(t *testing.T) {
 		delay, err = providerRetryDelay(errors.New("x"), http.Header{"Retry-After": []string{value}}, 2, nil)
 		if err != nil || delay < 1500*time.Millisecond || delay > 2*time.Second {
 			t.Fatalf("retry-after %q: %s / %v", value, delay, err)
+		}
+	}
+}
+
+// A provider stream that net/http reports cut short after the reply began ends as an assistant
+// error the retry policy retries (upstream #11879), not as a bare stream error.
+func TestDroppedProviderStreamIsARetryableAssistantError(t *testing.T) {
+	for _, test := range []struct {
+		name, begun string
+		stream      func(*http.Client, string) (ai.AssistantMessageEventStream, error)
+	}{
+		{"Anthropic", `{"type":"message_start","message":{"id":"m","usage":{"input_tokens":1,"output_tokens":0}}}`, func(client *http.Client, url string) (ai.AssistantMessageEventStream, error) {
+			model := anthropicTestModel()
+			model.BaseURL = url
+			return StreamAnthropicMessagesWithOptions(context.Background(), model, droppedStreamContext, &AnthropicMessagesOptions{StreamOptions: droppedStreamOptions(client)})
+		}},
+		{"OpenAI Completions", `{"id":"c","choices":[{"index":0,"delta":{"content":"partial"}}]}`, func(client *http.Client, url string) (ai.AssistantMessageEventStream, error) {
+			model := &ai.Model{ID: "fixture", API: ai.APIOpenAICompletions, Provider: "openai", BaseURL: url, MaxTokens: 128}
+			return StreamOpenAICompletionsWithOptions(context.Background(), model, droppedStreamContext, &OpenAICompletionsOptions{StreamOptions: droppedStreamOptions(client)})
+		}},
+		{"OpenAI Responses", `{"type":"response.created","response":{"id":"r"}}`, func(client *http.Client, url string) (ai.AssistantMessageEventStream, error) {
+			model := responsesTestModel()
+			model.BaseURL = url
+			return StreamOpenAIResponsesWithOptions(context.Background(), model, droppedStreamContext, &OpenAIResponsesOptions{StreamOptions: droppedStreamOptions(client)})
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(writer, "data: "+test.begun+"\n\n")
+				writer.(http.Flusher).Flush()
+				// Close the connection inside the chunked body.
+				connection, _, _ := writer.(http.Hijacker).Hijack()
+				_ = connection.Close()
+			}))
+			defer server.Close()
+			stream, err := test.stream(server.Client(), server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			message, err := ai.Collect(stream)
+			if err != nil || !ai.IsRetryableAssistantError(message) {
+				encoded, _ := ai.Marshal(message)
+				t.Fatalf("message = %s (error %v), want a retryable assistant error", encoded, err)
+			}
+		})
+	}
+}
+
+var droppedStreamContext = ai.Context{Messages: ai.MessageList{&ai.UserMessage{Content: ai.NewUserText("hello"), Timestamp: 1}}}
+
+func droppedStreamOptions(client *http.Client) ai.StreamOptions {
+	key, retries := "key", 0
+	return ai.StreamOptions{APIKey: &key, HTTPClient: client, MaxRetries: &retries}
+}
+
+// Connection failures keep their cause in the error message, as pi 1.5.1 now shows it (#11695).
+func TestProviderConnectionErrorsShowTheirCause(t *testing.T) {
+	if runtime.GOARCH == "wasm" {
+		t.Skip("a Wasm host has no sockets to refuse or to present a certificate")
+	}
+	refused := httptest.NewServer(http.NotFoundHandler())
+	refused.Close()
+	untrusted := httptest.NewUnstartedServer(http.NotFoundHandler())
+	untrusted.Config.ErrorLog = log.New(io.Discard, "", 0)
+	untrusted.StartTLS()
+	defer untrusted.Close()
+	for url, cause := range map[string]string{refused.URL: "refused", untrusted.URL: "certificate"} {
+		model := anthropicTestModel()
+		model.BaseURL = url
+		stream, err := StreamAnthropicMessagesWithOptions(context.Background(), model, droppedStreamContext, &AnthropicMessagesOptions{StreamOptions: droppedStreamOptions(nil)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if message, _ := ai.Collect(stream); message.ErrorMessage == nil || !strings.Contains(*message.ErrorMessage, cause) {
+			t.Fatalf("error = %+v, want the cause %q", message, cause)
 		}
 	}
 }

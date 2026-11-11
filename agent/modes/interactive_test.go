@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/truncate"
 	"github.com/OrdalieTech/orb/plugins/usage"
 	"github.com/OrdalieTech/orb/tui"
 
@@ -845,7 +847,7 @@ func TestTranscriptRecolorsAcrossTerminalAppearanceChanges(t *testing.T) {
 		tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "result"}}, false, nil, false)
 		bash := NewBashExecutionComponent("echo result", &fakeRenderRequester{}, false)
 		bash.AppendOutput("result")
-		bash.SetComplete(nil, false)
+		bash.SetComplete(nil, false, false, nil)
 		assistant := NewAssistantMessageComponent(&ai.AssistantMessage{Content: ai.AssistantContent{
 			&ai.ThinkingContent{Thinking: strings.Repeat("reasoning ", 600)},
 			&ai.TextContent{Text: "**Answer** with `code`"},
@@ -875,5 +877,40 @@ func TestTranscriptRecolorsAcrossTerminalAppearanceChanges(t *testing.T) {
 				t.Fatalf("%s component %d kept stale colors:\n%q\nwant:\n%q", step, i, got, want)
 			}
 		}
+	}
+}
+
+func TestUserBashOutputTruncationAndExpandState(t *testing.T) {
+	initTestTheme(t)
+	path := "/tmp/orb-bash-full.log"
+	bash := NewBashExecutionComponent("cat build.log", &fakeRenderRequester{}, false)
+	bash.AppendOutput(strings.Repeat("first chunk line\n", 8_000))
+	if bash.output.Len() > truncate.DefaultMaxBytes || !bash.truncated {
+		t.Fatalf("live output kept %d bytes, truncated=%t; want a bounded tail", bash.output.Len(), bash.truncated)
+	}
+	bash.SetComplete(nil, false, false, &path)
+	if rendered := tui.StripANSI(strings.Join(bash.Render(200), "\n")); !strings.Contains(rendered, "Output truncated. Full output: "+path) {
+		t.Fatalf("missing truncation notice: %s", rendered)
+	}
+	replayed := NewBashExecutionComponent("cat build.log", &fakeRenderRequester{}, false)
+	replayed.AppendOutput("tail")
+	replayed.SetComplete(nil, false, true, &path)
+	if rendered := tui.StripANSI(strings.Join(replayed.Render(200), "\n")); !strings.Contains(rendered, "Full output: "+path) {
+		t.Fatalf("executor truncation not shown: %s", rendered)
+	}
+
+	mode := newRestoreMode(t)
+	mode.toolsExpanded = true
+	if live := mode.newBashExecutionComponent("ls", false); !live.expanded {
+		t.Fatal("live shell output did not start in the current expand state")
+	}
+}
+
+// Windows terminals keep Ctrl+V for their own text paste, so Alt+V pastes too (pi 1.5.1, #11765),
+// on every platform: WSL is Linux to the binary.
+func TestAltVPastesBesideCtrlV(t *testing.T) {
+	keys := NewAppKeybindings(nil).Keys("app.clipboard.pasteImage")
+	if !slices.Equal(keys, []tui.KeyID{"ctrl+v", "alt+v"}) {
+		t.Fatalf("paste keys = %v", keys)
 	}
 }

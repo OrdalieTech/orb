@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"strings"
 
 	"github.com/yuin/goldmark/ast"
@@ -17,12 +18,20 @@ func (markdown *Markdown) renderInlineChildren(parent ast.Node, source []byte, c
 		result.WriteString(applyInlineText(plain.String(), context.apply))
 		plain.Reset()
 	}
+	// After a hidden comment, the next text drops its leading space when the text before ended with one,
+	// so "a <!-- c --> b" renders as "a b".
+	dropSpace := false
 	for child := parent.FirstChild(); child != nil; child = child.NextSibling() {
+		trimSpace := dropSpace
+		dropSpace = false
 		switch typed := child.(type) {
 		case *ast.Text:
 			value := string(typed.Value(source))
 			if !markdown.options.PreserveBackslashEscapes {
 				value = escapablePunctuation.ReplaceAllString(value, `$1`)
+			}
+			if trimSpace {
+				value = strings.TrimLeft(value, " \t")
 			}
 			plain.WriteString(value)
 			if typed.SoftLineBreak() || typed.HardLineBreak() {
@@ -32,6 +41,12 @@ func (markdown *Markdown) renderInlineChildren(parent ast.Node, source []byte, c
 		case *ast.String:
 			plain.Write(typed.Value)
 			continue
+		case *ast.RawHTML:
+			if typed.Segments.Len() > 0 && bytes.HasPrefix(source[typed.Segments.At(0).Start:], []byte("<!--")) {
+				before := plain.String()
+				dropSpace = child.PreviousSibling() == nil || strings.HasSuffix(before, " ") || strings.HasSuffix(before, "\t")
+				continue
+			}
 		}
 		flushPlain()
 		result.WriteString(markdown.renderInline(child, source, context))

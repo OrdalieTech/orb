@@ -708,7 +708,7 @@ func sliceWithWidth(line string, startCol, length int, strict bool) (string, int
 		if code, next, ok := extractANSI(line, pos); ok {
 			if currentCol >= startCol && currentCol < endCol {
 				result.WriteString(code)
-			} else if currentCol < startCol {
+			} else if currentCol < startCol && code != CursorMarker { // a cursor marker is positional, not style state
 				pendingANSI.WriteString(code)
 			}
 			pos = next

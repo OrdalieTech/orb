@@ -995,3 +995,27 @@ func TestRunCLIModelsListsAndSetsTheDefault(t *testing.T) {
 		t.Fatal("models use accepted a model that is not signed in")
 	}
 }
+
+func TestUpstreamPinMatchesVersionConstants(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "UPSTREAM.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lock struct {
+		Commit  string `json:"commit"`
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &lock); err != nil {
+		t.Fatal(err)
+	}
+	if upstreamVersion != lock.Version || upstreamCommit != lock.Commit {
+		t.Fatalf("cmd/orb/main.go reports %s @ %s, UPSTREAM.lock pins %s @ %s", upstreamVersion, upstreamCommit, lock.Version, lock.Commit)
+	}
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readme), lock.Commit) {
+		t.Fatalf("README.md does not reference UPSTREAM.lock commit %s", lock.Commit)
+	}
+}

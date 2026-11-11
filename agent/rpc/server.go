@@ -70,9 +70,11 @@ type server struct {
 	unsub   func()
 	// disposed is closed once dispose finishes; a second dispose waits on it.
 	disposed chan struct{}
-	// shutdownRequested is set by extension ctx.shutdown() and honored after
-	// the current command or agent_settled.
+	// shutdownRequested is set by extension ctx.shutdown() and honored once
+	// input is attached, no command is being handled and the session is idle.
 	shutdownRequested bool
+	inputReady        bool
+	activeCommands    int
 	promptMu          sync.Mutex
 	prompting         bool
 	promptSession     *agent.SessionRuntime
@@ -82,23 +84,25 @@ type server struct {
 }
 
 // requestExtensionShutdown is the RPC shutdownHandler for extension
-// ctx.shutdown(): it only records the request; the
-// shutdown itself runs after the in-flight command settles.
+// ctx.shutdown(). An idle session has no command response or agent_settled
+// left to check the request, so it is checked right away.
 func (mode *server) requestExtensionShutdown() {
 	mode.mu.Lock()
 	mode.shutdownRequested = true
 	mode.mu.Unlock()
+	mode.checkShutdownRequested()
 }
 
-// checkShutdownRequested: once a shutdown was
-// requested, cancel the serve loop, which disposes, flushes stdout, and
-// returns exit code 0 like upstream's shutdown().
+// checkShutdownRequested cancels the serve loop, which disposes, flushes
+// stdout, and returns exit code 0 like upstream's shutdown(), once a shutdown
+// was requested and nothing still needs the process. Each of those ending
+// checks again.
 func (mode *server) checkShutdownRequested() {
 	mode.mu.Lock()
-	requested := mode.shutdownRequested
+	ready := mode.shutdownRequested && mode.inputReady && mode.activeCommands == 0
 	cancel := mode.cancel
 	mode.mu.Unlock()
-	if requested && cancel != nil {
+	if ready && cancel != nil && mode.host.Session().IsIdle() {
 		cancel()
 	}
 }
@@ -150,6 +154,12 @@ func (mode *server) serve() int {
 	lines := make(chan []byte)
 	readErrors := make(chan error, 1)
 	go ReadFrames(mode.options.Input, lines, readErrors)
+
+	mode.mu.Lock()
+	mode.inputReady = true
+	mode.mu.Unlock()
+	// A shutdown requested during startup, such as from session_start.
+	mode.checkShutdownRequested()
 
 	var commands sync.WaitGroup
 	for {
@@ -307,6 +317,9 @@ func (mode *server) handleLine(line []byte, commands *sync.WaitGroup) {
 		}
 		mode.promptMu.Unlock()
 	}
+	mode.mu.Lock()
+	mode.activeCommands++
+	mode.mu.Unlock()
 	execute := func() {
 		if preflight != nil {
 			select {
@@ -318,7 +331,9 @@ func (mode *server) handleLine(line []byte, commands *sync.WaitGroup) {
 		if response != nil {
 			_ = mode.writeObject(*response)
 		}
-		// Upstream checks after every handled command.
+		mode.mu.Lock()
+		mode.activeCommands--
+		mode.mu.Unlock()
 		mode.checkShutdownRequested()
 	}
 	if preflight != nil || rpcCommandIsAsync(command.Type) {

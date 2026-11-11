@@ -9,8 +9,14 @@ import (
 
 const (
 	contextSafetyTokens float64 = 4096
-	estimatedImageChars int64   = 4800
-	minimumMaxTokens    float64 = 1
+	// OpenRouter counts the input with its own tokenizer, up to 12% above the provider's count, and
+	// rejects input + max_tokens above the window before routing (#10497).
+	contextSafetyRatio = 0.15
+	// The ratio margin is kept only while it leaves this much output; otherwise only the fixed margin
+	// is, and output is capped at this so an overcount still fits for a while before compaction.
+	minOutputWithRatioMargin float64 = 32768
+	estimatedImageChars      int64   = 4800
+	minimumMaxTokens         float64 = 1
 )
 
 type contextUsageEstimate struct {
@@ -55,8 +61,12 @@ func clampMaxTokensToContext(model *ai.Model, requestContext ai.Context, maxToke
 	if model.ContextWindow <= 0 {
 		return max(minimumMaxTokens, maxTokens)
 	}
-	available := model.ContextWindow - float64(estimateContextTokens(requestContext).tokens) - contextSafetyTokens
-	return min(maxTokens, max(minimumMaxTokens, available))
+	input := float64(estimateContextTokens(requestContext).tokens)
+	room := model.ContextWindow - input - max(contextSafetyTokens, math.Ceil(input*contextSafetyRatio))
+	if room < minOutputWithRatioMargin {
+		room = min(minOutputWithRatioMargin, model.ContextWindow-input-contextSafetyTokens)
+	}
+	return min(maxTokens, max(minimumMaxTokens, room))
 }
 
 func estimateContextTokens(requestContext ai.Context) contextUsageEstimate {

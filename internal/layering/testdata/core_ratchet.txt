@@ -65,7 +65,7 @@ agent/tools	os.MkdirAll	2
 agent/tools	os.MkdirTemp	1
 agent/tools	os.Open	4
 agent/tools	os.OpenFile	3
-agent/tools	os.ReadFile	3
+agent/tools	os.ReadFile	2
 agent/tools	os.Remove	1
 agent/tools	os.RemoveAll	1
 agent/tools	os.Rename	1

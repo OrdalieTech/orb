@@ -211,11 +211,11 @@ func TruncateLine(line string, maxChars ...int) LineResult {
 	if len(units) <= limit {
 		return LineResult{Text: line}
 	}
-	end := limit
-	if end < 0 {
-		end = len(units) + end
+	end := max(0, limit)
+	// Cutting a surrogate pair in half would leave a lone surrogate: keep the whole character out.
+	if end > 0 && utf16.IsSurrogate(rune(units[end-1])) && units[end-1] < 0xdc00 && units[end] >= 0xdc00 && units[end] <= 0xdfff {
+		end--
 	}
-	end = max(0, min(len(units), end))
 	return LineResult{
 		Text:         stringFromUTF16Units(units[:end]) + "... [truncated]",
 		WasTruncated: true,

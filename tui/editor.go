@@ -1669,6 +1669,8 @@ func (editor *Editor) handleBackspace() {
 			graphemeLength = runeLen(lastGrapheme)
 		}
 
+		before := runeSlice(line, 0, editor.state.cursorCol-graphemeLength)
+		after := runeSliceFrom(line, editor.state.cursorCol)
 		if match := pasteMarkerSingle.FindStringSubmatch(lastGrapheme); match != nil {
 			targetID, _ := strconv.Atoi(match[1])
 			delete(editor.pastes, targetID)
@@ -1685,30 +1687,24 @@ func (editor *Editor) handleBackspace() {
 				delete(editor.pastes, id)
 			}
 
-			// Renumber markers with IDs greater than the removed one.
-			for index, mapLine := range editor.state.lines {
-				editor.state.lines[index] = pasteMarkerRegex.ReplaceAllStringFunc(mapLine, func(fullMatch string) string {
+			renumber := func(text string) string {
+				return pasteMarkerRegex.ReplaceAllStringFunc(text, func(fullMatch string) string {
 					sub := pasteMarkerRegex.FindStringSubmatchIndex(fullMatch)
 					id, _ := strconv.Atoi(fullMatch[sub[2]:sub[3]])
 					if id <= targetID {
 						return fullMatch
 					}
-					// Unmatched optional suffix stringifies as "undefined"
-					// upstream; the quirk is preserved.
-					suffix := "undefined"
-					if sub[4] >= 0 {
-						suffix = fullMatch[sub[4]:sub[5]]
-					}
-					return fmt.Sprintf("[paste #%d%s]", id-1, suffix)
+					return fmt.Sprintf("[paste #%d%s", id-1, fullMatch[sub[3]:])
 				})
 			}
+			for index, mapLine := range editor.state.lines {
+				editor.state.lines[index] = renumber(mapLine)
+			}
+			before, after = renumber(before), renumber(after)
 		}
 
-		line = editor.currentLine()
-		before := runeSlice(line, 0, editor.state.cursorCol-graphemeLength)
-		after := runeSliceFrom(line, editor.state.cursorCol)
 		editor.state.lines[editor.state.cursorLine] = before + after
-		editor.setCursorCol(editor.state.cursorCol - graphemeLength)
+		editor.setCursorCol(runeLen(before))
 	} else if editor.state.cursorLine > 0 {
 		editor.pushUndoSnapshot()
 		currentLine := editor.currentLine()
