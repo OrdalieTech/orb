@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-11
+
 Orb follows pi 1.5.2, and the apps grow: Orb for the desktop replaces the SwiftUI Mac app on macOS, Linux and Windows, the Android app shows every open conversation at once as live cards, both keep a default model per machine, and they start and run lighter.
 
 - Orb for the desktop (`platforms/desktop`) replaces the SwiftUI Mac app, on macOS, Linux and Windows: Go drawn by MyGo's native UI, in the Android app's look, with a sidebar of the conversations open and every machine's threads, conversations tiled side by side or stacked as a tiling window manager does (⌘D, ⌘⇧D, ⌘W, ⌘[ ⌘], ⌘=, ⌘⇧↩ to zoom one, or dragging threads and tiles onto a tile's sides; tiles glide as the layout changes), providers, plugins and Bridge beside them, the pairing code as a QR code a phone photographs, and the terminal where a conversation runs under it (⌘J). `platforms/desktop/build.sh` packages each platform's app with its `orb`; `platforms/apple` now builds the iOS app only.

@@ -86,7 +86,6 @@ Full tree: ARCHITECTURE §1.
 
 - Bridge fully in the core (P4, P11): a host-supplied transport port and every session registered
   as an instance by default. Per-target gaps are in `docs/deployments.md`.
-- Release the pi 1.5 adoption now under `[Unreleased]` in `CHANGELOG.md`.
 - Upgrade Ordalie-back from Orb v0.7.0: filter system messages out of client SSE, and move
   `agentengine` from `shouldStopAfterTurn` to `finishTurn` and from `SetSystemPrompt` to a system
   message ahead of its replayed messages.
