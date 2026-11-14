@@ -158,6 +158,86 @@ private struct Bar: View {
     }
 }
 
+/// Home, as on Android: every thread on every machine, newest first, where it lives a detail of
+/// the row; a way to pair while no machine is; a box that starts a conversation on a paired
+/// machine, since the phone runs no Orb of its own yet.
+private struct Start: View {
+    @Environment(Orb.self) private var orb
+    @Environment(Nav.self) private var nav
+    @Environment(\.go) private var go
+    @State private var target: (machine: String, cwd: String, label: String)? = nil
+
+    var body: some View {
+        VStack(spacing: 0) {
+            List {
+                Group {
+                    ForEach(orb.home.entries) { e in
+                        Button { nav.tab = "e:" + e.key } label: {
+                            row(e.title, dotted(orb.machine(e.machine)?.name ?? "", base(e.cwd), e.modified.ago), live: e.live, asks: e.asks, hue: orb.hue(e.machine))
+                        }
+                    }
+                    if orb.home.machines.count < 2 {
+                        Button { nav.pane = "pair"; nav.settings = true } label: {
+                            HStack { Text("No paired devices").foregroundStyle(Ink.mute); Spacer(); Text("Pair ›").fontWeight(.medium) }.padding(.vertical, 10)
+                        }
+                    }
+                    Text(orb.state.up ? orb.state.launching.isEmpty ? orb.state.summary : orb.state.launching : "starting Bridge…")
+                        .font(.mono(Size.small)).foregroundStyle(Ink.meta)
+                }
+                // No rules between rows, on the page's own ground.
+                .listRowBackground(Color.clear).listRowSeparator(.hidden)
+            }
+            .listStyle(.plain).scrollContentBackground(.hidden).buttonStyle(.plain)
+            if let t = target {
+                PromptBox(tab: nil, place: place) { text in
+                    Task { (try? await orb.ask("start", ["machine": t.machine, "cwd": t.cwd, "text": text], as: Outcome.self)).map(go) }
+                }
+            }
+        }
+        .onChange(of: starts.first?.id, initial: true) {
+            if target == nil, let m = starts.first { target = (m.id, "", m.name) }
+        }
+    }
+
+    /// The machines a conversation can start on.
+    private var starts: [Machine] { orb.home.machines.filter { $0.launch && !$0.here } }
+
+    private func row(_ title: String, _ sub: String, live: Bool, asks: Bool, hue: Color) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.mono()).lineLimit(1)
+                Text(sub).font(.mono(Size.small)).foregroundStyle(hue).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if asks { Dot() } else if live { Dot(pulse: true) }
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// Where the next message goes: an Orb running somewhere, or a folder of a machine.
+    private var place: some View {
+        Menu(target?.label ?? device) {
+            let running = orb.home.machines.flatMap { $0.running }
+            if !running.isEmpty {
+                Section("Running") {
+                    ForEach(running, id: \.instance) { r in
+                        Button(r.label) { Task { (try? await orb.ask("open", ["key": "i:" + r.instance], as: Outcome.self)).map(go) } }
+                    }
+                }
+            }
+            ForEach(starts) { m in
+                Menu("on \(m.name)") {
+                    Button("where Orb starts") { target = (m.id, "", m.name) }
+                    ForEach(m.folders.prefix(12), id: \.cwd) { f in
+                        Button(f.cwd) { target = (m.id, f.cwd, dotted(m.name, base(f.cwd))) }
+                    }
+                }
+            }
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+    }
+}
+
 /// What the system tells the view and shows of it: whether the app is in front, a count on its
 /// icon of what waits for you (questions, answers not read yet), Settings, and links to pair.
 private struct Lifecycle: ViewModifier {

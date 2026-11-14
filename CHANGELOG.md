@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- The iOS app builds again: its Home (every thread, pairing, and the box that starts a conversation on a paired machine) had gone with the Mac app's sidebar.
+
 ## [0.21.0] - 2026-11-11
 
 Orb follows pi 1.5.2, and the apps grow: Orb for the desktop replaces the SwiftUI Mac app on macOS, Linux and Windows, the Android app shows every open conversation at once as live cards, both keep a default model per machine, and they start and run lighter.
