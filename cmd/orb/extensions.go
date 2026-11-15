@@ -18,7 +18,6 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/plugins/bridgeagents"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
-	"github.com/OrdalieTech/orb/plugins/codexsessions"
 	herdrext "github.com/OrdalieTech/orb/plugins/herdr"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 )
@@ -84,7 +83,6 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		Bridge: bridgeExtension(args, settings), BridgeManagement: true,
 		BridgeAgentCalls: bridgeagents.Extension(ownerBridge{args: args, settings: settings}),
 		ClaudeSessions:   claudesessions.Management(settings, agentDir, os.Environ()),
-		CodexSessions:    codexsessions.Extension(os.Environ()),
 		// Background jobs run through the same bash as the built-in: sandbox, shell and prefix.
 		Bash: func(cwd string) (engine.AgentTool, error) {
 			mode, err := permissions.SandboxMode(settings)

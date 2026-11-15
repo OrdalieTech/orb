@@ -11,7 +11,7 @@ import kotlinx.coroutines.*
 import tech.ordalie.orb.core.*
 
 /** These read a computer's Claude Code or Codex: neither belongs on a phone. */
-private val COMPUTER = setOf("claude-sessions", "codex-sessions")
+private val COMPUTER = setOf("claude-sessions")
 
 /** Orb's bundled plugins on a machine, and their choices. Each one only ever renders into a slot or raises an interrupt. */
 @Composable

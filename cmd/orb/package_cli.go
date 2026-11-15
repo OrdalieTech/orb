@@ -16,7 +16,6 @@ import (
 	extensionhost "github.com/OrdalieTech/orb/agent/extensions/host"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
-	"github.com/OrdalieTech/orb/plugins/codexsessions"
 	mcpcli "github.com/OrdalieTech/orb/plugins/mcp/cli"
 )
 
@@ -181,7 +180,6 @@ func listFullComposition(cwd, agentDir string, settings *config.SettingsManager,
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
 		Compiled: compiledExtensionsForEnvironment(os.Getenv), MCP: true,
 		ClaudeSessions: claudesessions.Management(settings, agentDir, os.Environ()),
-		CodexSessions:  codexsessions.Extension(os.Environ()),
 		Bridge:         bridgeExtension(CLIArgs{}, settings), BridgeManagement: true,
 	})
 	for _, row := range assembly.Resolve(rows, settings, false) {

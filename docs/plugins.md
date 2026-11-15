@@ -140,8 +140,7 @@ and `/activity prev`; `/activity close` folds it without affecting execution. At
 rows show at once, fewer on short terminals. Recent completions clear on the next prompt.
 
 Native Claude tasks, Orb subagents, configured external CLIs (including Claude and Codex),
-and background bash jobs feed the same session-local state and renderer. This does not add
-native Codex execution: imported Codex transcripts contain no live tasks to track. A parent's
+and background bash jobs feed the same session-local state and renderer. A parent's
 answer or tool-launch result never completes a child; lost native outcomes show as unknown.
 The bar observes work only: it grants no permissions and never cancels a session or task.
 
@@ -237,7 +236,7 @@ like a summary, so the session goes on and nothing asks about it again. Summarie
 are kept in the session as hidden `memtree` and `memtree-view` entries, so they follow it across
 forks, exports, hosts and restarts. Two Orb processes on one session: Orb's store refuses entries from the
 one that no longer owns it, and memtree in that process stops calling the compactor and goes on
-with lines cut to size. Claude and Codex sessions run their own loop and bypass the
+with lines cut to size. Claude sessions run their own loop and bypass the
 plugin.
 
 ### memory, tasks, websearch

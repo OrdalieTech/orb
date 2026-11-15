@@ -40,8 +40,6 @@ type CatalogOptions struct {
 	AgentDir         string
 	// ClaudeSessions is host-supplied: it runs processes the SDK layer never owns.
 	ClaudeSessions extensions.Factory
-	// CodexSessions is host-supplied: it reads the user's Codex home.
-	CodexSessions extensions.Factory
 	// Bash builds the host's bash tool, which background jobs run through.
 	Bash jobs.Bash
 	// Wake is the host's scheduler, which the host advances; on, it also holds
@@ -49,7 +47,7 @@ type CatalogOptions struct {
 	Wake *wake.Scheduler
 }
 
-var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "codex-sessions", "provider-usage", "bridge", "bridge-agent-calls", "wake"}
+var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "provider-usage", "bridge", "bridge-agent-calls", "wake"}
 
 var descriptions = map[string]string{
 	"activity":           "Compact, expandable statuses for agents and background processes",
@@ -66,7 +64,6 @@ var descriptions = map[string]string{
 	"memory":             "Bounded persistent remember, recall, replace, and forget tools",
 	"memtree":            "Experimental: zoomable summary tree of each session for lossless compaction or fresh turns",
 	"claude-sessions":    "Claude models and accounts through Claude Code and the official Agent SDK",
-	"codex-sessions":     "Open Codex CLI threads as Orb conversations with orb --session <id>",
 	"provider-usage":     "The provider in use and its remaining quota in the footer, quotas in Providers",
 }
 
@@ -151,14 +148,11 @@ func Catalog(options CatalogOptions) map[string]extensions.Factory {
 	if options.ClaudeSessions == nil {
 		options.ClaudeSessions = func(extensions.API) error { return fmt.Errorf("claude sessions require host assembly") }
 	}
-	if options.CodexSessions == nil {
-		options.CodexSessions = func(extensions.API) error { return fmt.Errorf("codex sessions require host assembly") }
-	}
 	if options.BridgeAgentCalls == nil {
 		options.BridgeAgentCalls = func(extensions.API) error { return fmt.Errorf("bridge agent calls require host assembly") }
 	}
 	return map[string]extensions.Factory{
-		"bridge": options.Bridge, "bridge-agent-calls": options.BridgeAgentCalls, "claude-sessions": options.ClaudeSessions, "codex-sessions": options.CodexSessions,
+		"bridge": options.Bridge, "bridge-agent-calls": options.BridgeAgentCalls, "claude-sessions": options.ClaudeSessions,
 		"questions":      questions.Extension(questions.Draw{Panel: panel.Draw, Text: text}),
 		"tasks":          tasks.Extension(tasks.Draw{Widget: newTaskWidget, Text: text}),
 		"titles":         titles.Extension(),

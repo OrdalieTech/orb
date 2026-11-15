@@ -17,7 +17,6 @@ internal/toolenv	os.Environ	1
 plugins/claudesessions	imports platforms/native/sandbox	1
 plugins/claudesessions	os.Getwd	2
 plugins/claudesessions	os.UserHomeDir	1
-plugins/codexsessions	os.UserHomeDir	1
 plugins/permissions	imports platforms/native/sandbox	1
 plugins/permissions/native	imports platforms/native/sandbox	1
 plugins/subagents	imports platforms/native/sandbox	4

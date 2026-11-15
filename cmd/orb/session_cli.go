@@ -16,34 +16,21 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
-	"github.com/OrdalieTech/orb/plugins/codexsessions"
 )
 
 var errNoSessionSelected = errors.New("no session selected")
 
-// importers open another agent's session as an Orb conversation, each with
-// its plugin enabled; notFound is the error for an ID the agent doesn't know.
-var importers = []struct {
-	plugin   string
-	open     func(id string, env []string, create func(cwd string) (*session.SessionManager, error)) (*session.SessionManager, error)
-	notFound error
-}{
-	{claudesessions.Name, claudesessions.ImportClaudeCode, claudesessions.ErrNoClaudeCodeSession},
-	{codexsessions.Name, codexsessions.ImportCodex, codexsessions.ErrNoCodexSession},
-}
-
-// importSession opens id through the first enabled importer that knows it,
-// and returns no manager when none does.
+// importSession opens id as a Claude Code session, its plugin enabled, and
+// returns no manager when Claude Code doesn't know it.
 func importSession(settings *config.SettingsManager, id string, create func(cwd string) (*session.SessionManager, error)) (*session.SessionManager, error) {
-	for _, importer := range importers {
-		if !settings.GetPlugins()[importer.plugin] {
-			continue
-		}
-		if manager, err := importer.open(id, os.Environ(), create); !errors.Is(err, importer.notFound) {
-			return manager, err
-		}
+	if !settings.GetPlugins()[claudesessions.Name] {
+		return nil, nil
 	}
-	return nil, nil
+	manager, err := claudesessions.ImportClaudeCode(id, os.Environ(), create)
+	if errors.Is(err, claudesessions.ErrNoClaudeCodeSession) {
+		return nil, nil
+	}
+	return manager, err
 }
 
 // SessionSelector picks a session at startup from the current project's

@@ -14,6 +14,8 @@ shown by `/changelog`.
 - `orb chat setup buzz` onboards a Buzz agent in one command: it makes the agent's key, has its owner approve it (with their key here or a hidden prompt, or on their own machine with `--attest`, which prints the `--auth` to give back), publishes the owner's record and the agent's profile, and saves everything in the data directory's `buzz.env`, which `orb chat buzz` then reads, and which is also a `docker --env-file`. No membership of its own is needed on a closed relay. It replaces `platforms/agent/buzz-owner.py`. An agent can run it for itself: Orb's skill says so.
 - The Buzz app plugin that makes Orb an agent type in Buzz 1.0 (one Orb session per thread or Solo chat, live steps, steering, usage, model and thinking per agent) now lives in the repository, in `chat/buzz/plugin`.
 - The team agent image runs one process: no `sidecar` user, no Buzz `.deb`, no `nc`, about 30 MB smaller. Every `orb chat` serves its ACP socket when `ORB_ACP_SOCKET` is set, so scheduled turns work for any agent, Telegram-only ones included.
+- On Buzz, a reply that says more than what the agent posted with `buzz_publish` during the turn is posted: an agent that posts "on it" and then works no longer loses its answer, while one that repeats or quotes its post still stays quiet. A subscription the relay closes reconnects (with the usual backoff) instead of leaving the agent online but deaf, and a sender's clock ahead of the relay's no longer moves the agent's cursor past what is still to come.
+- The `codex-sessions` plugin is gone: `orb --session <id>` opens Claude Code sessions only.
 
 ## [0.21.0] - 2026-11-11
 
