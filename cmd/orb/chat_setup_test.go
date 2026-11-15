@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -31,7 +32,8 @@ func TestChatSetupSavesWhatOrbChatReads(t *testing.T) {
 	run("buzz", "--relay", "wss://relay.example", "--name", "Sales")
 	path := filepath.Join(root, "agent", "chat", "buzz", "buzz.env")
 	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o600 {
+	// Windows has no POSIX modes to check.
+	if err != nil || runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("settings file: %v, %v", info, err)
 	}
 	first := readSettings(path)

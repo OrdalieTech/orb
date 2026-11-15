@@ -89,9 +89,11 @@ type Adapter struct {
 	conn          *websocket.Conn
 	names         map[string]string
 	conversations map[string]bool
-	// said is when the agent last posted with its tools, by conversation.
-	said map[string]time.Time
-	seen map[string]bool
+	// said is the agent's last post with its tools in each conversation, by
+	// its rank among them all, posts: a count, since clock readings can tie.
+	said  map[string]int
+	posts int
+	seen  map[string]bool
 }
 
 var (
@@ -133,7 +135,7 @@ func New(options Options) (*Adapter, error) {
 		key: k, respondTo: options.RespondTo, channels: options.Channels, profile: options.Profile, cursor: options.Cursor,
 		http: options.HTTPClient, logger: options.Logger, host: relay.Host,
 		base: httpScheme + "://" + relay.Host + relay.Path, socket: wsScheme + "://" + relay.Host + relay.Path, origin: wsScheme + "://" + relay.Host, media: httpScheme + "://" + relay.Host + "/media/",
-		names: map[string]string{}, conversations: map[string]bool{}, said: map[string]time.Time{}, seen: map[string]bool{},
+		names: map[string]string{}, conversations: map[string]bool{}, said: map[string]int{}, seen: map[string]bool{},
 	}
 	if a.http == nil {
 		a.http = &http.Client{Timeout: time.Minute}
@@ -495,7 +497,8 @@ func (a *Adapter) saying(e event) {
 		root = e.ID
 	}
 	a.mu.Lock()
-	a.said[e.tag("h")+"/"+root] = time.Now()
+	a.posts++
+	a.said[e.tag("h")+"/"+root] = a.posts
 	a.mu.Unlock()
 }
 
@@ -737,7 +740,9 @@ func (a *Adapter) Download(ctx context.Context, ref chat.AttachmentRef) (io.Read
 // NewDelivery implements [chat.Adapter]: the reply goes in the thread of the
 // event it answers, replyTo, and a conversation's top level stays there.
 func (a *Adapter) NewDelivery(key chat.ConversationKey, replyTo string, _ string) chat.Delivery {
-	d := &delivery{adapter: a, tags: [][]string{{"h", key.ChatID}}, place: key.ChatID + "/" + key.ThreadID, started: time.Now()}
+	a.mu.Lock()
+	d := &delivery{adapter: a, tags: [][]string{{"h", key.ChatID}}, place: key.ChatID + "/" + key.ThreadID, started: a.posts}
+	a.mu.Unlock()
 	switch key.ThreadID {
 	case "":
 	case replyTo:
@@ -753,9 +758,9 @@ type delivery struct {
 	adapter *Adapter
 	tags    [][]string
 	// place is the conversation, a channel and a thread root, and started
-	// when the turn began: see said.
+	// the agent's post count when the turn began: see said.
 	place   string
-	started time.Time
+	started int
 	typing  typing.Refresher
 	// sent are the chunks already posted, so a retried Finalize resumes.
 	sent []string
@@ -793,7 +798,7 @@ func (d *delivery) PreviewID() string { return "" }
 func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, error) {
 	d.typing.Stop()
 	d.adapter.mu.Lock()
-	posted := d.adapter.said[d.place].After(d.started)
+	posted := d.adapter.said[d.place] > d.started
 	d.adapter.mu.Unlock()
 	if posted {
 		return chat.Receipt{At: time.Now().UTC()}, nil
