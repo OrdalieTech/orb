@@ -216,13 +216,14 @@ type heldCall struct {
 }
 
 // decide settles session's held calls with the user's message: a yes runs them,
-// anything else denies them, and the model reads each outcome before the message.
-func (s *Scheduler) decide(ctx context.Context, api extensions.API, session, text string, runner extensions.Context) {
+// anything else denies them. It returns their outcomes, which the input hook
+// puts before the message: a native session (claudesessions) only reads its turn's prompt.
+func (s *Scheduler) decide(ctx context.Context, session, text string, runner extensions.Context) string {
 	// An expired call is past deciding: Advance delivers its expiry.
 	now := s.now()
 	held := func(w Wake) bool { return w.Session == session && w.Call != nil && w.Due.After(now) }
 	if wakes, err := s.read(ctx); err != nil || !slices.ContainsFunc(wakes, held) {
-		return
+		return ""
 	}
 	var taken []Wake
 	// Nothing runs until its removal is stored, so a call runs at most once.
@@ -236,10 +237,10 @@ func (s *Scheduler) decide(ctx context.Context, api extensions.API, session, tex
 			return false
 		}), nil
 	}); err != nil {
-		_ = send(ctx, api, "The held calls could not be settled, so none ran: "+err.Error(), false)
-		return
+		return "The held calls could not be settled, so none ran: " + err.Error()
 	}
 	yes := approves(text)
+	var reports []string
 	for _, w := range taken {
 		report := fmt.Sprintf("The user denied the %s call, so it did not run.", w.Call.Tool)
 		if tools, ok := runner.(extensions.ToolContext); yes && ok {
@@ -256,8 +257,9 @@ func (s *Scheduler) decide(ctx context.Context, api extensions.API, session, tex
 			}
 			report = fmt.Sprintf("The user approved the %s call, which %s:\n%s", w.Call.Tool, state, out.String())
 		}
-		_ = send(ctx, api, report, false)
+		reports = append(reports, report)
 	}
+	return strings.Join(reports, "\n\n")
 }
 
 // approves reads a yes from the user's message: a Buzz event (buzz-acp)
@@ -316,7 +318,9 @@ func (s *Scheduler) Extension() extensions.Factory {
 		})
 		api.On(extensions.EventInput, func(ctx context.Context, event extensions.Event, runner extensions.Context) (any, error) {
 			if input, ok := event.(extensions.InputEvent); ok && input.Source != extensions.InputExtension && !strings.Contains(input.Text, marker) {
-				s.decide(ctx, api, runner.SessionManager().GetSessionID(), input.Text, runner)
+				if report := s.decide(ctx, runner.SessionManager().GetSessionID(), input.Text, runner); report != "" {
+					return extensions.InputResult{Action: extensions.InputTransform, Text: report + "\n\n" + input.Text, Images: input.Images}, nil
+				}
 			}
 			return nil, nil
 		})
