@@ -37,7 +37,7 @@ func teamWake(agents *acpHost) func(context.Context, func(chat.Message) error) e
 		return nil
 	}
 	var emit func(chat.Message) error
-	scheduler := wake.New(state.Document(filepath.Join(state.AgentDir, "wake.json")), time.Now, func(ctx context.Context, w wake.Wake) error {
+	scheduler := wake.New(wake.InDocument(state.Document(filepath.Join(state.AgentDir, "wake.json"))), time.Now, func(ctx context.Context, w wake.Wake) error {
 		if w.Route != "" {
 			var m chat.Message
 			if err := json.Unmarshal([]byte(w.Route), &m); err != nil || emit == nil {
@@ -64,8 +64,8 @@ func teamWake(agents *acpHost) func(context.Context, func(chat.Message) error) e
 			}
 			// Sessions schedule meanwhile, so wait at most a few seconds.
 			wait := 10 * time.Second
-			if !next.IsZero() {
-				wait = min(wait, max(time.Until(next), 0))
+			if !next.IsZero() && err == nil {
+				wait = min(wait, max(time.Until(next), time.Second))
 			}
 			select {
 			case <-ctx.Done():

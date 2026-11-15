@@ -341,8 +341,10 @@ Each holds until changed by owner-signed decision.
   once, a missed one once at restart. An ask no UI can answer is held the same way: the user's next
   message approves it (the plugin runs the call) or denies it, and without an answer in 30 minutes
   it does not run. The plugin has no goroutine or timer: its host advances it and delivers to
-  sessions it has not open, `orb chat` for team agents (where it is on) or an SDK host. It replaces
-  the systemd timer that started turns through the ACP socket. Owner, 2026-11-14.
+  sessions it has not open, `orb chat` for team agents (where it is on) or an SDK host. The wakes
+  live in the host's own store (a file, a table, Redis), whose conditional claim keeps delivery
+  once across replicas. It replaces the systemd timer that started turns through the ACP socket.
+  Owner, 2026-11-14.
 - **A browser is a capability of the agent's image, not of Orb.** The `browser` image adds
   agent-browser, which the agent drives from its shell with its skill, and Lightpanda, its default
   engine (small, no rendering, partial Web APIs); built with `CHROMIUM=1` it adds headless

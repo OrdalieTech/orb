@@ -117,12 +117,16 @@ Claude Code's own background tasks and `Monitor`.
 The agent wakes itself later. `schedule_wake` takes a prompt and one of `at` (RFC 3339, or a
 local time with `timezone`), `delay` (`30m`) or `cron` (5 fields, at most every 5 minutes); the
 prompt comes back as a message in the conversation that scheduled it and starts a turn.
-`list_wakes` and `cancel_wake` manage this conversation's wakes, 50 at most per agent. Wakes live
-in one Store document and are delivered once: a host calls `Advance`, which delivers what is due
-and returns the next due time, so the plugin runs no goroutine or timer. `orb chat` advances it for
-team agents, where it is on; an SDK host builds `wake.New(document, clock, deliver)`, adds its
-`Extension()`, sets it as `permissions.Policy.Defer` and calls `Advance` when it likes (see the
-package example). With it on, an ask no UI can answer is held instead of denied: the user's next
+`list_wakes` and `cancel_wake` manage this conversation's wakes, 50 at most per conversation. A
+host calls `Advance`, which delivers what is due and returns the next due time, so the plugin runs
+no goroutine or timer. Wakes live in a `wake.Store`, one record each (`Put`, `List`, `Due`, `Next`),
+and `Claim` takes a wake only if its due time is unchanged, so a wake is delivered, and a held call
+runs, at most once, across replicas too: a table indexed by due time or a Redis sorted set
+implements it directly, and `wake.InDocument` keeps them in one JSON file. `orb chat` advances it
+for team agents, where it is on, in the agent's `wake.json`. An SDK host builds
+`wake.New(store, clock, deliver)` and calls `Advance` when it likes: a plain `engine.Agent` takes
+`Tools(conversation, cwd)` (see the package example), and an Orb session takes `Extension()`, set
+as `permissions.Policy.Defer` for held asks. With it on, an ask no UI can answer is held instead of denied: the user's next
 message approves it (yes, oui, ok) and the plugin runs the call, or denies it, and after 30
 minutes without an answer the call does not run. Plain `orb` does not advance it yet, so enabling it
 there reports that it needs a host.

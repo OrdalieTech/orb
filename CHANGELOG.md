@@ -5,7 +5,7 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
-- An agent can wake itself later (the `wake` plugin, off by default, on for team agents): `schedule_wake` brings a prompt back into the conversation that scheduled it, once (`at`, `delay`) or on a cron schedule in a time zone, and `list_wakes` and `cancel_wake` manage them. A wake is delivered once, and one missed while the agent was down arrives once at restart. `orb chat` advances it, and an SDK host wires it with its own store, clock and delivery. It replaces the systemd timer of the agent image's docs.
+- An agent can wake itself later (the `wake` plugin, off by default, on for team agents): `schedule_wake` brings a prompt back into the conversation that scheduled it, once (`at`, `delay`) or on a cron schedule in a time zone, and `list_wakes` and `cancel_wake` manage them. A wake is delivered once, and one missed while the agent was down arrives once at restart. `orb chat` advances it, and an SDK host wires it with its own store (a file, a table, Redis: `wake.Store`, whose `Claim` keeps delivery once across replicas), clock and delivery, on a plain `engine.Agent` (`Tools`) as on an Orb session (`Extension`). It replaces the systemd timer of the agent image's docs.
 - With `wake` on, a permission ask no one can answer now (a Buzz or chat conversation) is held instead of denied: the agent asks in the conversation, the user's next message approves it and the call runs, its result handed to the agent, or denies it, and without an answer in 30 minutes it does not run.
 - The iOS app builds again: its Home (every thread, pairing, and the box that starts a conversation on a paired machine) had gone with the Mac app's sidebar.
 

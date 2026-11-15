@@ -2,10 +2,13 @@
 // that comes back as a message in the conversation that scheduled it. It also
 // holds the asks no one can answer now, until the user's next message decides.
 // The host drives it: Advance delivers what is due and says when to call again,
-// so it needs no goroutine or timer and runs wherever the host does.
+// so it needs no goroutine or timer and runs wherever the host does. Tools
+// serves a plain engine.Agent; Extension serves an Orb session, and adds the
+// held approvals.
 package wake
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -22,7 +25,6 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
-	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/plugins/internal/toolutil"
 )
 
@@ -60,10 +62,107 @@ func (w Wake) Text() string {
 	return marker + w.ID + "] " + w.Prompt
 }
 
-// Scheduler keeps wakes in one document. Routes, set by the host, tag the
-// wakes a session schedules (a chat conversation, say) for its deliver.
+// Store keeps one agent's wakes, one record each, shared by its replicas: a
+// table indexed by Due (scoped to the agent), or a Redis sorted set scored by
+// Due, serves as well as InDocument's file. Dues are whole seconds, so a store
+// may keep them at that precision.
+type Store interface {
+	// Put adds w, whose ID is new.
+	Put(ctx context.Context, w Wake) error
+	// Claim removes w, or replaces it with next (moving it in the Due index),
+	// only if the stored wake with w.ID still has w.Due (time.Time.Equal), and
+	// reports whether it did. The check and the write are one atomic step
+	// (UPDATE or DELETE ... WHERE id = ? AND due = ?, a Lua script), so of
+	// concurrent claims one alone succeeds: a wake is delivered, and a held
+	// call runs, at most once, across replicas too.
+	Claim(ctx context.Context, w Wake, next *Wake) (bool, error)
+	// List returns session's wakes, held calls (Call set) included.
+	List(ctx context.Context, session string) ([]Wake, error)
+	// Due returns the wakes due at or before t.
+	Due(ctx context.Context, t time.Time) ([]Wake, error)
+	// Next returns the earliest due time, zero when there are no wakes.
+	Next(ctx context.Context) (time.Time, error)
+}
+
+// Document is one JSON document updated atomically, such as a file.
+type Document interface {
+	Read(ctx context.Context) ([]byte, error)
+	Update(ctx context.Context, change func([]byte) ([]byte, error)) error
+}
+
+// InDocument keeps every wake in doc, which suits one agent's file.
+func InDocument(doc Document) Store {
+	return inDocument{doc}
+}
+
+type inDocument struct{ doc Document }
+
+func (d inDocument) read(ctx context.Context, keep func(Wake) bool) ([]Wake, error) {
+	data, err := d.doc.Read(ctx)
+	var wakes []Wake
+	if err == nil && len(data) > 0 {
+		err = json.Unmarshal(data, &wakes)
+	}
+	return slices.DeleteFunc(wakes, func(w Wake) bool { return !keep(w) }), err
+}
+
+func (d inDocument) update(ctx context.Context, change func([]Wake) []Wake) error {
+	return d.doc.Update(ctx, func(data []byte) ([]byte, error) {
+		var wakes []Wake
+		if len(data) > 0 {
+			if err := json.Unmarshal(data, &wakes); err != nil {
+				return nil, err
+			}
+		}
+		return json.Marshal(change(wakes))
+	})
+}
+
+func (d inDocument) Put(ctx context.Context, w Wake) error {
+	return d.update(ctx, func(wakes []Wake) []Wake {
+		return append(wakes, w)
+	})
+}
+
+func (d inDocument) Claim(ctx context.Context, w Wake, next *Wake) (bool, error) {
+	var claimed bool
+	err := d.update(ctx, func(wakes []Wake) []Wake {
+		at := slices.IndexFunc(wakes, func(o Wake) bool { return o.ID == w.ID && o.Due.Equal(w.Due) })
+		switch claimed = at >= 0; {
+		case !claimed:
+		case next != nil:
+			wakes[at] = *next
+		default:
+			wakes = slices.Delete(wakes, at, at+1)
+		}
+		return wakes
+	})
+	return claimed && err == nil, err
+}
+
+func (d inDocument) List(ctx context.Context, session string) ([]Wake, error) {
+	return d.read(ctx, func(w Wake) bool { return w.Session == session })
+}
+
+func (d inDocument) Due(ctx context.Context, t time.Time) ([]Wake, error) {
+	return d.read(ctx, func(w Wake) bool { return !w.Due.After(t) })
+}
+
+func (d inDocument) Next(ctx context.Context) (time.Time, error) {
+	wakes, err := d.read(ctx, func(Wake) bool { return true })
+	var next time.Time
+	for _, w := range wakes {
+		if next.IsZero() || w.Due.Before(next) {
+			next = w.Due
+		}
+	}
+	return next, err
+}
+
+// Scheduler keeps wakes in a Store. Routes, set by the host, tag the wakes a
+// session schedules (a chat conversation, say) for its deliver.
 type Scheduler struct {
-	doc     document.Document
+	store   Store
 	now     func() time.Time
 	deliver func(context.Context, Wake) error
 	mu      sync.Mutex
@@ -71,11 +170,11 @@ type Scheduler struct {
 	routes  map[string]string
 }
 
-// New keeps wakes in doc. A wake whose session is open in this process is
+// New keeps wakes in store. A wake whose session is open in this process is
 // delivered in it; deliver gets the others, and nil leaves them due until
 // their session opens.
-func New(doc document.Document, now func() time.Time, deliver func(context.Context, Wake) error) *Scheduler {
-	return &Scheduler{doc: doc, now: now, deliver: deliver, live: map[string]extensions.API{}, routes: map[string]string{}}
+func New(store Store, now func() time.Time, deliver func(context.Context, Wake) error) *Scheduler {
+	return &Scheduler{store: store, now: now, deliver: deliver, live: map[string]extensions.API{}, routes: map[string]string{}}
 }
 
 // Route tags the wakes session schedules from now on.
@@ -85,87 +184,50 @@ func (s *Scheduler) Route(session, route string) {
 	s.mu.Unlock()
 }
 
-func (s *Scheduler) update(ctx context.Context, change func([]Wake) ([]Wake, error)) error {
-	return s.doc.Update(ctx, func(data []byte) ([]byte, error) {
-		var wakes []Wake
-		if len(data) > 0 {
-			if err := json.Unmarshal(data, &wakes); err != nil {
-				return nil, err
-			}
-		}
-		wakes, err := change(wakes)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(wakes)
-	})
+// due is t at the next whole second, the precision a Store keeps.
+func due(t time.Time) time.Time {
+	return t.Add(time.Second - 1).Truncate(time.Second)
 }
 
-// Advance delivers every due wake once, committing first, and returns the next
-// due time (zero when none). A wake missed while the host was down fires once;
-// a recurring one then moves to its next time after now.
+// Advance delivers every due wake once, claiming it first, and returns the
+// next due time (zero when none). A wake missed while the host was down fires
+// once; a recurring one then moves to its next time after now.
 func (s *Scheduler) Advance(ctx context.Context) (time.Time, error) {
 	now := s.now()
-	type delivery struct {
-		Wake
-		api extensions.API
-	}
-	var due []delivery
-	var next time.Time
-	// take keeps the wakes not due and the recurring ones, moved on.
-	take := func(wakes []Wake) []Wake {
-		due, next = nil, time.Time{}
-		kept := wakes[:0]
-		for _, w := range wakes {
-			// A routed wake goes to deliver, which owns its conversation's replies.
-			api := s.live[w.Session]
-			if w.Route != "" && s.deliver != nil {
-				api = nil
-			}
-			if !w.Due.After(now) && (api != nil || s.deliver != nil) {
-				due = append(due, delivery{w, api})
-				if w.Cron == "" {
-					continue
-				}
-				var err error
-				if w.Due, err = nextTime(w.Cron, w.Timezone, now); err != nil {
-					continue
-				}
-			}
-			if next.IsZero() || w.Due.Before(next) {
-				next = w.Due
-			}
-			kept = append(kept, w)
-		}
-		return kept
-	}
-	s.mu.Lock()
-	wakes, err := s.read(ctx)
-	if take(wakes); err == nil && len(due) > 0 {
-		err = s.update(ctx, func(wakes []Wake) ([]Wake, error) { return take(wakes), nil })
-	}
-	s.mu.Unlock()
+	wakes, err := s.store.Due(ctx, now)
 	if err != nil {
 		return time.Time{}, err
 	}
 	var errs []error
-	for _, d := range due {
-		if d.api != nil {
-			errs = append(errs, send(ctx, d.api, d.Text(), true))
+	for _, w := range wakes {
+		// A routed wake goes to deliver, which owns its conversation's replies.
+		s.mu.Lock()
+		api := s.live[w.Session]
+		s.mu.Unlock()
+		if w.Route != "" && s.deliver != nil {
+			api = nil
+		}
+		if api == nil && s.deliver == nil {
+			continue
+		}
+		var next *Wake
+		if at, err := nextTime(w.Cron, w.Timezone, now); w.Cron != "" && err == nil {
+			moved := w
+			moved.Due = at
+			next = &moved
+		}
+		if claimed, err := s.store.Claim(ctx, w, next); !claimed {
+			errs = append(errs, err)
+			continue
+		}
+		if api != nil {
+			errs = append(errs, send(ctx, api, w.Text(), true))
 		} else {
-			errs = append(errs, s.deliver(ctx, d.Wake))
+			errs = append(errs, s.deliver(ctx, w))
 		}
 	}
-	return next, errors.Join(errs...)
-}
-
-func (s *Scheduler) read(ctx context.Context) ([]Wake, error) {
-	data, err := s.doc.Read(ctx)
-	var wakes []Wake
-	if err == nil && len(data) > 0 {
-		err = json.Unmarshal(data, &wakes)
-	}
-	return wakes, err
+	next, err := s.store.Next(ctx)
+	return next, errors.Join(append(errs, err)...)
 }
 
 func send(ctx context.Context, api extensions.API, text string, trigger bool) error {
@@ -179,21 +241,21 @@ func (s *Scheduler) Defer(ctx context.Context, session, cwd, tool string, args a
 	s.mu.Lock()
 	route := s.routes[session]
 	s.mu.Unlock()
-	w := Wake{ID: newID(), Session: session, Route: route, CWD: cwd, Due: s.now().Add(approval), Call: &Call{tool, args},
+	w := Wake{ID: newID(), Session: session, Route: route, CWD: cwd, Due: due(s.now().Add(approval)), Call: &Call{tool, args},
 		Prompt: "The approval request for " + tool + " got no answer within 30 minutes, so the call did not run."}
 	held, _ := json.Marshal(w.Call)
-	err := s.update(ctx, func(wakes []Wake) ([]Wake, error) {
-		if slices.ContainsFunc(wakes, func(o Wake) bool {
-			same, _ := json.Marshal(o.Call)
-			return o.Session == session && string(same) == string(held)
-		}) {
-			return wakes, nil // one held call per identical retry
-		}
-		if len(wakes) >= maxWakes {
-			return nil, fmt.Errorf("%d wakes are already scheduled", maxWakes)
-		}
-		return append(wakes, w), nil
-	})
+	wakes, err := s.store.List(ctx, session)
+	switch {
+	case err != nil:
+	case slices.ContainsFunc(wakes, func(o Wake) bool {
+		same, _ := json.Marshal(o.Call)
+		return string(same) == string(held)
+	}): // one held call per identical retry (calls made at once may hold twice, and run twice on a yes)
+	case len(wakes) >= maxWakes:
+		err = fmt.Errorf("%d wakes are already scheduled", maxWakes)
+	default:
+		err = s.store.Put(ctx, w)
+	}
 	if err != nil {
 		return "This call needs the user's approval, which could not be requested: " + err.Error()
 	}
@@ -219,28 +281,27 @@ type heldCall struct {
 // anything else denies them. It returns their outcomes, which the input hook
 // puts before the message: a native session (claudesessions) only reads its turn's prompt.
 func (s *Scheduler) decide(ctx context.Context, session, text string, runner extensions.Context) string {
-	// An expired call is past deciding: Advance delivers its expiry.
 	now := s.now()
-	held := func(w Wake) bool { return w.Session == session && w.Call != nil && w.Due.After(now) }
-	if wakes, err := s.read(ctx); err != nil || !slices.ContainsFunc(wakes, held) {
+	wakes, err := s.store.List(ctx, session)
+	if err != nil {
 		return ""
 	}
+	var reports []string
 	var taken []Wake
-	// Nothing runs until its removal is stored, so a call runs at most once.
-	if err := s.update(ctx, func(wakes []Wake) ([]Wake, error) {
-		taken = nil
-		return slices.DeleteFunc(wakes, func(w Wake) bool {
-			if held(w) {
-				taken = append(taken, w)
-				return true
-			}
-			return false
-		}), nil
-	}); err != nil {
-		return "The held calls could not be settled, so none ran: " + err.Error()
+	for _, w := range wakes {
+		// An expired call is past deciding: Advance delivers its expiry.
+		if w.Call == nil || !w.Due.After(now) {
+			continue
+		}
+		// Every call is claimed before any runs: one runs at most once, and a
+		// long one does not let the next expire.
+		if claimed, err := s.store.Claim(ctx, w, nil); claimed {
+			taken = append(taken, w)
+		} else if err != nil {
+			reports = append(reports, fmt.Sprintf("The %s call could not be settled, so it did not run: %v", w.Call.Tool, err))
+		}
 	}
 	yes := approves(text)
-	var reports []string
 	for _, w := range taken {
 		report := fmt.Sprintf("The user denied the %s call, so it did not run.", w.Call.Tool)
 		if tools, ok := runner.(extensions.ToolContext); yes && ok {
@@ -296,6 +357,36 @@ var (
 	idSchema = ai.JSONSchema(`{"type":"object","required":["id"],"properties":{"id":{"type":"string","description":"The wake ID schedule_wake returned"}}}`)
 )
 
+// tools are wake's tools, run for a session and its working directory.
+var tools = []struct {
+	name, label, snippet, description string
+	parameters                        ai.JSONSchema
+	run                               func(s *Scheduler, ctx context.Context, session, cwd string, raw any) (engine.AgentToolResult, error)
+}{
+	{"schedule_wake", "Schedule wake", "Wake yourself later, once or on a schedule",
+		"Schedule a prompt to come back to you in this conversation, as a message that starts a turn: once (at or delay) or recurring (cron). " +
+			"Give exactly one of at, delay, cron. Use it for follow-ups, reminders and recurring work instead of waiting; a recurring wake runs at most every 5 minutes.",
+		scheduleSchema, (*Scheduler).schedule},
+	{"list_wakes", "List wakes", "List this conversation's scheduled wakes",
+		"List the wakes scheduled in this conversation: ID, next time, schedule and prompt.",
+		ai.JSONSchema(`{"type":"object","properties":{}}`), (*Scheduler).list},
+	{"cancel_wake", "Cancel wake", "Cancel a scheduled wake",
+		"Cancel a wake scheduled in this conversation, one-shot or recurring.", idSchema, (*Scheduler).cancel},
+}
+
+// Tools are schedule_wake, list_wakes and cancel_wake for session, whose wakes
+// go to the host's deliver: an SDK host hands them to its engine.Agent.
+func (s *Scheduler) Tools(session, cwd string) []engine.AgentTool {
+	var out []engine.AgentTool
+	for _, t := range tools {
+		out = append(out, engine.AgentToolFunc{AgentToolSpec: engine.AgentToolSpec{Name: t.name, Label: t.label, Description: t.description, Parameters: t.parameters},
+			Run: func(ctx context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback) (engine.AgentToolResult, error) {
+				return t.run(s, ctx, session, cwd, raw)
+			}})
+	}
+	return out
+}
+
 // Extension adds schedule_wake, list_wakes and cancel_wake, and delivers due
 // wakes inside the session while it is open.
 func (s *Scheduler) Extension() extensions.Factory {
@@ -324,33 +415,25 @@ func (s *Scheduler) Extension() extensions.Factory {
 			}
 			return nil, nil
 		})
-		api.RegisterTool(extensions.ToolDefinition{
-			Name: "schedule_wake", Label: "Schedule wake", PromptSnippet: "Wake yourself later, once or on a schedule",
-			Description: "Schedule a prompt to come back to you in this conversation, as a message that starts a turn: once (at or delay) or recurring (cron). " +
-				"Give exactly one of at, delay, cron. Use it for follow-ups, reminders and recurring work instead of waiting; a recurring wake runs at most every 5 minutes.",
-			Parameters: scheduleSchema, Execute: s.schedule,
-		})
-		api.RegisterTool(extensions.ToolDefinition{
-			Name: "list_wakes", Label: "List wakes", PromptSnippet: "List this conversation's scheduled wakes",
-			Description: "List the wakes scheduled in this conversation: ID, next time, schedule and prompt.",
-			Parameters:  ai.JSONSchema(`{"type":"object","properties":{}}`), Execute: s.list,
-		})
-		api.RegisterTool(extensions.ToolDefinition{
-			Name: "cancel_wake", Label: "Cancel wake", PromptSnippet: "Cancel a scheduled wake",
-			Description: "Cancel a wake scheduled in this conversation, one-shot or recurring.",
-			Parameters:  idSchema, Execute: s.cancel,
-		})
+		for _, t := range tools {
+			api.RegisterTool(extensions.ToolDefinition{
+				Name: t.name, Label: t.label, Description: t.description, PromptSnippet: t.snippet, Parameters: t.parameters,
+				Execute: func(ctx context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback, session extensions.Context) (engine.AgentToolResult, error) {
+					return t.run(s, ctx, session.SessionManager().GetSessionID(), session.CWD(), raw)
+				},
+			})
+		}
 		return nil
 	}
 }
 
-func (s *Scheduler) schedule(ctx context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback, session extensions.Context) (engine.AgentToolResult, error) {
+func (s *Scheduler) schedule(ctx context.Context, session, cwd string, raw any) (engine.AgentToolResult, error) {
 	var in struct{ Prompt, At, Delay, Cron, Timezone string }
 	if err := toolutil.Decode(raw, &in); err != nil {
 		return engine.AgentToolResult{}, err
 	}
 	now := s.now()
-	w := Wake{ID: newID(), Session: session.SessionManager().GetSessionID(), CWD: session.CWD(), Prompt: strings.TrimSpace(in.Prompt), Cron: strings.TrimSpace(in.Cron), Timezone: in.Timezone}
+	w := Wake{ID: newID(), Session: session, CWD: cwd, Prompt: strings.TrimSpace(in.Prompt), Cron: strings.TrimSpace(in.Cron), Timezone: in.Timezone}
 	location, err := zone(in.Timezone)
 	switch {
 	case err != nil:
@@ -380,7 +463,7 @@ func (s *Scheduler) schedule(ctx context.Context, _ string, raw any, _ engine.Ag
 			}
 		}
 	}
-	if err == nil && !w.Due.After(now) {
+	if w.Due = due(w.Due); err == nil && !w.Due.After(now) {
 		err = errors.New("that time has passed")
 	}
 	if err != nil {
@@ -389,62 +472,58 @@ func (s *Scheduler) schedule(ctx context.Context, _ string, raw any, _ engine.Ag
 	s.mu.Lock()
 	w.Route = s.routes[w.Session]
 	s.mu.Unlock()
-	err = s.update(ctx, func(wakes []Wake) ([]Wake, error) {
-		if len(wakes) >= maxWakes {
-			return nil, fmt.Errorf("%d wakes are already scheduled; cancel one first", maxWakes)
-		}
-		return append(wakes, w), nil
-	})
-	if err != nil {
+	if wakes, err := s.store.List(ctx, session); err != nil {
+		return engine.AgentToolResult{}, err
+	} else if len(wakes) >= maxWakes {
+		return engine.AgentToolResult{}, fmt.Errorf("%d wakes are already scheduled in this conversation; cancel one first", maxWakes)
+	}
+	if err := s.store.Put(ctx, w); err != nil {
 		return engine.AgentToolResult{}, err
 	}
 	return toolutil.TextResult(fmt.Sprintf("Scheduled wake %s, next at %s.", w.ID, w.Due.In(location).Format(time.RFC3339))), nil
 }
 
-func (s *Scheduler) list(ctx context.Context, _ string, _ any, _ engine.AgentToolUpdateCallback, session extensions.Context) (engine.AgentToolResult, error) {
-	wakes, err := s.read(ctx)
+func (s *Scheduler) list(ctx context.Context, session, _ string, _ any) (engine.AgentToolResult, error) {
+	wakes, err := s.store.List(ctx, session)
 	if err != nil {
 		return engine.AgentToolResult{}, err
 	}
 	var out strings.Builder
 	for _, w := range wakes {
-		if w.Session == session.SessionManager().GetSessionID() && w.Call == nil {
+		if w.Call == nil {
 			location, _ := zone(w.Timezone)
-			fmt.Fprintf(&out, "%s  %s  %s  %s\n", w.ID, w.Due.In(location).Format(time.RFC3339), cmp(w.Cron, "once"), w.Prompt)
+			fmt.Fprintf(&out, "%s  %s  %s  %s\n", w.ID, w.Due.In(location).Format(time.RFC3339), cmp.Or(w.Cron, "once"), w.Prompt)
 		}
 	}
-	return toolutil.TextResult(cmp(out.String(), "No wakes are scheduled in this conversation.")), nil
+	return toolutil.TextResult(cmp.Or(out.String(), "No wakes are scheduled in this conversation.")), nil
 }
 
-func (s *Scheduler) cancel(ctx context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback, session extensions.Context) (engine.AgentToolResult, error) {
+func (s *Scheduler) cancel(ctx context.Context, session, _ string, raw any) (engine.AgentToolResult, error) {
 	var in struct{ ID string }
 	if err := toolutil.Decode(raw, &in); err != nil {
 		return engine.AgentToolResult{}, err
 	}
-	err := s.update(ctx, func(wakes []Wake) ([]Wake, error) {
-		index := slices.IndexFunc(wakes, func(w Wake) bool {
-			return w.ID == in.ID && w.Call == nil && w.Session == session.SessionManager().GetSessionID()
-		})
-		if index < 0 {
-			return nil, fmt.Errorf("no wake %q in this conversation", in.ID)
+	// A wake that fires meanwhile moves on: cancel the one it has become.
+	for range 3 {
+		wakes, err := s.store.List(ctx, session)
+		if err != nil {
+			return engine.AgentToolResult{}, err
 		}
-		return slices.Delete(wakes, index, index+1), nil
-	})
-	if err != nil {
-		return engine.AgentToolResult{}, err
+		index := slices.IndexFunc(wakes, func(w Wake) bool { return w.ID == in.ID && w.Call == nil })
+		if index < 0 {
+			return engine.AgentToolResult{}, fmt.Errorf("no wake %q in this conversation", in.ID)
+		}
+		if claimed, err := s.store.Claim(ctx, wakes[index], nil); err != nil {
+			return engine.AgentToolResult{}, err
+		} else if claimed {
+			return toolutil.TextResult("Cancelled wake " + in.ID + "."), nil
+		}
 	}
-	return toolutil.TextResult("Cancelled wake " + in.ID + "."), nil
-}
-
-func cmp(value, fallback string) string {
-	if value == "" {
-		return fallback
-	}
-	return value
+	return engine.AgentToolResult{}, fmt.Errorf("wake %q keeps firing; try again", in.ID)
 }
 
 func newID() string {
-	b := make([]byte, 4)
+	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
