@@ -51,15 +51,18 @@ func bridgeExtension(args CLIArgs, settings *config.SettingsManager) extensions.
 			status(true)
 			return nil, nil
 		})
-		api.RegisterCommand("bridge", extensions.Command{SettingsLabel: "Bridge", Description: "Connect devices and open their conversations", Handler: func(ctx context.Context, _ string, c extensions.CommandContext) error {
+		mitosisHandler := func(ctx context.Context, _ string, c extensions.CommandContext) error {
 			if args.native != nil {
 				ctx = context.WithValue(ctx, nativeStateKey{}, args.native)
 			}
 			if c.Mode() != extensions.ModeTUI {
-				return fmt.Errorf("bridge administration requires the local TUI")
+				return fmt.Errorf("mitosis administration requires the local TUI")
 			}
 			return bridgeSettingsWindow(ctx, c, args, settings, profile)
-		}})
+		}
+		// Mitosis is the brand; /bridge stays as a backward-compatible alias.
+		api.RegisterCommand("mitosis", extensions.Command{SettingsLabel: "Mitosis", Description: "Connect devices and open their conversations", Handler: mitosisHandler})
+		api.RegisterCommand("bridge", extensions.Command{SettingsLabel: "Bridge", Description: "Connect devices and open their conversations (alias of /mitosis)", Handler: mitosisHandler})
 		return nil
 	}
 }
