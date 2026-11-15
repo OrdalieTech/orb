@@ -86,10 +86,10 @@ the agent's tools; `browser` variants add agent-browser with Lightpanda or Chrom
 `buzz` is Orb, which has the agent run the real CLI with the Buzz key, so the agent's tools reach
 none of its credentials. `orb chat` never trusts the project it works in, where those tools write,
 so the agent's settings come from the agent file alone. The volume `/agent` holds the agent file, config, state and workspace;
-secrets arrive as environment only. Scheduled turns come from a host timer through the agent's
-ACP socket. Evidence so far: the Go suite drives `orb --mode acp`, a Telegram conversation sharing
+secrets arrive as environment only. Scheduled turns come from the `wake` plugin, which `orb chat`
+advances. Evidence so far: the Go suite drives `orb --mode acp`, a Telegram conversation sharing
 memory with an ACP session, and the harness's rendering; the images ran against a local Buzz relay
-with a scripted model (posting, scheduled turns, both browsers). Not yet: a relay run in CI, a
+with a scripted model (posting, both browsers). Not yet: a relay run in CI, a
 documented removal command.
 
 ### Go SDK embedding
