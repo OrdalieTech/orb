@@ -32,12 +32,13 @@ var (
 	charcoal = ui.Hex("#2A2D2B")
 )
 
-// palette is paper, not white; charcoal, not black: the contrast of printed matter. Rules are drawn, not hinted.
-type palette struct{ bg, fg, mute, meta, rule, raised ui.Color }
+// palette is paper, not white; charcoal, not black: the contrast of printed matter. Rules are drawn,
+// not hinted; meta text keeps 4.4:1 on paper, and hover is a ground the eye sees (raised is not).
+type palette struct{ bg, fg, mute, meta, rule, raised, hover ui.Color }
 
 var (
-	light = palette{ui.Hex("#E3E7E0"), charcoal, ui.Hex("#4F5550"), ui.Hex("#7E847F"), ui.Hex("#9EA49F"), ui.Hex("#ECEFE9")}
-	dark  = palette{ui.Hex("#1C201E"), ui.Hex("#DADFD8"), ui.Hex("#A8AEA9"), ui.Hex("#7A817C"), ui.Hex("#4E5550"), ui.Hex("#242927")}
+	light = palette{ui.Hex("#E3E7E0"), charcoal, ui.Hex("#444A45"), ui.Hex("#646A65"), ui.Hex("#9EA49F"), ui.Hex("#ECEFE9"), ui.Hex("#D6DAD3")}
+	dark  = palette{ui.Hex("#1C201E"), ui.Hex("#DADFD8"), ui.Hex("#A8AEA9"), ui.Hex("#8A918C"), ui.Hex("#4E5550"), ui.Hex("#242927"), ui.Hex("#2F3331")}
 	// A peer's hue (1 to 6, as the view assigns them; 0, this computer, takes the ink): six tones
 	// apart from each other and from the rupture red, light then dark.
 	hues = [][2]string{{"#2F5FA8", "#6E9BE0"}, {"#1F7F73", "#4FBFAE"}, {"#9A6A12", "#D9A441"}, {"#6A47A8", "#A88BE0"}, {"#4A7A22", "#8CC255"}, {"#9C3F86", "#D77CC4"}}
@@ -60,10 +61,17 @@ const (
 var (
 	easeOut = ui.CubicBezier(0.23, 1, 0.32, 1)
 
-	pressing = ui.Animation{Duration: 120 * time.Millisecond, Ease: easeOut} // a press gives way
-	hovering = ui.Animation{Duration: 120 * time.Millisecond, Ease: ui.EaseOut}
-	opening  = ui.Animation{Duration: 200 * time.Millisecond, Ease: easeOut} // popovers, folds
-	showing  = ui.Animation{Duration: 250 * time.Millisecond, Ease: easeOut} // dialogs
+	pressing = ui.Animation{Duration: 120 * time.Millisecond, Ease: easeOut}                            // a press gives way
+	hovering = ui.Animation{Duration: 120 * time.Millisecond, Ease: ui.CubicBezier(0.25, 0.1, 0.25, 1)} // a colour, eased both ways
+	opening  = ui.Animation{Duration: 200 * time.Millisecond, Ease: easeOut}                            // popovers, folds
+	// A tab's content coming in under its bar, by pointer only: quick and short.
+	switching = ui.Animation{Duration: 180 * time.Millisecond, Ease: easeOut}
+	// A passing note rises and sinks, softer than the rest.
+	passing = ui.Animation{Duration: 400 * time.Millisecond, Ease: ui.CubicBezier(0.25, 0.1, 0.25, 1)}
+	showing = ui.Animation{Duration: 250 * time.Millisecond, Ease: easeOut} // dialogs
+	// Tiles taking new places, and a transcript following what streams in: a spring keeps its pace
+	// when more comes on the way.
+	moving = ui.Animation{Spring: ui.SpringOptions{Duration: 300 * time.Millisecond}}
 )
 
 // p is the palette of the appearance the system shows.
@@ -120,22 +128,38 @@ func theme(c *ui.Context) {
 // label is small caps in medium weight, tracked out as small text wants; everything else is
 // sentence case.
 func label(c *ui.Context, s string) ui.Element {
-	return ui.Text(c, strings.ToUpper(s)).FontSize(labelSize).FontWeight(medium).LetterSpacing(0.6).TextColor(p(c).mute).SingleLine()
+	return ui.Text(c, strings.ToUpper(s)).FontSize(labelSize + 1).FontWeight(medium).LetterSpacing(0.9).TextColor(p(c).mute).SingleLine()
 }
 
 // press makes e give way under the pointer the moment it goes down (scaled to 0.97), and reports a
 // click on it.
 func press(e ui.Element) bool {
 	e.Cursor(ui.CursorPointer)
-	if s := e.AnimateTo("press", map[bool]float32{true: 0.97, false: 1}[e.Pressed()], pressing); s != 1 {
-		e.Scale(s, s)
-	}
+	// A pose repaints without building the view again; 0.98, as wide rows give way too much at 0.97.
+	e.AnimatePose(ui.Pose{Scale: map[bool]float32{true: 0.98, false: 1}[e.Pressed()]}, pressing)
 	return e.Clicked()
 }
 
 // hover is the ground an element takes under the pointer, eased in and out.
 func hover(e ui.Element, on ui.Color) ui.Element {
 	return e.Background(e.AnimateColor("hover", map[bool]ui.Color{true: on, false: on.Alpha(0)}[e.Hovered()], hovering))
+}
+
+// link is a small action in words, unlike the labels it sits by: sentence case, its key after
+// it, a ground under the pointer; its words stay on the column's edge.
+func link(c *ui.Context, text, key string) bool {
+	pal := p(c)
+	return press(hover(ui.Row(c).Height(24).Padding(0, 8).Margin(0, -8).Gap(8).Radius(soft).AlignItems(ui.Center), pal.hover).Children(func() {
+		ui.Text(c, text).FontSize(12).FontWeight(medium).TextColor(pal.mute)
+		if key != "" {
+			ui.Text(c, key).FontSize(12).TextColor(pal.meta)
+		}
+	}))
+}
+
+// empty says a list has nothing to show, and why, where its rows would be.
+func empty(c *ui.Context, text string) ui.Element {
+	return ui.Text(c, text).FontSize(12).TextColor(p(c).meta).PaddingY(10)
 }
 
 // rule is a hairline separating regions (turns, rows of a table, the prompt), never words.
@@ -183,7 +207,7 @@ func field(c *ui.Context, value *string, hint string, secret bool) ui.Element {
 	if *value != "" {
 		edge = pal.fg
 	}
-	in := ui.TextInputBase(c, value).Placeholder(hint).PlaceholderColor(pal.meta).Padding(8, 12).Radius(soft).Border(1, edge).FontSize(body)
+	in := ui.TextInputBase(c, value).Placeholder(hint).PlaceholderColor(pal.meta).Padding(6, 10).Radius(soft).Border(1, edge).FontSize(body)
 	if secret {
 		in.Password()
 	}
@@ -324,8 +348,9 @@ func actionLine(c *ui.Context, verb, target, result string, live, failed bool, o
 // shows, actions at right.
 func header(c *ui.Context, name, sub string, back func(), right func()) {
 	pal := p(c)
-	ui.Row(c).FillWidth().Padding(6, 12, 10, 4).Gap(4).Children(func() {
-		if press(ui.Row(c).PaddingX(10).Children(func() { ui.Text(c, "‹").FontSize(26).TextColor(pal.fg) })) {
+	// Without a way back, the name starts on the body's edge.
+	ui.Row(c).FillWidth().Padding(6, 12, 10, map[bool]float32{true: 4, false: margin}[back != nil]).Gap(4).Children(func() {
+		if back != nil && press(ui.Row(c).PaddingX(10).Children(func() { ui.Text(c, "‹").FontSize(26).TextColor(pal.fg) })) {
 			back()
 		}
 		ui.Column(c).Grow(1).Basis(0).Children(func() {
@@ -422,7 +447,7 @@ func gauge(c *ui.Context, value float64, alarm float64) ui.Element {
 			}
 			// A change runs along the segments, 25 ms apart, as a reading climbs on a NERV screen.
 			seg := ui.Box(c.Key(i)).Size(3, 10)
-			seg.Background(seg.AnimateColor("lit", ink, ui.Animation{Duration: 120 * time.Millisecond, Ease: easeOut, Delay: time.Duration(i) * 25 * time.Millisecond}))
+			seg.Background(seg.AnimateColor("lit", ink, ui.Animation{Duration: 120 * time.Millisecond, Ease: easeOut, Delay: time.Duration(i) * 15 * time.Millisecond}))
 		}
 	})
 }

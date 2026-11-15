@@ -1,8 +1,10 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -10,27 +12,28 @@ import (
 )
 
 // homeScreen starts a session: the prompt box in the middle of the window, where it runs a click
-// away, the latest threads under it. Every thread is in the sidebar.
+// away, the latest threads under it. Every thread is a ⌘K away.
 func (a *app) homeScreen(c *ui.Context) {
-	o, pal := a.o, p(c)
-	// Among tiles, its bar names it as the others name their conversation.
-	a.titleBar(c, func() {
-		if !a.root.leaf() {
-			ui.Text(c, "new session").FontSize(15).FontWeight(strong).TextColor(p(c).mute).SingleLine()
-		}
-		ui.Spacer(c)
-	})
+	a.titleBar(c, func() {})
 	// A small tile keeps Home to its prompt box.
 	small := a.narrow || a.building != nil && a.building.height > 0 && a.building.height < 480
-	ui.Column(c).Grow(1).Basis(0).FillWidth().Justify(ui.Center).Padding(0, margin, 48).Children(func() {
+	// Centred while it fits; with many cards open, it scrolls from the top.
+	ui.Scroll(c.Key("in:home")).Grow(1).Basis(0).FillWidth().Transition(a.entering).Children(func() {
+		ui.Column(c).FillWidth().MinHeightPercent(100).Justify(ui.Center).Padding(56, margin, 64).Children(func() { a.homeBody(c, small) })
+	})
+}
+
+// homeBody is Home under its bar: the title card, the prompt box, the cards open, the latest.
+func (a *app) homeBody(c *ui.Context, small bool) {
+	o, pal := a.o, p(c)
+	{
 		// An Evangelion title card: a rule, the title stretched tall.
 		reading(c).MaxWidth(680).PaddingX(margin).Children(func() {
 			if small {
 				a.launching(c)
 				return
 			}
-			ui.Box(c).FillWidth().Height(1).Background(pal.rule)
-			ui.Row(c).FillWidth().Margin(12, 0, 0).Gap(10).AlignItems(ui.End).Children(func() {
+			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.End).Children(func() {
 				// The title wipes in the first time the app shows it, as a title card cuts in.
 				card := stretch(c, "NEW SESSION", 46, pal.fg, 1)
 				if !a.carded {
@@ -42,27 +45,54 @@ func (a *app) homeScreen(c *ui.Context) {
 			})
 			a.launching(c)
 		})
-		ui.Box(c).Height(18)
-		ui.Column(c).FillWidth().MaxWidth(680+2*overhang+2*margin).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
+		ui.Box(c).Height(22)
+		// The box a little past the column (8 a side, 2.5% of it), so it stands out of the page
+		// without leaving it; its own padding sets its text in.
+		ui.Column(c).FillWidth().MaxWidth(680+16).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
 		var recent []Entry
 		for _, e := range o.home.Entries {
-			if !e.Open && len(recent) < 5 {
+			if !e.Open && len(recent) < 6 {
 				recent = append(recent, e)
 			}
 		}
 		a.boot(c)
+		if len(o.state.Tabs) > 0 && !small {
+			a.openCards(c)
+		}
 		if len(recent) > 0 && o.state.Up && !small {
-			reading(c).MaxWidth(680).Margin(18, ui.Auto, 0).PaddingX(margin).Children(func() {
-				label(c, "latest").TextColor(pal.meta).Margin(0, 0, 4)
+			reading(c).MaxWidth(680).Margin(36, ui.Auto, 0).PaddingX(margin).Children(func() {
+				ui.Row(c).FillWidth().Margin(0, 0, 6).Children(func() {
+					label(c, "latest").TextColor(pal.meta).Grow(1)
+					if link(c, "all threads", keys("K")) {
+						a.openPalette()
+					}
+				})
 				for _, e := range recent {
 					meta := ""
 					if m := o.machine(e.Machine); m != nil && !m.Self {
 						meta = m.Name
 					}
-					if press(sessionRow(c.Key(e.Key), e.Title, meta, ago(e.Modified), e.Live, e.Asks, false, o.hue(e.Machine))) {
+					row := sessionRow(c.Key(e.Key), e.Title, meta, ago(e.Modified), e.Live, e.Asks, false, o.hue(e.Machine))
+					row.ContextMenu(func(m *ui.Menu) { a.threadMenu(m, e) })
+					if press(row) {
 						a.open(e.Key)
 					}
 				}
+			})
+		}
+		if !small {
+			reading(c).MaxWidth(680).Margin(32, ui.Auto, 0).PaddingX(margin).Children(func() {
+				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+					ink := pal.meta
+					if strings.HasPrefix(o.state.Summary, "needs you") {
+						ink = rupture
+					}
+					dot(c, map[bool]ui.Color{true: pal.fg, false: pal.rule}[o.state.Up], 6, !o.state.Up, false)
+					ui.Text(c, cmp.Or(o.state.Summary, "starting Bridge…")).Grow(1).Basis(0).FontSize(12).TextColor(ink).SingleLine()
+					if link(c, "settings", keys(",")) {
+						a.settings()
+					}
+				})
 			})
 		}
 		if len(o.home.Machines) < 2 && o.state.Up && !small {
@@ -76,7 +106,98 @@ func (a *app) homeScreen(c *ui.Context) {
 				}
 			})
 		}
+	}
+}
+
+// openCards are the conversations open, as the phone's overview shows them: a card each, what it
+// does and where, the last thing it said; a click shows it, × closes it (its Orb runs on).
+func (a *app) openCards(c *ui.Context) {
+	o, pal := a.o, p(c)
+	// What needs a look first: what asks, works, has news; then what is awake. Six show, two
+	// rows, unless all are asked for.
+	tabs := slices.Clone(o.state.Tabs)
+	slices.SortStableFunc(tabs, func(x, y Tab) int {
+		rank := func(t Tab) int {
+			switch {
+			case t.Ask != nil:
+				return 0
+			case t.Busy:
+				return 1
+			case t.Unread > 0:
+				return 2
+			case !t.Asleep:
+				return 3
+			}
+			return 4
+		}
+		return rank(x) - rank(y)
 	})
+	const few = 6
+	if !a.allOpen && len(tabs) > few {
+		tabs = tabs[:few]
+	}
+	reading(c).MaxWidth(680).Margin(36, ui.Auto, 0).PaddingX(margin).Children(func() {
+		ui.Row(c).FillWidth().Margin(0, 0, 6).Children(func() {
+			label(c, fmt.Sprintf("open · %d", len(o.state.Tabs))).TextColor(pal.meta).Grow(1)
+			if len(o.state.Tabs) > few {
+				more := map[bool]string{true: "fewer", false: fmt.Sprintf("all %d", len(o.state.Tabs))}[a.allOpen]
+				if link(c, more, "") {
+					a.allOpen = !a.allOpen
+				}
+			}
+		})
+		ui.Grid(c).FillWidth().Columns(map[bool]int{true: 2, false: 3}[a.narrow]).Gap(8).Children(func() {
+			for _, t := range tabs {
+				card := ui.Column(c.Key(t.ID)).Height(78).Padding(9, 10).Gap(3).Radius(10).Border(1, pal.rule).Clip()
+				hovered := card.Hovered()
+				hover(card, pal.hover)
+				card.Children(func() {
+					ui.Row(c).FillWidth().Gap(7).AlignItems(ui.Center).Children(func() {
+						// Asleep, it recedes as the phone's cards do, its words still legible.
+						where(c, o.hue(t.Peer), t.Busy, t.Ask != nil, map[bool]ui.Color{true: pal.rule, false: pal.mute}[t.Asleep])
+						ui.Text(c, cmp.Or(t.Title, "new session")).Grow(1).Basis(0).MinWidth(0).FontSize(small).FontWeight(map[bool]int{true: medium, false: strong}[t.Asleep]).TextColor(map[bool]ui.Color{true: pal.mute, false: pal.fg}[t.Asleep]).SingleLine().Tooltip(cmp.Or(t.Title, "new session"))
+						if hovered && press(ui.Row(c).Size(18, 18).Radius(4).Justify(ui.Center).Children(func() { ui.Text(c, "×").FontSize(14).TextColor(pal.meta) }).Tooltip("Close · it runs on")) {
+							a.close(t.ID)
+						}
+					})
+					state, ink := "", pal.meta
+					switch {
+					case t.Ask != nil:
+						state, ink = "asks", rupture
+					case t.Busy:
+						state, ink = "working", pal.fg
+					case strings.TrimSpace(t.Status) != "":
+						state = strings.Split(t.Status, " · ")[0]
+					case t.Unread > 0:
+						state, ink = fmt.Sprintf("%d new", t.Unread), pal.fg
+					case t.Asleep:
+						state = "asleep"
+					}
+					ui.Text(c, strings.Join(nonEmpty(map[bool]string{true: t.Where}[t.Remote], tidy(t.CWD), state), " · ")).FontSize(12).TextColor(ink).SingleLine()
+					if last := lastSaid(o.rows[t.ID]); last != "" {
+						ui.Text(c, last).FontSize(12).TextColor(pal.mute).MaxLines(1)
+					}
+				})
+				a.carry(card, carried{tab: t.ID})
+				if press(card) {
+					a.show(t.ID)
+				}
+			}
+		})
+	})
+}
+
+// lastSaid is the last line a conversation's rows say, for its card.
+func lastSaid(rows []Row) string {
+	for i := len(rows) - 1; i >= 0; i-- {
+		if t := strings.TrimSpace(rows[i].Text); t != "" {
+			if j := strings.LastIndexByte(t, '\n'); j >= 0 {
+				t = t[j+1:]
+			}
+			return t
+		}
+	}
+	return ""
 }
 
 // sessionRow is one line per session: its title, then where it lives and its condition in words
@@ -84,17 +205,14 @@ func (a *app) homeScreen(c *ui.Context) {
 // are enough.
 func sessionRow(c *ui.Context, title, meta, age string, live, asks, current bool, hueN int) ui.Element {
 	pal := p(c)
-	e := ui.Row(c).FillWidth().Padding(9, 8).Margin(0, -8).Gap(10).Radius(soft)
-	if e.Hovered() {
-		e.Background(pal.raised)
-	}
+	e := hover(ui.Row(c).AlignSelf(ui.Stretch).Padding(9, 8).Margin(0, -8).Gap(10).Radius(soft), pal.hover)
 	return e.Children(func() {
 		where(c, hueN, live, asks, pal.mute)
 		w := 400
 		if current || live {
 			w = strong
 		}
-		ui.Text(c, title).Grow(1).Basis(0).FontSize(15).FontWeight(w).SingleLine()
+		ui.Text(c, title).Grow(1).Basis(0).FontSize(15).FontWeight(w).SingleLine().Tooltip(title)
 		state := age
 		switch {
 		case asks:
@@ -141,87 +259,181 @@ func tidy(p string) string {
 	return p
 }
 
-// deviceScreen is one machine: its folders, most recently worked in first, and any other folder by path.
-func (a *app) deviceScreen(c *ui.Context, peer string) {
-	m := a.o.machine(peer)
-	if m == nil {
-		a.back()
-		return
+// explorer chooses the folder a session starts in, on a machine: floating out of the prompt box's
+// place (above or below it, as the room allows, never past the window), or a dialog over a screen.
+// At its top the path, each folder of it a click back; then a filter that ↩ follows (or a path
+// typed whole); the folders in it, git ones marked, a click going in, a double click starting
+// there; its recent folders when it shows the home; start here at its foot.
+func (a *app) explorer(c *ui.Context) {
+	o, pal := a.o, p(c)
+	peer := a.exploring
+	m := o.machine(peer)
+	open := m != nil
+	if a.dirOf != peer {
+		a.readDirs(peer, "")
 	}
-	threads := 0
-	for _, f := range m.Folders {
-		threads += f.Threads
+	d := a.dir
+	q := strings.ToLower(strings.TrimSpace(a.path))
+	var shown []string
+	for _, x := range d.Dirs {
+		if q == "" || strings.Contains(strings.ToLower(x.Name), q) {
+			shown = append(shown, x.Name)
+		}
 	}
-	sub := fmt.Sprintf("%d folders · %d threads", len(m.Folders), threads)
-	if m.Version != "" {
-		sub += " · orb " + m.Version
-	}
-	page(c, func() {
-		header(c, m.Name, sub, a.back, func() {
-			if btn(c, "providers", false, p(c).fg, p(c).bg) {
-				a.push(screen{kind: "providers", peer: m.ID})
+	body := func() {
+		ui.Row(c).FillWidth().Padding(12, 12, 2, 8).Gap(2).AlignItems(ui.Center).Children(func() {
+			// Back to the machines it was chosen among.
+			if press(hover(ui.Row(c).Size(22, 22).Radius(soft).Justify(ui.Center).AlignItems(ui.Center), pal.hover).Children(func() {
+				ui.Text(c, "‹").FontSize(16).TextColor(pal.mute)
+			}).Tooltip("Back")) {
+				a.exploring = ""
+				a.chooseWhere()
 			}
-		})
-	}, func() {
-		ui.Row(c).FillWidth().Gap(8).Children(func() {
-			if field(c, &a.path, "another folder · ~/code/project", false).Grow(1).Submitted() || btn(c, "open", true, p(c).fg, p(c).bg) {
-				if dir := strings.TrimSpace(a.path); dir != "" {
-					a.path = ""
-					a.push(screen{kind: "folder", peer: m.ID, arg: dir})
+			label(c, m.Name).TextColor(pal.meta).MarginEnd(8).MaxWidth(120).Tooltip(m.Name)
+			// Between the folders a / (none after the root, which is one); the last, where it is, in ink.
+			cs := crumbs(d.Path)
+			if len(cs) > 4 { // a deep path keeps where it starts and where it is
+				cs = append(append(cs[:1:1], [2]string{"…", cs[len(cs)-3][1]}), cs[len(cs)-2:]...)
+			}
+			for i, cr := range cs {
+				if i > 0 && cs[i-1][0] != "/" {
+					ui.Text(c.Key("/"+cr[1]), "/").FontSize(12).TextColor(pal.rule)
+				}
+				ink := pal.mute
+				if i == len(cs)-1 {
+					ink = pal.fg
+				}
+				if press(ui.Row(c.Key(cr[1])).Padding(2, 4).Radius(5).Children(func() { ui.Text(c, cr[0]).FontSize(12).FontWeight(medium).TextColor(ink) })) {
+					a.readDirs(peer, cr[1])
 				}
 			}
 		})
-		a.launching(c)
-		label(c, "folders").Margin(18, 0, 4)
-		for _, f := range m.Folders {
-			name := path.Base(f.CWD)
-			if press(sessionRow(c.Key(f.CWD), name, fmt.Sprint(f.Threads), ago(f.Modified), f.Live, false, false, a.o.hue(peer)).Tooltip(tidy(f.CWD))) {
-				a.push(screen{kind: "folder", peer: m.ID, arg: f.CWD})
+		in := field(c, &a.path, "filter · or a path, ↩", false).Margin(6, 10, 4).FontSize(small).AutoFocus()
+		if in.Submitted() {
+			switch t := strings.TrimSpace(a.path); {
+			case strings.HasPrefix(t, "/") || strings.HasPrefix(t, "~"):
+				a.readDirs(peer, t)
+			case len(shown) > 0:
+				a.readDirs(peer, path.Join(d.Path, shown[0]))
 			}
+		}
+		ui.Scroll(c).FillWidth().MaxHeight(340).Shrink(1).Padding(2, 10, 4).Children(func() {
+			if a.dirErr != "" {
+				ui.Text(c, a.dirErr).FontSize(12).TextColor(rupture).Padding(6, 4)
+			}
+			if d.Parent != "" && q == "" {
+				if press(dirRow(c.Key(".."), "..", false)) {
+					a.readDirs(peer, d.Parent)
+				}
+			}
+			for _, x := range d.Dirs {
+				if q != "" && !strings.Contains(strings.ToLower(x.Name), q) {
+					continue
+				}
+				at := path.Join(d.Path, x.Name)
+				row := dirRow(c.Key(x.Name), x.Name, x.Git)
+				if row.DoubleClicked() {
+					a.exploring = ""
+					a.start(peer, at)
+				} else if press(row) {
+					a.readDirs(peer, at)
+				}
+			}
+			switch {
+			case d.Path == "" && a.dirErr == "":
+				empty(c, "reading…").PaddingX(8)
+			case d.Path != "" && len(shown) == 0 && q != "":
+				empty(c, "no folder here matches · ↩ opens a path").PaddingX(8)
+			case d.Path != "" && len(d.Dirs) == 0:
+				empty(c, "no folders in here").PaddingX(8)
+			}
+			if q == "" && d.Parent != "" && tidy(d.Path) == "~" && len(m.Folders) > 0 {
+				label(c, "recent").Padding(12, 0, 2).TextColor(pal.meta)
+				for i, f := range m.Folders {
+					if i == 5 {
+						break
+					}
+					if press(dirRow(c.Key("r:"+f.CWD), tidy(f.CWD), false)) {
+						a.readDirs(peer, f.CWD)
+					}
+				}
+			}
+		})
+		rule(c, pal.rule)
+		ui.Row(c).FillWidth().Padding(8, 10, 10, 14).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "a click opens a folder").Grow(1).Basis(0).MinWidth(0).FontSize(12).TextColor(pal.meta).SingleLine()
+			if d.Path != "" && btn(c, "use this folder", true, pal.fg, pal.bg) {
+				a.exploring = ""
+				a.start(peer, d.Path)
+			}
+		})
+	}
+	if !open {
+		a.exploring = ""
+		return
+	}
+	if len(a.stack) > 0 || a.active == nil {
+		modal(c, &open, 440, body)
+	} else {
+		// Out of the prompt box, its left edge on the box's, clear of it.
+		popover(c, &a.active.boxAt, &open, 440, true, body)
+	}
+	if !open {
+		a.exploring = ""
+	}
+}
+
+// explore opens the explorer on a machine, at its home.
+func (a *app) explore(peer string) { a.exploring, a.dirOf, a.dir = peer, "", Dirs{} }
+
+// readDirs lists a folder of a machine, its home for "", into the explorer.
+func (a *app) readDirs(peer, dir string) {
+	a.dirOf, a.path, a.dirErr = peer, "", ""
+	then(a.o, func(r Dirs, err error) {
+		if a.dirOf != peer {
+			return
+		}
+		if err != nil {
+			a.dirErr = err.Error()
+			return
+		}
+		a.dir = r
+	}, "dirs", "machine", peer, "cwd", dir)
+}
+
+// dirRow is a folder in the explorer, a line tight: its name, git when it is a repository.
+func dirRow(c *ui.Context, name string, git bool) ui.Element {
+	pal := p(c)
+	e := hover(ui.Row(c).FillWidth().Height(28).Padding(0, 8).Gap(10).Radius(soft).AlignItems(ui.Center), pal.hover)
+	return e.Children(func() {
+		ui.Text(c, name).Grow(1).Basis(0).FontSize(small).SingleLine()
+		if git {
+			label(c, "git").TextColor(pal.meta)
 		}
 	})
 }
 
-// folderScreen is one folder on a machine: start a thread here, or open one of its threads.
-func (a *app) folderScreen(c *ui.Context, peer, cwd string) {
-	o, pal := a.o, p(c)
-	m := o.machine(peer)
-	if m == nil {
-		a.back()
-		return
+// crumbs are a path's folders, as their names (the home as ~) and their paths.
+func crumbs(p string) [][2]string {
+	if p == "" {
+		return nil
 	}
-	var threads []Entry
-	for _, e := range o.home.Entries {
-		if e.Machine == peer && e.CWD == cwd && !e.Unstored {
-			threads = append(threads, e)
-		}
+	out := [][2]string{{"/", "/"}}
+	rest := strings.Trim(p, "/")
+	at := ""
+	if t := tidy(p); strings.HasPrefix(t, "~") {
+		at = p[:len(p)-len(t)+1]
+		out = [][2]string{{"~", at}}
+		rest = strings.Trim(t[1:], "/")
 	}
-	page(c, func() {
-		header(c, path.Base(cwd), m.Name+" · "+tidy(cwd), a.back, nil)
-	}, func() {
-		ui.Column(c).FillWidth().Children(func() {
-			if btn(c, "new thread here", true, pal.fg, pal.bg) {
-				a.start(peer, cwd)
-			}
-		})
-		a.launching(c)
-		if len(threads) == 0 {
-			label(c, "no threads here yet").TextColor(pal.meta).Margin(18, 0, 4)
-		} else {
-			label(c, "threads").Margin(18, 0, 4)
-		}
-		for _, e := range threads {
-			meta := ""
-			if e.Open {
-				meta = "open"
-			}
-			row := sessionRow(c.Key(e.Key), e.Title, meta, ago(e.Modified), e.Live, e.Asks, false, o.hue(peer))
-			row.ContextMenu(func(menu *ui.Menu) { a.threadMenu(menu, e) })
-			if press(row) {
-				a.open(e.Key)
-			}
-		}
-	})
+	if rest == "" {
+		return out
+	}
+	for _, name := range strings.Split(rest, "/") {
+		at += "/" + name
+		out = append(out, [2]string{name, at})
+	}
+	return out
 }
 
 func nonEmpty(s ...string) []string {

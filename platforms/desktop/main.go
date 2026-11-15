@@ -5,6 +5,7 @@ package main
 
 import (
 	"log"
+	"runtime"
 	"strings"
 	"time"
 
@@ -20,7 +21,7 @@ func main() {
 	a := &app{
 		drafts: map[string]string{}, found: map[string][]Completion{}, foundFor: map[string]string{}, lists: map[string]*ui.ListState{}, shells: map[string]*shell{},
 		answer: map[string]string{}, expanded: map[string]bool{}, details: map[string]map[string]string{},
-		pics: map[string]*ui.Bitmap{}, loading: map[string]bool{}, fold: map[string]bool{}, side: 272, asked: map[string]time.Time{},
+		pics: map[string]*ui.Bitmap{}, loading: map[string]bool{}, asked: map[string]time.Time{},
 		defaults: map[string]*Tab{},
 	}
 	a.loadTiles()
@@ -45,10 +46,15 @@ func main() {
 	})
 	mygo.App.WhenReady(func() {
 		loadFont()
+		if runtime.GOOS == "darwin" {
+			mygo.App.SetMenu(a.menu())
+		}
 		win := mygo.NewWindow(mygo.WindowOptions{
 			Title: "Orb", Width: 1080, Height: 760, StateKey: "main",
 			TitleBarStyle: mygo.TitleBarHidden,
-			Content:       ui.View(a.view),
+			// The traffic lights centred in the tiles' 48-high bars, as the tabs are.
+			TrafficLightPosition: &mygo.Point{X: 18, Y: 17},
+			Content:              ui.View(a.view),
 		})
 		a.o.open(win)
 		// The view follows what shows at full pace, and the rest at the pace of a window out of sight.

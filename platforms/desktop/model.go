@@ -27,6 +27,7 @@ type Tab struct {
 	Remote    bool      `json:"remote"`
 	CWD       string    `json:"cwd"`
 	Busy      bool      `json:"busy"`
+	Acting    bool      `json:"acting"`
 	Online    bool      `json:"online"`
 	Asleep    bool      `json:"asleep"`
 	Loaded    bool      `json:"loaded"`
@@ -132,6 +133,16 @@ type Running struct {
 	Label    string `json:"label"`
 	Busy     bool   `json:"busy"`
 	Open     bool   `json:"open"`
+}
+
+// Dirs is a folder of a machine and the folders in it, as host.dirs lists them.
+type Dirs struct {
+	Path   string `json:"path"`
+	Parent string `json:"parent"`
+	Dirs   []struct {
+		Name string `json:"name"`
+		Git  bool   `json:"git"`
+	} `json:"dirs"`
 }
 
 type Folder struct {

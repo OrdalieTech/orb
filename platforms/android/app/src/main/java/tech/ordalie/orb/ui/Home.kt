@@ -8,8 +8,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.*
 import kotlinx.coroutines.*
@@ -57,14 +55,7 @@ fun ColumnScope.Home(c: Ctx) {
         item { Spacer(Modifier.height(12.dp)) }
     }
     TitleCard()
-    // Sent here from the overview's new-session card: the box takes the keyboard once the page settles.
-    val focus = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(c.nav.compose) {
-        if (!c.nav.compose) return@LaunchedEffect
-        delay(400); runCatching { focus.requestFocus() }; keyboard?.show(); c.nav.compose = false
-    }
-    PromptBox(null, c, c.palette(null), placeholder = "What should we work on?", focus = focus) { c.send(null, it) }
+    PromptBox(null, c, c.palette(null), placeholder = "What should we work on?") { c.send(null, it) }
 }
 
 /** An Evangelion title card over the prompt box, as on the desktop: a rule, the title stretched tall. */
