@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.*
 import android.provider.OpenableColumns
+import android.view.KeyEvent
 import android.view.RoundedCorner
 import androidx.activity.*
 import androidx.activity.compose.setContent
@@ -16,6 +17,8 @@ import tech.ordalie.orb.ui.*
 class MainActivity : ComponentActivity() {
     private val cites = mutableStateListOf<String>()
     private val shared = mutableStateOf<String?>(null)
+    /** The keyboard shortcuts, which [App] sets: seen before any view, they work wherever the focus is. */
+    private var shortcut: (KeyEvent) -> Boolean = { false }
 
     /** Cited documents are copied where the core works, so every Orb tool can read them. */
     private val pick = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> uris.forEach(::cite) }
@@ -28,11 +31,13 @@ class MainActivity : ComponentActivity() {
         startForegroundService(Intent(this, OrbService::class.java))
         receive(intent)
         val corner = if (Build.VERSION.SDK_INT >= 31) windowManager.currentWindowMetrics.windowInsets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0 else 0
-        setContent { OrbTheme(corner) { App(runtime, cites, { pick.launch(arrayOf("*/*")) }, shared) } }
+        setContent { OrbTheme(corner) { App(runtime, cites, { pick.launch(arrayOf("*/*")) }, shared) { shortcut = it } } }
     }
 
     // Access to the phone's files may have just been granted in Settings: show them to the Linux.
     override fun onResume() { super.onResume(); runtime.orb.linux.linkStorage() }
+
+    override fun dispatchKeyEvent(e: KeyEvent) = shortcut(e) || super.dispatchKeyEvent(e)
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); receive(intent) }
     override fun onStart() { super.onStart(); runtime.visible = true }

@@ -39,7 +39,7 @@ private fun turns(rows: List<Row>): List<List<Row>> = buildList {
 fun ColumnScope.Chat(c: Ctx, t: Tab) {
     val v = c.v
     Strip(t, v.word(t), { c.usage(t) }) { c.nav.go(Screen.Terminal(t)) }
-    AnimatedVisibility(!t.remote && v.state.acting, enter = expandVertically(spring(stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) { PatternBlue { v.send("abort", "tab" to t.id) } }
+    AnimatedVisibility(t.acting, enter = expandVertically(spring(stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) { PatternBlue { v.send("abort", "tab" to t.id) } }
     val turns = turns(v.rows[t.id].orEmpty())
     // Anchored at the top, the list never moves on its own: what streams in follows only a reader at
     // the bottom. Scrolling away leaves them where they read until they come back down, or send. It
@@ -165,7 +165,10 @@ private fun ActionView(a: Action, t: Tab, c: Ctx) = Column(Modifier.fillMaxWidth
     Box(Modifier.press { open = !open }) { ActionLine(a.verb, a.target, a.result, a.live, a.failed, open) }
     if (open) Panel {
         val d = detail
+        val diff = d?.optString("diff").orEmpty().trimEnd('\n')
         if (a.verb == "thought") BasicText(d?.optString("text").orEmpty(), style = type((SIZE - 2).sp, p.mute))
+        // An edit shows what it changed: added lines in green, removed ones in the rupture.
+        else if (diff.isNotEmpty()) diff.lines().forEach { BasicText(it, style = type(12.sp, if (it.startsWith('+')) hue(5) else if (it.startsWith('-')) Ink.Rupture else p.mute)) }
         else {
             d?.optString("args")?.takeIf { it.isNotBlank() }?.let { T("input", label = true, color = p.meta); BasicText(it, style = type(12.sp, p.mute)) }
             T("output", label = true, color = p.meta)

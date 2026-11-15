@@ -452,3 +452,31 @@ func TestSubagentRunsOnAnOfferedModel(t *testing.T) {
 	require(t, childModel == "lab/small", "child ran on %q", childModel)
 	require(t, strings.Contains(refused, `model: expected one of ["lab/small"]`), "a model outside the offer was not refused: %q", refused)
 }
+
+// What a child does streams to the call, a line per tool call, and stays in its details.
+func TestSubagentStepsShowWhatTheChildDid(t *testing.T) {
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(faux.ToolCall("subagent", map[string]any{"mode": "single", "task": "look", "agent": "scout"})),
+		faux.AssistantMessage(faux.ToolCall("ls", map[string]any{"path": "."})),
+		faux.AssistantMessage("child done"),
+		faux.AssistantMessage("parent done"),
+	})
+	session := newSubagentParent(t, provider)
+	var updates int
+	defer session.Subscribe(func(event any) {
+		if update, ok := event.(engine.ToolExecutionUpdateEvent); ok && update.ToolName == "subagent" {
+			updates++
+		}
+	})()
+	mustOK(session.PromptSync(context.Background(), "delegate"))
+	var steps string
+	for _, message := range session.State().Messages {
+		if result, ok := message.(*ai.ToolResultMessage); ok && result.ToolName == "subagent" {
+			var details struct{ Steps string }
+			_ = json.Unmarshal(result.Details, &details)
+			steps = details.Steps
+		}
+	}
+	require(t, steps == "scout · ls ." && updates == 1, "steps=%q updates=%d", steps, updates)
+}

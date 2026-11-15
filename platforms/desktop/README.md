@@ -4,17 +4,17 @@ The desktop app for macOS, Linux and Windows draws `orb app` (`bridge/view`): th
 open on this computer's Bridge, the CLI's own, and on its paired machines. It holds no logic of
 its own; the view, shared with the Android and iOS apps, does. It is Go, drawn by
 [MyGo](https://github.com/egoist/mygo)'s native UI (no webview, no cgo), in the Android app's look:
-a sidebar of the conversations open and each machine's threads, and beside it tiles, as a tiling
-window manager cuts the window: conversations, Home, and the terminals where conversations run.
+tiles, as a tiling window manager cuts the window, each with its tabs as a browser has them: the
+conversations open in it, Home (a new session and the latest threads) when it shows none, and the
+terminals where conversations run. ⌘K goes to any conversation or thread; ⌘, opens Settings.
 
 Tiles work with the keys and the pointer alike (⌘ is Ctrl off macOS):
 
-- ⌘D splits a tile right, ⌘⇧D down; ⌘W closes it (its conversation stays open in the sidebar);
-  ⌘[ and ⌘] move between tiles; ⌘= evens them out; ⌘⇧↩ zooms one to fill the room, and back; ⌘J
+- ⌘T opens a tab, ⌘W closes the one shown (its Orb runs on), ⌘⇧W the tile; ⌘⇧[ and ⌘⇧] move
+  between a tile's tabs. ⌘D splits a tile right, ⌘⇧D down; ⌘[ and ⌘] move between tiles; ⌘= evens them out; ⌘⇧↩ zooms one to fill the room, and back; ⌘J
   opens a conversation's terminal under it. Tiles glide to their new places as the layout changes.
-- A conversation or a thread dragged from the sidebar onto a tile opens there: on a side, in a new
-  tile on that side; in the middle, in place of what it shows. A tile dragged by its title moves the
-  same way. Dividers drag; a tile's bar shows split and close on hover, and its menu (right click)
+- A tab dragged onto a tile moves there: on a side, in a new tile on that side; in the middle,
+  among its tabs. A tile its last tab leaves goes. Dividers drag; a tile's bar shows split and close on hover, and its menu (right click)
   has the rest.
 
 This directory is a Go module of its own, so MyGo never reaches Orb's module or the `orb` binary.
