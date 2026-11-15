@@ -297,47 +297,34 @@ Each holds until changed by owner-signed decision.
   is refused with its reason instead of failing every tool call.
 - **Team agents.** One agent is one process, `orb chat <front>... --tools`: every front drives
   sessions of the same agent dir and store, so identity, memory (the `memory` plugin) and tools are
-  shared, and each conversation (a Buzz channel or thread, a Telegram chat) is a session. Buzz stays
-  behind `buzz-acp`, which holds the agent's relay identity, author gate, queues and owner
-  commands; the agent starts it and it reaches the agent through an ACP socket, by the
-  `orb chat connect` relay it runs as its agent command. Its exit ends the agent, so an owner's
-  `!shutdown` stays final under the container's restart policy. A Go Nostr front is deferred until
-  buzz-acp gets in the way. Owner, 2026-10-05: Orb replaces the Hermes agents, one container each.
+  shared, and each conversation (a Buzz thread or direct message, a Telegram chat) is a session.
+  Owner, 2026-10-05: Orb replaces the Hermes agents, one container each.
 - **Chat platforms are plain packages; one catalog composes them.** A platform package
   (`chat/telegram`, `chat/buzz`, …) takes its configuration as Options and reads no environment,
   registers nothing and holds no package state (P3). The catalog `chat/platforms`, an assembly,
-  has one row per platform: the variables it reads (`Env`, `About` for help), and either `Open`
-  (an adapter and its `chat.Inbound`: it polls, or it is called and `orb chat` serves its
-  webhook on `ORB_CHAT_LISTEN`/`ORB_CHAT_PATH`) or `Front` (it drives the agent's sessions
-  itself as an ACP client), plus `Configure` (its section of an agent file), `Sidecar` (a process
-  run beside the agent as another user) and `Alias` (what Orb runs when started under its name,
-  such as the shell's `buzz`). `orb` and `orb-agent` both read it, so the platform list exists
-  once, and removing a platform is deleting its package and its row. A front sees the agent only
-  through `chat.Agent`: `Serve` (ACP on one connection), `Connect` (the command relaying stdio to
-  an ACP socket, `orb chat connect` in Orb), `Environ` and `Export` (its tools' environment) and
-  `Log`. Coupling kept knowingly: `ORB_ACP_SOCKET` keeps its generic name although only Buzz
-  reads it, as the pilot's environment names it; adapters and fronts share one row type with
-  exclusive fields; and `platforms/agent` is an image for Buzz and Telegram, which installs
-  Buzz's binaries. Owner, 2026-10-06.
+  has one row per platform: the variables it reads (`Env`, `About` for help), `Open` (an adapter
+  and its `chat.Inbound`: it polls, or it is called and `orb chat` serves its webhook on
+  `ORB_CHAT_LISTEN`/`ORB_CHAT_PATH`), `Configure` (its section of an agent file) and `Setup` (its
+  onboarding, `orb chat setup <platform>`, whose settings `orb chat` keeps per data directory). `orb` and
+  `orb-agent` both read it, so the platform list exists once, and removing a platform is deleting
+  its package and its row. A platform reaches the rest of Orb through two optional seams only:
+  `Inbound.Authorize` gates its senders in place of the shared `ORB_CHAT_ALLOWED_SENDERS` (Buzz's
+  `respond_to`), and an adapter that is `chat.Extended` adds an extension of its tools to every
+  session of the agent, chat and ACP alike. Owner, 2026-10-06; fronts, sidecars and aliases went
+  with buzz-acp, owner, 2026-11-15.
 - **A team agent is one file and its secrets, set up outside Orb.** `orb-agent`
   (`platforms/agent/harness`), the image's entrypoint and a program of its own, validates
   `/agent/agent.yaml` strictly and renders it into the files Orb already reads (settings.json,
   AGENTS.md, mcp.json, models.json) and the browser's config, rewriting them on every start, so the
   file is the agent's configuration of record; secrets stay in the environment and reach Orb on
-  descriptors as before. What it knows of a platform is its catalog row: `Env`, `Configure` (its
+  descriptors as before. What it knows of a platform is its catalog row: `Env` and `Configure` (its
   section of the file mapped onto the environment it already reads, so the env contract is
-  unchanged and an image without a file runs as before) and `Sidecar` (a process run beside the
-  agent as the `sidecar` user, such as buzz-acp, given the relay command for the agent's ACP
-  socket). The agent and its sidecars run in the agent's workspace: a sidecar that is an ACP
-  client opens the agent's sessions in its own working directory, which the agent's tools must be
-  able to enter (0.18.0 ran buzz-acp in its home, and every Buzz turn's tools failed). The `allow`
-  of a platform `orb chat` routes is its shared sender allowlist. Coupling kept knowingly: the
-  image's relay (`nc`), socket path and the `agent`/`sidecar` users are the harness's; and Buzz's
-  section takes a chosen set of buzz-acp settings, the rest staying `BUZZ_ACP_*` environment.
-  Owner, 2026-10-06.
+  unchanged and an image without a file runs as before). The agent runs in its workspace, as the
+  `agent` user, alone. A platform's `allow` is the shared sender allowlist. Owner, 2026-10-06.
 - **Orb has no scheduler.** A timer outside Orb (systemd on the host) starts a turn in a running
-  agent through its ACP socket (`orb chat connect`), in a session of its own, with the agent's
-  memory, tools and identity: it posts on Buzz with the shim, and the timer delivers the printed
+  agent through the ACP socket `orb chat` serves on `ORB_ACP_SOCKET` (`orb chat connect`), in a
+  session of its own, with the agent's memory, tools and identity: it posts on Buzz with
+  `buzz_publish`, and the timer delivers the printed
   reply elsewhere, such as Telegram with the bot's token; missed runs are systemd's
   `Persistent=true`. Not `docker exec orb -p`: a second Orb whose tools inherit the container's
   secrets. Owner, 2026-10-06.
@@ -349,8 +336,7 @@ Each holds until changed by owner-signed decision.
   volume (Lightpanda's restored cookies and storage, Chromium's profile); Chromium runs without its
   own sandbox, which needs user namespaces containers deny, so the container is the sandbox.
   Rejected: a browser plugin in Orb and a browser shared between agents. Owner, 2026-10-06.
-- **The base image keeps only what agents run.** Debian 13 (Buzz's binaries need glibc 2.39) with
-  bash, git, curl and nc, assembled into one layer without apt, Perl or documentation (copyright
+- **The base image keeps only what agents run.** Debian 13 with bash, git and curl, assembled into one layer without apt, Perl or documentation (copyright
   files kept); git's Perl-only commands (`send-email`, `svn`) go with Perl. Owner, 2026-10-06.
 - **Memory is the agent's; each session is a view of it.** A session's prompt carries the memory
   profile as it stood when the session began, so the prefix stays cacheable. Whatever changed
@@ -364,37 +350,59 @@ Each holds until changed by owner-signed decision.
   `orb chat` sets one (`PATH,HOME,USER,SHELL,LANG,LC_ALL,TERM,TZ,TMPDIR`) unless its operator
   widens it: an allowlist, because a deny-list misses the next secret an operator adds. An Orb
   with an allowlist marks itself non-dumpable, so its `/proc` entries, environment included, are
-  unreadable to its same-user tools. buzz-acp gets the allowlist plus its `BUZZ_*` settings, never
-  model or chat credentials. Without an allowlist tools inherit everything, as pi's do.
-- **Buzz is reached the way Buzz designed it, and nothing more.** ACP brings messages in, and the
-  agent answers with `buzz messages send` in its shell, as buzz-acp's harness prompt says, unchanged.
-  The shell's `buzz` is Orb answering under that name: it hands the command to the agent over the
-  socket `ORB_BUZZ` names, and the agent runs the real CLI (`ORB_BUZZ_CLI`) with `BUZZ_PRIVATE_KEY`
-  and `BUZZ_AUTH_TAG` added to that child alone; standard input goes along only for a `-`
-  argument, since the bash tool feeds its script on the shell's stdin. No model-facing tool, no
-  buzz-dev-mcp (its tools duplicate Orb's). The rest of Orb's Buzz code, all in `chat/buzz`, is
-  `orb chat buzz` supervising buzz-acp and publishing the agent's profile with that same CLI.
-  Owner, 2026-10-06.
+  unreadable to its same-user tools. Without an allowlist tools inherit everything, as pi's do.
+- **Buzz is native.** `chat/buzz` is a platform like Telegram, Orb speaking the relay's protocol
+  itself: buzz-acp's DM gate had to be patched, it dropped what arrived during a restart, it tied
+  the image to Buzz Desktop's glibc 2.39 amd64 binaries, and Buzz 1.0 no longer ships it. The
+  agent subscribes over the relay's WebSocket (NIP-42, its owner's NIP-OA tag in AUTH) to its
+  mentions in the channels it is in, which also catches direct messages and Solo chats, since Buzz
+  clients tag their participants, and to every message of its `channels`. The relay fans a
+  channel's events out only to subscriptions naming the channel (a `#p` subscription alone gets
+  stored events, never live ones; the live test found it), so it subscribes per batch of 128 of
+  the channels its rosters (39002) list, and to each channel it is added to (44100) while
+  connected. Everything else is the relay's HTTP API
+  under NIP-98 with the tag in `x-auth-tag`: queries, its replies, its profile, media. Each thread
+  is a conversation (a top-level message opens its own) and a direct message is one; the reply
+  goes in the answered event's thread, with no `p` tag, so agents answering agents do not loop,
+  and is not posted when the agent already posted in that conversation with its tool during the
+  turn (the live test caught Gemini answering twice; a harness rule, not a prompt one). Presence
+  (kind 20001 on the WebSocket) shows it online as Buzz's clients do.
+  Mentioned mid-thread, the agent first gets the thread's messages since it last spoke there that
+  never reached it. A cursor file in the gateway's data directory resumes the subscription where
+  it stopped, and the turn ledger deduplicates what comes twice. `respond_to` is buzz-acp's
+  (owner-only, the default, allowlist, anyone), applied to direct messages too; the owner is the
+  auth tag's, and the allowlist the shared one's pubkeys. Not carried over: buzz-acp's sibling
+  agents (list them), its `!shutdown`/`!cancel` (the processor's `/stop`, `/new`, `/status` and
+  `/compact` work on Buzz), its heartbeat and its status reactions. The agent's tools are two,
+  `buzz_query` (any filters) and `buzz_publish` (any event, signed as the agent, its owner's tag
+  added as Buzz's own clients add it), with recipes in their prompt guidelines: everything on Buzz
+  is an event, so two tools cover what the CLI's many commands did. Signing is BIP-340 over
+  secp256k1 in `math/big`, checked against BIP-340's vectors: variable-time, and it only ever signs
+  with the agent's own key. The Buzz app's own plugin for Orb, which has the app host an Orb agent
+  over ACP, lives beside it in `chat/buzz/plugin`, so all of Orb's Buzz code is in one place.
+  Owner, 2026-11-15, replacing "Buzz is reached the way Buzz designed it" (2026-10-06).
 - **The agent signs its profile; its owner signs its record, on the owner's machine.** Buzz names
   an agent by its kind:0, and its agent directory lists one only when that kind:0 carries a valid
   NIP-OA tag from its owner and the owner has published a kind:30177 record of it (its name and
-  whom it answers). `orb chat buzz` publishes the kind:0 at every start with the real CLI
-  (`buzz users set-profile`, which adds `BUZZ_AUTH_TAG` and merges into the profile on the relay)
-  from `BUZZ_ACP_DISPLAY_NAME`, `ORB_BUZZ_ABOUT` and `ORB_BUZZ_AVATAR`, retrying in the
-  background until the relay takes it: a replaceable event, so a restart republishes the same
-  profile, and Orb holds no Nostr code. The 30177 needs the owner's key, which never enters the
-  container, and the relay takes events only from their author, so the owner publishes it with
-  `platforms/agent/buzz-owner.py`, the standard-library script that signs the auth tag, posting it
-  to the relay's `/events` under NIP-98. No other owner record is needed: channel membership is
-  the relay's, and team rosters resolve through 30177s. Owner, 2026-10-06.
-- **The Nostr key stays out of the tools' reach by user, not by care.** buzz-acp reads the key
-  from its environment and writes a signing keyfile, so it cannot share the tools' user. The team
-  agent image starts as root only to run Orb as `agent` and buzz-acp as `sidecar`, and
-  Orb then serves buzz-acp on a fixed group socket (`ORB_ACP_SOCKET`) instead of starting it. The
-  real buzz CLI, which runs as `agent` with the key, is installed execute-only, so the kernel runs it
-  non-dumpable and its environment stays unreadable. Chosen over a sidecar container: one container,
-  one entrypoint. Without `ORB_ACP_SOCKET`, `orb chat buzz` starts buzz-acp as its own user, which
-  leaves the key readable by the agent's tools: fit for development, not for a team agent.
+  whom it answers). `orb chat buzz` publishes the kind:0, once connected, from `BUZZ_NAME`,
+  `BUZZ_ABOUT` and `BUZZ_AVATAR`, merged into the profile on the relay and only when they changed.
+  The 30177 and the attestation need the owner's key, which never has to reach the agent: `orb chat
+  setup buzz` (the catalog's `Setup` row, the only onboarding code, in `chat/buzz`) makes the
+  agent's key and settings, and the owner approves it with the same command, here with the
+  owner's key or on their own machine (`--attest`, which prints the `--auth` to give the agent);
+  the agent checks the attestation's signature before keeping it. An agent of a closed relay needs
+  no membership of its own: the relay admits it through its owner's tag. The 30177 is written as
+  Buzz's app writes one (`parallelism`, `respond_to`, `name`, `picture`, tags `d` and `runtime`
+  `orb`, a runtime no app runs, so the app lists it as running elsewhere). The settings land in
+  `<data dir>/buzz.env` (0600), which `orb chat` reads under the environment, except as a team
+  agent: its entrypoint hands it every credential, and its tools could write the file. The file is
+  also a `docker --env-file`. No other owner record is needed: channel membership is the relay's,
+  and team rosters resolve through 30177s. Owner, 2026-10-06; onboarding in Orb replacing
+  `buzz-owner.py`, owner, 2026-11-15.
+- **The Nostr key is a credential like the others.** It reaches Orb on `ORB_SECRETS_FD` with the
+  model's key and the bot tokens, in a process its same-user tools cannot inspect, and no tool
+  process inherits it. The `sidecar` user, its group socket and the execute-only CLI went with
+  buzz-acp. Owner, 2026-11-15.
 - **A team agent holds its credentials on descriptors, never by path.** Its in-process tools
   (read, edit, write) run as Orb itself, so no file Orb can open by name may hold a secret, and
   neither may `/proc/self/environ`. `orb-agent`, still root, passes every variable outside a
@@ -406,10 +414,6 @@ Each holds until changed by owner-signed decision.
 - **A team agent's settings.json and models.json stay its configuration of record**: `orb chat`
   reads them from the agent dir on every start instead of the copies the native store imported,
   so editing the mounted file and restarting changes the model.
-- **buzz-acp reaches the agent through `nc -N -U`** in the image (about 1 MB), not an Orb relay
-  (about 45 MB of runtime to copy bytes). `orb-agent` waits for the agent's socket before
-  starting sidecars, since buzz-acp launches its agent at once.
-
 ### Storage, release and platforms
 
 - **Native SQLite storage.** The CLI stores native state in SQLite with Pi JSONL import/export, so

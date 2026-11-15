@@ -6,7 +6,6 @@
 package platforms
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -28,9 +28,13 @@ import (
 	"github.com/OrdalieTech/orb/chat/whatsapp"
 )
 
-// AllowedSenders is orb chat's sender allowlist, shared by the platforms it
-// routes (those with Open).
+// AllowedSenders is orb chat's sender allowlist, shared by the platforms
+// that do not gate their senders themselves; Buzz takes its pubkeys as its
+// allowlist.
 const AllowedSenders = "ORB_CHAT_ALLOWED_SENDERS"
+
+// DataDir is where orb chat keeps the gateway's state, a platform's included.
+const DataDir = "ORB_CHAT_DATA_DIR"
 
 // Platform is one row of the catalog.
 type Platform struct {
@@ -39,48 +43,43 @@ type Platform struct {
 	// in *), and About says what it does, for help.
 	Env   []string
 	About string
-	// Open builds the adapter of a platform orb chat routes, logging to
-	// logger, and how its messages come in.
+	// Open builds the platform's adapter, logging to logger, and how its
+	// messages come in.
 	Open func(env Env, logger *slog.Logger) (chat.Adapter, chat.Inbound, error)
-	// Front runs a platform that drives the agent's sessions itself.
-	Front func(ctx context.Context, agent chat.Agent, env Env) error
 	// Configure maps the platform's section of an agent file onto the
 	// environment it reads; nil takes no settings.
 	Configure func(agent chat.Identity, section map[string]any) (map[string]string, error)
-	// Sidecar is a process the platform needs beside the agent, run as another
-	// user: given relay, a command connecting its stdio to the agent's ACP
-	// socket, it returns the command and its settings. It also gets the
-	// variables Env names.
-	Sidecar func(relay []string) (command, settings []string)
-	// Alias is what Orb runs when started under the platform's name, through a
-	// link in the agent's shell.
-	Alias func(env Env, args []string, stdin io.Reader, stdout, stderr io.Writer) int
+	// Setup onboards the agent on the platform (orb chat setup <platform>):
+	// given its arguments and the variables saved so far, talking with the
+	// user on in and out, it returns the variables to save, or nil for none.
+	Setup func(ctx context.Context, args []string, saved map[string]string, in io.Reader, out io.Writer) (map[string]string, error)
 }
 
 // All is the catalog.
 var All = []Platform{
 	{
-		Name:  "buzz",
-		Env:   []string{"BUZZ_PRIVATE_KEY", "BUZZ_RELAY_URL", "BUZZ_AUTH_TAG", "BUZZ_API_TOKEN", "BUZZ_ACP_*", "RUST_LOG"},
-		About: "starts buzz-acp (or ORB_BUZZ_ACP), which holds the agent's Buzz identity and reaches it over ACP",
-		Front: func(ctx context.Context, agent chat.Agent, env Env) error {
-			return buzz.Front(ctx, agent, buzz.Options{
-				CLI:         cmp.Or(env.Get("ORB_BUZZ_CLI"), "buzz"),
-				Credentials: env.Matching("BUZZ_PRIVATE_KEY", "BUZZ_AUTH_TAG", "BUZZ_RELAY_URL"),
-				Profile:     chat.Identity{Name: env.Get("BUZZ_ACP_DISPLAY_NAME"), About: env.Get("ORB_BUZZ_ABOUT"), Avatar: env.Get("ORB_BUZZ_AVATAR")},
-				Socket:      env.Get("ORB_ACP_SOCKET"),
-				Harness:     cmp.Or(env.Get("ORB_BUZZ_ACP"), "buzz-acp"),
-				HarnessEnv:  env.Matching("BUZZ_*", "RUST_LOG"),
+		Name: "buzz", Env: []string{"BUZZ_PRIVATE_KEY", "BUZZ_RELAY_URL", "BUZZ_AUTH_TAG", "BUZZ_RESPOND_TO", "BUZZ_CHANNELS", "BUZZ_NAME", "BUZZ_ABOUT", "BUZZ_AVATAR"},
+		About: "the agent's Nostr key, its relay and its owner's NIP-OA tag; BUZZ_RESPOND_TO is owner-only (default), allowlist or anyone",
+		Open: func(env Env, logger *slog.Logger) (chat.Adapter, chat.Inbound, error) {
+			cursor := ""
+			if dir := env.Get(DataDir); dir != "" {
+				cursor = filepath.Join(dir, "buzz.cursor")
+			}
+			adapter, err := buzz.New(buzz.Options{
+				Key: env.Get("BUZZ_PRIVATE_KEY"), Relay: env.Get("BUZZ_RELAY_URL"), AuthTag: env.Get("BUZZ_AUTH_TAG"),
+				RespondTo: env.Get("BUZZ_RESPOND_TO"), Channels: list(env.Get("BUZZ_CHANNELS")),
+				// The shared allowlist's pubkeys: other platforms' ids are not 64 characters.
+				Allow:   slices.DeleteFunc(list(env.Get(AllowedSenders)), func(id string) bool { return len(id) != 64 }),
+				Profile: chat.Identity{Name: env.Get("BUZZ_NAME"), About: env.Get("BUZZ_ABOUT"), Avatar: env.Get("BUZZ_AVATAR")},
+				Cursor:  cursor, Logger: logger,
 			})
+			if err != nil {
+				return nil, chat.Inbound{}, err
+			}
+			return adapter, chat.Inbound{Poll: adapter.Poll, Authorize: adapter.Authorize}, nil
 		},
 		Configure: configureBuzz,
-		Sidecar: func(relay []string) ([]string, []string) {
-			return []string{"buzz-acp"}, buzz.HarnessSettings(relay)
-		},
-		Alias: func(env Env, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-			dir, _ := os.Getwd()
-			return buzz.Shim(env.Get("ORB_BUZZ"), dir, args, stdin, stdout, stderr)
-		},
+		Setup:     buzz.Setup,
 	},
 	{
 		Name: "discord", Env: []string{"DISCORD_BOT_TOKEN"}, About: "Discord bot token",
@@ -226,40 +225,45 @@ func required(env Env, name string) (string, error) {
 	return "", errors.New(name + " is required")
 }
 
-// buzzSettings are the buzz-acp settings an agent file may set, as
-// BUZZ_ACP_<KEY>; allow is BUZZ_ACP_RESPOND_TO_ALLOWLIST. Others stay
-// available as environment.
-var buzzSettings = []string{"respond_to", "allow", "subscribe", "channels", "kinds", "idle_timeout", "turn_timeout", "heartbeat_interval", "heartbeat_prompt"}
+// list splits a comma-separated list, dropping empty items.
+func list(text string) []string {
+	var items []string
+	for _, item := range strings.Split(text, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
+}
 
-// configureBuzz maps the agent's identity and its buzz section onto the
-// environment the buzz row and buzz-acp read.
+// configureBuzz maps the agent's identity and its buzz section (respond_to,
+// channels) onto the environment the buzz row reads; its allow is the shared
+// allowlist.
 func configureBuzz(agent chat.Identity, section map[string]any) (map[string]string, error) {
 	env := map[string]string{}
-	for name, value := range map[string]string{"BUZZ_ACP_DISPLAY_NAME": agent.Name, "ORB_BUZZ_ABOUT": agent.About, "ORB_BUZZ_AVATAR": agent.Avatar} {
+	for name, value := range map[string]string{"BUZZ_NAME": agent.Name, "BUZZ_ABOUT": agent.About, "BUZZ_AVATAR": agent.Avatar} {
 		if value != "" {
 			env[name] = value
 		}
 	}
 	for key, value := range section {
-		if !slices.Contains(buzzSettings, key) {
-			return nil, fmt.Errorf("buzz: unknown setting %q (known: %s)", key, strings.Join(buzzSettings, ", "))
-		}
-		name := "BUZZ_ACP_" + strings.ToUpper(key)
-		if key == "allow" {
-			name = "BUZZ_ACP_RESPOND_TO_ALLOWLIST"
-		}
 		switch value := value.(type) {
-		case []any:
-			items := make([]string, len(value))
-			for i, item := range value {
-				items[i] = fmt.Sprint(item)
+		case string:
+			if key == "respond_to" {
+				env["BUZZ_RESPOND_TO"] = value
+				continue
 			}
-			env[name] = strings.Join(items, ",")
-		case map[string]any:
-			return nil, fmt.Errorf("buzz: %s takes a value or a list", key)
-		default:
-			env[name] = fmt.Sprint(value)
+		case []any:
+			if key == "channels" {
+				items := make([]string, len(value))
+				for i, item := range value {
+					items[i] = fmt.Sprint(item)
+				}
+				env["BUZZ_CHANNELS"] = strings.Join(items, ",")
+				continue
+			}
 		}
+		return nil, fmt.Errorf("buzz: settings are respond_to (owner-only, allowlist or anyone), allow and channels (lists), got %s: %v", key, value)
 	}
 	return env, nil
 }

@@ -11,21 +11,17 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
-
-	"github.com/OrdalieTech/orb/chat/platforms"
 )
 
-// run sets up the agent and supervises it with its sidecars: the first
-// process to exit ends the container with its status, so an owner's clean
-// shutdown stays final under --restart on-failure. Without an agent file,
-// args are orb chat's, as before agent files.
+// run sets up the agent and supervises it: its exit ends the container with
+// its status, and signals go to it. Without an agent file, args are orb
+// chat's, as before agent files.
 func run(args []string, image layout) (int, error) {
 	agent, err := lookup("agent")
 	if err != nil {
 		return 0, err
 	}
-	// Every process runs in the workspace, which a volume may lack.
+	// The agent runs in the workspace, which a volume may lack.
 	if err := os.MkdirAll(image.workspace, 0o755); err != nil {
 		return 0, err
 	}
@@ -45,22 +41,11 @@ func run(args []string, image layout) (int, error) {
 		}
 		args, rendered = append(plan.platforms, "--tools"), plan.env
 	}
-	var sidecars []platforms.Platform
-	for _, name := range args {
-		if platform, ok := platforms.Lookup(name); ok && platform.Sidecar != nil {
-			sidecars = append(sidecars, platform)
-		}
-	}
 	auth, err := authFile(image)
 	if err != nil {
 		return 0, err
 	}
-	// A socket left by a process that died is not one the agent listens on:
-	// sidecars wait for the agent's own, and a restart is not blocked.
-	if err := os.Remove(image.socket); err != nil && !os.IsNotExist(err) {
-		return 0, err
-	}
-	orb := agentProcess(args, os.Environ(), rendered, image, len(sidecars) > 0)
+	orb := agentProcess(args, os.Environ(), rendered, image)
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		return 0, err
@@ -74,32 +59,13 @@ func run(args []string, image layout) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	running := []*exec.Cmd{command}
-	if len(sidecars) > 0 {
-		sidecar, err := lookup("sidecar")
-		if err != nil {
-			return 0, err
-		}
-		// A sidecar may start its agent at once, so the socket comes first.
-		for deadline := time.Now().Add(30 * time.Second); !exists(image.socket) && time.Now().Before(deadline); {
-			time.Sleep(100 * time.Millisecond)
-		}
-		for _, platform := range sidecars {
-			command := sidecarProcess(platform, os.Environ(), rendered, image, sidecar.home).command(sidecar)
-			if err := command.Start(); err != nil {
-				return 0, err
-			}
-			running = append(running, command)
-		}
-	}
-	return supervise(running), nil
+	return supervise(command), nil
 }
 
 // account is a user the image runs processes as.
 type account struct {
 	uid, gid uint32
 	groups   []uint32
-	home     string
 }
 
 func (a account) credential() *syscall.Credential {
@@ -126,7 +92,7 @@ func lookup(name string) (account, error) {
 		}
 		parsed[i] = uint32(value)
 	}
-	return account{uid: parsed[0], gid: parsed[1], groups: parsed[2:], home: found.HomeDir}, nil
+	return account{uid: parsed[0], gid: parsed[1], groups: parsed[2:]}, nil
 }
 
 // command runs the process as a user, with that user's groups.
@@ -137,49 +103,33 @@ func (p process) command(as account) *exec.Cmd {
 	return command
 }
 
-// supervise waits for the first process to exit, stops the others and
-// returns its status; SIGTERM and SIGINT go to every process. Every exit is
-// logged with its status or signal, so no death goes unexplained.
-func supervise(running []*exec.Cmd) int {
+// supervise waits for the agent to exit, passing it SIGTERM and SIGINT, and
+// returns its status. Its exit is logged with its status or signal, so no
+// death goes unexplained.
+func supervise(agent *exec.Cmd) int {
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
 	oomKills := oomKillCount()
-	exited := make(chan *exec.Cmd, len(running))
-	for _, process := range running {
-		go func() { _ = process.Wait(); exited <- process }()
-	}
-	stop := func(signal os.Signal) {
-		for _, process := range running {
-			_ = process.Process.Signal(signal)
+	exited := make(chan struct{})
+	go func() { _ = agent.Wait(); close(exited) }()
+	for waiting := true; waiting; {
+		select {
+		case received := <-signals:
+			_, _ = fmt.Fprintf(os.Stderr, "orb-agent: received %s, stopping the agent\n", received)
+			_ = agent.Process.Signal(received)
+		case <-exited:
+			waiting = false
 		}
 	}
-	report := func(process *exec.Cmd) {
-		status := process.ProcessState.Sys().(syscall.WaitStatus)
-		how := fmt.Sprintf("exited with status %d", status.ExitStatus())
-		if status.Signaled() {
-			how = fmt.Sprintf("was killed by signal %d (%s)", status.Signal(), status.Signal())
-			if killed := oomKillCount() - oomKills; status.Signal() == syscall.SIGKILL && killed > 0 {
-				how += fmt.Sprintf("; the kernel's OOM killer has killed %d process(es) in this container since it started", killed)
-			}
+	status := agent.ProcessState.Sys().(syscall.WaitStatus)
+	how := fmt.Sprintf("exited with status %d", status.ExitStatus())
+	if status.Signaled() {
+		how = fmt.Sprintf("was killed by signal %d (%s)", status.Signal(), status.Signal())
+		if killed := oomKillCount() - oomKills; status.Signal() == syscall.SIGKILL && killed > 0 {
+			how += fmt.Sprintf("; the kernel's OOM killer has killed %d process(es) in this container since it started", killed)
 		}
-		_, _ = fmt.Fprintf(os.Stderr, "orb-agent: %s (pid %d) %s\n", process.Args[0], process.Process.Pid, how)
 	}
-	var first *exec.Cmd
-	select {
-	case first = <-exited:
-		report(first)
-		_, _ = fmt.Fprintln(os.Stderr, "orb-agent: stopping the container")
-		stop(syscall.SIGTERM)
-	case received := <-signals:
-		_, _ = fmt.Fprintf(os.Stderr, "orb-agent: received %s, stopping the container\n", received)
-		stop(received)
-		first = <-exited
-		report(first)
-	}
-	for range len(running) - 1 {
-		report(<-exited)
-	}
-	status := first.ProcessState.Sys().(syscall.WaitStatus)
+	_, _ = fmt.Fprintf(os.Stderr, "orb-agent: %s (pid %d) %s\n", agent.Args[0], agent.Process.Pid, how)
 	if status.Signaled() {
 		return 128 + int(status.Signal())
 	}

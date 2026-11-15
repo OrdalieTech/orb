@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"os/signal"
@@ -107,10 +109,6 @@ func main() {
 	}
 	if len(os.Args) == 2 && os.Args[1] == "mermaid" {
 		os.Exit(runMermaid(os.Stdin, os.Stdout))
-	}
-	// Orb started under a platform's name, through a link in an agent's shell.
-	if platform, ok := platforms.Lookup(filepath.Base(os.Args[0])); ok && platform.Alias != nil {
-		os.Exit(platform.Alias(os.Environ(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	if len(os.Args) == 4 && os.Args[1] == "chat" && os.Args[2] == "connect" {
 		os.Exit(runChatConnect(os.Args[3], os.Stdin, os.Stdout))
@@ -802,6 +800,9 @@ func reportCLIError(writer io.Writer, err error) int {
 }
 
 func runChatCommand(ctx context.Context, args []string, streams cliStreams, dependencies cliDependencies) int {
+	if len(args) > 0 && args[0] == "setup" {
+		return runChatSetup(ctx, args[1:], streams)
+	}
 	if len(args) == 0 || slices.Contains(args, "--help") || slices.Contains(args, "-h") {
 		_, _ = io.WriteString(streams.Stdout, chatHelpText())
 		return 0
@@ -824,51 +825,55 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 		return reportCLIError(streams.Stderr, errors.New("usage: orb chat <platform>... [--tools]"))
 	}
 	agents := teamAgent(ctx, dependencies, streams)
-	var fronts []func(context.Context) error
-	var chats []string
-	for _, name := range selected {
-		if platform, _ := platforms.Lookup(name); platform.Front != nil {
-			fronts = append(fronts, func(ctx context.Context) error {
-				agent := chat.Agent{Serve: agents.serve, Connect: chatConnectCommand, Environ: toolenv.Environ, Export: toolenv.Export, Log: streams.Stderr}
-				return platform.Front(ctx, agent, os.Environ())
-			})
-		} else {
-			chats = append(chats, name)
-		}
-	}
-	if len(chats) == 0 {
-		return runFronts(ctx, fronts, streams)
-	}
-	authorize, err := gateway.Authorizer(os.Getenv(platforms.AllowedSenders))
-	if err != nil {
-		return reportCLIError(streams.Stderr, err)
-	}
 	agentDir, err := migrateStartupAuth()
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	dataDir := strings.TrimSpace(os.Getenv("ORB_CHAT_DATA_DIR"))
-	if dataDir == "" {
-		names := slices.Clone(chats)
-		slices.Sort(names)
-		dataDir = filepath.Join(agentDir, "chat", strings.Join(slices.Compact(names), "+"))
-	}
+	dataDir := chatDataDir(agentDir, selected)
 	logger := slog.New(slog.NewTextHandler(streams.Stderr, nil))
 	var adapters []chat.Adapter
 	var ingresses []func(context.Context, func(chat.Message) error) error
 	webhooks := map[string]func(func(chat.Message) error) http.Handler{}
-	for _, platform := range chats {
-		open, _ := platforms.Lookup(platform)
-		adapter, inbound, err := open.Open(os.Environ(), logger)
+	gates := map[string]func(chat.Message) error{}
+	for _, name := range selected {
+		platform, _ := platforms.Lookup(name)
+		// What orb chat setup saved comes under the environment, except for a
+		// team agent, whose entrypoint hands it every credential.
+		env := os.Environ()
+		if os.Getenv("ORB_SECRETS_FD") == "" {
+			// A variable set empty does not hide a saved one.
+			env = append(readSettings(filepath.Join(dataDir, name+".env")), slices.DeleteFunc(env, func(entry string) bool { return strings.HasSuffix(entry, "=") })...)
+		}
+		adapter, inbound, err := platform.Open(append(env, platforms.DataDir+"="+dataDir), logger)
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
 		adapters = append(adapters, adapter)
+		if inbound.Authorize != nil {
+			gates[name] = inbound.Authorize
+		}
 		if inbound.Webhook != nil {
-			webhooks[platform] = inbound.Webhook
+			webhooks[name] = inbound.Webhook
 		} else {
 			ingresses = append(ingresses, inbound.Poll)
 		}
+		// A platform's own tools join every session of the agent, its ACP ones
+		// included, so a scheduled turn can post too.
+		if extended, ok := adapter.(chat.Extended); ok {
+			agents.args.compiled = append(agents.args.compiled, extensions.CompiledExtension{Name: name, Hidden: true, DefaultEnabled: true, Factory: extended.Extension})
+		}
+	}
+	shared := chat.AllowAll
+	if len(gates) < len(selected) {
+		if shared, err = gateway.Authorizer(os.Getenv(platforms.AllowedSenders)); err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+	}
+	authorize := func(m chat.Message) error {
+		if gate := gates[m.Platform]; gate != nil {
+			return gate(m)
+		}
+		return shared(m)
 	}
 	if len(webhooks) > 0 {
 		ingress, err := gateway.Webhooks(strings.TrimSpace(os.Getenv("ORB_CHAT_LISTEN")), strings.TrimSpace(os.Getenv("ORB_CHAT_PATH")), webhooks)
@@ -876,6 +881,10 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 			return reportCLIError(streams.Stderr, err)
 		}
 		ingresses = append(ingresses, ingress)
+	}
+	var fronts []func(context.Context) error
+	if socket := os.Getenv("ORB_ACP_SOCKET"); socket != "" {
+		fronts = append(fronts, func(ctx context.Context) error { return agents.serveSocket(ctx, socket) })
 	}
 	var workspace []chat.LocalProviderOption
 	if tools {
@@ -886,6 +895,92 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 		workspace = append(workspace, agentWorkspace(agents, cwd, adapters))
 	}
 	return runLocalChat(ctx, dataDir, adapters, ingresses, fronts, authorize, workspace, logger, streams)
+}
+
+// chatDataDir is ORB_CHAT_DATA_DIR, or the agent dir's directory for these
+// platforms.
+func chatDataDir(agentDir string, platformNames []string) string {
+	if dir := strings.TrimSpace(os.Getenv(platforms.DataDir)); dir != "" {
+		return dir
+	}
+	names := slices.Clone(platformNames)
+	slices.Sort(names)
+	return filepath.Join(agentDir, "chat", strings.Join(slices.Compact(names), "+"))
+}
+
+// runChatSetup is orb chat setup <platform>: the platform onboards the agent,
+// and what it returns is saved as <data dir>/<platform>.env (0600), which
+// orb chat reads under the environment; a platform variable set in the
+// environment is taken as saved.
+func runChatSetup(ctx context.Context, args []string, streams cliStreams) int {
+	var names []string
+	for _, platform := range platforms.All {
+		if platform.Setup != nil {
+			names = append(names, platform.Name)
+		}
+	}
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		_, _ = fmt.Fprintf(streams.Stdout, "Usage: orb chat setup <platform> [flags]\n\nOnboards this agent on a platform: %s.\n", strings.Join(names, ", "))
+		return 0
+	}
+	platform, ok := platforms.Lookup(strings.ToLower(args[0]))
+	if !ok || platform.Setup == nil {
+		return reportCLIError(streams.Stderr, fmt.Errorf("no setup for %q (set up: %s; others take their variables, see orb chat --help)", args[0], strings.Join(names, ", ")))
+	}
+	agentDir, err := migrateStartupAuth()
+	if err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	path := filepath.Join(chatDataDir(agentDir, []string{platform.Name}), platform.Name+".env")
+	saved := map[string]string{}
+	for _, entry := range append(readSettings(path), platforms.Env(os.Environ()).Matching(platform.Env...)...) {
+		if name, value, _ := strings.Cut(entry, "="); value != "" {
+			saved[name] = value
+		}
+	}
+	settings, err := platform.Setup(ctx, args[1:], saved, streams.Stdin, streams.Stdout)
+	if errors.Is(err, flag.ErrHelp) {
+		return 0
+	}
+	if err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	if settings == nil {
+		return 0
+	}
+	if err := writeSettings(path, settings); err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	_, _ = fmt.Fprintln(streams.Stdout, "Saved in "+path)
+	return 0
+}
+
+// readSettings reads a settings file's KEY=VALUE lines, as written (no
+// quoting), skipping blank lines and comments; a missing file has none.
+func readSettings(path string) []string {
+	data, _ := os.ReadFile(path)
+	var entries []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") && strings.Contains(line, "=") {
+			entries = append(entries, line)
+		}
+	}
+	return entries
+}
+
+func writeSettings(path string, settings map[string]string) error {
+	var data strings.Builder
+	for _, name := range slices.Sorted(maps.Keys(settings)) {
+		data.WriteString(name + "=" + settings[name] + "\n")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	temporary := path + ".tmp"
+	if err := os.WriteFile(temporary, []byte(data.String()), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(temporary, path)
 }
 
 // agentWorkspace makes chat conversations full sessions of the agent, built as
@@ -899,7 +994,7 @@ func agentWorkspace(agents acpHost, cwd string, adapters []chat.Adapter) chat.Lo
 			_, files := adapter.(chat.FileSender)
 			return files && adapter.Platform() == key.Platform
 		}) {
-			args.compiled = append(args.compiled, extensions.CompiledExtension{Name: "chat", Hidden: true, DefaultEnabled: true, Factory: chat.SendFile})
+			args.compiled = append(slices.Clip(args.compiled), extensions.CompiledExtension{Name: "chat", Hidden: true, DefaultEnabled: true, Factory: chat.SendFile})
 		}
 		runtime, close, err := openHeadless(ctx, args, agents.dependencies, agents.streams, manager)
 		if err != nil {
@@ -949,16 +1044,6 @@ func runLocalChat(
 	return 0
 }
 
-// runFronts runs an agent's fronts until one ends or a signal arrives.
-func runFronts(ctx context.Context, fronts []func(context.Context) error, streams cliStreams) int {
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if err := gateway.RunFronts(ctx, fronts, streams.Stderr, nil); err != nil {
-		return reportCLIError(streams.Stderr, err)
-	}
-	return 0
-}
-
 // chatHelpText documents `orb chat` and the platforms linked in.
 func chatHelpText() string {
 	var credentials strings.Builder
@@ -970,8 +1055,11 @@ func chatHelpText() string {
 		credentials.WriteString(strings.TrimRight(line, " ") + "\n")
 	}
 	return `Usage: orb chat <platform>... [--tools]
+       orb chat setup <platform> [flags]
 
 Runs this agent on every platform named, as one process with one memory.
+Setup onboards it on a platform and saves its settings in the data directory,
+as <platform>.env, read under the environment.
 
 Platforms: ` + strings.Join(platforms.Names(), ", ") + `
 
@@ -979,8 +1067,11 @@ Platforms: ` + strings.Join(platforms.Names(), ", ") + `
            Only for an agent running isolated, such as one container per agent.
 
 Common environment:
-  ORB_CHAT_ALLOWED_SENDERS Comma-separated platform user IDs (required for chat platforms)
+  ORB_CHAT_ALLOWED_SENDERS Comma-separated platform user IDs (required by platforms
+                           that do not gate senders themselves; Buzz's allowlist)
   ORB_CHAT_DATA_DIR        Session and spool directory (default ~/.orb/agent/chat/<platform>)
+  ORB_ACP_SOCKET           Also serves the agent over ACP on this Unix socket, for
+                           turns started from outside (orb chat connect <socket>)
   ORB_CHAT_LISTEN          Webhook listen address (default 127.0.0.1:8080)
   ORB_CHAT_PATH            Webhook path with a single webhook platform (default
                            /<platform>; several share one server, each at /<platform>)

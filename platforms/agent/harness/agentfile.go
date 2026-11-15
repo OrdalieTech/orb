@@ -40,24 +40,20 @@ type agentFile struct {
 
 // layout is where the image keeps things; tests point it elsewhere.
 type layout struct {
-	// workspace is where the agent and its sidecars run: a sidecar that is an
-	// ACP client, such as buzz-acp, opens the agent's sessions in its own
-	// working directory, which the agent's tools must be able to enter.
+	// workspace is where the agent runs.
 	home, config, workspace string
 	// engines are the browser engines the image ships, by name, and skills
 	// is agent-browser's skill directory.
 	engines map[string]string
 	skills  string
-	// socket is the agent's ACP socket, and relay the command a sidecar runs
-	// to reach it.
+	// socket is the agent's ACP socket.
 	socket string
-	relay  []string
 }
 
 var image = layout{
 	home: "/agent", config: "/agent/config", workspace: "/agent/workspace", skills: "/usr/local/lib/agent-browser/skills",
 	engines: map[string]string{"lightpanda": "/usr/local/bin/lightpanda", "chromium": "/usr/lib/chromium/chromium-headless-shell"},
-	socket:  "/run/orb/acp.sock", relay: []string{"/usr/bin/nc", "-N", "-U", "/run/orb/acp.sock"},
+	socket:  "/run/orb/acp.sock",
 }
 
 func (image layout) settings() string { return filepath.Join(image.config, "settings.json") }

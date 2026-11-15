@@ -40,7 +40,7 @@ is tested but is not released or is limited. **In progress** is under active dev
 |---|---|---|---|---|---|
 | macOS, Linux (desktop, server) | Stable | all | SQLite (`~/.orb/state`) | full peer | install script |
 | Containers, headless servers | Stable | all | SQLite or files | full peer | same binary |
-| Team agent container | Preview: Buzz (buzz-acp 0.5.26) and Telegram end-to-end in Docker, not in CI | all | SQLite on the agent's volume | full peer | `docker build platforms/agent` |
+| Team agent container | Preview: Buzz (native) live against a Buzz relay and a fake one in the Go suite; Telegram end-to-end in Docker, not in CI | all | SQLite on the agent's volume | full peer | `docker build platforms/agent` |
 | Go SDK embedding | Stable | host-defined | host-defined (`host.Host`) | library | `go get` |
 | Windows | Preview: full suite green in CI, not released yet | all | SQLite | full peer | build from source |
 | Browser (Wasm worker) | Preview | FS tools | tab memory | outbound client | static files |
@@ -78,18 +78,20 @@ without `ps` it inspects `/proc`. The CGo-free static build needs no libc.
 ### Team agent container
 
 One container per team agent: `orb-agent`, the image's entrypoint, sets the agent up from
-`/agent/agent.yaml` and runs `orb chat buzz telegram --tools`, with both fronts on one memory, plus
-buzz-acp for Buzz as a separate user (see `platforms/agent/README.md`). The image adds buzz-acp and
-the `buzz` CLI from Buzz Desktop's `.deb` (glibc 2.39+, so Debian 13) and a shell, git and curl for
-the agent's tools; `browser` variants add agent-browser with Lightpanda or Chromium. The shell's
-`buzz` is Orb, which has the agent run the real CLI with the Buzz key, so the agent's tools reach
-none of its credentials. `orb chat` never trusts the project it works in, where those tools write,
-so the agent's settings come from the agent file alone. The volume `/agent` holds the agent file, config, state and workspace;
-secrets arrive as environment only. Scheduled turns come from a host timer through the agent's
-ACP socket. Evidence so far: the Go suite drives `orb --mode acp`, a Telegram conversation sharing
-memory with an ACP session, and the harness's rendering; the images ran against a local Buzz relay
-with a scripted model (posting, scheduled turns, both browsers). Not yet: a relay run in CI, a
-documented removal command.
+`/agent/agent.yaml` and runs `orb chat buzz telegram --tools`, one process on both platforms with
+one memory (see `platforms/agent/README.md`). Buzz is Orb's own: no Buzz binary, so the image is a
+shell, git and curl for the agent's tools beside Orb, and `browser` variants add agent-browser
+with Lightpanda or Chromium. `orb chat` never trusts the project it works in, where those tools
+write, so the agent's settings come from the agent file alone. The volume `/agent` holds the agent
+file, config, state and workspace; secrets arrive as environment only. Scheduled turns come from a
+host timer through the agent's ACP socket. The same `orb chat buzz` runs outside the image, on any
+platform Orb builds for, with the key in its environment. Evidence so far: the Go suite drives
+`orb --mode acp`, a Telegram conversation sharing memory with an ACP session, the harness's
+rendering and the Buzz adapter against a fake relay (authentication, subscription, cursor,
+threads, replies), and a dedicated agent onboarded with `orb chat setup buzz` on a real relay
+(mentions, thread context, reactions, DMs, presence, catch-up after downtime, seen from the Buzz
+app). The image itself has not run native Buzz yet. Not yet: a real relay run in CI, a documented
+removal command.
 
 ### Go SDK embedding
 

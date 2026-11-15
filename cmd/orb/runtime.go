@@ -621,9 +621,8 @@ func newSessionRuntime(cfg agent.SessionRuntimeConfig) (*agent.SessionRuntime, e
 }
 
 // claudeEnv is the environment Claude Code runs a session with. Its native tools
-// stand in for Orb's, so it is theirs, the ORB_TOOL_ENV allowlist and what Orb
-// exports to its tools included (the buzz shim's socket), plus the Claude login
-// Orb was started with.
+// stand in for Orb's, so it is theirs, the ORB_TOOL_ENV allowlist included,
+// plus the Claude login Orb was started with.
 func claudeEnv() []string {
 	env := toolenv.Environ()
 	if dir, ok := os.LookupEnv("CLAUDE_CONFIG_DIR"); ok {
