@@ -18,8 +18,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
+
 	"github.com/OrdalieTech/orb/chat"
-	"github.com/OrdalieTech/orb/chat/internal/wsclient"
 )
 
 // --- fake gateway plumbing (scripted server over a hijacked connection) ---
@@ -571,7 +572,7 @@ func TestPeerCleanCloseKeepsResumeSession(t *testing.T) {
 			st := &gatewayState{}
 			st.setSeq(9)
 			st.setSession("sess-clean", "wss://resume.example")
-			if err := adapter.classifyGatewayError(st, &wsclient.CloseError{Code: code}); err != nil {
+			if err := adapter.classifyGatewayError(st, websocket.CloseError{Code: websocket.StatusCode(code)}); err != nil {
 				t.Fatalf("classifyGatewayError: %v", err)
 			}
 			if _, _, _, ok := st.session(); !ok {

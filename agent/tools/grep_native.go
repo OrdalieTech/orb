@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -57,11 +59,12 @@ func (tool *grepTool) Execute(
 
 	contextValue := 0.0
 	if input.Context != nil && *input.Context > 0 {
-		contextValue = *input.Context
+		// Clamped so the argument never needs exponent notation, which rg rejects.
+		contextValue = math.Min(math.Floor(*input.Context), truncate.MaxSafeInteger)
 	}
 	effectiveLimit := float64(defaultGrepLimit)
 	if input.Limit != nil {
-		effectiveLimit = math.Max(1, *input.Limit)
+		effectiveLimit = math.Max(1, math.Floor(*input.Limit))
 	}
 	// --no-config: a RIPGREP_CONFIG_PATH with --fixed-strings would turn every regex literal.
 	args := []string{"--no-config", "--json", "--line-number", "--color=never", "--hidden"}
@@ -72,11 +75,29 @@ func (tool *grepTool) Execute(
 		args = append(args, "--fixed-strings")
 	}
 	if input.Glob != nil && *input.Glob != "" {
-		args = append(args, "--glob", *input.Glob)
+		// rg never matches a leading "./"; a leading "!" negates.
+		negation, glob := "", *input.Glob
+		if strings.HasPrefix(glob, "!") {
+			negation, glob = "!", glob[1:]
+		}
+		for strings.HasPrefix(glob, "./") {
+			glob = glob[2:]
+		}
+		args = append(args, "--glob", negation+glob)
 	}
-	args = append(args, "--", input.Pattern, searchPath)
-
-	command := exec.Command(rgPath, args...)
+	if contextValue > 0 {
+		args = append(args, "--context", strconv.FormatFloat(contextValue, 'f', -1, 64))
+	}
+	// rg roots --glob at its cwd, so a directory search runs inside searchPath and searches ".":
+	// rg canonicalizes its cwd, so a symlinked absolute searchPath would not lie under the glob root.
+	target := searchPath
+	if isDirectory {
+		target = "."
+	}
+	command := exec.Command(rgPath, append(args, "--", input.Pattern, target)...)
+	if isDirectory {
+		command.Dir = searchPath
+	}
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		return engine.AgentToolResult{}, upstreamToolErrorf("Failed to run ripgrep: %s", err)
@@ -102,48 +123,74 @@ func (tool *grepTool) Execute(
 		}()
 	}
 
-	type rgMatch struct {
-		FilePath   string
-		LineNumber float64
-		LineText   *string
+	formatPath := func(file string) string {
+		if isDirectory {
+			if !filepath.IsAbs(file) {
+				file = filepath.Join(searchPath, file)
+			}
+			if relative, relErr := filepath.Rel(searchPath, file); relErr == nil && relative != "." && !strings.HasPrefix(relative, "..") {
+				return filepath.ToSlash(relative)
+			}
+		}
+		return filepath.Base(file)
 	}
-	type rgEvent struct {
-		Type string `json:"type"`
-		Data struct {
-			Path struct {
-				Text string `json:"text"`
-			} `json:"path"`
-			LineNumber *float64 `json:"line_number"`
-			Lines      struct {
-				Text *string `json:"text"`
-			} `json:"lines"`
-		} `json:"data"`
+	var outputLines []string
+	// The full output size, including the lines past the byte cap that are counted but not stored.
+	outputBytes, outputLineCount, matchCount := 0, 0, 0
+	linesTruncated := false
+	lastFile := ""
+	pushLine := func(file string, lineNumber float64, text string, isMatch bool) {
+		lastFile = file
+		// Only the line terminator goes: a lone CR inside a line is content, as in the read tool.
+		truncated := truncate.TruncateLine(strings.TrimSuffix(strings.TrimSuffix(text, "\n"), "\r"))
+		linesTruncated = linesTruncated || truncated.WasTruncated
+		separator := ":"
+		if !isMatch {
+			separator = "-"
+		}
+		line := formatPath(file) + separator + formatSearchNumber(lineNumber) + separator + " " + truncated.Text
+		// outputBytes counts a newline after every line; the joined output has one fewer.
+		if outputBytes-1 <= truncate.DefaultMaxBytes {
+			outputLines = append(outputLines, line)
+		}
+		outputBytes += len(line) + 1
+		outputLineCount++
 	}
+
 	reader := bufio.NewReader(stdout)
-	matches := make([]rgMatch, 0, defaultGrepLimit)
-	matchCount := 0
-	matchLimitReached := false
-	killedDueToLimit := false
+	// limitHit is set at the last allowed match: rg still sends its trailing context, kept up to
+	// trailingContextEnd, and the limit notice waits for proof of one more match.
+	limitHit, matchLimitReached, killedDueToLimit := false, false, false
+	trailingContextEnd := 0.0
 	var stdoutErr error
+read:
 	for {
 		line, readErr := reader.ReadString('\n')
-		line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
-		if strings.TrimSpace(line) != "" && !(float64(matchCount) >= effectiveLimit) {
-			var event rgEvent
-			if json.Unmarshal([]byte(line), &event) == nil && event.Type == "match" {
-				matchCount++
-				if event.Data.Path.Text != "" && event.Data.LineNumber != nil {
-					matches = append(matches, rgMatch{
-						FilePath:   event.Data.Path.Text,
-						LineNumber: *event.Data.LineNumber,
-						LineText:   event.Data.Lines.Text,
-					})
+		var event rgEvent
+		if json.Unmarshal([]byte(line), &event) == nil && (event.Type == "match" || event.Type == "context") {
+			isMatch := event.Type == "match"
+			file, lineNumber := event.Data.Path.decode(), event.Data.LineNumber
+			switch {
+			case file == "" || lineNumber == nil:
+			case !limitHit:
+				pushLine(file, *lineNumber, event.Data.Lines.decode(), isMatch)
+				if isMatch {
+					matchCount++
+					if limitHit = float64(matchCount) >= effectiveLimit; limitHit {
+						trailingContextEnd = *lineNumber + contextValue
+					}
 				}
-				if float64(matchCount) >= effectiveLimit {
-					matchLimitReached = true
+			default:
+				inWindow := file == lastFile && *lineNumber <= trailingContextEnd
+				// A match inside the last match's trailing context shows as context.
+				if inWindow {
+					pushLine(file, *lineNumber, event.Data.Lines.decode(), false)
+				}
+				matchLimitReached = matchLimitReached || isMatch
+				if matchLimitReached && !(inWindow && *lineNumber < trailingContextEnd) {
 					killedDueToLimit = true
 					_ = command.Process.Kill()
-					break
+					break read
 				}
 			}
 		}
@@ -183,70 +230,8 @@ func (tool *grepTool) Execute(
 		return textToolResult("No matches found", nil), nil
 	}
 
-	linesTruncated := false
-	fileCache := make(map[string][]string)
-	outputLines := make([]string, 0, len(matches))
-	formatPath := func(path string) string {
-		if isDirectory {
-			relative, relErr := filepath.Rel(searchPath, path)
-			if relErr == nil && relative != "" && !strings.HasPrefix(relative, "..") {
-				return filepath.ToSlash(relative)
-			}
-		}
-		return filepath.Base(path)
-	}
-	getFileLines := func(path string) []string {
-		if lines, ok := fileCache[path]; ok {
-			return lines
-		}
-		content, readErr := tool.operations.ReadFile(preSpawnContext, path)
-		if readErr != nil {
-			fileCache[path] = nil
-			return nil
-		}
-		// Only CRLF ends a line: ripgrep counts a lone CR as part of one, and context lines follow its numbers.
-		lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
-		fileCache[path] = lines
-		return lines
-	}
-	appendLine := func(prefix, text string) {
-		truncated := truncate.TruncateLine(strings.ReplaceAll(text, "\r", ""))
-		linesTruncated = linesTruncated || truncated.WasTruncated
-		outputLines = append(outputLines, prefix+truncated.Text)
-	}
-	for _, match := range matches {
-		relativePath := formatPath(match.FilePath)
-		if contextValue == 0 && match.LineText != nil {
-			lineText := strings.ReplaceAll(*match.LineText, "\r\n", "\n")
-			lineText = strings.ReplaceAll(lineText, "\r", "")
-			lineText = strings.TrimSuffix(lineText, "\n")
-			appendLine(relativePath+":"+formatSearchNumber(match.LineNumber)+": ", lineText)
-			continue
-		}
-		lines := getFileLines(match.FilePath)
-		if len(lines) == 0 {
-			outputLines = append(outputLines, relativePath+":"+formatSearchNumber(match.LineNumber)+": (unable to read file)")
-			continue
-		}
-		start := math.Max(1, match.LineNumber-contextValue)
-		end := math.Min(float64(len(lines)), match.LineNumber+contextValue)
-		for current := start; current <= end; current++ {
-			lineText := ""
-			lineIndex := current - 1
-			if lineIndex == math.Trunc(lineIndex) && lineIndex >= 0 && lineIndex < float64(len(lines)) {
-				lineText = lines[int(lineIndex)]
-			}
-			lineNumber := formatSearchNumber(current)
-			separator := fmt.Sprintf("%s-%s- ", relativePath, lineNumber)
-			if current == match.LineNumber {
-				separator = fmt.Sprintf("%s:%s: ", relativePath, lineNumber)
-			}
-			appendLine(separator, lineText)
-		}
-	}
-
-	rawOutput := strings.Join(outputLines, "\n")
-	truncation := truncate.TruncateHead(rawOutput, truncate.Options{MaxLines: truncate.Int(truncate.MaxSafeInteger)})
+	truncation := truncate.TruncateHead(strings.Join(outputLines, "\n"), truncate.Options{MaxLines: truncate.Int(truncate.MaxSafeInteger)})
+	truncation.TotalLines, truncation.TotalBytes = outputLineCount, outputBytes-1
 	output := truncation.Content
 	details := GrepToolDetails{}
 	notices := make([]string, 0, 3)
@@ -271,4 +256,27 @@ func (tool *grepTool) Execute(
 		resultDetails = details
 	}
 	return textToolResult(output, resultDetails), nil
+}
+
+type rgEvent struct {
+	Type string `json:"type"`
+	Data struct {
+		Path       rgText   `json:"path"`
+		LineNumber *float64 `json:"line_number"`
+		Lines      rgText   `json:"lines"`
+	} `json:"data"`
+}
+
+// rgText is a ripgrep JSON text field; non-UTF-8 data arrives base64-encoded in bytes.
+type rgText struct {
+	Text  string `json:"text"`
+	Bytes string `json:"bytes"`
+}
+
+func (text rgText) decode() string {
+	if text.Bytes == "" {
+		return text.Text
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(text.Bytes)
+	return decodeNodeUTF8(decoded)
 }

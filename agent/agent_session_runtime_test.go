@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -162,7 +163,20 @@ func TestAgentSessionRuntimeNewAndSwitchLifecycle(t *testing.T) {
 	}
 }
 
-func TestAgentSessionRuntimeSettlesActiveToolBeforeReplacementShutdown(t *testing.T) {
+func TestAgentSessionRuntimeSettlesActiveToolBeforeShutdown(t *testing.T) {
+	for name, transition := range map[string]func(*AgentSessionRuntime) error{
+		"replace": func(host *AgentSessionRuntime) error {
+			_, err := host.NewSession(context.Background(), nil)
+			return err
+		},
+		"dispose":         func(host *AgentSessionRuntime) error { host.Dispose(context.Background()); return nil },
+		"session dispose": func(host *AgentSessionRuntime) error { host.Session().Dispose(); return nil },
+	} {
+		t.Run(name, func(t *testing.T) { testSettlesActiveToolBeforeShutdown(t, transition) })
+	}
+}
+
+func testSettlesActiveToolBeforeShutdown(t *testing.T, transition func(*AgentSessionRuntime) error) {
 	cwd := t.TempDir()
 	provider := testFaux(100000)
 	provider.SetResponses([]faux.ResponseStep{
@@ -240,10 +254,7 @@ func TestAgentSessionRuntimeSettlesActiveToolBeforeReplacementShutdown(t *testin
 	}
 
 	replaceDone := make(chan error, 1)
-	go func() {
-		_, replaceErr := host.NewSession(context.Background(), nil)
-		replaceDone <- replaceErr
-	}()
+	go func() { replaceDone <- transition(host) }()
 	select {
 	case <-cancelObserved:
 	case <-shutdown:
@@ -291,6 +302,36 @@ func TestAgentSessionRuntimeSettlesActiveToolBeforeReplacementShutdown(t *testin
 	if assistant := asAssistant(decodeSessionMessage(messages[len(messages)-1])); assistant == nil {
 		t.Fatalf("final message = %#v, want assistant", decodeSessionMessage(messages[len(messages)-1]))
 	}
+}
+
+// Reload during a response asks the caller to wait instead of replacing
+// extensions mid-run (upstream #9222).
+func TestReloadWaitsForTheCurrentResponse(t *testing.T) {
+	provider := testFaux(100000)
+	started := make(chan struct{})
+	provider.SetResponses([]faux.ResponseStep{blockingFauxResponse(provider, started)})
+	cwd := t.TempDir()
+	host, err := NewAgentSessionRuntime(context.Background(), AgentSessionOptions{
+		CWD: cwd, AgentDir: t.TempDir(), StreamFn: provider.StreamSimple, Model: provider.GetModel(),
+		ExtensionRegistry: extensions.NewRegistry(cwd),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { host.Dispose(context.Background()) })
+	session := host.Session()
+	done := make(chan error, 1)
+	go func() { done <- session.PromptSync(context.Background(), "block") }()
+	<-started
+	const want = "Wait for the current response to finish before reloading."
+	if err := session.Reload(context.Background()); err == nil || err.Error() != want {
+		t.Fatalf("session reload = %v", err)
+	}
+	if err := host.Rebuild(context.Background()); err == nil || err.Error() != want || host.Session() != session {
+		t.Fatalf("runtime rebuild = %v", err)
+	}
+	session.Abort()
+	<-done
 }
 
 func TestAgentSessionRuntimeHonorsSwitchCancellation(t *testing.T) {
@@ -423,6 +464,80 @@ func TestAgentSessionRuntimeImportFromJSONL(t *testing.T) {
 	var missing *SessionImportFileNotFoundError
 	if !errors.As(err, &missing) {
 		t.Fatalf("missing import error = %T %v", err, err)
+	}
+}
+
+// A resume or import of a session whose cwd is gone continues it in the
+// current cwd, forks it there under a new ID, or is cancelled leaving no copy
+// behind, for file-backed and repository-backed sessions (pi #11060, #11975).
+func TestMissingSessionCWDContinuesForksOrCancels(t *testing.T) {
+	operations := map[string]func(*AgentSessionRuntime, string) (extensions.SessionReplacementResult, error){
+		"resume": func(host *AgentSessionRuntime, path string) (extensions.SessionReplacementResult, error) {
+			return host.SwitchSession(context.Background(), path, nil)
+		},
+		"import": func(host *AgentSessionRuntime, path string) (extensions.SessionReplacementResult, error) {
+			return host.ImportFromJSONL(context.Background(), path, "")
+		},
+	}
+	backends := map[string]func(t *testing.T, cwd string) *AgentSessionRuntime{
+		"files": func(t *testing.T, cwd string) *AgentSessionRuntime {
+			provider := testFaux(100000)
+			host, err := NewAgentSessionRuntime(context.Background(), AgentSessionOptions{
+				CWD: cwd, AgentDir: t.TempDir(), StreamFn: provider.StreamSimple, Model: provider.GetModel(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { host.Dispose(context.Background()) })
+			return host
+		},
+		"repo": func(t *testing.T, cwd string) *AgentSessionRuntime {
+			host, _ := newFidelityHarnessRepoRuntime(t, cwd, nil)
+			return host
+		},
+	}
+	for backendName, newHost := range backends {
+		for operationName, operation := range operations {
+			for _, choice := range []MissingSessionCWDChoice{"", MissingSessionCWDContinue, MissingSessionCWDFork} {
+				t.Run(backendName+"/"+operationName+"/"+cmp.Or(string(choice), "cancel"), func(t *testing.T) {
+					cwd := t.TempDir()
+					host := newHost(t, cwd)
+					source := filepath.Join(t.TempDir(), "gone.jsonl")
+					if err := os.WriteFile(source, stableRuntimeSessionJSONL(filepath.Join(cwd, "removed"), "gone"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+					host.SetMissingSessionCWD(func(_ context.Context, issue *MissingSessionCWDError) (MissingSessionCWDChoice, error) {
+						if issue.FallbackCWD != cwd {
+							t.Errorf("fallback cwd = %q", issue.FallbackCWD)
+						}
+						return choice, nil
+					})
+					before := host.Session()
+					result, err := operation(host, source)
+					if err != nil || result.Cancelled != (choice == "") {
+						t.Fatalf("result %#v, %v", result, err)
+					}
+					manager := host.Session().Manager()
+					if copies, _ := filepath.Glob(filepath.Join(host.Services().AgentDir, "sessions", "*", "gone.jsonl")); choice != MissingSessionCWDContinue && len(copies) != 0 {
+						t.Fatalf("a cancelled or forked open left a copy of the original: %v", copies)
+					}
+					switch choice {
+					case "":
+						if host.Session() != before {
+							t.Fatal("a cancelled open replaced the session")
+						}
+					case MissingSessionCWDContinue:
+						if manager.GetSessionID() != "gone" || manager.GetCWD() != cwd {
+							t.Fatalf("continued %s in %s", manager.GetSessionID(), manager.GetCWD())
+						}
+					case MissingSessionCWDFork:
+						if manager.GetSessionID() == "gone" || manager.GetCWD() != cwd || len(manager.BuildSessionContext().Messages) == 0 {
+							t.Fatalf("forked %s in %s", manager.GetSessionID(), manager.GetCWD())
+						}
+					}
+				})
+			}
+		}
 	}
 }
 

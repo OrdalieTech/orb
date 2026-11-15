@@ -402,7 +402,7 @@
     },
     {
       "id": "openai-codex",
-      "name": "OpenAI Codex (legacy)",
+      "name": "OpenAI Codex",
       "baseUrl": "https://chatgpt.com/backend-api",
       "apis": [
         "openai-codex-responses"
@@ -509,6 +509,22 @@
         "name": "Qwen Token Plan Individual API key",
         "env": [
           "QWEN_TOKEN_PLAN_API_KEY"
+        ],
+        "oauth": false
+      }
+    },
+    {
+      "id": "qwen-token-plan-individual-cn",
+      "name": "Qwen Token Plan Individual CN",
+      "baseUrl": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      "apis": [
+        "openai-completions"
+      ],
+      "auth": {
+        "kind": "api_key",
+        "name": "Qwen Token Plan Individual CN API key",
+        "env": [
+          "QWEN_TOKEN_PLAN_CN_API_KEY"
         ],
         "oauth": false
       }

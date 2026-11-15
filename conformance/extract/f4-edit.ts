@@ -10,9 +10,7 @@ type Edit = {
 type FixtureCase = {
   name: string;
   operation:
-    | "detect-line-ending"
     | "normalize-lf"
-    | "restore-line-endings"
     | "strip-bom"
     | "normalize-fuzzy"
     | "fuzzy-find"
@@ -26,14 +24,14 @@ type FixtureCase = {
   newText?: string;
   edits?: Edit[];
   path?: string;
-  ending?: "\r\n" | "\n";
   contextLines?: number;
 };
 
+type TextReplacement = { matchIndex: number; matchLength: number; newText: string };
+
 interface EditDiffModule {
-  detectLineEnding(content: string): "\r\n" | "\n";
   normalizeToLF(text: string): string;
-  restoreLineEndings(text: string, ending: "\r\n" | "\n"): string;
+  applyReplacementsToOriginal(originalContent: string, replacements: TextReplacement[]): string;
   normalizeForFuzzyMatch(text: string): string;
   fuzzyFindText(content: string, oldText: string): unknown;
   splitBom(content: string): { bom: string; text: string };
@@ -41,7 +39,13 @@ interface EditDiffModule {
     normalizedContent: string,
     edits: Edit[],
     path: string,
-  ): { baseContent: string; newContent: string };
+  ): { baseContent: string; newContent: string; replacements: TextReplacement[] };
+  generateEditDiff(
+    path: string,
+    baseContent: string,
+    newContent: string,
+    replacements: TextReplacement[],
+  ): { diff: string; patch: string; firstChangedLine: number | undefined };
   generateDiffString(
     oldContent: string,
     newContent: string,
@@ -55,54 +59,10 @@ const editDiffSource = "packages/coding-agent/src/core/tools/edit-diff.ts";
 
 const basicCases: FixtureCase[] = [
   {
-    name: "detect-line-ending-empty",
-    operation: "detect-line-ending",
-    upstreamCase: `${editDiffSource}:detectLineEnding default`,
-    content: "",
-  },
-  {
-    name: "detect-line-ending-lf",
-    operation: "detect-line-ending",
-    upstreamCase: `${toolsTest}:edit tool CRLF handling/preserve LF`,
-    content: "first\nsecond\n",
-  },
-  {
-    name: "detect-line-ending-crlf",
-    operation: "detect-line-ending",
-    upstreamCase: `${toolsTest}:edit tool CRLF handling/preserve CRLF`,
-    content: "first\r\nsecond\r\n",
-  },
-  {
-    name: "detect-line-ending-first-sequence-wins-lf",
-    operation: "detect-line-ending",
-    upstreamCase: `${editDiffSource}:detectLineEnding mixed input`,
-    content: "first\nsecond\r\nthird\n",
-  },
-  {
-    name: "detect-line-ending-first-sequence-wins-crlf",
-    operation: "detect-line-ending",
-    upstreamCase: `${editDiffSource}:detectLineEnding mixed input`,
-    content: "first\r\nsecond\nthird\r\n",
-  },
-  {
     name: "normalize-lf-crlf-and-cr",
     operation: "normalize-lf",
     upstreamCase: `${editDiffSource}:normalizeToLF`,
     content: "one\r\ntwo\rthree\nfour",
-  },
-  {
-    name: "restore-line-endings-crlf",
-    operation: "restore-line-endings",
-    upstreamCase: `${toolsTest}:edit tool CRLF handling/preserve CRLF`,
-    content: "one\ntwo\nthree\n",
-    ending: "\r\n",
-  },
-  {
-    name: "restore-line-endings-lf",
-    operation: "restore-line-endings",
-    upstreamCase: `${toolsTest}:edit tool CRLF handling/preserve LF`,
-    content: "one\ntwo\nthree\n",
-    ending: "\n",
   },
   {
     name: "strip-bom-present",
@@ -473,6 +433,105 @@ const pipelineCases: FixtureCase[] = [
     edits: [{ oldText: "hello\nworld\n", newText: "replaced\n" }],
   },
   {
+    name: "line-endings-default-lf-without-line-breaks",
+    operation: "edit-pipeline",
+    upstreamCase: `${editDiffSource}:getLineEndingAt default`,
+    path: "single-line.txt",
+    content: "only",
+    edits: [{ oldText: "only", newText: "one\ntwo" }],
+  },
+  {
+    name: "line-endings-lf-for-inserted-lines",
+    operation: "edit-pipeline",
+    upstreamCase: `${toolsTest}:edit tool CRLF handling/write LF for inserted lines in LF files`,
+    path: "lf-bytes.txt",
+    content: "first\nsecond\nthird",
+    edits: [{ oldText: "second\nthird", newText: "2a\r\n2b\nthird!" }],
+  },
+  {
+    name: "line-endings-crlf-for-inserted-lines",
+    operation: "edit-pipeline",
+    upstreamCase: `${toolsTest}:edit tool CRLF handling/write CRLF for inserted lines in CRLF files`,
+    path: "crlf-bytes.txt",
+    content: "first\r\nsecond\r\nthird",
+    edits: [{ oldText: "second\nthird", newText: "2a\r\n2b\nthird!" }],
+  },
+  {
+    name: "line-endings-crlf-multi-line-replacement",
+    operation: "edit-pipeline",
+    upstreamCase: `${toolsTest}:edit tool CRLF handling/preserve CRLF`,
+    path: "crlf-multi-line.txt",
+    content: "one\r\ntwo\r\nthree\r\n",
+    edits: [{ oldText: "two\nthree\n", newText: "TWO\nTHREE\nFOUR\n" }],
+  },
+  {
+    name: "line-endings-classic-mac-cr",
+    operation: "edit-pipeline",
+    upstreamCase: `${editDiffSource}:getLineEndingAt lone CR without LF`,
+    path: "classic-mac.txt",
+    content: "one\rtwo\rthree\r",
+    edits: [{ oldText: "two\n", newText: "2a\n2b\n" }],
+  },
+  {
+    name: "mixed-endings-lf-first-keeps-crlf-lines",
+    operation: "edit-pipeline",
+    upstreamCase: `${toolsTest}:edit tool CRLF handling/keep CRLF lines when the first line ends with LF (#8544)`,
+    path: "mixed-lf-first.txt",
+    content: "a\nb\r\nX = 1\r\n",
+    edits: [{ oldText: "X = 1", newText: "X = 2" }],
+  },
+  {
+    name: "mixed-endings-crlf-first-keeps-lf-lines",
+    operation: "edit-pipeline",
+    upstreamCase: `${toolsTest}:edit tool CRLF handling/keep LF lines when the first line ends with CRLF (#8544)`,
+    path: "mixed-crlf-first.txt",
+    content: "a\r\nb\nc",
+    edits: [{ oldText: "c", newText: "C" }],
+  },
+  {
+    name: "mixed-endings-multi-edit-takes-replaced-line-ending",
+    operation: "edit-pipeline",
+    upstreamCase: `${toolsTest}:edit tool CRLF handling/line ending of the replaced line in multi-edit mode (#8544)`,
+    path: "mixed-multi.txt",
+    content: "lf1\nlf2\ncr1\r\ncr2\r\n",
+    edits: [
+      { oldText: "lf1\n", newText: "A\nB\n" },
+      { oldText: "cr1\n", newText: "C\nD\n" },
+    ],
+  },
+  {
+    name: "mixed-endings-fuzzy-widened-lines",
+    operation: "edit-pipeline",
+    upstreamCase: `${toolsTest}:edit tool CRLF handling/untouched endings when fuzzy matching widens the edit (#8544)`,
+    path: "mixed-fuzzy.txt",
+    content: "a\r\nfoo   \r\nb\n",
+    edits: [{ oldText: "foo\n", newText: "FOO\n" }],
+  },
+  {
+    name: "lone-cr-untouched-line-kept",
+    operation: "edit-pipeline",
+    upstreamCase: `${toolsTest}:edit tool CRLF handling/keep a lone CR in an untouched line (#8544)`,
+    path: "lone-cr.txt",
+    content: "a\rb\nX = 1\n",
+    edits: [{ oldText: "X = 1", newText: "X = 2" }],
+  },
+  {
+    name: "lone-cr-seam-inserted-line-feed",
+    operation: "edit-pipeline",
+    upstreamCase: `${toolsTest}:edit tool CRLF handling/not merge a kept lone CR with a line feed after it`,
+    path: "cr-seam-insert.txt",
+    content: "a\rb\nc",
+    edits: [{ oldText: "b", newText: "\nB" }],
+  },
+  {
+    name: "lone-cr-seam-deleted-range",
+    operation: "edit-pipeline",
+    upstreamCase: `${toolsTest}:edit tool CRLF handling/not merge a kept lone CR with a line feed after it`,
+    path: "cr-seam-delete.txt",
+    content: "a\rb\nc",
+    edits: [{ oldText: "b", newText: "" }],
+  },
+  {
     name: "bom-preserved-after-edit",
     operation: "edit-pipeline",
     upstreamCase: `${toolsTest}:edit tool CRLF handling/preserve UTF-8 BOM`,
@@ -555,6 +614,17 @@ const diffCases: FixtureCase[] = [
     ],
   },
   {
+    name: "diff-window-nearby-edits-merge",
+    operation: "edit-pipeline",
+    upstreamCase: `${editDiffSource}:generateEditDiff overlapping windows merge`,
+    path: "edit-window-merge.txt",
+    content: `${Array.from({ length: 120 }, (_, index) => `line ${String(index + 1).padStart(3, "0")}`).join("\n")}\n`,
+    edits: [
+      { oldText: "line 030\n", newText: "LINE 030\nINSERTED\n" },
+      { oldText: "line 070\nline 071\n", newText: "LINE 070\n" },
+    ],
+  },
+  {
     name: "patch-simple-single-line",
     operation: "patch",
     upstreamCase: `${toolsTest}:edit tool/replace text in file patch`,
@@ -615,15 +685,8 @@ function requireEdits(fixtureCase: FixtureCase): Edit[] {
 
 function executeCase(editDiff: EditDiffModule, fixtureCase: FixtureCase): unknown {
   switch (fixtureCase.operation) {
-    case "detect-line-ending":
-      return editDiff.detectLineEnding(requireString(fixtureCase.content, "content", fixtureCase));
     case "normalize-lf":
       return editDiff.normalizeToLF(requireString(fixtureCase.content, "content", fixtureCase));
-    case "restore-line-endings":
-      return editDiff.restoreLineEndings(
-        requireString(fixtureCase.content, "content", fixtureCase),
-        fixtureCase.ending ?? "\n",
-      );
     case "strip-bom":
       return editDiff.splitBom(requireString(fixtureCase.content, "content", fixtureCase));
     case "normalize-fuzzy":
@@ -633,27 +696,38 @@ function executeCase(editDiff: EditDiffModule, fixtureCase: FixtureCase): unknow
         requireString(fixtureCase.content, "content", fixtureCase),
         requireString(fixtureCase.oldText, "oldText", fixtureCase),
       );
-    case "apply":
-      return editDiff.applyEditsToNormalizedContent(
+    case "apply": {
+      // Replacement offsets are JavaScript UTF-16 offsets; edit-pipeline cases check their effect.
+      const { baseContent, newContent } = editDiff.applyEditsToNormalizedContent(
         requireString(fixtureCase.content, "content", fixtureCase),
         requireEdits(fixtureCase),
         requireString(fixtureCase.path, "path", fixtureCase),
       );
+      return { baseContent, newContent };
+    }
     case "edit-pipeline": {
       const rawContent = requireString(fixtureCase.content, "content", fixtureCase);
       const pathValue = requireString(fixtureCase.path, "path", fixtureCase);
       const { bom, text } = editDiff.splitBom(rawContent);
-      const ending = editDiff.detectLineEnding(text);
       const normalizedContent = editDiff.normalizeToLF(text);
       const applied = editDiff.applyEditsToNormalizedContent(normalizedContent, requireEdits(fixtureCase), pathValue);
-      const generatedDiff = editDiff.generateDiffString(applied.baseContent, applied.newContent);
+      const editDiffResult = editDiff.generateEditDiff(
+        pathValue,
+        applied.baseContent,
+        applied.newContent,
+        applied.replacements,
+      );
+      const finalContent =
+        text === normalizedContent
+          ? applied.newContent
+          : editDiff.applyReplacementsToOriginal(text, applied.replacements);
       return {
-        finalContent: bom + editDiff.restoreLineEndings(applied.newContent, ending),
+        finalContent: bom + finalContent,
         baseContent: applied.baseContent,
         newContent: applied.newContent,
-        diff: generatedDiff.diff,
-        ...(generatedDiff.firstChangedLine === undefined ? {} : { firstChangedLine: generatedDiff.firstChangedLine }),
-        patch: editDiff.generateUnifiedPatch(pathValue, applied.baseContent, applied.newContent),
+        diff: editDiffResult.diff,
+        ...(editDiffResult.firstChangedLine === undefined ? {} : { firstChangedLine: editDiffResult.firstChangedLine }),
+        patch: editDiffResult.patch,
       };
     }
     case "diff":

@@ -103,7 +103,7 @@ func TestWebhookServiceURLBinding(t *testing.T) {
 // signed by a freshly rotated key is accepted after a forced JWKS refetch.
 func TestJWKSRotationRefetch(t *testing.T) {
 	env := newTestEnv(t)
-	env.adapter.validator.refetchFloor = 0
+	env.adapter.validator.keys.Floor = 0
 	handler := env.adapter.Webhook(func(chat.Message) error { return nil })
 	serviceURL := env.connector.server.URL
 

@@ -2,6 +2,7 @@ package host
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -22,7 +23,8 @@ import (
 )
 
 type stateHost struct {
-	mu sync.RWMutex
+	mu      sync.RWMutex
+	deltaMu sync.Mutex
 
 	base              stateSnapshot
 	registrations     map[string]*stateRegistrations
@@ -42,6 +44,7 @@ type stateHost struct {
 	sessionCacheRevision uint64
 	sessionCache         *stateSessionSnapshot
 	sentSessionRevisions map[string]bool
+	sentModels           map[string][sha256.Size]byte
 }
 
 type stateRegistrations struct {
@@ -175,6 +178,7 @@ func newStateHost(options Options) *stateHost {
 		execCancels:          make(map[string]context.CancelFunc),
 		execCancelled:        make(map[string]bool),
 		sentSessionRevisions: make(map[string]bool),
+		sentModels:           make(map[string][sha256.Size]byte),
 	}
 }
 
@@ -203,6 +207,7 @@ func (host *stateHost) reset(entries []extensionEntry) {
 	host.releaseLocked()
 	host.registrations = make(map[string]*stateRegistrations, len(entries))
 	host.sentSessionRevisions = make(map[string]bool)
+	host.sentModels = make(map[string][sha256.Size]byte)
 	for _, entry := range entries {
 		host.registrations[entry.ID] = &stateRegistrations{flags: make(map[string]wireFlag), bus: make(map[string]wireBusSubscription)}
 		if _, exists := host.snapshots[entry.ID]; !exists {
@@ -933,33 +938,49 @@ func (host *stateHost) refreshAndPush(manager *Manager, generation *generation, 
 }
 
 func (host *stateHost) writeStateDelta(generation *generation, extensionID string, snapshot stateSnapshot) error {
+	host.deltaMu.Lock()
+	defer host.deltaMu.Unlock()
+	// Callbacks run per streaming token and the model catalog is large, so an
+	// unchanged registry stays off the wire; the host keeps its last copy.
+	models, err := ai.Marshal(snapshot.Models)
+	if err != nil {
+		return err
+	}
+	modelsSum := sha256.Sum256(models)
 	host.mu.RLock()
 	sessionSent := host.sentSessionRevisions[snapshot.SessionRevision]
+	if host.sentModels[extensionID] == modelsSum {
+		models = nil
+	}
 	host.mu.RUnlock()
 	if sessionSent {
 		snapshot.Session = nil
 	}
-	markSessionSent := func() {
-		if snapshot.SessionRevision == "" {
-			return
-		}
+	markSent := func() {
 		host.mu.Lock()
-		host.sentSessionRevisions[snapshot.SessionRevision] = true
+		if snapshot.SessionRevision != "" {
+			host.sentSessionRevisions[snapshot.SessionRevision] = true
+		}
+		host.sentModels[extensionID] = modelsSum
 		host.mu.Unlock()
+	}
+	type wireSnapshot struct {
+		stateSnapshot
+		Models json.RawMessage `json:"modelRegistry,omitempty"`
 	}
 	frameFor := func(transferID string) (frame, error) {
 		return eventFrame("state_delta", struct {
-			ExtensionID       string        `json:"extensionId"`
-			Snapshot          stateSnapshot `json:"stateSnapshot"`
-			SessionTransferID string        `json:"sessionTransferId,omitempty"`
-		}{extensionID, snapshot, transferID})
+			ExtensionID       string       `json:"extensionId"`
+			Snapshot          wireSnapshot `json:"stateSnapshot"`
+			SessionTransferID string       `json:"sessionTransferId,omitempty"`
+		}{extensionID, wireSnapshot{snapshot, models}, transferID})
 	}
 	value, err := frameFor("")
 	if err != nil {
 		return err
 	}
 	if err = generation.codec.write(value); err == nil {
-		markSessionSent()
+		markSent()
 		return nil
 	}
 	if !errors.Is(err, ErrFrameTooLarge) || snapshot.Session == nil {
@@ -991,7 +1012,7 @@ func (host *stateHost) writeStateDelta(generation *generation, extensionID strin
 	if err = generation.codec.write(value); err != nil {
 		return err
 	}
-	markSessionSent()
+	markSent()
 	return nil
 }
 

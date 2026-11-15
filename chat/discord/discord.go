@@ -1,10 +1,10 @@
 // Package discord implements the Discord adapter for the orb chat
-// gateway: Gateway (WebSocket) ingress over the internal RFC 6455 client —
+// gateway: Gateway (WebSocket) ingress over github.com/coder/websocket —
 // hello/heartbeat/identify, READY capture, resume-first reconnects — plus
 // REST delivery with a refreshed typing indicator, streamed preview edits,
 // chunked finalization with mass-mention suppression, and pre-signed
 // attachment download. It plugs into the chat processor via [chat.Adapter];
-// ingress runs through [Adapter.Run].
+// ingress runs through [Adapter.Poll].
 package discord
 
 import (
@@ -75,7 +75,7 @@ type Adapter struct {
 var _ chat.Adapter = (*Adapter)(nil)
 
 // New creates a Discord adapter. It performs no network calls; the gateway
-// session starts with [Adapter.Run].
+// session starts with [Adapter.Poll].
 func New(opts Options) (*Adapter, error) {
 	if opts.Token == "" {
 		return nil, errors.New("discord: Options.Token is required")

@@ -14,7 +14,7 @@ import (
 
 const defaultGrepLimit = 100
 
-var grepSchema = jsonschema.Schema(`{"type":"object","required":["pattern"],"properties":{"pattern":{"type":"string","description":"Search pattern (regex or literal string)"},"path":{"type":"string","description":"Directory or file to search (default: current directory)"},"glob":{"type":"string","description":"Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'"},"ignoreCase":{"type":"boolean","description":"Case-insensitive search (default: false)"},"literal":{"type":"boolean","description":"Treat pattern as literal string instead of regex (default: false)"},"context":{"type":"number","description":"Number of lines to show before and after each match (default: 0)"},"limit":{"type":"number","description":"Maximum number of matches to return (default: 100)"}}}`)
+var grepSchema = jsonschema.Schema(`{"type":"object","required":["pattern"],"properties":{"pattern":{"type":"string","description":"Search pattern (regex or literal string)"},"path":{"type":"string","description":"Directory or file to search (default: current directory)"},"glob":{"type":"string","description":"Filter files by glob pattern, relative to path, e.g. '*.ts', 'src/**/*.ts' or '**/*.spec.ts'. A pattern without '/' matches file names at any depth"},"ignoreCase":{"type":"boolean","description":"Case-insensitive search (default: false)"},"literal":{"type":"boolean","description":"Treat pattern as literal string instead of regex (default: false)"},"context":{"type":"number","description":"Number of lines to show before and after each match (default: 0)"},"limit":{"type":"number","description":"Maximum number of matches to return (default: 100)"}}}`)
 
 type GrepToolInput struct {
 	Pattern    string   `json:"pattern"`
@@ -32,10 +32,10 @@ type GrepToolDetails struct {
 	LinesTruncated    bool             `json:"linesTruncated,omitempty"`
 }
 
-// GrepOperations is the delegation seam for grep file metadata and context reads.
+// GrepOperations is the delegation seam for grep file metadata. The search always runs the local
+// ripgrep, which also supplies the context lines.
 type GrepOperations interface {
 	IsDirectory(context.Context, string) (bool, error)
-	ReadFile(context.Context, string) (string, error)
 }
 
 type GrepToolOptions struct {
@@ -55,14 +55,6 @@ func (localGrepOperations) IsDirectory(_ context.Context, path string) (bool, er
 		return false, err
 	}
 	return info.IsDir(), nil
-}
-
-func (localGrepOperations) ReadFile(_ context.Context, path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return decodeNodeUTF8(data), nil
 }
 
 func NewGrepTool(cwd string, options *GrepToolOptions) engine.AgentTool {

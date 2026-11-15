@@ -144,8 +144,7 @@ func AppendCompact(dst, raw []byte) ([]byte, error) {
 		}
 		dst = buffer.Bytes()
 	}
-	// Both fixes shorten the value when they change it.
-	if value := normalizeNegativeZeros(restoreLineSeparators(dst[start:])); len(value) < len(dst)-start {
+	if value := normalizeNegativeZeros(restoreLineSeparators(dst[start:])); !bytes.Equal(value, dst[start:]) {
 		dst = append(dst[:start], value...)
 	}
 	return dst, nil
@@ -322,6 +321,16 @@ func decodeEscapedCodeUnit(data []byte, index, end int) (uint16, error) {
 		return 0, fmt.Errorf("jsonwire: invalid Unicode escape: %w", err)
 	}
 	return uint16(value), nil
+}
+
+// UTF16Len is JavaScript's String.prototype.length of value: its UTF-16 code
+// units, an invalid byte counting as one.
+func UTF16Len(value string) int {
+	length := 0
+	for _, r := range value {
+		length += utf16.RuneLen(r)
+	}
+	return length
 }
 
 func writeWTF8CodeUnit(output *bytes.Buffer, unit uint16) {

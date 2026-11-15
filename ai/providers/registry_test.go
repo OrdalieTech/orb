@@ -16,9 +16,10 @@ type providerFixture struct {
 	BaseURL string        `json:"baseUrl"`
 	APIs    []ai.API      `json:"apis"`
 	Auth    struct {
-		Kind  providers.AuthKind `json:"kind"`
-		Env   []string           `json:"env"`
-		OAuth bool               `json:"oauth"`
+		Kind  string   `json:"kind"`
+		Name  string   `json:"name"`
+		Env   []string `json:"env"`
+		OAuth bool     `json:"oauth"`
 	} `json:"auth"`
 }
 
@@ -47,7 +48,11 @@ func TestRegistryMatchesPinnedUpstream(t *testing.T) {
 		if expected.ID == "azure" {
 			expected.APIs = []ai.API{ai.APIAzureOpenAIResponses}
 		}
-		if got.ID != expected.ID || got.Name != expected.Name || got.BaseURL != expected.BaseURL || got.Auth != expected.Auth.Kind || got.OAuth != expected.Auth.OAuth || !slices.Equal(got.APIs, expected.APIs) || !slices.Equal(got.Env, env) {
+		apiKeyName := ""
+		if got.Methods.APIKey != nil {
+			apiKeyName = got.Methods.APIKey.Name()
+		}
+		if got.ID != expected.ID || got.Name != expected.Name || got.BaseURL != expected.BaseURL || authKind(got) != expected.Auth.Kind || apiKeyName != expected.Auth.Name || (got.Methods.OAuth != nil) != expected.Auth.OAuth || !slices.Equal(got.APIs, expected.APIs) || !slices.Equal(got.Env, env) {
 			t.Fatalf("provider %d mismatch\n got: %#v\nwant: %#v", index, got, expected)
 		}
 		if _, ok := providers.Get(expected.ID); !ok {
@@ -73,6 +78,14 @@ func TestEveryRegisteredProviderHasBuiltinModels(t *testing.T) {
 			t.Errorf("registered provider %q has no --list-models entry", provider.ID)
 		}
 	}
+}
+
+// authKind is the upstream auth kind: api_key whenever an API key resolves.
+func authKind(provider providers.Provider) string {
+	if provider.Methods.APIKey != nil {
+		return "api_key"
+	}
+	return "oauth"
 }
 
 func mustProvider(t *testing.T, id ai.ProviderID) providers.Provider {

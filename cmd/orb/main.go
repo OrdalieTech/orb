@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -50,8 +51,8 @@ import (
 var version = "dev"
 
 const (
-	upstreamVersion     = "1.5.0"
-	upstreamCommit      = "f9a26365568127461c47a07a37dcb42c140a3ac5"
+	upstreamVersion     = "1.5.2"
+	upstreamCommit      = "b4afdddf44e059c67ccf5097e5317d913521b470"
 	latestReleaseURL    = selfupdate.LatestReleaseURL
 	versionCheckTimeout = 10 * time.Second
 )
@@ -73,7 +74,7 @@ type cliDependencies struct {
 	refreshModels           func(context.Context, string) error
 	runInteractive          func(context.Context, *agent.SessionRuntime, modes.InteractiveModeOptions) int
 	selectSession           SessionSelector
-	selectMissingSessionCWD func(context.Context, *agent.MissingSessionCWDError) (string, bool, error)
+	selectMissingSessionCWD func(context.Context, *agent.MissingSessionCWDError) (agent.MissingSessionCWDChoice, error)
 	runRPCFixture           func(context.Context, CLIArgs, cliStreams, string) (handled bool, code int)
 	selfUpdate              func(context.Context, io.Writer, bool, bool) int
 }
@@ -228,14 +229,14 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		}
 	}
 	if dependencies.selectMissingSessionCWD == nil {
-		dependencies.selectMissingSessionCWD = func(ctx context.Context, issue *agent.MissingSessionCWDError) (string, bool, error) {
-			return modes.RunStartupSelector(ctx, modes.StartupSelectorOptions{
-				Title: modes.MissingSessionCWDPrompt(issue),
-				Choices: []modes.StartupChoice{
-					{Label: "Continue", Value: issue.FallbackCWD},
-					{Label: "Cancel", Cancel: true},
-				},
-			})
+		dependencies.selectMissingSessionCWD = func(ctx context.Context, issue *agent.MissingSessionCWDError) (agent.MissingSessionCWDChoice, error) {
+			title, options := modes.MissingSessionCWDPrompt(issue)
+			choices := make([]modes.StartupChoice, len(options))
+			for index, option := range options {
+				choices[index] = modes.StartupChoice{Label: option.Label, Value: string(option.Choice), Cancel: option.Choice == ""}
+			}
+			choice, _, err := modes.RunStartupSelector(ctx, modes.StartupSelectorOptions{Title: title, Choices: choices})
+			return agent.MissingSessionCWDChoice(choice), err
 		}
 	}
 	if len(argv) > 0 && argv[0] == "bridge" {
@@ -471,25 +472,39 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		if !isInteractive {
 			return reportCLIError(streams.Stderr, issue)
 		}
-		selectedCWD, selected, selectErr := dependencies.selectMissingSessionCWD(ctx, issue)
+		choice, selectErr := dependencies.selectMissingSessionCWD(ctx, issue)
 		if selectErr != nil {
 			return reportCLIError(streams.Stderr, selectErr)
 		}
-		if !selected {
+		if choice == "" {
 			return 0
 		}
 		agentDir, dirErr := config.GetAgentDir()
 		if dirErr != nil {
 			return reportCLIError(streams.Stderr, dirErr)
 		}
-		if args.native != nil {
+		switch {
+		case choice == agent.MissingSessionCWDFork:
+			// Forked like --fork, so the next resume opens the fork here without asking (pi #11060).
+			var settings *config.SettingsManager
+			var sessionDir string
+			if settings, err = config.NewSettingsManager(cwd, config.WithAgentDir(agentDir)); err == nil {
+				sessionDir, err = resolveCLISessionDir(args, settings)
+			}
+			if err == nil {
+				manager, err = agent.ForkSessionInto(ctx, manager, cwd, sessionDir)
+			}
+			if err == nil && args.native != nil {
+				err = args.native.BindSession(manager)
+			}
+		case args.native != nil:
 			var opened *harness.Session
 			opened, err = args.native.Sessions().OpenPath(ctx, manager.GetSessionID())
 			if err == nil {
-				manager, err = session.FromHarnessStorage(opened.Storage(), session.WithHarnessRepo(args.native.Sessions()), session.WithCwdOverride(selectedCWD))
+				manager, err = session.FromHarnessStorage(opened.Storage(), session.WithHarnessRepo(args.native.Sessions()), session.WithCwdOverride(cwd))
 			}
-		} else {
-			manager, err = session.Open(issue.SessionFile, manager.GetSessionDir(), session.WithAgentDir(agentDir), session.WithCwdOverride(selectedCWD))
+		default:
+			manager, err = session.Open(issue.SessionFile, manager.GetSessionDir(), session.WithAgentDir(agentDir), session.WithCwdOverride(cwd))
 		}
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
@@ -593,7 +608,11 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 		sessionHost.Dispose(ctx)
 		return reportCLIError(streams.Stderr, err)
 	}
-	defer sessionHost.Dispose(ctx)
+	defer func() {
+		// A signal during the final disposal does not cut it short; a second one exits at once.
+		defer catchShutdownSignals(nil)()
+		sessionHost.Dispose(ctx)
+	}()
 
 	var stdinContent *string
 	if !streams.StdinTTY {
@@ -830,21 +849,33 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 	}
 	dataDir := strings.TrimSpace(os.Getenv("ORB_CHAT_DATA_DIR"))
 	if dataDir == "" {
-		dataDir = filepath.Join(agentDir, "chat", strings.Join(chats, "+"))
+		names := slices.Clone(chats)
+		slices.Sort(names)
+		dataDir = filepath.Join(agentDir, "chat", strings.Join(slices.Compact(names), "+"))
 	}
+	logger := slog.New(slog.NewTextHandler(streams.Stderr, nil))
 	var adapters []chat.Adapter
 	var ingresses []func(context.Context, func(chat.Message) error) error
+	webhooks := map[string]func(func(chat.Message) error) http.Handler{}
 	for _, platform := range chats {
 		open, _ := platforms.Lookup(platform)
-		adapter, inbound, err := open.Open(os.Environ())
+		adapter, inbound, err := open.Open(os.Environ(), logger)
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
-		ingress := inbound.Poll
+		adapters = append(adapters, adapter)
 		if inbound.Webhook != nil {
-			ingress = gateway.Webhook(platform, strings.TrimSpace(os.Getenv("ORB_CHAT_LISTEN")), strings.TrimSpace(os.Getenv("ORB_CHAT_PATH")), inbound.Webhook)
+			webhooks[platform] = inbound.Webhook
+		} else {
+			ingresses = append(ingresses, inbound.Poll)
 		}
-		adapters, ingresses = append(adapters, adapter), append(ingresses, ingress)
+	}
+	if len(webhooks) > 0 {
+		ingress, err := gateway.Webhooks(strings.TrimSpace(os.Getenv("ORB_CHAT_LISTEN")), strings.TrimSpace(os.Getenv("ORB_CHAT_PATH")), webhooks)
+		if err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		ingresses = append(ingresses, ingress)
 	}
 	var workspace []chat.LocalProviderOption
 	if tools {
@@ -854,7 +885,7 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 		}
 		workspace = append(workspace, agentWorkspace(agents, cwd, adapters))
 	}
-	return runLocalChat(ctx, dataDir, adapters, ingresses, fronts, authorize, workspace, streams)
+	return runLocalChat(ctx, dataDir, adapters, ingresses, fronts, authorize, workspace, logger, streams)
 }
 
 // agentWorkspace makes chat conversations full sessions of the agent, built as
@@ -888,9 +919,10 @@ func runLocalChat(
 	fronts []func(context.Context) error,
 	authorize func(chat.Message) error,
 	providerOptions []chat.LocalProviderOption,
+	logger *slog.Logger,
 	streams cliStreams,
 ) int {
-	options := gateway.Options{DataDir: dataDir, Adapters: adapters, Ingresses: ingresses, Fronts: fronts, Authorize: authorize, Provider: providerOptions, Log: streams.Stderr}
+	options := gateway.Options{DataDir: dataDir, Adapters: adapters, Ingresses: ingresses, Fronts: fronts, Authorize: authorize, Provider: providerOptions, Log: streams.Stderr, Logger: logger}
 	if state := stateFromContext(ctx); state != nil {
 		settings, err := state.Settings(dataDir, state.AgentDir)
 		if err != nil {
@@ -950,7 +982,8 @@ Common environment:
   ORB_CHAT_ALLOWED_SENDERS Comma-separated platform user IDs (required for chat platforms)
   ORB_CHAT_DATA_DIR        Session and spool directory (default ~/.orb/agent/chat/<platform>)
   ORB_CHAT_LISTEN          Webhook listen address (default 127.0.0.1:8080)
-  ORB_CHAT_PATH            Webhook path (default /<platform>)
+  ORB_CHAT_PATH            Webhook path with a single webhook platform (default
+                           /<platform>; several share one server, each at /<platform>)
 
 Platform credentials:
 ` + credentials.String()
@@ -963,12 +996,12 @@ Usage: orb [options] [@files...] [messages...]
        orb login <provider>
        orb logout [provider]
        orb auth <command>
-       orb chat <platform>
+       orb chat <platform>...
 
 OAuth providers: anthropic, openai-codex, github-copilot, kimi-coding, openrouter, xai
 
 Commands:
-  orb chat <platform>         Run a chat gateway
+  orb chat <platform>...      Run a chat gateway
   orb install <source> [-l]   Install a package source and save it to settings
   orb remove <source> [-l]    Remove a package source from settings
   orb uninstall <source> [-l] Alias for remove
@@ -1012,9 +1045,13 @@ Global prefixes (before runtime options/subcommands):
   --name, -n <name>              Set the session display name
   --session-dir <dir>            Session directory in --pi-files compatibility mode
   --no-session                   Don't save session (ephemeral)
+  --bridge <profile>             Attach this session to a Bridge profile (default personal)
+  --instance <alias>             Keep this session's Bridge instance under a stable alias
   --export <path|id> [output]    Export a session to HTML or Markdown and exit
   --tools, -t <names>            Comma-separated tool allowlist
   --exclude-tools, -xt <names>   Comma-separated tool denylist
+  --no-tools, -nt                Disable every tool, built-in and extension
+  --no-builtin-tools, -nbt       Disable the built-in tools; extension tools stay
   --skill <path>                 Load a skill file or directory; repeatable
   --no-skills, -ns               Disable discovered skills; --skill remains additive
   --prompt-template <path>       Load a prompt template file or directory; repeatable

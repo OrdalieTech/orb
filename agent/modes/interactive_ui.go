@@ -38,9 +38,18 @@ type InteractiveUI struct {
 	dialogs []*openDialog
 	// inline are the inline custom components, newest last: the newest stands in the editor's place,
 	// and the one below shows again when it closes (pi 1.4.0).
-	inline         []*inlineComponent
-	customOverlays map[tui.OverlayHandle]struct{}
+	inline []*inlineComponent
+	// customOverlays are the open Custom overlays, oldest first, each with the function that closes it.
+	customOverlays []customOverlay
 }
+
+type customOverlay struct {
+	handle  tui.OverlayHandle
+	release func()
+}
+
+// customReleased is the result a reset hands a Custom overlay: closed without an answer.
+type customReleased struct{}
 
 type widgetEntry struct {
 	placement extensions.WidgetPlacement
@@ -202,10 +211,10 @@ func (ui *InteractiveUI) Notify(message string, notifyType extensions.Notificati
 	switch notifyType {
 	case extensions.NotifyWarning:
 		ui.mode.chat.AddChild(tui.NewSpacer(1))
-		ui.mode.chat.AddChild(tui.NewText(theme.FG("warning", "Warning: "+message), ui.mode.outputPad+2, 0, nil))
+		ui.mode.chat.AddChild(tui.NewText(theme.FG("warning", "Warning: "+message), ui.mode.currentOutputPad()+2, 0, nil))
 	case extensions.NotifyError:
 		ui.mode.chat.AddChild(tui.NewSpacer(1))
-		ui.mode.chat.AddChild(tui.NewText(theme.FG("error", "Error: "+message), ui.mode.outputPad+2, 0, nil))
+		ui.mode.chat.AddChild(tui.NewText(theme.FG("error", "Error: "+message), ui.mode.currentOutputPad()+2, 0, nil))
 	default:
 		ui.mode.showStatusMessage(message)
 		return
@@ -507,21 +516,18 @@ func (ui *InteractiveUI) resetExtensionUI() {
 		dialog.cancel()
 	}
 	// Hide the dialog windows deterministically (their goroutines' deferred
-	// hides are async and idempotent), then the tracked Custom overlays —
-	// never a blind top-of-stack pop, which could hit a built-in menu window
-	// the reset does not own.
+	// hides are async and idempotent), then close every tracked Custom overlay,
+	// hidden ones included, newest first — never a blind top-of-stack pop,
+	// which could hit a built-in menu window the reset does not own.
 	ui.mu.Lock()
-	customs := make([]tui.OverlayHandle, 0, len(ui.customOverlays))
-	for handle := range ui.customOverlays {
-		customs = append(customs, handle)
-	}
-	clear(ui.customOverlays)
+	customs := ui.customOverlays
+	ui.customOverlays = nil
 	ui.mu.Unlock()
 	for _, dialog := range dialogs {
 		dialog.handle.Hide()
 	}
-	for _, handle := range customs {
-		handle.Hide()
+	for _, custom := range slices.Backward(customs) {
+		custom.release()
 	}
 	ui.clearTerminalInputListeners()
 	ui.SetFooter(nil)
@@ -601,19 +607,14 @@ func (ui *InteractiveUI) SetHeader(factory extensions.HeaderFactory) {
 	ui.mode.header.Clear()
 	if factory != nil {
 		if component := factory(ui.mode, ui.Theme()); component != nil {
-			ui.mode.mu.Lock()
-			expanded := ui.mode.toolsExpanded
-			ui.mode.mu.Unlock()
-			setExpandedComponent(component, expanded)
+			setExpandedComponent(component, ui.mode.currentToolsExpanded())
 			ui.mu.Lock()
 			ui.customHeader = component
 			ui.mu.Unlock()
 			ui.mode.header.AddChild(component)
 		}
 	} else if len(ui.builtInHeader) > 0 {
-		ui.mode.mu.Lock()
-		expanded := ui.mode.toolsExpanded
-		ui.mode.mu.Unlock()
+		expanded := ui.mode.currentToolsExpanded()
 		for _, component := range ui.builtInHeader {
 			setExpandedComponent(component, expanded)
 			ui.mode.header.AddChild(component)
@@ -632,7 +633,7 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 	if factory == nil {
 		return nil, false, nil
 	}
-	savedText := ui.mode.activeEditorText(false)
+	savedText := ui.mode.activeEditorText(true)
 	overlay := opts != nil && opts.Overlay
 	result := make(chan any, 1)
 	var transactionMu sync.Mutex
@@ -721,7 +722,7 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 		} else {
 			tuiOverlay = ui.mode.ui.ShowOverlay(view, toTUIOverlayOptions(*resolved))
 		}
-		ui.trackCustomOverlay(tuiOverlay)
+		ui.trackCustomOverlay(tuiOverlay, func() { done(customReleased{}) })
 		overlayHandle = &interactiveOverlayHandle{overlay: tuiOverlay}
 	} else {
 		entry.view, entry.focus = view, extensionFocus(view)
@@ -747,6 +748,9 @@ func (ui *InteractiveUI) Custom(ctx context.Context, factory extensions.CustomFa
 	}
 	select {
 	case value := <-result:
+		if _, released := value.(customReleased); released {
+			return nil, false, nil
+		}
 		return value, true, nil
 	case <-ctx.Done():
 		transactionMu.Lock()
@@ -963,21 +967,18 @@ func (ui *InteractiveUI) Editor(ctx context.Context, title string, prefill *stri
 	return awaitDialog(ctx, context.Background(), result)
 }
 
-func (ui *InteractiveUI) trackCustomOverlay(handle tui.OverlayHandle) {
+func (ui *InteractiveUI) trackCustomOverlay(handle tui.OverlayHandle, release func()) {
 	if handle == nil {
 		return
 	}
 	ui.mu.Lock()
-	if ui.customOverlays == nil {
-		ui.customOverlays = make(map[tui.OverlayHandle]struct{})
-	}
-	ui.customOverlays[handle] = struct{}{}
+	ui.customOverlays = append(ui.customOverlays, customOverlay{handle, release})
 	ui.mu.Unlock()
 }
 
 func (ui *InteractiveUI) untrackCustomOverlay(handle tui.OverlayHandle) {
 	ui.mu.Lock()
-	delete(ui.customOverlays, handle)
+	ui.customOverlays = slices.DeleteFunc(ui.customOverlays, func(open customOverlay) bool { return open.handle == handle })
 	ui.mu.Unlock()
 }
 
@@ -1202,9 +1203,7 @@ func (adapter tuiAutocompleteAdapter) ShouldTriggerFileCompletion(request extens
 // ─── Tools ───────────────────────────────────────────────
 
 func (ui *InteractiveUI) GetToolsExpanded() bool {
-	ui.mode.mu.Lock()
-	defer ui.mode.mu.Unlock()
-	return ui.mode.toolsExpanded
+	return ui.mode.currentToolsExpanded()
 }
 
 func (ui *InteractiveUI) SetToolsExpanded(expanded bool) {

@@ -52,10 +52,8 @@ func TestOutputAccumulatorSpillsOriginalBytesAndKeepsPathAfterClose(t *testing.T
 
 func TestRPCBashPipelinePreservesSplitUTF8(t *testing.T) {
 	output := NewOutputAccumulator()
-	var decoder streamingUTF8Decoder
 	for _, chunk := range [][]byte{{0xe2}, {0x82}, {0xac, '\r', '\n'}} {
-		text := sanitizeBashOutput(decoder.Decode(chunk, false))
-		if err := output.appendTransformed(len(chunk), text); err != nil {
+		if _, err := output.AppendSanitized(chunk); err != nil {
 			t.Fatal(err)
 		}
 	}

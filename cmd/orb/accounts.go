@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"sort"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
@@ -198,11 +200,17 @@ func openBook(ctx context.Context) (accountBook, error) {
 	if err != nil {
 		return accountBook{}, err
 	}
-	registry, err := state.Models(agentDir, storage, true)
+	store := state.Accounts(agentDir, storage)
+	registry, err := state.Models(agentDir, store, true)
 	if err != nil {
 		return accountBook{}, err
 	}
-	return accountBook{store: state.Accounts(agentDir, storage), credentials: storage, registry: registry, settings: settings, agentDir: agentDir}, nil
+	if settings.GetPlugins()[claudesessions.Name] {
+		ext := extensions.NewRegistry(cwd)
+		_ = ext.Register(claudesessions.Name, claudesessions.Management(settings, agentDir, os.Environ()))
+		ext.BindModelRegistry(registry, nil)
+	}
+	return accountBook{store: store, credentials: storage, registry: registry, settings: settings, agentDir: agentDir}, nil
 }
 
 // runModels is the model choice for apps that draw their own screens, before any session runs.
@@ -211,6 +219,10 @@ func openBook(ctx context.Context) (accountBook, error) {
 //	                                        reasoning levels, the one it starts at, the default marked
 //	orb models use <provider> <id> [level]  makes that model, at that level, the one new sessions start on
 func runModels(ctx context.Context, args []string, streams cliStreams) int {
+	if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
+		_, _ = fmt.Fprintln(streams.Stdout, "Usage: orb models --json | orb models use <provider> <id> [level]")
+		return 0
+	}
 	out := aiauth.NewJSONLines(streams.Stdout)
 	fail := func(err error) int { out.Emit(map[string]string{"type": "error", "message": err.Error()}); return 1 }
 	if !slices.Equal(args, []string{"--json"}) && (len(args) < 3 || len(args) > 4 || args[0] != "use") {
@@ -261,6 +273,10 @@ func runModels(ctx context.Context, args []string, streams cliStreams) int {
 //	orb accounts --json               one JSON line per connected account, with its plan limits
 //	orb accounts use <provider> <id>  makes that account the one the provider uses
 func runAccounts(ctx context.Context, args []string, streams cliStreams) int {
+	if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
+		_, _ = fmt.Fprintln(streams.Stdout, "Usage: orb accounts --json | orb accounts use <provider> <id>")
+		return 0
+	}
 	out := aiauth.NewJSONLines(streams.Stdout)
 	fail := func(err error) int { out.Emit(map[string]string{"type": "error", "message": err.Error()}); return 1 }
 	if !slices.Equal(args, []string{"--json"}) && (len(args) != 3 || args[0] != "use") {

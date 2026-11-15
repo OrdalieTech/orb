@@ -122,9 +122,9 @@ func fileDocument(path string, perm os.FileMode) host.Document {
 }
 
 // authFile is auth.json: upstream's lock on it heartbeats, so a dead
-// holder's lock takes AsyncStale to expire.
+// holder's lock takes AsyncStale to expire, and it is taken on the resolved file.
 func authFile(path string) host.Document {
-	return filelock.File{Path: path, Perm: 0o600, Stale: filelock.AsyncStale}
+	return filelock.File{Path: path, Perm: 0o600, Stale: filelock.AsyncStale, LockResolved: true}
 }
 
 func writeGlobalSettings(path string, values jsonwire.RawObject, nestedField, nestedKey string, nested func(json.RawMessage) json.RawMessage) error {

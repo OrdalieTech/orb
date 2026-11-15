@@ -581,7 +581,7 @@ func appendPiMessagesRewriteDiagnostic(message *ai.AssistantMessage, rewrite *Pi
 		return
 	}
 	details, _ := ai.Marshal(rewrite)
-	appendPiMessagesDiagnostic(message, ai.AssistantMessageDiagnostic{
+	appendDiagnostic(message, ai.AssistantMessageDiagnostic{
 		Type: "pi_messages_rewrite", Timestamp: openAINowUnixMilli(), Details: details,
 	})
 }
@@ -603,7 +603,7 @@ func piMessagesErrorEvent(model *ai.Model, err error, aborted bool) ai.ErrorEven
 		if responseError.Code != nil {
 			code, _ = ai.Marshal(*responseError.Code)
 		}
-		appendPiMessagesDiagnostic(message, ai.AssistantMessageDiagnostic{
+		appendDiagnostic(message, ai.AssistantMessageDiagnostic{
 			Type:      "pi_messages_response_failure",
 			Timestamp: openAINowUnixMilli(),
 			Error: &ai.DiagnosticErrorInfo{
@@ -615,7 +615,8 @@ func piMessagesErrorEvent(model *ai.Model, err error, aborted bool) ai.ErrorEven
 	return ai.ErrorEvent{Reason: reason, Error: message}
 }
 
-func appendPiMessagesDiagnostic(message *ai.AssistantMessage, diagnostic ai.AssistantMessageDiagnostic) {
+// appendDiagnostic appends to a copy: emitted events may still hold the old slice.
+func appendDiagnostic(message *ai.AssistantMessage, diagnostic ai.AssistantMessageDiagnostic) {
 	diagnostics := make([]ai.AssistantMessageDiagnostic, 0, 1)
 	if message.Diagnostics != nil {
 		diagnostics = append(diagnostics, (*message.Diagnostics)...)

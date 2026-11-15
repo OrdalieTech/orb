@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
+	"slices"
 )
 
 type CredentialType string
@@ -62,7 +63,7 @@ func (credential *Credential) SetExtra(name string, value json.RawMessage) {
 		credential.Extra = make(map[string]json.RawMessage)
 	}
 	credential.Extra[name] = append(json.RawMessage(nil), value...)
-	if !contains(credential.order, name) {
+	if !slices.Contains(credential.order, name) {
 		credential.order = append(credential.order, name)
 	}
 }

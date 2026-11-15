@@ -257,6 +257,16 @@ func TestCompactionSummarizesTheRecentPartOfAnOversizedConversation(t *testing.T
 	if _, err := GenerateSummaryWithUsage(context.Background(), long[:2], model, complete, 1_000, "", nil, ai.ModelThinkingOff); err != nil || len(prompts) != 1 || !strings.Contains(prompts[0], "step 0 ") {
 		t.Fatalf("a conversation that fits was not summarized whole: %d requests, %v", len(prompts), err)
 	}
+	prompts = nil
+	paste := engine.AgentMessages{long[0], user("paste " + strings.Repeat("x", 100_000))}
+	if _, err := GenerateSummaryWithUsage(context.Background(), paste, model, complete, 1_000, "", nil, ai.ModelThinkingOff); err != nil || len(prompts) != 1 || !strings.Contains(prompts[0], "[User]: paste x") {
+		t.Fatalf("a newest message over the window was not summarized clipped: %d requests, %v", len(prompts), err)
+	}
+	prompts = nil
+	cjk := engine.AgentMessages{long[0], user("paste " + strings.Repeat("語", 100_000))}
+	if _, err := GenerateSummaryWithUsage(context.Background(), cjk, model, complete, 1_000, "", nil, ai.ModelThinkingOff); err != nil || len(prompts) != 1 || !strings.Contains(prompts[0], "[User]: paste 語") {
+		t.Fatalf("a multibyte newest message over the window was not summarized clipped: %d requests, %v", len(prompts), err)
+	}
 }
 
 // /compact's instructions reach the summary of a split turn's start, even when that turn is all that is new.

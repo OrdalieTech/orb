@@ -7,7 +7,6 @@ import (
 var azureProvider = Provider{
 	ID:   "azure",
 	Name: "Azure",
-	Auth: AuthAPIKey,
 	Methods: auth.ProviderAuth{APIKey: auth.EnvAPIKeyAuth{
 		DisplayName: "Azure OpenAI API key",
 		EnvVars:     []string{"AZURE_OPENAI_API_KEY"},

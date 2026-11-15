@@ -1,6 +1,6 @@
 {
   "family": "F1",
-  "upstreamCommit": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "upstreamCommit": "b4afdddf44e059c67ccf5097e5317d913521b470",
   "generator": "conformance/extract/f1-messages.ts + conformance/extract/f1-partialjson.ts + conformance/extract/f1-schema.ts",
   "source": "packages/ai/src/types.ts + packages/ai/src/utils/json-parse.ts + packages/ai/src/utils/typebox-helpers.ts + packages/ai/src/utils/validation.ts",
   "files": [

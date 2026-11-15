@@ -168,8 +168,8 @@ func TestGoogleVertexADCStreamAuthAndHeaderOverrides(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if tokenCalls != 2 {
-		t.Fatalf("token calls = %d, want one fresh ADC client per stream", tokenCalls)
+	if tokenCalls != 1 {
+		t.Fatalf("token calls = %d, want the second stream to reuse the cached ADC token", tokenCalls)
 	}
 	if len(vertexRequests) != 2 {
 		t.Fatalf("Vertex requests = %d", len(vertexRequests))

@@ -75,6 +75,20 @@ func TestPerRequestHTTPClientSupportedAdapters(t *testing.T) {
 			}
 			_, _ = ai.Collect(stream)
 		}},
+		{name: "Codex WebSocket", run: func(t *testing.T, client *http.Client) {
+			CloseOpenAICodexWebSocketSessions()
+			model := codexTestModel()
+			model.BaseURL = "https://ambient.invalid/backend-api"
+			token := codexAPITestToken(t, "account-fixture")
+			transport := ai.TransportWebSocket
+			stream, err := StreamOpenAICodexResponsesWithOptions(context.Background(), &model, requestContext, &OpenAICodexResponsesOptions{
+				StreamOptions: ai.StreamOptions{APIKey: &token, HTTPClient: client, Transport: &transport, MaxRetries: &zeroRetries},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = ai.Collect(stream)
+		}},
 		{name: "Codex SSE", run: func(t *testing.T, client *http.Client) {
 			model := codexTestModel()
 			model.BaseURL = "https://ambient.invalid/backend-api"
@@ -112,8 +126,12 @@ func TestPerRequestHTTPClientSupportedAdapters(t *testing.T) {
 				}, nil
 			})}
 			test.run(t, client)
-			if got := calls.Load(); got != 1 {
-				t.Fatalf("custom client calls = %d, want 1", got)
+			want := int32(1)
+			if test.name == "Codex WebSocket" {
+				want = 2 // the refused handshake falls back to SSE
+			}
+			if got := calls.Load(); got != want {
+				t.Fatalf("custom client calls = %d, want %d", got, want)
 			}
 		})
 	}

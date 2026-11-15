@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -14,7 +15,10 @@ import (
 )
 
 func TestMigrationGuardReadsProcfsWithoutPS(t *testing.T) {
-	if os.Getenv("ORB_TEST_WRITER") != "" {
+	if writer := os.Getenv("ORB_TEST_WRITER"); writer != "" {
+		if writer == "hidden" {
+			_, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 0, 0)
+		}
 		time.Sleep(time.Minute)
 		return
 	}
@@ -30,9 +34,9 @@ func TestMigrationGuardReadsProcfsWithoutPS(t *testing.T) {
 	}
 	agentDir, otherDir := t.TempDir(), t.TempDir()
 	t.Setenv(config.EnvAgentDir, agentDir)
-	start := func(dir string) *exec.Cmd {
+	start := func(dir, writer string) *exec.Cmd {
 		process := exec.Command(orb, "-test.run=^TestMigrationGuardReadsProcfsWithoutPS$")
-		process.Env = append(os.Environ(), "ORB_TEST_WRITER=1", config.EnvAgentDir+"="+dir)
+		process.Env = append(os.Environ(), "ORB_TEST_WRITER="+writer, config.EnvAgentDir+"="+dir)
 		if err := process.Start(); err != nil {
 			t.Fatal(err)
 		}
@@ -48,7 +52,7 @@ func TestMigrationGuardReadsProcfsWithoutPS(t *testing.T) {
 	}
 	t.Setenv("PATH", t.TempDir())
 
-	writer := start(agentDir)
+	writer := start(agentDir, "1")
 	err = RequireOfflineMigration(context.Background(), agentDir)
 	if err == nil || !strings.Contains(err.Error(), "close other Orb processes") {
 		t.Fatalf("writer on the same state root: %v", err)
@@ -56,8 +60,18 @@ func TestMigrationGuardReadsProcfsWithoutPS(t *testing.T) {
 	_ = writer.Process.Kill()
 	_ = writer.Wait()
 
-	start(otherDir)
+	start(otherDir, "1")
 	if err := RequireOfflineMigration(context.Background(), agentDir); err != nil {
 		t.Fatalf("writer on another state root blocked migration: %v", err)
+	}
+
+	hidden := start(agentDir, "hidden")
+	for environ := filepath.Join("/proc", strconv.Itoa(hidden.Process.Pid), "environ"); ; time.Sleep(time.Millisecond) {
+		if _, err := os.ReadFile(environ); err != nil {
+			break
+		}
+	}
+	if err := RequireOfflineMigration(context.Background(), agentDir); err != nil {
+		t.Fatalf("an Orb hiding its environment blocked migration: %v", err)
 	}
 }

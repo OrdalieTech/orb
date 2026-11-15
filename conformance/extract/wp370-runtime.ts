@@ -115,7 +115,8 @@ async function runDisposeCase(
   };
   const runtime = new Runtime(
     session,
-    { cwd: "/fixture", agentDir: "/agent" },
+    // dispose settles credential writes through the services' model runtime (pi 1.5.1).
+    { cwd: "/fixture", agentDir: "/agent", modelRuntime: { async settleCredentialWrites() {} } },
     async () => ({ session, services: { cwd: "/fixture", agentDir: "/agent" }, diagnostics: [] }),
   );
   runtime.setBeforeSessionInvalidate(() => records.push({ phase: "beforeSessionInvalidate" }));

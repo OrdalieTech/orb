@@ -302,10 +302,17 @@ func (markdown *Markdown) renderBlocks(parent ast.Node, source []byte, width int
 	lines := make([]string, 0)
 	var previous ast.Node
 	for node := parent.FirstChild(); node != nil; node = node.NextSibling() {
+		if isHTMLComment(node, source) {
+			continue
+		}
 		if len(lines) > 0 && lines[len(lines)-1] != "" && (node.HasBlankPreviousLines() || blankLineBetween(previous, node, source)) {
 			lines = append(lines, "")
 		}
-		lines = append(lines, markdown.renderBlock(node, source, width, node.NextSibling(), style)...)
+		next := node.NextSibling()
+		for next != nil && isHTMLComment(next, source) {
+			next = next.NextSibling()
+		}
+		lines = append(lines, markdown.renderBlock(node, source, width, next, style)...)
 		previous = node
 	}
 	return lines
@@ -348,7 +355,7 @@ func (markdown *Markdown) renderBlock(node ast.Node, source []byte, width int, n
 	case *ast.ThematicBreak:
 		return spacing([]string{markdown.theme.HorizontalRule(strings.Repeat("─", min(width, 80)))}, false)
 	case *ast.HTMLBlock:
-		return []string{markdown.applyDefaultStyle(strings.TrimSpace(htmlBlockText(typed, source)))}
+		return []string{markdown.applyDefaultStyle(strings.TrimSpace(htmlComment.ReplaceAllString(htmlBlockText(typed, source), "")))}
 	default:
 		if node.Type() == ast.TypeInline {
 			return []string{markdown.renderInline(node, source, markdown.resolveInlineContext(style))}
@@ -399,6 +406,15 @@ func blockText(node ast.Node, source []byte) []byte {
 		result.Write(segment.Value(source))
 	}
 	return bytes.TrimSuffix(result.Bytes(), []byte("\n"))
+}
+
+// An unclosed comment runs to the end of its HTML block, as in CommonMark, so a streamed comment stays hidden.
+var htmlComment = regexp.MustCompile(`(?s)<!--.*?(?:-->|$)`)
+
+// isHTMLComment reports an HTML block holding only comments, which renders no line (pi #11710).
+func isHTMLComment(node ast.Node, source []byte) bool {
+	block, ok := node.(*ast.HTMLBlock)
+	return ok && strings.TrimSpace(htmlComment.ReplaceAllString(htmlBlockText(block, source), "")) == ""
 }
 
 func htmlBlockText(block *ast.HTMLBlock, source []byte) string {

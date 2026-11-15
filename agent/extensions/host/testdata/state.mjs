@@ -1,3 +1,5 @@
+import { writeFileSync } from "node:fs";
+
 // win32 has no /bin/sh, so the same child is a Node one-liner there.
 function shellCommand(script, windowsScript) {
 	return process.platform === "win32" ? [process.execPath, ["-e", windowsScript]] : ["/bin/sh", ["-c", script]];
@@ -16,9 +18,14 @@ export default function stateExtension(pi) {
 		pi.sendUserMessage(`bus:${data.value}`);
 	});
 
+	const offStaleBash = pi.on("user_bash", () => {
+		throw new Error("unsubscribed user_bash handler ran");
+	});
+
 	pi.registerCommand("state-probe", {
 		description: "Exercise state actions and synchronous mirrors",
 		async handler(args, ctx) {
+			offStaleBash();
 			const before = pi.getSessionName() ?? "unset";
 			pi.setSessionName(args);
 			const optimistic = pi.getSessionName() ?? "unset";
@@ -179,6 +186,12 @@ export default function stateExtension(pi) {
 		return {
 			operations: {
 				exec(command, cwd, options) {
+					if (command.startsWith("wait-abort ")) {
+						return new Promise((resolve) => options.signal.addEventListener("abort", () => {
+							writeFileSync(command.slice("wait-abort ".length), "aborted");
+							resolve({ exitCode: 130 });
+						}, { once: true }));
+					}
 					options.onData(Buffer.from(`${command}@${cwd}`));
 					return { exitCode: 7 };
 				},

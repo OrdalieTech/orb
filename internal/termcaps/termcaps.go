@@ -65,12 +65,13 @@ func ProbeTmuxHyperlinks() bool {
 // Detect derives capabilities from the terminal environment. Behavior is a
 // faithful port of upstream terminal-image.ts detection order.
 func Detect(tmuxForwardsHyperlink func() bool) TerminalCapabilities {
-	termProgram := strings.ToLower(os.Getenv("TERM_PROGRAM"))
-	terminalEmulator := strings.ToLower(os.Getenv("TERMINAL_EMULATOR"))
-	term := strings.ToLower(os.Getenv("TERM"))
-	colorTerm := strings.ToLower(os.Getenv("COLORTERM"))
+	env := os.Getenv
+	termProgram := strings.ToLower(env("TERM_PROGRAM"))
+	terminalEmulator := strings.ToLower(env("TERMINAL_EMULATOR"))
+	term := strings.ToLower(env("TERM"))
+	colorTerm := strings.ToLower(env("COLORTERM"))
 	trueColorHint := colorTerm == "truecolor" || colorTerm == "24bit"
-	if os.Getenv("TMUX") != "" || strings.HasPrefix(term, "tmux") {
+	if env("TMUX") != "" || strings.HasPrefix(term, "tmux") {
 		forwarded := false
 		if tmuxForwardsHyperlink != nil {
 			forwarded = tmuxForwardsHyperlink()
@@ -91,22 +92,25 @@ func Detect(tmuxForwardsHyperlink func() bool) TerminalCapabilities {
 	if termProgram == "rex" {
 		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
 	}
-	if os.Getenv("KITTY_WINDOW_ID") != "" || termProgram == "kitty" {
+	if env("KITTY_WINDOW_ID") != "" || termProgram == "kitty" {
 		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true, Notify: NotifyOSC99}
 	}
-	if termProgram == "ghostty" || strings.Contains(term, "ghostty") || os.Getenv("GHOSTTY_RESOURCES_DIR") != "" {
+	if termProgram == "ghostty" || strings.Contains(term, "ghostty") || env("GHOSTTY_RESOURCES_DIR") != "" {
 		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true, Notify: NotifyOSC777}
 	}
-	if os.Getenv("WEZTERM_PANE") != "" || termProgram == "wezterm" {
+	if env("WEZTERM_PANE") != "" || termProgram == "wezterm" {
 		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true, Notify: NotifyOSC777}
 	}
-	if termProgram == "warpterminal" || os.Getenv("WARP_SESSION_ID") != "" || os.Getenv("WARP_TERMINAL_SESSION_UUID") != "" {
+	if termProgram == "warpterminal" || env("WARP_SESSION_ID") != "" || env("WARP_TERMINAL_SESSION_UUID") != "" {
 		return TerminalCapabilities{Images: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
 	}
-	if os.Getenv("ITERM_SESSION_ID") != "" || termProgram == "iterm.app" {
+	if env("ITERM_SESSION_ID") != "" || termProgram == "iterm.app" {
 		return TerminalCapabilities{Images: ImageProtocolITerm2, TrueColor: true, Hyperlinks: true, Notify: NotifyOSC9}
 	}
-	if os.Getenv("WT_SESSION") != "" || termProgram == "vscode" || termProgram == "alacritty" {
+	// Alacritty sets no TERM_PROGRAM: TERM is alacritty when its terminfo entry is installed
+	// (xterm-256color otherwise), and ALACRITTY_WINDOW_ID is set on Unix and macOS.
+	alacritty := termProgram == "alacritty" || strings.HasPrefix(term, "alacritty") || env("ALACRITTY_WINDOW_ID") != ""
+	if env("WT_SESSION") != "" || termProgram == "vscode" || alacritty {
 		return TerminalCapabilities{TrueColor: true, Hyperlinks: true}
 	}
 	if terminalEmulator == "jetbrains-jediterm" {

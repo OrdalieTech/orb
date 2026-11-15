@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/OrdalieTech/orb/bridge/protocol"
 )
@@ -49,17 +50,16 @@ func (b *Bridge) Admin(_ context.Context, method string, params json.RawMessage)
 			}
 		}
 		return JSON(struct {
-			SupportsFullAccess bool                `json:"supports_full_access"`
-			PeerStates         map[string]string   `json:"peer_states"`
-			PeerID             string              `json:"peer_id"`
-			BootID             string              `json:"bridge_boot_id"`
-			Groups             map[string]string   `json:"groups"`
-			Scopes             map[string][]string `json:"scopes"`
-			Grants             []Grant             `json:"grants"`
-			Instances          []Instance          `json:"instances"`
-			Pending            []Invitation        `json:"pending"`
-			Peers              []string            `json:"peers"`
-		}{true, states, b.PeerID(), b.boot, b.state.Groups, b.state.Scopes, b.state.Grants, instances, pending, peers}), nil
+			PeerStates map[string]string   `json:"peer_states"`
+			PeerID     string              `json:"peer_id"`
+			BootID     string              `json:"bridge_boot_id"`
+			Groups     map[string]string   `json:"groups"`
+			Scopes     map[string][]string `json:"scopes"`
+			Grants     []Grant             `json:"grants"`
+			Instances  []Instance          `json:"instances"`
+			Pending    []Invitation        `json:"pending"`
+			Peers      []string            `json:"peers"`
+		}{states, b.PeerID(), b.boot, b.state.Groups, b.state.Scopes, b.state.Grants, instances, pending, peers}), nil
 	case "enroll":
 		var p struct {
 			Alias string `json:"alias"`
@@ -206,7 +206,7 @@ func (b *Bridge) TransportState() json.RawMessage {
 	return append(json.RawMessage(nil), b.state.Transport...)
 }
 func (b *Bridge) SaveTransportState(raw json.RawMessage) error {
-	if _, err := protocol.Canonical(raw); err != nil {
+	if err := protocol.Validate(raw); err != nil {
 		return err
 	}
 	b.mu.Lock()
@@ -233,7 +233,10 @@ func (b *Bridge) PeerLocator(peer string) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	locator := b.state.Peers[peer]
-	for _, record := range b.state.Records {
+	for k, record := range b.state.Records {
+		if !strings.HasSuffix(k, "/"+peer) {
+			continue
+		}
 		contact, err := record.Verify()
 		if err == nil && contact.Peer == peer && !contact.Withdrawn && len(b.state.Scopes[contact.Scope]) != 0 {
 			for _, endpoint := range contact.Endpoints {

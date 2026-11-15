@@ -286,3 +286,19 @@ func useTreeTestKeybindings(t *testing.T) {
 	tui.SetKeybindings(NewAppKeybindings(nil))
 	t.Cleanup(func() { tui.SetKeybindings(previous) })
 }
+
+// The focused search and label inputs place the cursor marker for input methods (pi #9157).
+func TestTreeSelectorInputsPlaceTheCursor(t *testing.T) {
+	initTestTheme(t)
+	useTreeTestKeybindings(t)
+	roots, leaf := treeTestForked()
+	selector := NewTreeSelectorComponent(roots, leaf, 24, nil, nil, func(string, *string) {}, "", "default")
+	selector.SetFocused(true)
+	for _, keys := range [][]string{{"/", "o"}, {"\x1b", "L", "k"}} {
+		press(selector, keys...)
+		lines := selector.Render(80)
+		if footer := lines[len(lines)-1]; strings.Count(strings.Join(lines, "\n"), tui.CursorMarker) != 1 || !strings.Contains(footer, tui.CursorMarker) {
+			t.Fatalf("after %q the footer %q holds no single cursor marker", keys, footer)
+		}
+	}
+}

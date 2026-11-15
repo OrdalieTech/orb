@@ -30,8 +30,7 @@ import (
 var embeddedArchive []byte
 
 // embeddedLexers decompresses the bundled lexer configs. The XML sources stay
-// on disk under embedded/ for provenance; the archive is rebuilt from them by
-// `go generate` and TestEmbeddedArchiveMatchesSource fails if the two drift.
+// on disk under embedded/ for provenance, and `go generate` rebuilds the archive.
 var embeddedLexers = sync.OnceValue(func() fs.FS {
 	compressed, err := gzip.NewReader(bytes.NewReader(embeddedArchive))
 	if err != nil {

@@ -184,7 +184,7 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 		if len(params) > protocol.MaxFrame {
 			return bridge.Fail("resource_exhausted")
 		}
-		_, e = protocol.Canonical(params)
+		e = protocol.Validate(params)
 		return e
 	}
 	switch method {
@@ -381,9 +381,6 @@ func trustBridgePeer(ctx context.Context, client *protocol.Conn, peer string, ma
 	var status bridgeSettingsStatus
 	if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
 		return err
-	}
-	if !status.SupportsFullAccess {
-		return fmt.Errorf("bridge needs to restart after an update.\nTurn it off and on, then reconnect")
 	}
 	for _, old := range status.Grants {
 		if old.Principal == g.Principal && old.GroupID == "*" && old.IncludeFuture && old.Destination == "" && slices.Equal(old.Permissions, g.Permissions) {

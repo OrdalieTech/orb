@@ -95,7 +95,8 @@ func TestResolveProviderAuthRefreshesExpiredOAuthOnce(t *testing.T) {
 }
 
 // A caller that gives up during a refresh returns at once, but the rotated
-// token is still saved: the provider may already have spent the old one.
+// token is still saved, and SettleWrites waits for it: the provider may
+// already have spent the old one.
 func TestCancelledOAuthRefreshStillSavesTheRotatedToken(t *testing.T) {
 	flow := &testOAuth{started: make(chan struct{}), hold: make(chan struct{})}
 	store := NewMemoryStore(map[string]*Credential{"provider": OAuthCredential("refresh", "expired", 0)})
@@ -111,12 +112,10 @@ func TestCancelledOAuthRefreshStillSavesTheRotatedToken(t *testing.T) {
 		t.Fatalf("cancelled resolve = %v", err)
 	}
 	close(flow.hold)
-	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
-		if saved, err := store.Read(context.Background(), "provider"); err == nil && saved.Refresh == "rotated" {
-			return
-		}
+	SettleWrites()
+	if saved, err := store.Read(context.Background(), "provider"); err != nil || saved.Refresh != "rotated" {
+		t.Fatalf("rotated token not saved once writes settled: %#v, %v", saved, err)
 	}
-	t.Fatal("rotated token not saved after the caller gave up")
 }
 
 func TestResolveProviderAuthRefreshesOAuthWithinDefaultValidityWindow(t *testing.T) {

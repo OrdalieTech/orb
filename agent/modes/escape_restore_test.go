@@ -3,15 +3,19 @@ package modes
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes/theme"
+	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/tui"
 )
 
 func newRestoreMode(t *testing.T) *InteractiveMode {
 	t.Helper()
 	mode, _, _, _ := newF12ShutdownMode(t)
+	mode.keybindings = NewAppKeybindings(nil)
 	mode.editor = NewCustomEditor(mode.ui, theme.EditorTheme(), mode.keybindings)
 	mode.chat = &tui.Container{}
 	return mode
@@ -87,5 +91,49 @@ func TestPendingPromptEntryIDOnlyWhileUnanswered(t *testing.T) {
 	}
 	if got := mode.pendingPromptEntryID(); got != "" {
 		t.Fatalf("pending prompt = %q, want none once the assistant answered", got)
+	}
+}
+
+// Editor round trips go through the expanded text: SetText drops the paste
+// registry, so a marker put back would stay literal (pi #10146).
+func TestLargePasteSurvivesEditorRoundTrips(t *testing.T) {
+	paste := strings.TrimSpace(strings.Repeat("pasted line\n", 20))
+	for name, roundTrip := range map[string]func(*InteractiveMode){
+		"restore queued": func(mode *InteractiveMode) { mode.restoreToEditor(nil, []string{"queued"}) },
+		"switch editor":  func(mode *InteractiveMode) { mode.installEditorFactory(nil) },
+		"inline custom": func(mode *InteractiveMode) {
+			ui := NewInteractiveUI(mode)
+			outcome := f12UILifecycleRunCustom(t.Context(), ui, func(_ extensions.UIHost, _ extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
+				go done(nil)
+				return &tui.Text{}, nil
+			}, nil)
+			f12UILifecycleReceive(t, outcome, "inline custom result")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			mode := newRestoreMode(t)
+			mode.editorContainer = &tui.Container{}
+			mode.editor.HandleInput(tui.KeyEvent{Raw: "\x1b[200~" + paste + "\x1b[201~"})
+			roundTrip(mode)
+			if got := mode.editor.GetExpandedText(); !strings.Contains(got, paste) {
+				t.Fatalf("editor text = %q, want the pasted content", got)
+			}
+		})
+	}
+}
+
+func TestFollowUpSubmitsExpandedTextWithImages(t *testing.T) {
+	mode := newRestoreMode(t)
+	mode.editorContainer = &tui.Container{}
+	mode.setupKeyHandlers()
+	paste := strings.TrimSpace(strings.Repeat("pasted line\n", 20))
+	image := &ai.ImageContent{Data: "aGk=", MimeType: "image/png"}
+	mode.pendingImages = []*ai.ImageContent{image}
+	mode.editor.SetText("see [Image #1] ")
+	mode.editor.HandleInput(tui.KeyEvent{Raw: "\x1b[200~" + paste + "\x1b[201~"})
+	mode.editor.actionHandlers["app.message.followUp"]()
+	entry := <-mode.inputCh
+	if entry.text != "see [Image #1] "+paste || !entry.followUp || len(entry.images) != 1 || entry.images[0] != image {
+		t.Fatalf("follow-up = %+v, want the expanded text with its image", entry)
 	}
 }

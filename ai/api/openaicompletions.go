@@ -40,6 +40,8 @@ type resolvedOpenAICompletionsCompat struct {
 	maxTokensField                              ai.MaxTokensField
 	requiresToolResultName                      bool
 	requiresAssistantAfterToolResult            bool
+	requiresNonNullAssistantContent             bool
+	requiresToolsWithToolHistory                bool
 	requiresThinkingAsText                      bool
 	requiresReasoningContentOnAssistantMessages bool
 	thinkingFormat                              ai.ThinkingFormat
@@ -58,6 +60,7 @@ type resolvedOpenAICompletionsCompat struct {
 	cacheControlFormat                          *ai.CacheControlFormat
 	sendSessionAffinityHeaders                  bool
 	sessionAffinityFormat                       ai.SessionAffinityFormat
+	promptCacheKeyMode                          ai.PromptCacheKeyMode
 	supportsLongCacheRetention                  bool
 }
 
@@ -325,10 +328,6 @@ func (object openAICompletionsWireObject) MarshalJSON() ([]byte, error) {
 	return appendOpenAICompletionsObject(nil, object.value, orderedOpenAICompletionsKeys(object.value, object.preferred))
 }
 
-func marshalOpenAICompletionsObjectWithKeys(object map[string]any, keys []string) ([]byte, error) {
-	return appendOpenAICompletionsObject(nil, object, keys)
-}
-
 // appendOpenAICompletionsValue encodes into one buffer: per-value encoding
 // allocated for every string and re-validated every nested object.
 func appendOpenAICompletionsValue(dst []byte, value any) ([]byte, error) {
@@ -530,6 +529,12 @@ func resolveOpenAICompletionsCompat(model *ai.Model) (resolvedOpenAICompletionsC
 	if overrides.RequiresAssistantAfterToolResult != nil {
 		resolved.requiresAssistantAfterToolResult = *overrides.RequiresAssistantAfterToolResult
 	}
+	if overrides.RequiresNonNullAssistantContent != nil {
+		resolved.requiresNonNullAssistantContent = *overrides.RequiresNonNullAssistantContent
+	}
+	if overrides.RequiresToolsWithToolHistory != nil {
+		resolved.requiresToolsWithToolHistory = *overrides.RequiresToolsWithToolHistory
+	}
 	if overrides.RequiresThinkingAsText != nil {
 		resolved.requiresThinkingAsText = *overrides.RequiresThinkingAsText
 	}
@@ -585,6 +590,9 @@ func resolveOpenAICompletionsCompat(model *ai.Model) (resolvedOpenAICompletionsC
 	if overrides.SessionAffinityFormat != nil {
 		resolved.sessionAffinityFormat = *overrides.SessionAffinityFormat
 	}
+	if overrides.PromptCacheKeyMode != nil {
+		resolved.promptCacheKeyMode = *overrides.PromptCacheKeyMode
+	}
 	if overrides.SupportsLongCacheRetention != nil {
 		resolved.supportsLongCacheRetention = *overrides.SupportsLongCacheRetention
 	}
@@ -601,62 +609,16 @@ func openAICompletionsChatTemplateValueOrder(compat json.RawMessage, field strin
 		return nil, nil
 	}
 
-	decoder := json.NewDecoder(bytes.NewReader(values))
-	opening, err := decoder.Token()
-	if err != nil {
-		return nil, err
-	}
-	if delimiter, ok := opening.(json.Delim); !ok || delimiter != '{' {
+	members, ok := jsonwire.ParseRawObject(values)
+	if !ok {
 		return nil, errors.New(field + " is not an object")
 	}
-
-	order := make([]string, 0)
-	seen := make(map[string]bool)
-	for decoder.More() {
-		token, err := decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		name, ok := token.(string)
-		if !ok {
-			return nil, errors.New(field + " key is not a string")
-		}
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
-			return nil, err
-		}
-		if !seen[name] {
-			seen[name] = true
-			order = append(order, name)
-		}
+	jsonwire.SortJSPropertyOrder(members, func(member jsonwire.RawMember) string { return member.Name })
+	order := make([]string, len(members))
+	for index, member := range members {
+		order[index] = member.Name
 	}
-	if _, err := decoder.Token(); err != nil {
-		return nil, err
-	}
-
-	sort.SliceStable(order, func(left, right int) bool {
-		leftIndex, leftIsIndex := openAICompletionsArrayIndex(order[left])
-		rightIndex, rightIsIndex := openAICompletionsArrayIndex(order[right])
-		if leftIsIndex && rightIsIndex {
-			return leftIndex < rightIndex
-		}
-		return leftIsIndex && !rightIsIndex
-	})
 	return order, nil
-}
-
-func openAICompletionsArrayIndex(name string) (uint64, bool) {
-	if name == "0" {
-		return 0, true
-	}
-	if name == "" || name[0] == '0' {
-		return 0, false
-	}
-	value, err := strconv.ParseUint(name, 10, 32)
-	if err != nil || value == uint64(1<<32)-1 || strconv.FormatUint(value, 10) != name {
-		return 0, false
-	}
-	return value, true
 }
 
 func detectOpenAICompletionsCompat(model *ai.Model) resolvedOpenAICompletionsCompat {
@@ -851,8 +813,9 @@ func buildOpenAICompletionsPayload(
 		"messages": messages,
 		"stream":   true,
 	}
-	if (strings.Contains(model.BaseURL, "api.openai.com") && retention != ai.CacheRetentionNone) ||
-		(retention == ai.CacheRetentionLong && compat.supportsLongCacheRetention) {
+	if retention != ai.CacheRetentionNone && (compat.promptCacheKeyMode == ai.PromptCacheKeyEnabled ||
+		compat.promptCacheKeyMode != ai.PromptCacheKeyDisabled && (strings.Contains(model.BaseURL, "api.openai.com") ||
+			retention == ai.CacheRetentionLong && compat.supportsLongCacheRetention)) {
 		if value := clampOpenAIPromptCacheKey(options.SessionID); value != nil {
 			payload["prompt_cache_key"] = value
 		}
@@ -873,7 +836,10 @@ func buildOpenAICompletionsPayload(
 		payload["temperature"] = *options.Temperature
 	}
 
-	activeTools := activeOpenAICompletionsTools(requestContext.Tools, nil)
+	var activeTools []ai.Tool
+	if requestContext.Tools != nil {
+		activeTools = *requestContext.Tools
+	}
 	var tools []any
 	if len(activeTools) > 0 {
 		if wire {
@@ -888,7 +854,7 @@ func buildOpenAICompletionsPayload(
 		if compat.zaiToolStream {
 			payload["tool_stream"] = true
 		}
-	} else if hasOpenAICompletionsToolHistory(requestContext.Messages) {
+	} else if compat.requiresToolsWithToolHistory && hasOpenAICompletionsToolHistory(requestContext.Messages) {
 		tools = []any{}
 		payload["tools"] = tools
 	}
@@ -1001,11 +967,11 @@ func convertOpenAICompletionsMessages(
 		messages = append(messages, map[string]any{"role": role, "content": sanitizeText(*requestContext.SystemPrompt)})
 	}
 	settings := completionsMessageSettings{
-		assistantAfterToolResult: compat.requiresAssistantAfterToolResult,
-		thinkingAsText:           compat.requiresThinkingAsText,
-		reasoningContent:         compat.requiresReasoningContentOnAssistantMessages && model.Reasoning,
-		toolResultName:           compat.requiresToolResultName,
-		openCodeGo:               model.Provider == "opencode-go",
+		nonNullAssistantContent: compat.requiresAssistantAfterToolResult || compat.requiresNonNullAssistantContent,
+		thinkingAsText:          compat.requiresThinkingAsText,
+		reasoningContent:        compat.requiresReasoningContentOnAssistantMessages && model.Reasoning,
+		toolResultName:          compat.requiresToolResultName,
+		openCodeGo:              model.Provider == "opencode-go",
 	}
 	// For the wire, a message the last request sent at the same place reuses
 	// that request's encoding.
@@ -1137,7 +1103,7 @@ func convertOpenAICompletionsMessages(
 // completionsMessageSettings is all that converting one message reads besides
 // the message, so a message encodes the same way under equal settings.
 type completionsMessageSettings struct {
-	assistantAfterToolResult, thinkingAsText, reasoningContent, toolResultName, openCodeGo bool
+	nonNullAssistantContent, thinkingAsText, reasoningContent, toolResultName, openCodeGo bool
 }
 
 // completionsWireJSON is a message's encoded wire object.
@@ -1160,6 +1126,19 @@ var completionsWireLast = struct {
 	sync.Mutex
 	sessions map[string]completionsWireMessages
 }{sessions: map[string]completionsWireMessages{}}
+
+func init() {
+	ai.RegisterSessionResourceCleanup(func(sessionID string) error {
+		completionsWireLast.Lock()
+		defer completionsWireLast.Unlock()
+		if sessionID == "" {
+			clear(completionsWireLast.sessions)
+		} else {
+			delete(completionsWireLast.sessions, sessionID)
+		}
+		return nil
+	})
+}
 
 func openAICompletionsImagePart(image *ai.ImageContent) map[string]any {
 	return map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:" + image.MimeType + ";base64," + image.Data}}
@@ -1196,7 +1175,7 @@ func convertOpenAICompletionsAssistantMessageWithGrammar(
 	grammarToolInputProperties map[string]string,
 ) (map[string]any, bool, error) {
 	contentValue := any(nil)
-	if settings.assistantAfterToolResult {
+	if settings.nonNullAssistantContent {
 		contentValue = ""
 	}
 	converted := map[string]any{"role": "assistant", "content": contentValue}
@@ -1343,19 +1322,6 @@ func convertOpenAICompletionsToolResult(settings completionsMessageSettings, mes
 	return converted
 }
 
-func activeOpenAICompletionsTools(tools *[]ai.Tool, deferred map[string]bool) []ai.Tool {
-	if tools == nil {
-		return nil
-	}
-	result := make([]ai.Tool, 0, len(*tools))
-	for _, tool := range *tools {
-		if !deferred[tool.Name] {
-			result = append(result, tool)
-		}
-	}
-	return result
-}
-
 func convertOpenAICompletionsTools(tools []ai.Tool, compat resolvedOpenAICompletionsCompat) ([]any, error) {
 	result := make([]any, 0, len(tools))
 	for _, tool := range tools {
@@ -1376,11 +1342,7 @@ func convertOpenAICompletionsTools(tools []ai.Tool, compat resolvedOpenAIComplet
 			})
 			continue
 		}
-		strict, err := resolveJSONSchemaStrictSampling(tool, compat.supportsStrictMode)
-		if err != nil {
-			return nil, err
-		}
-		parameters, err := getJSONSchemaToolParameters(tool.Parameters, strict != nil && *strict)
+		strict, parameters, err := resolveJSONSchemaStrictSampling(tool, compat.supportsStrictMode, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1618,7 +1580,7 @@ func applyOpenAICompletionsThinking(
 	}
 }
 
-func buildOpenAICompletionsChatTemplateKwargs(model *ai.Model, effort string, values map[string]any, budget ...*float64) map[string]any {
+func buildOpenAICompletionsChatTemplateKwargs(model *ai.Model, effort string, values map[string]any, budget *float64) map[string]any {
 	result := map[string]any{}
 	for name, value := range values {
 		object, isObject := value.(map[string]any)
@@ -1632,8 +1594,8 @@ func buildOpenAICompletionsChatTemplateKwargs(model *ai.Model, effort string, va
 			}
 		}
 		if object["$var"] == "thinking.budget" {
-			if len(budget) > 0 && budget[0] != nil {
-				result[name] = *budget[0]
+			if budget != nil {
+				result[name] = *budget
 			}
 			continue
 		}
@@ -2034,54 +1996,31 @@ func (state *completionsStreamState) consumeReasoningDetail(raw json.RawMessage,
 	kind, _ := rawJSONString(current["type"])
 	if len(state.reasoningDetails) > 0 && (kind == "reasoning.text" || kind == "reasoning.summary") {
 		index := len(state.reasoningDetails) - 1
-		var previous map[string]json.RawMessage
-		_ = json.Unmarshal(state.reasoningDetails[index], &previous)
-		priorKind, _ := rawJSONString(previous["type"])
-		if priorKind == kind {
+		// Existing JSON member order comes from the provider replay metadata.
+		previous, _ := jsonwire.ParseRawObject(state.reasoningDetails[index])
+		priorType, _ := previous.Get("type")
+		if priorKind, _ := rawJSONString(priorType); priorKind == kind {
 			field := "text"
 			if kind == "reasoning.summary" {
 				field = "summary"
 			}
-			a, _ := rawJSONString(previous[field])
+			priorText, _ := previous.Get(field)
+			a, _ := rawJSONString(priorText)
 			b, _ := rawJSONString(current[field])
-			previous[field], _ = jsonwire.MarshalString(a + b)
+			merged, _ := jsonwire.MarshalString(a + b)
+			previous.Set(field, merged)
 			for _, key := range []string{"signature", "id", "format", "index"} {
 				if key == "signature" && kind != "reasoning.text" {
 					continue
 				}
-				prior, exists := previous[key]
+				prior, exists := previous.Get(key)
 				if !exists || string(prior) == "null" || ((key == "signature" || key == "format") && string(prior) == `""`) {
 					if next, ok := current[key]; ok {
-						previous[key] = next
+						previous.Set(key, next)
 					}
 				}
 			}
-			// Existing JSON member order comes from the provider replay metadata.
-			var ordered []string
-			dec := json.NewDecoder(bytes.NewReader(state.reasoningDetails[index]))
-			_, _ = dec.Token()
-			for dec.More() {
-				k, _ := dec.Token()
-				var ignored json.RawMessage
-				_ = dec.Decode(&ignored)
-				ordered = append(ordered, k.(string))
-			}
-			values := map[string]any{}
-			for k, v := range previous {
-				values[k] = v
-			}
-			for _, k := range []string{"signature", "id", "format", "index"} {
-				if _, ok := previous[k]; ok {
-					found := false
-					for _, old := range ordered {
-						found = found || old == k
-					}
-					if !found {
-						ordered = append(ordered, k)
-					}
-				}
-			}
-			state.reasoningDetails[index], _ = marshalOpenAICompletionsObjectWithKeys(values, ordered)
+			state.reasoningDetails[index], _ = previous.MarshalJSON()
 			return nil
 		}
 	}

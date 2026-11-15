@@ -47,7 +47,7 @@ func (adc *googleVertexADC) externalAccountExecutableSubjectToken(
 	if source == nil || source.Command == "" {
 		return "", errors.New(`no valid Pluggable Auth "credential_source" provided`)
 	}
-	if googleVertexExternalAccountUTF16Length(config.ServiceAccountImpersonationURL) > 256 {
+	if jsStringLength(config.ServiceAccountImpersonationURL) > 256 {
 		return "", fmt.Errorf("URL is too long: %s", config.ServiceAccountImpersonationURL) //nolint:staticcheck // Exact upstream prefix.
 	}
 	timeout := googleVertexExternalAccountExecutableDefaultTimeout
@@ -248,17 +248,6 @@ func googleVertexExternalAccountImpersonatedEmail(endpoint string) string {
 	}
 	start += len(marker)
 	return strings.TrimSuffix(endpoint[start:], ":generateAccessToken")
-}
-
-func googleVertexExternalAccountUTF16Length(value string) int {
-	length := 0
-	for _, character := range value {
-		length++
-		if character > 0xffff {
-			length++
-		}
-	}
-	return length
 }
 
 func googleVertexExternalAccountExecutableCode(response googleVertexExternalAccountExecutableResponse) string {

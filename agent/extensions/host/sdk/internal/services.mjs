@@ -10,7 +10,7 @@
 // ── Transport contract ───────────────────────────────────────────────────────
 //
 // transport.capabilities: Iterable<string>
-//   Capability ids negotiated in host_hello (e.g. "agent_session_v1").
+//   Capability ids negotiated in the handshake (e.g. "agent_session_v1").
 //   A service method may only be called when its capability is present.
 //
 // All methods return Promises and reject with structured errors

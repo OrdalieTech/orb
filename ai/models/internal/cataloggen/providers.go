@@ -110,7 +110,7 @@ func providers() []provider {
 		{
 			id: "anthropic",
 			models: func(ctx *buildContext) []*model {
-				return ctx.modelsDevModels("anthropic", devOptions{
+				return addMissing(ctx.modelsDevModels("anthropic", devOptions{
 					api: ai.APIAnthropicMessages, baseURL: "https://api.anthropic.com",
 					mapModel: func(m *model, _ sourceModel) *model {
 						if slices.Contains([]string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"}, m.ID) {
@@ -121,7 +121,11 @@ func providers() []provider {
 						}
 						return m
 					},
-				})
+				}),
+					// Released 2026-11-09; models.dev does not list it for Anthropic yet.
+					&model{Model: ai.Model{ID: "claude-fable-5-2", Name: "Claude Fable 5.2", API: ai.APIAnthropicMessages, BaseURL: "https://api.anthropic.com",
+						Provider: "anthropic", Reasoning: true, Input: ai.InputModalities{ai.InputText, ai.InputImage}, Cost: rates(8, 40, .2, 10),
+						ContextWindow: 1000000, MaxTokens: 128000}})
 			},
 			finalize: func(m *model, _ *buildContext) {
 				if m.API != ai.APIAnthropicMessages {
@@ -152,7 +156,7 @@ func providers() []provider {
 				for _, item := range []struct {
 					id        string
 					fallbacks []string
-				}{{"claude-fable-5", []string{"claude-opus-4-8", "claude-opus-5"}}, {"claude-opus-5", []string{"claude-opus-4-8"}}} {
+				}{{"claude-fable-5", []string{"claude-opus-4-8", "claude-opus-5"}}, {"claude-fable-5-2", []string{"claude-opus-4-8", "claude-opus-5"}}, {"claude-opus-5", []string{"claude-opus-4-8"}}} {
 					m := byID[item.id]
 					if m == nil {
 						continue
@@ -180,9 +184,10 @@ func providers() []provider {
 					if m.API != ai.APIOpenAIResponses {
 						continue
 					}
-					// Azure bills without OpenAI's long-context tier and deploys these with larger windows.
-					m.API, m.Provider, m.BaseURL, m.Cost.Tiers = ai.APIAzureOpenAIResponses, "azure", "", nil
-					if slices.Contains([]string{"gpt-5.4", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"}, m.ID) {
+					// Azure keeps OpenAI's long-context tier and deploys these with larger windows.
+					m.API, m.Provider, m.BaseURL = ai.APIAzureOpenAIResponses, "azure", ""
+					if slices.Contains([]string{"gpt-5.4", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra",
+						"gpt-6-astra", "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-6.1-terra"}, m.ID) {
 						m.ContextWindow = 1050000
 					}
 					models = append(models, m)
@@ -389,13 +394,9 @@ func providers() []provider {
 		opencode("opencode-go"),
 		opencode("opencode"),
 		openRouter(),
-		qwenTokenPlan("qwen-token-plan-cn", "alibaba-token-plan-cn", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", nil),
-		// QwenCloud Token Plan Individual allowlist, verified 2026-09-03: the
-		// international endpoint with a narrower catalog.
-		qwenTokenPlan("qwen-token-plan-individual", "alibaba-token-plan", qwenInternationalBaseURL, []string{
-			"deepseek-v4-flash-0731", "deepseek-v4-pro", "deepseek-v4-pro-0813", "glm-5.2", "qwen3.6-flash",
-			"qwen3.7-max", "qwen3.7-plus", "qwen3.8-flash", "qwen3.8-max",
-		}),
+		qwenTokenPlan("qwen-token-plan-cn", "alibaba-token-plan-cn", qwenCNBaseURL, nil),
+		qwenTokenPlan("qwen-token-plan-individual", "alibaba-token-plan", qwenInternationalBaseURL, qwenIndividualModelIDs),
+		qwenTokenPlan("qwen-token-plan-individual-cn", "alibaba-token-plan-cn", qwenCNBaseURL, qwenIndividualModelIDs),
 		qwenTokenPlan("qwen-token-plan", "alibaba-token-plan", qwenInternationalBaseURL, nil),
 		together(),
 		{
@@ -1034,6 +1035,11 @@ func opencode(id string) provider {
 				if id == "opencode" && supportsClaudeMidConvoSystemMessages(m.ID) {
 					m.mergeCompat(compat("supportsMidConvoSystemMessages", true))
 				}
+				// Zen and Go forward per-message effort and thinking.block_binding. Without
+				// drop_block, Go rejects replayed thinking after the system prompt or tools change.
+				if supportsClaudeMidConvoEffort(m.ID) {
+					enableClaudeMidConvoEffort(m)
+				}
 				// OpenCode Qwen 3.8 Flash emits and accepts thinking blocks with empty signatures.
 				if m.ID == "qwen3.8-flash" {
 					m.mergeCompat(compat("allowEmptySignature", true))
@@ -1115,7 +1121,17 @@ func openRouter() provider {
 
 // qwenInternationalBaseURL is Alibaba Cloud Model Studio Token Plan's
 // international endpoint; China uses its own endpoint and keys.
-const qwenInternationalBaseURL = "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+const (
+	qwenInternationalBaseURL = "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+	qwenCNBaseURL            = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+)
+
+// QwenCloud Token Plan Individual allowlist, verified 2026-11-01: each region's
+// endpoint with a narrower catalog.
+var qwenIndividualModelIDs = []string{
+	"deepseek-v4-flash-0731", "deepseek-v4-pro", "deepseek-v4-pro-0813", "glm-5.2", "glm-5.3", "qwen3.6-flash",
+	"qwen3.7-max", "qwen3.7-plus", "qwen3.8-flash", "qwen3.8-max",
+}
 
 func qwenTokenPlan(id, source, baseURL string, allowed []string) provider {
 	return provider{

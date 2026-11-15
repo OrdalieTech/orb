@@ -17,6 +17,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/truncate"
 	"github.com/OrdalieTech/orb/tui"
 
 	theme "github.com/OrdalieTech/orb/agent/modes/theme"
@@ -1453,6 +1454,8 @@ type BashExecutionComponent struct {
 	expanded    bool
 	hovered     bool
 	excludeCtx  bool
+	truncated   bool // earlier output was discarded, here or by the executor
+	fullOutput  string
 	loader      *tui.Loader
 	ui          tui.RenderRequester
 }
@@ -1477,14 +1480,25 @@ func (c *BashExecutionComponent) AppendOutput(text string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.output.WriteString(text)
+	// The executor keeps the full output on disk; the view keeps the tail the bash tool would.
+	if c.output.Len() > 2*truncate.DefaultMaxBytes {
+		tail := truncate.TruncateTail(c.output.String()).Content
+		c.output.Reset()
+		c.output.WriteString(tail)
+		c.truncated = true
+	}
 	c.rebuild()
 }
 
-func (c *BashExecutionComponent) SetComplete(exitCode *int, cancelled bool) {
+func (c *BashExecutionComponent) SetComplete(exitCode *int, cancelled, truncated bool, fullOutputPath *string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.exitCode = exitCode
 	c.cancelled = cancelled
+	c.truncated = c.truncated || truncated
+	if fullOutputPath != nil {
+		c.fullOutput = *fullOutputPath
+	}
 	c.complete = true
 	if c.loader != nil {
 		c.loader.Stop()
@@ -1567,6 +1581,9 @@ func (c *BashExecutionComponent) rebuild() {
 			statusParts = append(statusParts, theme.FG("warning", "(cancelled)"))
 		} else if c.exitCode != nil && *c.exitCode != 0 {
 			statusParts = append(statusParts, theme.FG("error", fmt.Sprintf("(exit %d)", *c.exitCode)))
+		}
+		if c.truncated && c.fullOutput != "" {
+			statusParts = append(statusParts, theme.FG("warning", "Output truncated. Full output: "+c.fullOutput))
 		}
 		if len(statusParts) > 0 {
 			c.container.AddChild(tui.NewText(strings.Join(statusParts, "\n"), 3, 0, nil))
@@ -2283,11 +2300,7 @@ func (c *SummaryMessageComponent) Render(width int) []string {
 // CustomMessageComponent
 // ─────────────────────────────────────────────────────────────
 
-type CustomMessageComponent struct {
-	container *tui.Container
-	box       *tui.Box
-	expanded  bool
-}
+type CustomMessageComponent struct{ container *tui.Container }
 
 func NewCustomMessageComponent(customType string, content any, mdTheme tui.MarkdownTheme) *CustomMessageComponent {
 	container := &tui.Container{}
@@ -2297,14 +2310,69 @@ func NewCustomMessageComponent(customType string, content any, mdTheme tui.Markd
 	label := theme.FG("customMessageLabel", theme.Bold(fmt.Sprintf("[%s]", customType)))
 	box.AddChild(tui.NewText(label, 0, 0, nil))
 	box.AddChild(tui.NewSpacer(1))
-	text := fmt.Sprintf("%v", content)
-	if text != "" {
+	if text := customMessageText(content); text != "" {
 		box.AddChild(tui.NewMarkdown(text, 0, 0, mdTheme,
 			&tui.DefaultTextStyle{Color: func(t string) string { return theme.FG("customMessageText", t) }}, nil))
 	}
-	return &CustomMessageComponent{container: container, box: box}
+	return &CustomMessageComponent{container: container}
 }
 
-func (c *CustomMessageComponent) SetExpanded(expanded bool) { c.expanded = expanded }
+// customMessageText joins the text blocks of block-array content, as the HTML
+// export does; any other content prints as is.
+func customMessageText(content any) string {
+	switch typed := content.(type) {
+	case string:
+		return typed
+	case ai.UserContent:
+		if typed.Text != nil {
+			return *typed.Text
+		}
+		return customBlocksText(typed.Blocks)
+	case ai.UserContentBlocks:
+		return customBlocksText(typed)
+	case []ai.UserContentBlock:
+		return customBlocksText(typed)
+	case []*ai.TextContent:
+		var texts []string
+		for _, block := range typed {
+			if block != nil {
+				texts = append(texts, block.Text)
+			}
+		}
+		return strings.Join(texts, "\n")
+	case []any:
+		var texts []string
+		for _, block := range typed {
+			switch value := block.(type) {
+			case *ai.TextContent:
+				if value != nil {
+					texts = append(texts, value.Text)
+				}
+			case ai.TextContent:
+				texts = append(texts, value.Text)
+			case map[string]any:
+				if value["type"] == "text" {
+					if text, ok := value["text"].(string); ok {
+						texts = append(texts, text)
+					}
+				}
+			}
+		}
+		return strings.Join(texts, "\n")
+	default:
+		return fmt.Sprintf("%v", content)
+	}
+}
+
+func customBlocksText(blocks []ai.UserContentBlock) string {
+	var texts []string
+	for _, block := range blocks {
+		if text, ok := block.(*ai.TextContent); ok && text != nil {
+			texts = append(texts, text.Text)
+		}
+	}
+	return strings.Join(texts, "\n")
+}
+
 func (c *CustomMessageComponent) Invalidate()               { c.container.Invalidate() }
 func (c *CustomMessageComponent) Render(width int) []string { return c.container.Render(width) }

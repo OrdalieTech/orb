@@ -131,6 +131,13 @@ func (r *Sessions) Open(ctx context.Context, metadata harness.SessionMetadata) (
 	return harness.NewSession(storage), nil
 }
 
+// CWD is the folder session id runs in.
+func (r *Sessions) CWD(ctx context.Context, id string) (string, error) {
+	var cwd string
+	err := r.db.QueryRowContext(ctx, "SELECT cwd FROM sessions WHERE namespace=? AND id=?", r.namespace, id).Scan(&cwd)
+	return cwd, err
+}
+
 func (r *Sessions) List(ctx context.Context, options harness.SessionListOptions) ([]harness.SessionMetadata, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT header FROM sessions WHERE namespace=? AND (?='' OR cwd=?) ORDER BY modified DESC,id`, r.namespace, options.CWD, options.CWD)
 	if err != nil {

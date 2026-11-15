@@ -6,37 +6,12 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/ai/auth"
-	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/conformance/runner"
 )
 
 type googleVertexProviderFixture struct {
-	ID   ai.ProviderID `json:"id"`
-	Name string        `json:"name"`
-	APIs []ai.API      `json:"apis"`
 	Auth struct {
-		Kind  providers.AuthKind `json:"kind"`
-		Name  string             `json:"name"`
-		Login struct {
-			APIKey struct {
-				Type auth.CredentialType `json:"type"`
-				Key  string              `json:"key"`
-			} `json:"apiKey"`
-			ADC struct {
-				Type auth.CredentialType `json:"type"`
-				Env  map[string]string   `json:"env"`
-			} `json:"adc"`
-			ServiceAccount struct {
-				Type auth.CredentialType `json:"type"`
-				Env  map[string]string   `json:"env"`
-			} `json:"serviceAccount"`
-			Notifications []auth.AuthEvent `json:"notifications"`
-		} `json:"login"`
-		EnvAPIKeys struct {
-			Found []string `json:"found"`
-		} `json:"envAPIKeys"`
 		Resolutions []struct {
 			Name        string           `json:"name"`
 			Result      *auth.AuthResult `json:"result"`

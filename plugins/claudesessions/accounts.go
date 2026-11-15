@@ -308,13 +308,15 @@ func (p *provider) ambientStatus(ctx context.Context) claudeStatus {
 			close(done)
 		}()
 	}
-	pending, first := ambient.pending, ambient.checked.IsZero()
+	pending, status := ambient.pending, ambient.status
+	first := ambient.checked.IsZero() && pending != nil
 	ambient.Unlock()
-	if first && pending != nil {
-		select {
-		case <-pending:
-		case <-ctx.Done():
-		}
+	if !first {
+		return status
+	}
+	select {
+	case <-pending:
+	case <-ctx.Done():
 	}
 	ambient.Lock()
 	defer ambient.Unlock()

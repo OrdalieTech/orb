@@ -598,10 +598,9 @@ func TestAmbientLoginAnswersWhileRechecking(t *testing.T) {
 	ambient.Lock()
 	pending := ambient.pending
 	ambient.Unlock()
-	if pending == nil {
-		t.Fatal("no fresh reading was started")
+	if pending != nil {
+		<-pending // nil once the fresh reading has already landed
 	}
-	<-pending
 	if status := p.ambientStatus(t.Context()); status.Email == "old@example.com" {
 		t.Fatalf("status was not refreshed: %+v", status)
 	}

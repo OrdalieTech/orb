@@ -33,22 +33,6 @@ func TestAcquireUsesRemovableDirectory(t *testing.T) {
 	}
 }
 
-// A zero-byte regular file is what an older orb left behind with flock. It
-// wedges upstream forever, so acquiring must reclaim it rather than honour it.
-func TestAcquireReclaimsLeftoverRegularFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "models-store.json")
-	if err := os.WriteFile(path+".lock", nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	release, err := Acquire(path)
-	if err != nil {
-		t.Fatalf("leftover flock file must be reclaimed: %v", err)
-	}
-	if err := release(); err != nil {
-		t.Fatalf("release: %v", err)
-	}
-}
-
 // Jittered backoff exists so contending writers do not lose in lockstep; every
 // writer must eventually get the lock, and only one may hold it at a time.
 func TestAcquireSerializesContendingWriters(t *testing.T) {
@@ -114,6 +98,27 @@ func TestFileUpdateKeepsSymlinkAndNarrowedMode(t *testing.T) {
 	}
 	if _, err := os.Stat(link + ".lock"); !os.IsNotExist(err) {
 		t.Fatalf("lock survived the update: %v", err)
+	}
+}
+
+// With LockResolved, symlinked aliases of a file share the resolved file's lock.
+func TestFileUpdateLocksResolvedFile(t *testing.T) {
+	dir := t.TempDir()
+	target, link := filepath.Join(dir, "auth.json"), filepath.Join(dir, "alias.json")
+	if err := os.WriteFile(target, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip(err)
+	}
+	err := File{Path: link, Perm: 0o600, LockResolved: true}.Update(t.Context(), func(current []byte) ([]byte, error) {
+		if _, err := os.Stat(target + ".lock"); err != nil {
+			t.Errorf("resolved file not locked: %v", err)
+		}
+		return current, nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -172,6 +172,32 @@ func TestModelsJSONValidationMatchesUpstreamFixture(t *testing.T) {
 	}
 }
 
+// pi 1.5.1 compat fields. Compat shapes are open objects, so an invalid
+// promptCacheKeyMode is rejected only where no other API shape accepts the object.
+func TestModelsJSONValidatesPi151CompatFields(t *testing.T) {
+	for _, test := range []struct {
+		compat   string
+		accepted bool
+	}{
+		{`{"promptCacheKeyMode":"enabled","sessionAffinityFormat":"openai","requiresNonNullAssistantContent":true,"requiresToolsWithToolHistory":true}`, true},
+		{`{"promptCacheKeyMode":"disabled","sessionAffinityFormat":"openai","supportsExplicitPromptCacheMode":true}`, true},
+		{`{"supportsMessageThreads":false,"supportsStrictTools":true}`, true},
+		{`{"promptCacheKeyMode":"always","sessionAffinityFormat":"openai"}`, false},
+	} {
+		path := filepath.Join(t.TempDir(), "models.json")
+		if err := os.WriteFile(path, []byte(`{"providers":{"fixture":{"compat":`+test.compat+`}}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		config, err := LoadModelConfig(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if accepted := config.Error() == ""; accepted != test.accepted {
+			t.Errorf("%s: accepted = %t, error = %q", test.compat, accepted, config.Error())
+		}
+	}
+}
+
 func sameJSON(t *testing.T, left, right any) bool {
 	t.Helper()
 	leftJSON, err := json.Marshal(left)

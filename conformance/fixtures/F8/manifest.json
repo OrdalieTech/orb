@@ -1,6 +1,6 @@
 {
   "family": "F8",
-  "upstreamCommit": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "upstreamCommit": "b4afdddf44e059c67ccf5097e5317d913521b470",
   "generator": "conformance/extract/f8-slash-templates.ts",
   "source": "packages/coding-agent/src/core/prompt-templates.ts + packages/coding-agent/src/core/skills.ts + packages/coding-agent/src/core/resource-loader.ts + packages/coding-agent/src/core/agent-session.ts",
   "additionalSources": [

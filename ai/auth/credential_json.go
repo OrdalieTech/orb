@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -87,7 +87,7 @@ func (credential *Credential) UnmarshalJSON(data []byte) error {
 func (credential Credential) MarshalJSON() ([]byte, error) {
 	order := append([]string(nil), credential.order...)
 	appendMissing := func(name string, present bool) {
-		if !present || contains(order, name) {
+		if !present || slices.Contains(order, name) {
 			return
 		}
 		order = append(order, name)
@@ -155,19 +155,19 @@ func (credential Credential) member(name string) ([]byte, bool, error) {
 		value, err := marshalStringMap(credential.Env, credential.envOrder)
 		return value, true, err
 	case "refresh":
-		if credential.Refresh == "" && !contains(credential.order, name) {
+		if credential.Refresh == "" && !slices.Contains(credential.order, name) {
 			return nil, false, nil
 		}
 		value, err := jsonwire.Marshal(credential.Refresh)
 		return value, true, err
 	case "access":
-		if credential.Access == "" && !contains(credential.order, name) {
+		if credential.Access == "" && !slices.Contains(credential.order, name) {
 			return nil, false, nil
 		}
 		value, err := jsonwire.Marshal(credential.Access)
 		return value, true, err
 	case "expires":
-		if credential.Expires == 0 && credential.Type != CredentialOAuth && !contains(credential.order, name) {
+		if credential.Expires == 0 && credential.Type != CredentialOAuth && !slices.Contains(credential.order, name) {
 			return nil, false, nil
 		}
 		if len(credential.expiresJSON) != 0 && credential.Expires == credential.expiresBaseline {
@@ -181,43 +181,15 @@ func (credential Credential) member(name string) ([]byte, bool, error) {
 }
 
 func decodeOrderedObject(data []byte) (map[string]json.RawMessage, []string, error) {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	token, err := decoder.Token()
-	if err != nil {
-		return nil, nil, err
+	object, ok := jsonwire.ParseRawObject(data)
+	if !ok {
+		return nil, nil, errors.New("expected one JSON object")
 	}
-	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
-		return nil, nil, fmt.Errorf("expected JSON object")
-	}
-	members := make(map[string]json.RawMessage)
-	order := make([]string, 0)
-	for decoder.More() {
-		token, err = decoder.Token()
-		if err != nil {
-			return nil, nil, err
-		}
-		name, ok := token.(string)
-		if !ok {
-			return nil, nil, fmt.Errorf("expected JSON object key")
-		}
-		var raw json.RawMessage
-		if err := decoder.Decode(&raw); err != nil {
-			return nil, nil, err
-		}
-		if _, exists := members[name]; !exists {
-			order = append(order, name)
-		}
-		members[name] = append(json.RawMessage(nil), raw...)
-	}
-	if _, err := decoder.Token(); err != nil {
-		return nil, nil, err
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err == nil {
-		return nil, nil, fmt.Errorf("unexpected JSON trailer")
-	} else if !errors.Is(err, io.EOF) {
-		return nil, nil, fmt.Errorf("invalid JSON trailer: %w", err)
+	members := make(map[string]json.RawMessage, len(object))
+	order := make([]string, len(object))
+	for index, member := range object {
+		order[index] = member.Name
+		members[member.Name] = bytes.Clone(member.Value)
 	}
 	return members, order, nil
 }
@@ -260,13 +232,4 @@ func marshalStringMap(values map[string]string, preferredOrder []string) ([]byte
 	}
 	output.WriteByte('}')
 	return output.Bytes(), nil
-}
-
-func contains(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }

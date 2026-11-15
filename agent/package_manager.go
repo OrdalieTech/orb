@@ -281,36 +281,8 @@ func (manager *PackageManager) parseSource(source string) parsedSource {
 	return parsedSource{local: &localSource{path: source}}
 }
 
-func (manager *PackageManager) getSourceMatchKeyForInput(source string) string {
-	parsed := manager.parseSource(source)
-	switch {
-	case parsed.npm != nil:
-		return "npm:" + parsed.npm.name
-	case parsed.git != nil:
-		return "git:" + parsed.git.Host + "/" + parsed.git.Path
-	default:
-		return "local:" + pmResolvePath(parsed.local.path, manager.cwd)
-	}
-}
-
-func (manager *PackageManager) getSourceMatchKeyForSettings(source, scope string) string {
-	parsed := manager.parseSource(source)
-	switch {
-	case parsed.npm != nil:
-		return "npm:" + parsed.npm.name
-	case parsed.git != nil:
-		return "git:" + parsed.git.Host + "/" + parsed.git.Path
-	default:
-		baseDir, err := manager.getBaseDirForScope(scope)
-		if err != nil {
-			baseDir = manager.cwd
-		}
-		return "local:" + pmResolvePath(parsed.local.path, baseDir)
-	}
-}
-
 func (manager *PackageManager) packageSourcesMatch(existing config.PackageSource, inputSource, scope string) bool {
-	return manager.getSourceMatchKeyForSettings(existing.Source, scope) == manager.getSourceMatchKeyForInput(inputSource)
+	return manager.getPackageIdentity(existing.Source, scope) == manager.getPackageIdentity(inputSource, "")
 }
 
 // getPackageIdentity ignores version/ref so the same package configured in
@@ -1236,15 +1208,15 @@ func (manager *PackageManager) getManagedNpmInstallPath(source *npmSource, scope
 		if err != nil {
 			return "", err
 		}
-		return resolveManagedPath(root, "node_modules", source.name)
+		return resolveNpmPackagePath(root, source.name)
 	}
 	if scope == "project" {
 		if err := manager.assertProjectTrustedForScope(scope); err != nil {
 			return "", err
 		}
-		return filepath.Join(config.ProjectNpmInstallRoot(manager.cwd), "node_modules", source.name), nil
+		return resolveNpmPackagePath(config.ProjectNpmInstallRoot(manager.cwd), source.name)
 	}
-	return filepath.Join(config.UserNpmInstallRoot(manager.agentDir), "node_modules", source.name), nil
+	return resolveNpmPackagePath(config.UserNpmInstallRoot(manager.agentDir), source.name)
 }
 
 // getNpmInstallPath: upstream also probes legacy npm/pnpm global roots for
@@ -1264,7 +1236,14 @@ func (manager *PackageManager) getGitInstallPath(source *GitSource, scope string
 	if installRoot == "" {
 		return "", errors.New("Missing git install root") //nolint:staticcheck // Upstream error text is observable.
 	}
-	return resolveManagedPath(installRoot, source.Host, source.Path)
+	resolved, err := resolveManagedPath(installRoot, source.Host, source.Path)
+	if err != nil {
+		return "", err
+	}
+	if resolved == pmResolvePath(installRoot, "") {
+		return "", fmt.Errorf("Refusing to use path outside package install root: %s", resolved) //nolint:staticcheck // Upstream error text is observable.
+	}
+	return resolved, nil
 }
 
 func (manager *PackageManager) getGitInstallRoot(scope string) (string, error) {
@@ -1313,6 +1292,33 @@ func resolveManagedPath(root string, parts ...string) (string, error) {
 		return "", fmt.Errorf("Refusing to use path outside package install root: %s", resolvedPath) //nolint:staticcheck // Upstream error text is observable.
 	}
 	return resolvedPath, nil
+}
+
+// resolveNpmPackagePath anchors an npm package strictly inside root/node_modules
+// and rejects path-traversal or multi-segment package names.
+func resolveNpmPackagePath(installRoot, name string) (string, error) {
+	nodeModules := pmResolvePath(filepath.Join(installRoot, "node_modules"), "")
+	candidate := filepath.Clean(filepath.Join(nodeModules, filepath.FromSlash(name)))
+	if !validNpmPackageName(name) || candidate == nodeModules || !strings.HasPrefix(candidate, nodeModules+string(filepath.Separator)) {
+		return "", fmt.Errorf("Refusing to use path outside package install root: %s", candidate) //nolint:staticcheck // Upstream error text is observable.
+	}
+	return candidate, nil
+}
+
+func validNpmPackageName(name string) bool {
+	if name == "" || strings.ContainsAny(name, "\\\x00") {
+		return false
+	}
+	segments := strings.Split(name, "/")
+	switch len(segments) {
+	case 1:
+		return segments[0] != "" && segments[0] != "." && segments[0] != ".." && !strings.HasPrefix(segments[0], "@")
+	case 2:
+		return len(segments[0]) > 1 && strings.HasPrefix(segments[0], "@") && segments[0] != "@." && segments[0] != "@.." &&
+			segments[1] != "" && segments[1] != "." && segments[1] != ".."
+	default:
+		return false
+	}
 }
 
 func (manager *PackageManager) getBaseDirForScope(scope string) (string, error) {

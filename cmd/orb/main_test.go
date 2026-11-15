@@ -463,7 +463,8 @@ func TestBuiltBinaryServesRPCConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rpcContext, cancelRPC := context.WithTimeout(context.Background(), 10*time.Second)
+	// The deadline only ends a hung binary: a cold start on a loaded Windows runner takes seconds.
+	rpcContext, cancelRPC := context.WithTimeout(context.Background(), time.Minute)
 	defer cancelRPC()
 	command := exec.CommandContext(rpcContext, binary, "--mode", "rpc", "--no-session", "--provider", "faux", "--model", "faux-1")
 	command.Dir = project
@@ -489,6 +490,8 @@ func TestBuiltBinaryServesRPCConversation(t *testing.T) {
 		}
 		line, readErr := reader.ReadBytes('\n')
 		if readErr != nil {
+			_ = stdin.Close()
+			_ = command.Wait()
 			t.Fatalf("read RPC response: %v; stderr=%q", readErr, stderr.String())
 		}
 		return bytes.TrimSuffix(line, []byte{'\n'})
@@ -799,7 +802,7 @@ func TestRunCLIRPCMovesEventSubscriptionForExtensionInitiatedReplacement(t *test
 	input, inputWriter := io.Pipe()
 	output, outputWriter := io.Pipe()
 	var stderr bytes.Buffer
-	rpcContext, cancelRPC := context.WithTimeout(context.Background(), 5*time.Second)
+	rpcContext, cancelRPC := context.WithTimeout(context.Background(), time.Minute)
 	defer cancelRPC()
 	done := make(chan int, 1)
 	go func() {
@@ -990,5 +993,29 @@ func TestRunCLIModelsListsAndSetsTheDefault(t *testing.T) {
 	}
 	if code := use("nope", "x"); code == 0 {
 		t.Fatal("models use accepted a model that is not signed in")
+	}
+}
+
+func TestUpstreamPinMatchesVersionConstants(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "UPSTREAM.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lock struct {
+		Commit  string `json:"commit"`
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &lock); err != nil {
+		t.Fatal(err)
+	}
+	if upstreamVersion != lock.Version || upstreamCommit != lock.Commit {
+		t.Fatalf("cmd/orb/main.go reports %s @ %s, UPSTREAM.lock pins %s @ %s", upstreamVersion, upstreamCommit, lock.Version, lock.Commit)
+	}
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readme), lock.Commit) {
+		t.Fatalf("README.md does not reference UPSTREAM.lock commit %s", lock.Commit)
 	}
 }

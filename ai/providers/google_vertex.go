@@ -136,6 +136,5 @@ func credentialEnvValue(env map[string]string, name string) (string, bool) {
 var googleVertexProvider = Provider{
 	ID:      "google-vertex",
 	Name:    "Google Vertex AI",
-	Auth:    AuthAPIKey,
 	Methods: auth.ProviderAuth{APIKey: googleVertexAuth{}},
 }

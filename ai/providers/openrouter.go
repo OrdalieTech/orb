@@ -8,7 +8,6 @@ import (
 var openRouterProvider = Provider{
 	ID:   "openrouter",
 	Name: "OpenRouter",
-	Auth: AuthAPIKey,
 	Methods: auth.ProviderAuth{
 		APIKey: auth.EnvAPIKeyAuth{
 			DisplayName: "OpenRouter API key",

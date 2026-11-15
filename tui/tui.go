@@ -1411,7 +1411,8 @@ func applyLineResets(lines []string) []string {
 				}
 				line = line[:start] + line[start+stop+1:]
 			}
-			lines[index] = NormalizeTerminalOutput(line) + segmentReset
+			// The cursor marker is render metadata: extractCursor took the first one, the rest are stale.
+			lines[index] = NormalizeTerminalOutput(strings.ReplaceAll(line, CursorMarker, "")) + segmentReset
 		}
 	}
 	return lines
@@ -1817,11 +1818,14 @@ func (ui *TUI) renderViewport(width, height int) []string {
 		lines[bodyHeight-1] = compositeLineAt(lines[bodyHeight-1], "\x1b[7m"+jumpButtonLabel+"\x1b[27m", bodyWidth-jumpButtonWidth-1, jumpButtonWidth, bodyWidth)
 	}
 	if top, size := scrollbar(bodyLines, bodyHeight, end); width > 1 && size > 0 {
-		for row := top; row < top+size; row++ {
+		// Rows a Kitty image covers stay blank: a thumb would make the renderer write them after the image,
+		// which erases its cells in terminals that store images in cells (WezTerm, Orca; pi #11835).
+		for row := 0; row < top+size; row++ {
 			if IsImageLine(lines[row]) {
-				continue
+				row += kittyImageReservedRows(lines, row, bodyHeight-1) - 1
+			} else if row >= top {
+				lines[row] += scrollbarThumb
 			}
-			lines[row] += scrollbarThumb
 		}
 	}
 	return append(lines, chrome...)

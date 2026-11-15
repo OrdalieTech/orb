@@ -725,7 +725,6 @@
         "headers": {
           "authorization": "Bearer fixture-key",
           "content-type": "application/json",
-          "session_id": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss-tail",
           "x-client-request-id": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss-tail",
           "x-fixture": "responses-text",
           "x-model-header": "responses-text"
@@ -1435,7 +1434,7 @@
           "authorization": "Bearer fixture-key",
           "content-type": "application/json"
         },
-        "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_image_1\",\"type\":\"function\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"one\\\"}\"}},{\"id\":\"call_image_2\",\"type\":\"function\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"two\\\"}\"}}]},{\"role\":\"tool\",\"content\":\"first caption\",\"tool_call_id\":\"call_image_1\"},{\"role\":\"tool\",\"content\":\"(see attached image)\",\"tool_call_id\":\"call_image_2\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Attached image(s) from tool result:\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,AAEC\"}},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/jpeg;base64,AQID\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"also inspect\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/webp;base64,BAUG\"}}]}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"tools\":[]}"
+        "body": "{\"model\":\"gpt-fixture-completions\",\"messages\":[{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_image_1\",\"type\":\"function\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"one\\\"}\"}},{\"id\":\"call_image_2\",\"type\":\"function\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"two\\\"}\"}}]},{\"role\":\"tool\",\"content\":\"first caption\",\"tool_call_id\":\"call_image_1\"},{\"role\":\"tool\",\"content\":\"(see attached image)\",\"tool_call_id\":\"call_image_2\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Attached image(s) from tool result:\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,AAEC\"}},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/jpeg;base64,AQID\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"also inspect\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/webp;base64,BAUG\"}}]}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}"
       }
     },
     {

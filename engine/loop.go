@@ -828,6 +828,11 @@ func executeToolCallsParallel(
 		wait.Add(1)
 		go func(entry *toolEntry) {
 			defer wait.Done()
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					entry.err = fmt.Errorf("agent: tool %s panicked: %v", entry.prepared.toolCall.Name, recovered)
+				}
+			}()
 			slots <- struct{}{}
 			defer func() { <-slots }()
 			executed, err := executePreparedToolCall(ctx, entry.prepared, emitter)

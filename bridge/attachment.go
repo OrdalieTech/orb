@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -149,7 +150,7 @@ func OpenLedger(store document.Document, quota int) (*Ledger, error) {
 		}
 	}
 	if changed {
-		if err = l.persist(); err != nil {
+		if err = l.persist(""); err != nil {
 			return nil, err
 		}
 	}
@@ -188,7 +189,7 @@ func (l *Ledger) Accept(r Request) (Receipt, bool, error) {
 	}
 	receipt := Receipt{InstanceID: r.Call.InstanceID, SessionID: r.Call.SessionID, Method: r.Call.Method, Expected: r.Call.Expected, AcceptedAt: time.Now().UnixMilli(), OperationID: r.Call.OperationID, Status: "accepted", Digest: d}
 	l.entries[k] = receipt
-	if err = l.persist(); err != nil {
+	if err = l.persist(k); err != nil {
 		delete(l.entries, k)
 		return Receipt{}, false, err
 	}
@@ -226,16 +227,38 @@ func (l *Ledger) Set(r Request, status string, result json.RawMessage, code stri
 	next.Result = append(json.RawMessage(nil), result...)
 	next.Error = code
 	l.entries[k] = next
-	if err := l.persist(); err != nil {
+	if err := l.persist(k); err != nil {
 		l.entries[k] = old
 		return Receipt{}, err
 	}
 	return next, nil
 }
-func (l *Ledger) persist() error {
+
+// persist evicts the oldest terminal receipts, never keep, when the file would
+// exceed its quota; accepted and running receipts guard operations in flight.
+func (l *Ledger) persist(keep string) error {
 	b := JSON(ledgerFile{Version: 1, Entries: l.entries})
-	if len(b) > l.quota {
-		return Fail("resource_exhausted")
+	if over := len(b) - l.quota; over > 0 {
+		var done []string
+		for k, r := range l.entries {
+			if k != keep && r.Status != "accepted" && r.Status != "running" {
+				done = append(done, k)
+			}
+		}
+		slices.SortFunc(done, func(a, b string) int {
+			return cmp.Or(cmp.Compare(l.entries[a].AcceptedAt, l.entries[b].AcceptedAt), strings.Compare(a, b))
+		})
+		n := 0
+		for ; n < len(done) && over > 0; n++ {
+			over -= len(JSON(done[n])) + len(JSON(l.entries[done[n]])) + 2
+		}
+		if over > 0 {
+			return Fail("resource_exhausted")
+		}
+		for _, k := range done[:n] {
+			delete(l.entries, k)
+		}
+		b = JSON(ledgerFile{Version: 1, Entries: l.entries})
 	}
 	if err := document.Replace(context.Background(), l.store, b); err != nil {
 		l.poisoned = true
@@ -326,10 +349,7 @@ func ValidateCall(c Call) error {
 	default:
 		return fmt.Errorf("unsupported method: %w", Fail("not_found"))
 	}
-	if _, err := protocol.Canonical(c.Args); err != nil {
-		return err
-	}
-	return nil
+	return protocol.Validate(c.Args)
 }
 
 // Local is a non-owning in-process registration channel. Closing it fences

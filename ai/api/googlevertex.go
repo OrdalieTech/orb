@@ -42,30 +42,9 @@ func StreamSimpleGoogleVertex(
 		return nil, errors.New("ai/api: Google Vertex model is nil")
 	}
 	base := buildBaseStreamOptions(model, requestContext, options)
-	if options == nil || options.Reasoning == nil {
-		return StreamGoogleVertexWithOptions(ctx, model, requestContext, &GoogleVertexOptions{
-			StreamOptions: base,
-			ToolChoice:    GoogleToolChoice(simpleToolChoice(options, "any")),
-			Thinking:      &GoogleThinkingOptions{Enabled: false},
-		})
-	}
-	clamped := clampGoogleReasoning(model, *options.Reasoning)
-	if clamped == ai.ThinkingLevel(ai.ModelThinkingOff) {
-		return StreamGoogleVertexWithOptions(ctx, model, requestContext, &GoogleVertexOptions{
-			StreamOptions: base,
-			ToolChoice:    GoogleToolChoice(simpleToolChoice(options, "any")),
-			Thinking:      &GoogleThinkingOptions{Enabled: false},
-		})
-	}
-	effort, err := resolveGoogleThinkingLevel(model, clamped)
+	thinking, err := simpleGoogleThinking(model, options, googleVertexThinkingBudget)
 	if err != nil {
 		return nil, err
-	}
-	thinking := &GoogleThinkingOptions{Enabled: true}
-	if usesGoogleThinkingLevel(model) {
-		thinking.Level = googleThinkingLevel(effort)
-	} else {
-		thinking.BudgetTokens = googleVertexThinkingBudget(model, effort, options.ThinkingBudgets)
 	}
 	return StreamGoogleVertexWithOptions(ctx, model, requestContext, &GoogleVertexOptions{
 		StreamOptions: base,
@@ -271,10 +250,6 @@ func googleVertexModelPath(model string) (string, error) {
 	default:
 		return "publishers/google/models/" + model, nil
 	}
-}
-
-func disabledGoogleVertexThinkingConfig(model *ai.Model) *GoogleThinkingConfig {
-	return disabledGoogleThinkingConfig(model)
 }
 
 // googleVertexThinkingBudget mirrors google-vertex.ts getGoogleBudget; efforts

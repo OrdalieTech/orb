@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -138,8 +139,11 @@ func (c *Conn) read() {
 		if err != nil {
 			return
 		}
+		// Read validated the frame, so it decodes without another canonical pass.
 		var f frame
-		if len(b) > int(c.frameLimit.Load()) || Decode(b, &f) != nil || f.Version != "2.0" || f.ID == "" {
+		d := json.NewDecoder(bytes.NewReader(b))
+		d.DisallowUnknownFields()
+		if len(b) > int(c.frameLimit.Load()) || d.Decode(&f) != nil || f.Version != "2.0" || f.ID == "" {
 			return
 		}
 		if f.Method == "" {
@@ -164,7 +168,7 @@ func (c *Conn) read() {
 		if len(f.Params) == 0 {
 			f.Params = json.RawMessage(`{}`)
 		}
-		if _, err = Canonical(f.Params); err != nil {
+		if f.Params[0] != '{' {
 			return
 		}
 		c.mu.Lock()

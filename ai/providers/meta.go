@@ -8,7 +8,6 @@ import (
 var metaProvider = Provider{
 	ID:   "meta",
 	Name: "Meta",
-	Auth: AuthAPIKey,
 	Methods: auth.ProviderAuth{
 		APIKey: auth.EnvAPIKeyAuth{DisplayName: "Meta Model API key", EnvVars: []string{"META_API_KEY"}},
 		OAuth:  oauth.NewMeta(nil),

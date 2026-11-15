@@ -40,10 +40,12 @@ type InteractiveSessionHost interface {
 	ImportSession(ctx context.Context, inputPath, cwdOverride string) (extensions.SessionReplacementResult, error)
 	Reload(ctx context.Context) error
 
-	// ListProjectSessions lists sessions for the current cwd;
-	// ListAllSessions lists every project's sessions.
-	ListProjectSessions(onProgress sessionstore.SessionListProgress) []sessionstore.SessionInfo
-	ListAllSessions(onProgress sessionstore.SessionListProgress) []sessionstore.SessionInfo
+	// ListProjectSessionsContext lists sessions for the current cwd;
+	// ListAllSessionsContext lists every project's sessions.
+	ListProjectSessionsContext(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error)
+	ListAllSessionsContext(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error)
+	// DeleteSession deletes a persisted session that has no session file.
+	DeleteSession(reference string) (SessionDeleteMethod, error)
 
 	TrustState() (InteractiveTrustState, error)
 	// SetProjectTrust persists the trust decisions and rebuilds the runtime
@@ -53,6 +55,12 @@ type InteractiveSessionHost interface {
 	AuthOptions(ctx context.Context) (InteractiveAuthOptions, error)
 	Login(ctx context.Context, providerID string, authType aiauth.AuthType, interaction aiauth.AuthInteraction) error
 	Logout(ctx context.Context, providerID string) error
+
+	// PlanLimits is the session's provider plan windows as last read, or nil; it never waits.
+	PlanLimits() *usage.Snapshot
+	// WatchOthers reports what this machine's other Orbs on Bridge are doing ("" when they are
+	// quiet or Bridge is off) until ctx ends.
+	WatchOthers(ctx context.Context, changed func(string))
 
 	Dispose()
 }
@@ -66,15 +74,6 @@ type InteractiveProviderHost interface {
 	CachedAccountUsage(string, string) (usage.Snapshot, bool)
 	UsageEnabled() bool
 	SetUsageEnabled(bool) error
-}
-
-// InteractiveFooterHost is optional: what the footer shows from beyond the session.
-type InteractiveFooterHost interface {
-	// PlanLimits is the session's provider plan windows as last read, or nil; it never waits.
-	PlanLimits() *usage.Snapshot
-	// WatchOthers reports what this machine's other Orbs on Bridge are doing ("" when they are
-	// quiet or Bridge is off) until ctx ends.
-	WatchOthers(ctx context.Context, changed func(string))
 }
 
 type InteractiveForkResult struct {
@@ -113,8 +112,18 @@ type InteractiveAuthOptions struct {
 	Logout []InteractiveAuthProvider
 }
 
-// MissingSessionCWDPrompt asks whether to continue a session whose stored cwd
-// no longer exists in the fallback cwd.
-func MissingSessionCWDPrompt(err *agent.MissingSessionCWDError) string {
-	return "cwd from session file does not exist\n" + err.SessionCWD + "\n\ncontinue in current cwd\n" + err.FallbackCWD
+// MissingSessionCWDPrompt asks how to open a session whose stored cwd no longer
+// exists; choices lists the options' labels by choice, the empty one cancelling.
+func MissingSessionCWDPrompt(err *agent.MissingSessionCWDError) (title string, choices []MissingSessionCWDOption) {
+	return "Session cwd does not exist: " + err.SessionCWD, []MissingSessionCWDOption{
+		{"Continue in " + err.FallbackCWD + " (asks again next time)", agent.MissingSessionCWDContinue},
+		{"Fork into " + err.FallbackCWD + " (new session ID, original kept)", agent.MissingSessionCWDFork},
+		{"Cancel", ""},
+	}
+}
+
+// MissingSessionCWDOption is one answer to [MissingSessionCWDPrompt].
+type MissingSessionCWDOption struct {
+	Label  string
+	Choice agent.MissingSessionCWDChoice
 }

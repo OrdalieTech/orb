@@ -24,12 +24,12 @@ type cloudflareAPIKeyAuth struct {
 }
 
 var cloudflareWorkersAIProvider = Provider{
-	ID: "cloudflare-workers-ai", Name: "Cloudflare Workers AI", Auth: AuthAPIKey,
+	ID: "cloudflare-workers-ai", Name: "Cloudflare Workers AI",
 	Methods: auth.ProviderAuth{APIKey: cloudflareWorkersAIAuth()},
 }
 
 var cloudflareAIGatewayProvider = Provider{
-	ID: "cloudflare-ai-gateway", Name: "Cloudflare AI Gateway", Auth: AuthAPIKey,
+	ID: "cloudflare-ai-gateway", Name: "Cloudflare AI Gateway",
 	Methods: auth.ProviderAuth{APIKey: cloudflareAIGatewayAuth()},
 }
 

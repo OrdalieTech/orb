@@ -119,7 +119,7 @@ func TestWindowedChatProductionMutationsRefreshCachedChildren(t *testing.T) {
 	t.Run("bound bash requester", func(t *testing.T) {
 		mode := newPendingToolMode(t, nil)
 		component := mode.newBashExecutionComponent("printf test", false)
-		defer component.SetComplete(nil, true)
+		defer component.SetComplete(nil, true, false, nil)
 		mode.chat.AddChild(component)
 		_ = mode.chat.LineCount(120)
 		component.AppendOutput("WINDOW_BASH_OUTPUT")

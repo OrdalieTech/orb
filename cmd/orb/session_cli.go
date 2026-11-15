@@ -118,11 +118,7 @@ func createCLISession(cwd string, args CLIArgs, streams cliStreams, selector Ses
 	if err != nil {
 		return nil, session.SessionContext{}, err
 	}
-	cliSessionDir := ""
-	if args.SessionDir != nil {
-		cliSessionDir = *args.SessionDir
-	}
-	sessionDir, err := config.ResolveSessionDir(cliSessionDir, settings)
+	sessionDir, err := resolveCLISessionDir(args, settings)
 	if err != nil {
 		return nil, session.SessionContext{}, err
 	}
@@ -214,6 +210,15 @@ func createCLISession(cwd string, args CLIArgs, streams cliStreams, selector Ses
 		return nil, session.SessionContext{}, err
 	}
 	return manager, manager.BuildSessionContext(), nil
+}
+
+// resolveCLISessionDir is the session directory --session-dir, the environment or settings name.
+func resolveCLISessionDir(args CLIArgs, settings *config.SettingsManager) (string, error) {
+	cliValue := ""
+	if args.SessionDir != nil {
+		cliValue = *args.SessionDir
+	}
+	return config.ResolveSessionDir(cliValue, settings)
 }
 
 func resolveSessionArgument(argument, cwd, sessionDir, agentDir string) (resolvedSession, error) {

@@ -193,7 +193,7 @@ type StdinBuffer struct {
 	timer           *time.Timer
 	timerGeneration uint64
 	pasteMode       bool
-	pasteBuffer     string
+	pasteBuffer     strings.Builder
 	pendingKitty    rune
 	onData          func(string)
 	onPaste         func(string)
@@ -265,15 +265,16 @@ func (buffer *StdinBuffer) Process(data string) {
 
 func (buffer *StdinBuffer) processLocked() []stdinEvent {
 	if buffer.pasteMode {
-		buffer.pasteBuffer += buffer.buffer
+		// Only the new chunk, and an end marker split across chunks, can hold the end.
+		from := max(0, buffer.pasteBuffer.Len()-len(bracketedPasteEnd)+1)
+		buffer.pasteBuffer.WriteString(buffer.buffer)
 		buffer.buffer = ""
-		if end := strings.Index(buffer.pasteBuffer, bracketedPasteEnd); end >= 0 {
-			events := []stdinEvent{{kind: stdinPasteEvent, value: buffer.pasteBuffer[:end]}}
-			remaining := buffer.pasteBuffer[end+len(bracketedPasteEnd):]
-			buffer.pasteMode, buffer.pasteBuffer = false, ""
-			buffer.buffer = remaining
-			events = append(events, buffer.processLocked()...)
-			return events
+		paste := buffer.pasteBuffer.String()
+		if end := strings.Index(paste[from:], bracketedPasteEnd); end >= 0 {
+			buffer.buffer = paste[from+end+len(bracketedPasteEnd):]
+			buffer.pasteMode = false
+			buffer.pasteBuffer.Reset()
+			return append([]stdinEvent{{kind: stdinPasteEvent, value: paste[:from+end]}}, buffer.processLocked()...)
 		}
 		return nil
 	}
@@ -288,16 +289,7 @@ func (buffer *StdinBuffer) processLocked() []stdinEvent {
 		events = append(events, stdinEvent{kind: stdinResetKittyEvent})
 		buffer.buffer = buffer.buffer[start+len(bracketedPasteStart):]
 		buffer.pasteMode = true
-		buffer.pasteBuffer = buffer.buffer
-		buffer.buffer = ""
-		if end := strings.Index(buffer.pasteBuffer, bracketedPasteEnd); end >= 0 {
-			events = append(events, stdinEvent{kind: stdinPasteEvent, value: buffer.pasteBuffer[:end]})
-			remaining := buffer.pasteBuffer[end+len(bracketedPasteEnd):]
-			buffer.pasteMode, buffer.pasteBuffer = false, ""
-			buffer.buffer = remaining
-			events = append(events, buffer.processLocked()...)
-		}
-		return events
+		return append(events, buffer.processLocked()...)
 	}
 	sequences, remainder := extractCompleteSequences(buffer.buffer)
 	buffer.buffer = remainder
@@ -379,8 +371,9 @@ func (buffer *StdinBuffer) Clear() {
 		buffer.timer.Stop()
 		buffer.timer = nil
 	}
-	buffer.buffer, buffer.pasteBuffer, buffer.pendingKitty = "", "", 0
+	buffer.buffer, buffer.pendingKitty = "", 0
 	buffer.pasteMode = false
+	buffer.pasteBuffer.Reset()
 }
 
 func (buffer *StdinBuffer) Close() { buffer.Clear() }

@@ -70,6 +70,7 @@ func newInteractiveSessionHost(
 	}
 	host.AgentSessionRuntime = runtime
 	runtime.SetReload(host.Reload)
+	runtime.SetMissingSessionCWD(host.chooseMissingSessionCWD)
 	if host.UsageEnabled() {
 		go host.warmUsage()
 	}
@@ -125,6 +126,25 @@ func (host *interactiveSessionHost) SwitchSession(ctx context.Context, sessionPa
 		return extensions.SessionReplacementResult{Cancelled: true}, err
 	}
 	return host.SwitchSession(ctx, sessionPath, cwdOverride, options)
+}
+
+// chooseMissingSessionCWD asks how a resume, import or extension switch opens
+// a session whose stored cwd is gone.
+func (host *interactiveSessionHost) chooseMissingSessionCWD(ctx context.Context, issue *agent.MissingSessionCWDError) (agent.MissingSessionCWDChoice, error) {
+	runner := host.Session().ExtensionRunner()
+	if runner == nil {
+		return "", issue
+	}
+	title, options := modes.MissingSessionCWDPrompt(issue)
+	labels := make([]string, len(options))
+	for index, option := range options {
+		labels[index] = option.Label
+	}
+	selected, ok, err := runner.UI().Select(ctx, title, labels, nil)
+	if index := slices.Index(labels, selected); ok && err == nil && index >= 0 {
+		return options[index].Choice, nil
+	}
+	return "", err
 }
 
 func (host *interactiveSessionHost) Fork(ctx context.Context, entryID string, options *extensions.ForkOptions) (modes.InteractiveForkResult, error) {
@@ -202,23 +222,6 @@ func (host *interactiveSessionHost) Reload(ctx context.Context) error {
 
 func (host *interactiveSessionHost) Dispose() {
 	host.AgentSessionRuntime.Dispose(context.Background())
-}
-
-func (host *interactiveSessionHost) ListProjectSessions(onProgress session.SessionListProgress) []session.SessionInfo {
-	manager := host.Session().Manager()
-	if host.args.native != nil {
-		rows, _ := host.args.native.Sessions().ListInfo(context.Background(), manager.GetCWD(), nil)
-		return spoken(rows)
-	}
-	return session.List(manager.GetCWD(), manager.GetSessionDir(), onProgress, session.WithAgentDir(host.agentDir))
-}
-
-func (host *interactiveSessionHost) ListAllSessions(onProgress session.SessionListProgress) []session.SessionInfo {
-	if host.args.native != nil {
-		rows, _ := host.args.native.Sessions().ListInfo(context.Background(), "", nil)
-		return spoken(rows)
-	}
-	return session.ListAll(host.allSessionsDir(), onProgress, session.WithAgentDir(host.agentDir))
 }
 
 func (host *interactiveSessionHost) ListProjectSessionsContext(ctx context.Context, onUpdate session.SessionListUpdateFunc) ([]session.SessionInfo, error) {

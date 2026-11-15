@@ -44,7 +44,7 @@ func TestGrepToolPassesFlagLikePatternAfterDoubleDash(t *testing.T) {
 	installFakeManagedTool(t, "rg", "", "", 1, record)
 	root := searchTreeRoot(t)
 	result, err := NewGrepTool(root, nil).Execute(context.Background(), "call", map[string]any{
-		"pattern": "--pre=payload", "path": root, "glob": "*.txt", "ignoreCase": true, "literal": true,
+		"pattern": "--pre=payload", "path": root, "glob": "!././*.txt", "ignoreCase": true, "literal": true, "context": 1e30,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -53,9 +53,13 @@ func TestGrepToolPassesFlagLikePatternAfterDoubleDash(t *testing.T) {
 		t.Fatalf("output = %q", got)
 	}
 	args := readRecordedArgs(t, record)
-	wantTail := []string{"--ignore-case", "--fixed-strings", "--glob", "*.txt", "--", "--pre=payload", root}
+	// The glob is relative to path: rg runs inside it, and a leading "./" is dropped (#11807).
+	wantTail := []string{"--ignore-case", "--fixed-strings", "--glob", "!*.txt", "--context", "9007199254740991", "--", "--pre=payload", "."}
 	if len(args) < len(wantTail) || !slices.Equal(args[len(args)-len(wantTail):], wantTail) {
 		t.Fatalf("args = %#v, want tail %#v", args, wantTail)
+	}
+	if cwd := readRecordedArgs(t, record+".cwd"); !slices.Equal(cwd, []string{root}) {
+		t.Fatalf("rg cwd = %q, want %q", cwd, root)
 	}
 }
 
@@ -83,7 +87,7 @@ func TestFindToolMiniTreeOutputAndPathGlobArguments(t *testing.T) {
 	if slices.Contains(args, "--no-require-git") {
 		t.Fatalf("args inside repository unexpectedly contain --no-require-git: %#v", args)
 	}
-	wantTail := []string{"--max-results", "1000", "--full-path", "--", "**/src/**/*.spec.ts", root}
+	wantTail := []string{"--max-results", "1001", "--full-path", "--", "**/src/**/*.spec.ts", root}
 	if len(args) < len(wantTail) || !slices.Equal(args[len(args)-len(wantTail):], wantTail) {
 		t.Fatalf("args = %#v, want tail %#v", args, wantTail)
 	}
@@ -184,8 +188,13 @@ func searchTreeRoot(t *testing.T) string {
 
 func rgMatchEvent(t *testing.T, path string, lineNumber int, text string) string {
 	t.Helper()
+	return rgLineEvent(t, "match", path, lineNumber, text)
+}
+
+func rgLineEvent(t *testing.T, kind, path string, lineNumber int, text string) string {
+	t.Helper()
 	event := map[string]any{
-		"type": "match",
+		"type": kind,
 		"data": map[string]any{
 			"path":        map[string]any{"text": path},
 			"line_number": lineNumber,
@@ -209,7 +218,7 @@ func installFakeManagedTool(t *testing.T, name, stdout, stderr string, exitCode 
 	var script strings.Builder
 	script.WriteString("#!/bin/sh\n")
 	if recordPath != "" {
-		fmt.Fprintf(&script, "printf '%%s\\n' \"$@\" > %s\n", shellSingleQuote(recordPath))
+		fmt.Fprintf(&script, "printf '%%s\\n' \"$@\" > %s\npwd > %s\n", shellSingleQuote(recordPath), shellSingleQuote(recordPath+".cwd"))
 	}
 	if stdout != "" {
 		script.WriteString("cat <<'ORB_STDOUT'\n")

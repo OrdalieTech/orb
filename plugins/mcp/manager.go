@@ -30,6 +30,7 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
 	"github.com/OrdalieTech/orb/internal/nodepath"
+	"github.com/OrdalieTech/orb/internal/proctree"
 	"github.com/OrdalieTech/orb/internal/toolenv"
 	"github.com/OrdalieTech/orb/plugins/mcp/serve"
 	"github.com/OrdalieTech/orb/tui"
@@ -501,6 +502,7 @@ func defaultConnect(
 		command.Dir = config.CWD
 	}
 	command.Env = toolenv.Merge(toolenv.Environ(), env)
+	proctree.Isolate(command)
 	// A process server opens with initialize: SDKs before the 2026-07-28
 	// protocol (rmcp, for one) exit on the server/discover probe the SDK's
 	// default sends first, and a dead process leaves nothing to fall back on.
@@ -517,12 +519,28 @@ func (transport progressTransport) Connect(ctx context.Context) (mcpsdk.Connecti
 	if err != nil {
 		return nil, err
 	}
-	return &progressConnection{Connection: connection, manager: transport.manager}, nil
+	progress := &progressConnection{Connection: connection, manager: transport.manager}
+	if command, ok := transport.transport.(*mcpsdk.CommandTransport); ok {
+		progress.command = command.Command
+	}
+	return progress, nil
 }
 
 type progressConnection struct {
 	mcpsdk.Connection
 	manager *Manager
+	command *exec.Cmd
+}
+
+// Close also ends a stdio server's process group: children it started can outlive it, even after
+// the server itself exited (#11721). Not on Windows, which has no group and gives a waited
+// process's PID to the next process at once: a tree kill there could end a stranger's.
+func (connection *progressConnection) Close() error {
+	err := connection.Connection.Close()
+	if command := connection.command; runtime.GOOS != "windows" && command != nil && command.Process != nil {
+		_ = proctree.Kill(command.Process.Pid)
+	}
+	return err
 }
 
 func (connection *progressConnection) Read(ctx context.Context) (mcpjsonrpc.Message, error) {
@@ -576,26 +594,77 @@ func (transport progressRoundTripper) RoundTrip(request *http.Request) (*http.Re
 	if err != nil || response.Body == nil {
 		return response, err
 	}
+	// The SDK reads JSON replies and error bodies whole (#11335): an oversized reply fails at the
+	// SSE event limit, and an error body ends after the 8 KiB that carry its JSON-RPC error. Both
+	// close the connection instead of reading on.
 	mediaType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if mediaType == "text/event-stream" {
+	switch {
+	case response.StatusCode < 200 || response.StatusCode >= 300:
+		response.Body = &boundedBody{ReadCloser: response.Body, remaining: 8 << 10, err: io.EOF}
+	case mediaType == "text/event-stream":
 		response.Body = &progressEventBody{ReadCloser: response.Body, manager: transport.manager}
+	default:
+		response.Body = &boundedBody{ReadCloser: response.Body, remaining: mcpsdk.DefaultMaxEventSize + 1, err: errMessageTooLarge}
 	}
 	return response, nil
+}
+
+var errMessageTooLarge = fmt.Errorf("MCP message exceeds %d bytes", mcpsdk.DefaultMaxEventSize)
+
+type boundedBody struct {
+	io.ReadCloser
+	remaining int
+	err       error
+}
+
+func (body *boundedBody) Read(buffer []byte) (int, error) {
+	if body.remaining <= 0 {
+		_ = body.Close()
+		return 0, body.err
+	}
+	read, err := body.ReadCloser.Read(buffer[:min(len(buffer), body.remaining)])
+	body.remaining -= read
+	return read, err
 }
 
 type progressEventBody struct {
 	io.ReadCloser
 	manager      *Manager
 	line         []byte
+	eventBytes   int
+	pendingCR    bool
 	eventName    string
 	eventData    []byte
 	eventInvalid bool
 }
 
+// Read turns CR and CRLF line endings into LF, which is all the SDK splits SSE lines at (#11764).
+// An event the SDK rejected as oversized ends the stream instead of draining it (#11729); the margin
+// past the SDK's limit covers the bytes it buffers ahead.
 func (body *progressEventBody) Read(buffer []byte) (int, error) {
-	read, err := body.ReadCloser.Read(buffer)
-	body.observe(buffer[:read], errors.Is(err, io.EOF))
-	return read, err
+	for {
+		if len(body.line)+body.eventBytes > mcpsdk.DefaultMaxEventSize+64<<10 {
+			_ = body.Close()
+			return 0, errMessageTooLarge
+		}
+		read, err := body.ReadCloser.Read(buffer)
+		kept := 0
+		for _, char := range buffer[:read] {
+			if char == '\n' && body.pendingCR {
+				body.pendingCR = false
+				continue
+			}
+			if body.pendingCR = char == '\r'; body.pendingCR {
+				char = '\n'
+			}
+			buffer[kept] = char
+			kept++
+		}
+		body.observe(buffer[:kept], errors.Is(err, io.EOF))
+		if kept > 0 || err != nil {
+			return kept, err
+		}
+	}
 }
 
 func (body *progressEventBody) observe(chunk []byte, eof bool) {
@@ -605,6 +674,7 @@ func (body *progressEventBody) observe(chunk []byte, eof bool) {
 		if end < 0 {
 			break
 		}
+		body.eventBytes += end + 1
 		body.observeLine(body.line[:end])
 		body.line = body.line[end+1:]
 	}
@@ -652,6 +722,7 @@ func (body *progressEventBody) observeEvent() {
 	body.eventName = ""
 	body.eventData = nil
 	body.eventInvalid = false
+	body.eventBytes = 0
 }
 
 func listTools(ctx context.Context, session *mcpsdk.ClientSession) ([]*mcpsdk.Tool, error) {

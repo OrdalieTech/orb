@@ -25,6 +25,7 @@ import (
 	"github.com/OrdalieTech/orb/conformance/runner"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jsonwire"
+	"github.com/OrdalieTech/orb/plugins/usage"
 	"github.com/OrdalieTech/orb/tui"
 
 	theme "github.com/OrdalieTech/orb/agent/modes/theme"
@@ -478,12 +479,17 @@ func (host *f12VisibleHost) Reload(context.Context) error {
 	host.addTrace("reload")
 	return nil
 }
-func (*f12VisibleHost) ListProjectSessions(sessionstore.SessionListProgress) []sessionstore.SessionInfo {
-	return nil
+func (*f12VisibleHost) ListProjectSessionsContext(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error) {
+	return nil, nil
 }
-func (*f12VisibleHost) ListAllSessions(sessionstore.SessionListProgress) []sessionstore.SessionInfo {
-	return nil
+func (*f12VisibleHost) ListAllSessionsContext(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error) {
+	return nil, nil
 }
+func (*f12VisibleHost) DeleteSession(string) (SessionDeleteMethod, error) {
+	return SessionDeleteUnlink, nil
+}
+func (*f12VisibleHost) PlanLimits() *usage.Snapshot               { return nil }
+func (*f12VisibleHost) WatchOthers(context.Context, func(string)) {}
 func (host *f12VisibleHost) TrustState() (InteractiveTrustState, error) {
 	return InteractiveTrustState{CWD: host.cwd, Options: config.GetProjectTrustOptions(host.cwd, true)}, nil
 }

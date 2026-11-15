@@ -583,7 +583,8 @@ async function validationCases(Type: any, StringEnum: any): Promise<ValidationCa
 			arguments: j({ x: 1 }),
 		},
 		{
-			// The check fails on enum before the $ref; explaining the failure still loops.
+			// The check fails on enum before the $ref; explaining the failure still loops, until V8's
+			// stack runs out. Where it runs out decides the error: extract with CI's Node release (24).
 			name: "ref-self-cycle-explained",
 			schema: { type: "object", properties: { x: { $ref: "#/$defs/cycle" } }, $defs: { cycle: { enum: ["a"], $ref: "#/$defs/cycle" } } },
 			arguments: j({ x: 1 }),

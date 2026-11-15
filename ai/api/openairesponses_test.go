@@ -489,3 +489,35 @@ func TestOpenAIResponsesRejectsUnfinishedToolCalls(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// pi 1.5.1: the affinity header is session-id (#11639), and promptCacheKeyMode
+// "disabled" omits prompt_cache_key on Responses and Azure (#9442).
+func TestOpenAIResponsesSessionAffinityAndPromptCacheKeyMode(t *testing.T) {
+	session := "session-1"
+	options := ai.StreamOptions{SessionID: &session}
+	model := responsesTestModel()
+	compat, err := getOpenAIResponsesCompat(model, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers := buildOpenAIResponsesHeaders(model, ai.Context{}, &options, compat)
+	if headers.Get("session-id") != session || headers.Get("session_id") != "" || headers.Get("x-client-request-id") != session {
+		t.Fatalf("headers = %v", headers)
+	}
+	for _, mode := range []string{"auto", "disabled"} {
+		model.Compat = json.RawMessage(`{"promptCacheKeyMode":"` + mode + `"}`)
+		azure := *model
+		azure.API = ai.APIAzureOpenAIResponses
+		payload, _, err := buildOpenAIResponsesPayload(model, ai.Context{}, &OpenAIResponsesOptions{StreamOptions: options})
+		if err != nil {
+			t.Fatal(err)
+		}
+		azurePayload, _, err := buildAzureOpenAIResponsesPayload(&azure, ai.Context{}, &AzureOpenAIResponsesOptions{StreamOptions: options}, "deployment")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := mode == "auto"; (payload.PromptCacheKey != nil) != want || (azurePayload.PromptCacheKey != nil) != want {
+			t.Fatalf("mode %q: prompt_cache_key = %v, azure %v", mode, payload.PromptCacheKey, azurePayload.PromptCacheKey)
+		}
+	}
+}

@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/truncate"
 )
 
 func TestReadToolReadsTextAndPagesByLine(t *testing.T) {
@@ -93,6 +96,68 @@ func TestReadToolConvertsBMPWithAutoResizeDisabled(t *testing.T) {
 	if imageBlock, ok := result.Content[1].(*ai.ImageContent); !ok || imageBlock.MimeType != "image/png" {
 		t.Fatalf("bmp attachment = %#v", result.Content[1])
 	}
+}
+
+// Streaming stores only the lines truncateHead can show; the result must match truncating the
+// whole selection, and operations without OpenFile must read the same (#9654).
+func TestReadToolStreamingMatchesWholeSelection(t *testing.T) {
+	dir := t.TempDir()
+	numbered := func(count, width int) string {
+		lines := make([]string, count)
+		for index := range lines {
+			lines[index] = fmt.Sprintf("%0*d", width, index+1)
+		}
+		return strings.Join(lines, "\n")
+	}
+	files := map[string]string{
+		"lines.txt":      numbered(2001, 4) + "\n",
+		"exact.txt":      numbered(2000, 4) + "\n",
+		"bytes.txt":      numbered(600, 99),
+		"long-first.txt": strings.Repeat("\U0001F600", truncate.DefaultMaxBytes) + "\nshort",
+		"endings.txt":    "a\r\nb\rc\n\n",
+	}
+	ranges := [][2]any{{nil, nil}, {2.0, nil}, {2.5, 3.0}, {1.0, 0.0}, {nil, -1.0}, {1999.0, 5.0}, {9999.0, nil}}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		allLines := strings.Split(content, "\n")
+		for _, bounds := range ranges {
+			args := map[string]any{"path": name}
+			start, end := 0, len(allLines)
+			if bounds[0] != nil {
+				args["offset"] = bounds[0]
+				start = jsSliceIndex(bounds[0].(float64)-1, len(allLines))
+			}
+			if bounds[1] != nil {
+				args["limit"] = bounds[1]
+				end = jsSliceIndex(math.Min(float64(start)+bounds[1].(float64), float64(len(allLines))), len(allLines))
+			}
+			streamed, streamErr := NewReadTool(dir, nil).Execute(context.Background(), "call", args, nil)
+			buffered, bufferErr := NewReadTool(dir, &ReadToolOptions{Operations: wholeFileReadOperations{}}).Execute(context.Background(), "call", args, nil)
+			if fmt.Sprint(streamErr) != fmt.Sprint(bufferErr) || !reflect.DeepEqual(streamed, buffered) {
+				t.Fatalf("%s %v: streamed %#v, %v; whole file %#v, %v", name, bounds, streamed, streamErr, buffered, bufferErr)
+			}
+			if streamErr != nil {
+				continue
+			}
+			want := truncate.TruncateHead(strings.Join(allLines[start:max(start, end)], "\n"))
+			details, _ := streamed.Details.(ReadToolDetails)
+			if want.Truncated && (details.Truncation == nil || !reflect.DeepEqual(*details.Truncation, want)) {
+				t.Fatalf("%s %v: truncation %#v, want %#v", name, bounds, details.Truncation, want)
+			}
+			if text := toolResultText(t, streamed); !want.FirstLineExceedsLimit && !strings.HasPrefix(text, want.Content) {
+				t.Fatalf("%s %v: output %q, want prefix %q", name, bounds, text, want.Content)
+			}
+		}
+	}
+}
+
+type wholeFileReadOperations struct{}
+
+func (wholeFileReadOperations) Access(context.Context, string) error { return nil }
+func (wholeFileReadOperations) ReadFile(_ context.Context, path string) ([]byte, error) {
+	return os.ReadFile(path)
 }
 
 func TestReadToolAbortDoesNotWaitForReadOperation(t *testing.T) {

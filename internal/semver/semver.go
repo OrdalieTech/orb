@@ -377,9 +377,9 @@ func primitiveComparators(op string, p partial) []comparator {
 	switch op {
 	case ">":
 		if !p.hasMinor {
-			return []comparator{{op: ">=", version: Version{Major: p.major + 1, Prerelease: []string{"0"}}}}
+			return []comparator{{op: ">=", version: Version{Major: p.major + 1}}}
 		}
-		return []comparator{{op: ">=", version: Version{Major: p.major, Minor: p.minor + 1, Prerelease: []string{"0"}}}}
+		return []comparator{{op: ">=", version: Version{Major: p.major, Minor: p.minor + 1}}}
 	case "<":
 		return []comparator{{op: "<", version: Version{Major: p.major, Minor: p.minor, Prerelease: []string{"0"}}}}
 	case ">=":

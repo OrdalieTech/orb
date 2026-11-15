@@ -28,16 +28,12 @@ type codexWebSocket struct {
 	closed     bool
 }
 
-type codexWebSocketConnectResult struct {
-	response *http.Response
-	err      error
-}
-
 func connectCodexWebSocket(
 	ctx context.Context,
 	endpoint string,
 	headers http.Header,
 	timeout time.Duration,
+	client openAIHTTPDoer,
 ) (*codexWebSocket, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
@@ -66,42 +62,18 @@ func connectCodexWebSocket(
 	request.Header.Set("Sec-WebSocket-Version", "13")
 	request.Header.Set("Sec-WebSocket-Key", key)
 
-	result := make(chan codexWebSocketConnectResult)
-	abandoned := make(chan struct{})
-	go func() {
-		response, requestErr := openAIHTTPClient.Do(request)
-		select {
-		case result <- codexWebSocketConnectResult{response: response, err: requestErr}:
-		case <-abandoned:
-			if response != nil && response.Body != nil {
-				_ = response.Body.Close()
-			}
-		}
-	}()
-	var timer *time.Timer
-	var timeoutChannel <-chan time.Time
-	if timeout > 0 {
-		timer = time.NewTimer(timeout)
-		timeoutChannel = timer.C
-	}
-	if timer != nil {
-		defer timer.Stop()
-	}
-	select {
-	case <-ctx.Done():
+	response, err, timedOut := awaitCodexResponse(ctx, request, timeout, client)
+	switch {
+	case timedOut:
 		cancel()
-		close(abandoned)
-		return nil, errors.New("Request was aborted") //nolint:staticcheck // Upstream capitalization is observable.
-	case <-timeoutChannel:
-		cancel()
-		close(abandoned)
 		return nil, fmt.Errorf("WebSocket connect timeout after %dms", timeout.Milliseconds()) //nolint:staticcheck // Upstream capitalization is observable.
-	case completed := <-result:
-		if completed.err != nil {
-			cancel()
-			return nil, completed.err
-		}
-		response := completed.response
+	case err != nil && ctx.Err() != nil:
+		cancel()
+		return nil, errors.New("Request was aborted") //nolint:staticcheck // Upstream capitalization is observable.
+	case err != nil:
+		cancel()
+		return nil, err
+	default:
 		if response == nil || response.Body == nil {
 			cancel()
 			return nil, errors.New("WebSocket handshake returned no response") //nolint:staticcheck // Upstream capitalization is observable.

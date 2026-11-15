@@ -6,11 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf16"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
 
-	"github.com/OrdalieTech/orb/internal/ignorerules"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/jstrim"
 )
 
@@ -96,10 +96,6 @@ func parseResourceFrontmatter(content string) (parsedFrontmatter, error) {
 	return parsedFrontmatter{Values: values, Body: body}, nil
 }
 
-func utf16Length(value string) int {
-	return len(utf16.Encode([]rune(value)))
-}
-
 // frontmatterTruthy mirrors JS truthiness for decoded YAML frontmatter values.
 func frontmatterTruthy(value any) bool {
 	switch typed := value.(type) {
@@ -124,7 +120,7 @@ func frontmatterTruthy(value any) bool {
 
 func validateSkillName(name string) []string {
 	errors := make([]string, 0, 4)
-	if length := utf16Length(name); length > maxSkillNameLength {
+	if length := jsonwire.UTF16Len(name); length > maxSkillNameLength {
 		errors = append(errors, fmt.Sprintf("name exceeds %d characters (%d)", maxSkillNameLength, length))
 	}
 	if name == "" || strings.Trim(name, "-abcdefghijklmnopqrstuvwxyz0123456789") != "" {
@@ -143,7 +139,7 @@ func validateSkillDescription(description string) []string {
 	if strings.TrimFunc(description, jstrim.IsSpace) == "" {
 		return []string{"description is required"}
 	}
-	if length := utf16Length(description); length > maxSkillDescriptionLength {
+	if length := jsonwire.UTF16Len(description); length > maxSkillDescriptionLength {
 		return []string{fmt.Sprintf("description exceeds %d characters (%d)", maxSkillDescriptionLength, length)}
 	}
 	return nil
@@ -214,7 +210,17 @@ func loadSkillFromFile(filePath, source string) (*Skill, []ResourceDiagnostic) {
 }
 
 type skillIgnoreMatcher struct {
-	rules []ignorerules.Rule
+	rules []skillIgnoreRule
+}
+
+// skillIgnoreRule is one parsed gitignore-style rule, scoped to the
+// slash-separated base directory it was declared in.
+type skillIgnoreRule struct {
+	base         string
+	pattern      string
+	negated      bool
+	directory    bool
+	basenameOnly bool
 }
 
 func (matcher *skillIgnoreMatcher) addDirectoryRules(dir, root string) {
@@ -252,23 +258,59 @@ func (matcher *skillIgnoreMatcher) addDirectoryRules(dir, root string) {
 			if line == "" {
 				continue
 			}
-			matcher.rules = append(matcher.rules, ignorerules.Rule{
-				Base: relativeDir, Pattern: filepath.ToSlash(line), Negated: negated,
-				Directory: directory, BasenameOnly: relativeDir == "" && !strings.Contains(line, "/"),
+			matcher.rules = append(matcher.rules, skillIgnoreRule{
+				base: relativeDir, pattern: filepath.ToSlash(line), negated: negated,
+				directory: directory, basenameOnly: relativeDir == "" && !strings.Contains(line, "/"),
 			})
 		}
 	}
 }
 
+// ignores mirrors the npm `ignore` library loop: the last matching rule wins.
 func (matcher *skillIgnoreMatcher) ignores(relativePath string, directory bool) bool {
-	return ignorerules.Ignores(matcher.rules, filepath.ToSlash(relativePath), directory)
+	relativePath = strings.TrimSuffix(filepath.ToSlash(relativePath), "/")
+	ignored := false
+	for _, rule := range matcher.rules {
+		local := relativePath
+		if rule.base != "" {
+			if local == rule.base {
+				local = ""
+			} else if strings.HasPrefix(local, rule.base+"/") {
+				local = strings.TrimPrefix(local, rule.base+"/")
+			} else {
+				continue
+			}
+		}
+		if local == "" {
+			continue
+		}
+		matched := false
+		if rule.basenameOnly {
+			parts := strings.Split(local, "/")
+			for index, part := range parts {
+				if ok, _ := doublestar.Match(rule.pattern, part); ok && (!rule.directory || directory || index < len(parts)-1) {
+					matched = true
+					break
+				}
+			}
+		} else {
+			matched, _ = doublestar.Match(rule.pattern, local)
+			if !matched {
+				matched, _ = doublestar.Match(strings.TrimSuffix(rule.pattern, "/")+"/**", local)
+			}
+		}
+		if matched {
+			ignored = !rule.negated
+		}
+	}
+	return ignored
 }
 
 // rootIgnoreMatcher ignores the named entries directly below the scan root.
 func rootIgnoreMatcher(names []string) *skillIgnoreMatcher {
 	matcher := &skillIgnoreMatcher{}
 	for _, name := range names {
-		matcher.rules = append(matcher.rules, ignorerules.Rule{Pattern: name})
+		matcher.rules = append(matcher.rules, skillIgnoreRule{pattern: name})
 	}
 	return matcher
 }

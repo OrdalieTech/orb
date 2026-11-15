@@ -126,10 +126,7 @@ func ClampThinkingLevel(model *Model, requested ModelThinkingLevel) ModelThinkin
 			return extendedThinkingLevels[candidate]
 		}
 	}
-	if len(levels) == 0 {
-		return ModelThinkingOff
-	}
-	return levels[0]
+	return ModelThinkingOff
 }
 
 // ContentText extracts text blocks and joins them with a newline by default.

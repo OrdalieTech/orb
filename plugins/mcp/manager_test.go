@@ -11,17 +11,23 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
+	"github.com/OrdalieTech/orb/internal/proctree"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -863,6 +869,129 @@ func TestManagerMatchesSDKWhitespaceParsingBeforeExecuteReturns(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("HTTP tool did not finish after whitespace progress was delivered")
+	}
+}
+
+// SSE replies with CR-only line endings parse like LF ones (#11764).
+func TestManagerReadsCROnlySSEReplies(t *testing.T) {
+	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "http-cr", Version: "1"}, nil)
+	addTextTool(server, "ping")
+	mcpHandler := mcpsdk.NewStreamableHTTPHandler(func(*http.Request) *mcpsdk.Server { return server }, nil)
+	httpServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		mcpHandler.ServeHTTP(&rewriteResponseWriter{ResponseWriter: response, rewrite: func(data []byte) []byte {
+			return bytes.ReplaceAll(data, []byte("\n"), []byte("\r"))
+		}}, request)
+	}))
+	defer httpServer.Close()
+	manager := NewManager(t.TempDir(), []testServer{{Name: "http-cr", URL: httpServer.URL}})
+	runner, active := registerManager(t, manager)
+	defer closeManager(t, manager)
+	tools := runner.AllRegisteredTools()
+	if len(tools) != 1 {
+		t.Fatalf("tools = %d, status = %#v", len(tools), manager.Status())
+	}
+	active.set([]string{tools[0].Definition.Name})
+	result, err := extensions.WrapRegisteredTool(tools[0], runner).Execute(context.Background(), "http-cr-call", map[string]any{}, nil)
+	if err != nil || contentText(result.Content) != "ping" {
+		t.Fatalf("result = %#v, error = %v", result, err)
+	}
+}
+
+// Error bodies stop after 8 KiB, and JSON replies and SSE events over the SDK's event limit fail,
+// closing the body instead of reading on (#11335, #11729).
+func TestProgressRoundTripperBoundsResponseBodies(t *testing.T) {
+	limit := mcpsdk.DefaultMaxEventSize
+	for _, test := range []struct {
+		name, contentType string
+		status, size      int
+		wantRead          int
+		wantErr           error
+	}{
+		{"error body", "application/json", http.StatusBadRequest, 20 << 10, 8 << 10, nil},
+		{"json within limit", "application/json", http.StatusOK, limit, limit, nil},
+		{"json over limit", "application/json", http.StatusOK, limit + 1, limit + 1, errMessageTooLarge},
+		{"endless sse event", "text/event-stream", http.StatusOK, -1, -1, errMessageTooLarge},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body := &endlessBody{size: test.size}
+			base := roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: test.status, Header: http.Header{"Content-Type": {test.contentType}}, Body: body}, nil
+			})
+			request := httptest.NewRequest(http.MethodPost, "http://mcp.test", nil)
+			response, err := progressRoundTripper{base: base, manager: newManager(t.TempDir(), nil)}.RoundTrip(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			read, err := io.Copy(io.Discard, response.Body)
+			if !errors.Is(err, test.wantErr) || test.wantRead >= 0 && read != int64(test.wantRead) {
+				t.Fatalf("read %d, %v; want %d, %v", read, err, test.wantRead, test.wantErr)
+			}
+			if closed := body.closed; closed != (test.wantErr != nil || test.size != test.wantRead) {
+				t.Fatalf("body closed = %v", closed)
+			}
+		})
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return function(request)
+}
+
+// endlessBody is size bytes of 'x', or endless for a negative size.
+type endlessBody struct {
+	size   int
+	closed bool
+}
+
+func (body *endlessBody) Read(buffer []byte) (int, error) {
+	if body.size == 0 {
+		return 0, io.EOF
+	}
+	if body.size > 0 {
+		buffer = buffer[:min(len(buffer), body.size)]
+		body.size -= len(buffer)
+	}
+	for index := range buffer {
+		buffer[index] = 'x'
+	}
+	return len(buffer), nil
+}
+
+func (body *endlessBody) Close() error {
+	body.closed = true
+	return nil
+}
+
+// Closing a stdio server ends its process group: a child it started dies with it, even after the
+// server itself exited (#11721).
+func TestStdioCloseKillsChildrenOfAnExitedServer(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process groups are POSIX")
+	}
+	pidFile := filepath.Join(t.TempDir(), "child")
+	command := exec.Command("/bin/sh", "-c", "sleep 30 & echo $! > "+pidFile)
+	proctree.Isolate(command)
+	connection, err := progressTransport{transport: &mcpsdk.CommandTransport{Command: command}}.Connect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var child *os.Process
+	for deadline := time.Now().Add(5 * time.Second); child == nil; time.Sleep(10 * time.Millisecond) {
+		if data, err := os.ReadFile(pidFile); err == nil && strings.HasSuffix(string(data), "\n") {
+			pid, _ := strconv.Atoi(strings.TrimSpace(string(data)))
+			child, _ = os.FindProcess(pid)
+		} else if time.Now().After(deadline) {
+			t.Fatal("server did not start its child")
+		}
+	}
+	_ = connection.Close()
+	for deadline := time.Now().Add(5 * time.Second); child.Signal(syscall.Signal(0)) == nil; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			_ = child.Kill()
+			t.Fatal("the server's child survived Close")
+		}
 	}
 }
 

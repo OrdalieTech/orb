@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"reflect"
+	"syscall"
 	"testing"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -281,5 +283,26 @@ func TestRPCSlashCommandsPreserveOptionalWireFields(t *testing.T) {
 	want := `[{"name":"ext","description":"Extension command","source":"extension","sourceInfo":{"path":"<inline:rpc>","source":"inline","scope":"temporary","origin":"top-level"}},{"name":"review","source":"prompt","sourceInfo":{"path":"review.md","source":"local","scope":"project","origin":"top-level"}},{"name":"skill:inspect","description":"Inspect files.","source":"skill","sourceInfo":{"path":"inspect/SKILL.md","source":"local","scope":"project","origin":"top-level","baseDir":"inspect"}}]`
 	if string(encoded) != want {
 		t.Fatalf("RPC commands = %s, want %s", encoded, want)
+	}
+}
+
+// One signal during a shutdown only starts it; a repeated one exits at once (upstream #11599).
+func TestForwardShutdownSignalsExitsOnASecondSignal(t *testing.T) {
+	signals, terminate, done := make(chan os.Signal), make(chan int, 1), make(chan struct{})
+	exited := make(chan int, 1)
+	go forwardShutdownSignals(signals, terminate, done, func(code int) { exited <- code })
+	defer close(done)
+	signals <- syscall.SIGTERM
+	if code := <-terminate; code != 143 {
+		t.Fatalf("terminate code = %d", code)
+	}
+	select {
+	case code := <-exited:
+		t.Fatalf("first signal exited with %d", code)
+	default:
+	}
+	signals <- syscall.SIGTERM
+	if code := <-exited; code != 143 {
+		t.Fatalf("second signal exit code = %d", code)
 	}
 }

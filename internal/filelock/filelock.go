@@ -73,9 +73,7 @@ func acquire(ctx context.Context, path string, staleAfter time.Duration) (*lock,
 			case deletePending(statErr):
 			case statErr != nil:
 				return nil, statErr
-			// A regular file is a lock an older orb took with flock and never
-			// removed; reclaim it so the two runtimes stop deadlocking on it.
-			case !info.IsDir(), time.Since(info.ModTime()) > staleAfter:
+			case time.Since(info.ModTime()) > staleAfter:
 				if removeErr := os.Remove(lockPath); removeErr == nil || errors.Is(removeErr, os.ErrNotExist) {
 					continue
 				}
@@ -181,6 +179,9 @@ type File struct {
 	// and trust files, which keeps their owner, umask, symlinks and
 	// single-file bind mounts; a private Perm is then enforced on the file.
 	Atomic bool
+	// LockResolved locks the file a symlinked Path resolves to, so every alias
+	// shares one lock, as upstream locks auth.json.
+	LockResolved bool
 }
 
 func (f File) Read(context.Context) ([]byte, error) {
@@ -199,7 +200,11 @@ func (f File) Update(ctx context.Context, change func([]byte) ([]byte, error)) e
 	if err := os.MkdirAll(filepath.Dir(f.Path), f.Perm|f.Perm>>2&0o111); err != nil {
 		return err
 	}
-	held, err := acquire(ctx, f.Path, cmp.Or(f.Stale, stale))
+	lockPath := f.Path
+	if resolved, err := filepath.EvalSymlinks(lockPath); err == nil && f.LockResolved {
+		lockPath = resolved
+	}
+	held, err := acquire(ctx, lockPath, cmp.Or(f.Stale, stale))
 	if err != nil {
 		return err
 	}

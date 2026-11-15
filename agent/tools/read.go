@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -33,6 +35,12 @@ type ReadOperations interface {
 	Access(context.Context, string) error
 }
 
+// ReadStreamOperations lets ReadOperations stream text files, so a read keeps only the lines it
+// shows in memory instead of the whole file.
+type ReadStreamOperations interface {
+	OpenFile(context.Context, string) (io.ReadCloser, error)
+}
+
 // ReadImageOperations is the optional image-detection extension used by
 // delegated filesystems that cannot be sniffed locally before reading.
 type ReadImageOperations interface {
@@ -60,6 +68,14 @@ func (localReadOperations) ReadFile(_ context.Context, path string) ([]byte, err
 	return data, asNodeFilesystemError("open", path, err)
 }
 
+func (localReadOperations) OpenFile(_ context.Context, path string) (io.ReadCloser, error) {
+	if err := nodeNullPathError(path); err != nil {
+		return nil, err
+	}
+	file, err := os.Open(path)
+	return file, asNodeFilesystemError("open", path, err)
+}
+
 func (localReadOperations) Access(_ context.Context, path string) error {
 	if err := nodeNullPathError(path); err != nil {
 		return err
@@ -67,10 +83,10 @@ func (localReadOperations) Access(_ context.Context, path string) error {
 	return asNodeFilesystemError("access", path, accessFile(path, accessRead))
 }
 
-func (localReadOperations) DetectImageMimeType(_ context.Context, path string) (string, error) {
-	file, err := os.Open(path)
+func (operations localReadOperations) DetectImageMimeType(ctx context.Context, path string) (string, error) {
+	file, err := operations.OpenFile(ctx, path)
 	if err != nil {
-		return "", asNodeFilesystemError("open", path, err)
+		return "", err
 	}
 	defer func() { _ = file.Close() }()
 	buffer := make([]byte, 4100)
@@ -131,39 +147,52 @@ func (tool *readTool) Execute(
 			return engine.AgentToolResult{}, err
 		}
 	}
-	data, err := runCancelable(ctx, func() ([]byte, error) { return tool.operations.ReadFile(ctx, absolutePath) })
-	if err != nil {
-		return engine.AgentToolResult{}, err
-	}
-	if mimeType != "" {
-		return tool.imageResult(ctx, data, mimeType), nil
-	}
-	text := decodeNodeUTF8(data)
-	allLines := strings.Split(text, "\n")
 	startLine := 0.0
 	if input.Offset != nil && *input.Offset != 0 {
 		startLine = math.Max(0, *input.Offset-1)
 	}
-	if startLine >= float64(len(allLines)) {
-		return engine.AgentToolResult{}, upstreamToolErrorf("Offset %s is beyond end of file (%d lines total)", formatJSNumber(*input.Offset), len(allLines))
+	endLine := math.Inf(1)
+	if input.Limit != nil {
+		endLine = startLine + *input.Limit
 	}
-
-	sliceStart := jsSliceIndex(startLine, len(allLines))
-	selectedLines := allLines[sliceStart:]
+	var source io.Reader
+	if streamer, ok := tool.operations.(ReadStreamOperations); ok && mimeType == "" && endLine >= startLine {
+		file, err := runCancelable(ctx, func() (io.ReadCloser, error) { return streamer.OpenFile(ctx, absolutePath) })
+		if err != nil {
+			return engine.AgentToolResult{}, err
+		}
+		defer func() { _ = file.Close() }()
+		source = file
+	} else {
+		data, err := runCancelable(ctx, func() ([]byte, error) { return tool.operations.ReadFile(ctx, absolutePath) })
+		if err != nil {
+			return engine.AgentToolResult{}, err
+		}
+		if mimeType != "" {
+			return tool.imageResult(ctx, data, mimeType), nil
+		}
+		if endLine < startLine {
+			// A negative limit slices from the end, as JavaScript's Array.slice.
+			total := bytes.Count(data, []byte("\n")) + 1
+			endLine = float64(jsSliceIndex(math.Min(endLine, float64(total)), total))
+		}
+		source = bytes.NewReader(data)
+	}
+	selection, err := runCancelable(ctx, func() (lineSelection, error) {
+		return selectLines(source, math.Trunc(startLine), math.Trunc(endLine))
+	})
+	if err != nil {
+		return engine.AgentToolResult{}, err
+	}
+	totalLines, truncation := selection.totalLines, selection.truncation
+	if startLine >= float64(totalLines) {
+		return engine.AgentToolResult{}, upstreamToolErrorf("Offset %s is beyond end of file (%d lines total)", formatJSNumber(*input.Offset), totalLines)
+	}
 	var userLimitedLines *float64
 	if input.Limit != nil {
-		endLine := math.Min(startLine+*input.Limit, float64(len(allLines)))
-		sliceEnd := jsSliceIndex(endLine, len(allLines))
-		if sliceEnd < sliceStart {
-			selectedLines = nil
-		} else {
-			selectedLines = allLines[sliceStart:sliceEnd]
-		}
-		limited := endLine - startLine
+		limited := math.Min(startLine+*input.Limit, float64(totalLines)) - startLine
 		userLimitedLines = &limited
 	}
-	selectedContent := strings.Join(selectedLines, "\n")
-	truncation := truncate.TruncateHead(selectedContent)
 	startLineDisplay := startLine + 1
 	outputText := truncation.Content
 	var details any
@@ -171,7 +200,7 @@ func (tool *readTool) Execute(
 		if startLine != math.Trunc(startLine) {
 			return engine.AgentToolResult{}, upstreamToolError(`The "string" argument must be of type string or an instance of Buffer or ArrayBuffer. Received undefined`)
 		}
-		firstLineSize := truncate.FormatSize(len(allLines[sliceStart]))
+		firstLineSize := truncate.FormatSize(selection.firstLineBytes)
 		line := formatJSNumber(startLineDisplay)
 		outputText = fmt.Sprintf("[Line %s is %s, exceeds %s limit. Use bash: sed -n '%sp' %s | head -c %d]", line, firstLineSize, truncate.FormatSize(truncate.DefaultMaxBytes), line, input.Path, truncate.DefaultMaxBytes)
 		details = ReadToolDetails{Truncation: &truncation}
@@ -179,13 +208,13 @@ func (tool *readTool) Execute(
 		endLineDisplay := startLineDisplay + float64(truncation.OutputLines) - 1
 		nextOffset := endLineDisplay + 1
 		if truncation.TruncatedBy != nil && *truncation.TruncatedBy == truncate.ReasonLines {
-			outputText += fmt.Sprintf("\n\n[Showing lines %s-%s of %d. Use offset=%s to continue.]", formatJSNumber(startLineDisplay), formatJSNumber(endLineDisplay), len(allLines), formatJSNumber(nextOffset))
+			outputText += fmt.Sprintf("\n\n[Showing lines %s-%s of %d. Use offset=%s to continue.]", formatJSNumber(startLineDisplay), formatJSNumber(endLineDisplay), totalLines, formatJSNumber(nextOffset))
 		} else {
-			outputText += fmt.Sprintf("\n\n[Showing lines %s-%s of %d (%s limit). Use offset=%s to continue.]", formatJSNumber(startLineDisplay), formatJSNumber(endLineDisplay), len(allLines), truncate.FormatSize(truncate.DefaultMaxBytes), formatJSNumber(nextOffset))
+			outputText += fmt.Sprintf("\n\n[Showing lines %s-%s of %d (%s limit). Use offset=%s to continue.]", formatJSNumber(startLineDisplay), formatJSNumber(endLineDisplay), totalLines, truncate.FormatSize(truncate.DefaultMaxBytes), formatJSNumber(nextOffset))
 		}
 		details = ReadToolDetails{Truncation: &truncation}
-	} else if userLimitedLines != nil && startLine+*userLimitedLines < float64(len(allLines)) {
-		remaining := float64(len(allLines)) - (startLine + *userLimitedLines)
+	} else if userLimitedLines != nil && startLine+*userLimitedLines < float64(totalLines) {
+		remaining := float64(totalLines) - (startLine + *userLimitedLines)
 		nextOffset := startLine + *userLimitedLines + 1
 		outputText += fmt.Sprintf("\n\n[%s more lines in file. Use offset=%s to continue.]", formatJSNumber(remaining), formatJSNumber(nextOffset))
 	}
@@ -193,6 +222,72 @@ func (tool *readTool) Execute(
 		Content: ai.ToolResultContent{&ai.TextContent{Text: outputText}},
 		Details: details,
 	}, nil
+}
+
+type lineSelection struct {
+	truncation     truncate.Result
+	totalLines     int
+	firstLineBytes int
+}
+
+// selectLines reads the lines [start, end) of a file. Only the lines truncateHead can show are
+// stored; the rest are counted, so memory does not grow with the file. Line counts follow
+// strings.Split(text, "\n").
+func selectLines(source io.Reader, start, end float64) (lineSelection, error) {
+	reader := bufio.NewReaderSize(source, 64*1024)
+	var stored []string
+	var current []byte
+	var selection lineSelection
+	storing, lastLineEmpty := true, true
+	line, storedBytes, selectedLines, selectedBytes, lineBytes := 0, 0, 0, 0, 0
+	for {
+		chunk, err := reader.ReadSlice('\n')
+		if err != nil && err != io.EOF && err != bufio.ErrBufferFull {
+			return lineSelection{}, err
+		}
+		chunk = bytes.TrimSuffix(chunk, []byte("\n"))
+		selected := float64(line) >= start && float64(line) < end
+		if selected {
+			// A line over the byte cap is never shown, and a first line over it is only measured.
+			if storing && lineBytes <= truncate.DefaultMaxBytes {
+				current = append(current, chunk...)
+			}
+			lineBytes += len(chunk)
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if selected {
+			if selectedLines == 0 {
+				selection.firstLineBytes = lineBytes
+			}
+			if storing {
+				// Storing continues one line past the caps: truncateHead ignores a trailing empty line,
+				// so it needs the line after the caps to decide truncation as for the full text.
+				storing = len(stored) <= truncate.DefaultMaxLines && storedBytes <= truncate.DefaultMaxBytes
+				text := decodeNodeUTF8(current)
+				storedBytes += len(text) + min(len(stored), 1)
+				stored = append(stored, text)
+			}
+			selectedBytes += lineBytes + 1
+			selectedLines++
+			lastLineEmpty = lineBytes == 0
+			current, lineBytes = current[:0], 0
+		}
+		if err == io.EOF {
+			break
+		}
+		line++
+	}
+	selection.truncation = truncate.TruncateHead(strings.Join(stored, "\n"))
+	// truncateHead's counts for the joined selected lines, which drop a trailing empty line.
+	selection.truncation.TotalBytes = max(0, selectedBytes-1)
+	if lastLineEmpty {
+		selectedLines--
+	}
+	selection.truncation.TotalLines = max(0, selectedLines)
+	selection.totalLines = line + 1
+	return selection, nil
 }
 
 func (tool *readTool) imageResult(ctx context.Context, data []byte, mimeType string) engine.AgentToolResult {

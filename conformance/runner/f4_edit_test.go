@@ -23,7 +23,6 @@ type f4Case struct {
 	NewText       *string         `json:"newText"`
 	Edits         []tools.Edit    `json:"edits"`
 	Path          *string         `json:"path"`
-	Ending        *string         `json:"ending"`
 	ContextLines  *int            `json:"contextLines"`
 	Expected      json.RawMessage `json:"expected"`
 	ExpectedError string          `json:"expectedError"`
@@ -51,7 +50,7 @@ func TestF4EditDiffMatchesUpstream(t *testing.T) {
 
 	var fixture f4Fixture
 	runner.LoadJSON(t, "F4", "cases.json", &fixture)
-	if fixture.SchemaVersion != 1 || len(fixture.Cases) != 65 {
+	if fixture.SchemaVersion != 1 || len(fixture.Cases) != 71 {
 		t.Fatalf("F4 fixture header = version %d, cases %d", fixture.SchemaVersion, len(fixture.Cases))
 	}
 
@@ -93,28 +92,12 @@ func TestF4EditDiffMatchesUpstream(t *testing.T) {
 
 func runF4Case(fixtureCase f4Case) (any, error) {
 	switch fixtureCase.Operation {
-	case "detect-line-ending":
-		content, err := f4RequiredString(fixtureCase.Content, "content", fixtureCase.Name)
-		if err != nil {
-			return nil, err
-		}
-		return tools.DetectLineEnding(content), nil
 	case "normalize-lf":
 		content, err := f4RequiredString(fixtureCase.Content, "content", fixtureCase.Name)
 		if err != nil {
 			return nil, err
 		}
 		return tools.NormalizeToLF(content), nil
-	case "restore-line-endings":
-		content, err := f4RequiredString(fixtureCase.Content, "content", fixtureCase.Name)
-		if err != nil {
-			return nil, err
-		}
-		ending, err := f4RequiredString(fixtureCase.Ending, "ending", fixtureCase.Name)
-		if err != nil {
-			return nil, err
-		}
-		return tools.RestoreLineEndings(content, ending), nil
 	case "strip-bom":
 		content, err := f4RequiredString(fixtureCase.Content, "content", fixtureCase.Name)
 		if err != nil {
@@ -173,23 +156,21 @@ func runF4Pipeline(fixtureCase f4Case) (f4PipelineResult, error) {
 		return f4PipelineResult{}, err
 	}
 	bom, content := tools.StripBOM(rawContent)
-	ending := tools.DetectLineEnding(content)
 	applied, err := tools.ApplyEditsToNormalizedContent(tools.NormalizeToLF(content), fixtureCase.Edits, path)
 	if err != nil {
 		return f4PipelineResult{}, err
 	}
-	diff := tools.GenerateDiffString(applied.BaseContent, applied.NewContent, 4)
-	patch, err := tools.GenerateUnifiedPatch(path, applied.BaseContent, applied.NewContent, 4)
+	details, err := tools.GenerateEditDiff(path, applied)
 	if err != nil {
 		return f4PipelineResult{}, err
 	}
 	return f4PipelineResult{
-		FinalContent:     bom + tools.RestoreLineEndings(applied.NewContent, ending),
+		FinalContent:     bom + tools.ApplyReplacementsToOriginal(content, applied),
 		BaseContent:      applied.BaseContent,
 		NewContent:       applied.NewContent,
-		Diff:             diff.Diff,
-		FirstChangedLine: diff.FirstChangedLine,
-		Patch:            patch,
+		Diff:             details.Diff,
+		FirstChangedLine: details.FirstChangedLine,
+		Patch:            details.Patch,
 	}, nil
 }
 

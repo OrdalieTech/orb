@@ -377,10 +377,7 @@ func (state *State) Accounts(agentDir string, base auth.CredentialStore) *accoun
 
 func (state *State) Models(agentDir string, credentials auth.CredentialStore, offline bool) (*config.ModelRegistry, error) {
 	if state == nil || state.Files {
-		if offline {
-			return config.NewOfflineModelRegistry(agentDir)
-		}
-		return config.NewModelRegistryWithCredentials(agentDir, credentials)
+		return config.NewModelRegistryWithDocuments(agentDir, credentials, nil, nil, !offline)
 	}
 	return config.NewModelRegistryWithDocuments(agentDir, credentials, state.Document(filepath.Join(agentDir, "models.json")), state.Document(filepath.Join(agentDir, "models-store.json")), !offline)
 }

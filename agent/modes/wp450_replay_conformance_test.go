@@ -217,7 +217,7 @@ func renderWP450ReplayWidth(width int) []ConformanceReplayFrame {
 	bash := NewBashExecutionComponent("printf 'alpha\\nbeta\\n'", ui, false)
 	bash.AppendOutput("alpha\nbeta\n")
 	exitCode := 0
-	bash.SetComplete(&exitCode, false)
+	bash.SetComplete(&exitCode, false, false, nil)
 	mode.chat.AddChild(bash)
 	capture("bash-complete")
 

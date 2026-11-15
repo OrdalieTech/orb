@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -161,6 +162,25 @@ func ResolveProviderAuth(
 // cancellation does not stop.
 const oauthRefreshTimeout = 15 * time.Second
 
+var pendingWrites sync.WaitGroup
+
+// DetachWrite runs a credential write that must finish even when its caller
+// gives up, such as a refresh that may already have spent a single-use refresh
+// token; write bounds its own duration. [SettleWrites] waits for it.
+func DetachWrite(write func()) { pendingWrites.Go(write) }
+
+// SettleWrites waits for detached credential writes to finish, at most as long
+// as one refresh may take. Call it before the process exits so a rotated token
+// is not lost.
+func SettleWrites() {
+	done := make(chan struct{})
+	go func() { pendingWrites.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(oauthRefreshTimeout):
+	}
+}
+
 func resolveStoredOAuth(
 	ctx context.Context,
 	providerID string,
@@ -187,7 +207,7 @@ func resolveStoredOAuth(
 			err  error
 		}
 		done := make(chan outcome, 1)
-		go func() {
+		DetachWrite(func() {
 			refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), oauthRefreshTimeout)
 			defer cancel()
 			post, err := credentials.Modify(refreshCtx, providerID, func(current *Credential) (*Credential, error) {
@@ -204,7 +224,7 @@ func resolveStoredOAuth(
 				return refreshed, nil
 			})
 			done <- outcome{post, err}
-		}()
+		})
 		var post *Credential
 		var err error
 		select {

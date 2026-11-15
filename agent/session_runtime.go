@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -93,8 +94,12 @@ type SessionRuntime struct {
 	chanCancels          map[chan struct{}]func()
 	disposed             bool
 	nextListenerID       uint64
+	errorListeners       map[uint64]func(extensions.ExtensionError)
+	nextErrorListenerID  uint64
 	steering             []string
 	followUps            []string
+	queuedTexts          map[*ai.UserMessage]string // what the queue lists; image hints change the message's own text
+	promptPreflights     int                        // prompts in input hooks or auth checks, which tree navigation waits for
 	lastAssistant        *ai.AssistantMessage
 	retryAttempt         int
 	overflowAttempted    bool
@@ -115,7 +120,7 @@ type SessionRuntime struct {
 	getAPIKey            engine.GetAPIKeyFunc
 	getRequestAuth       engine.GetRequestAuthFunc
 	unsubscribeAgent     func()
-	slashResolver        *SlashResolver
+	slashResolver        atomic.Pointer[SlashResolver]
 	baseSlashResolver    *SlashResolver
 	resourceLoader       ResourceLoader
 	activeRuns           int
@@ -288,12 +293,14 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 		getAPIKey:          runtimeConfig.GetAPIKey,
 		getRequestAuth:     runtimeConfig.GetRequestAuth,
 		scopedModels:       append([]ScopedModel(nil), runtimeConfig.ScopedModels...),
-		slashResolver:      cloneSlashResolver(runtimeConfig.SlashResolver),
 		baseSlashResolver:  cloneSlashResolver(runtimeConfig.SlashResolver),
 		resourceLoader:     runtimeConfig.ResourceLoader,
 		builtinToolPrompts: runtimeConfig.BuiltinToolPrompts,
 	}
-	runtimeConfig.SlashResolver = runtime.slashResolver
+	if runtimeConfig.ExtensionErrorHandler != nil {
+		runtime.OnExtensionError(runtimeConfig.ExtensionErrorHandler)
+	}
+	runtime.setSlashResolver(cloneSlashResolver(runtimeConfig.SlashResolver))
 	var previousRequest engine.PrepareRequestFunc
 	previousRequest = runtime.agent.SwapPrepareRequest(func(ctx context.Context, request engine.PrepareRequestContext) (*engine.AgentLoopTurnUpdate, error) {
 		// The session is the canonical provider context: each request is its
@@ -357,7 +364,7 @@ func NewSessionRuntime(runtimeConfig SessionRuntimeConfig) (*SessionRuntime, err
 	runtime.agent.SetFollowUpMode(engine.QueueMode(runtime.settings.GetFollowUpMode()))
 	sessionEnvTools := runtimeConfig.BaseTools
 	if len(sessionEnvTools) == 0 {
-		sessionEnvTools = runtime.agent.State().Tools
+		sessionEnvTools = runtime.agent.StateWithoutMessages().Tools
 	}
 	runtime.bindBashSessionEnvironment(sessionEnvTools)
 	if runtimeConfig.ExtensionRegistry != nil {
@@ -377,7 +384,7 @@ func (runtime *SessionRuntime) bindBashSessionEnvironment(baseTools []engine.Age
 			continue
 		}
 		binder.BindSessionEnvironment(func() *tools.BashSessionEnvironment {
-			state := runtime.agent.State()
+			state := runtime.agent.StateWithoutMessages()
 			info := &tools.BashSessionEnvironment{
 				SessionID:      runtime.manager.GetSessionID(),
 				SessionFile:    runtime.manager.GetSessionFile(),
@@ -438,7 +445,7 @@ func providerStreamOptions(settings *config.SettingsManager, options *ai.SimpleS
 
 func cloneSlashResolver(resolver *SlashResolver) *SlashResolver {
 	if resolver == nil {
-		return nil
+		return &SlashResolver{}
 	}
 	cloned := *resolver
 	cloned.Skills = append([]Skill(nil), resolver.Skills...)
@@ -486,12 +493,8 @@ func mergeSummaryEnv(resolved, overrides ai.ProviderEnv) ai.ProviderEnv {
 		return nil
 	}
 	merged := make(ai.ProviderEnv, len(resolved)+len(overrides))
-	for name, value := range resolved {
-		merged[name] = value
-	}
-	for name, value := range overrides {
-		merged[name] = value
-	}
+	maps.Copy(merged, resolved)
+	maps.Copy(merged, overrides)
 	return merged
 }
 
@@ -514,11 +517,8 @@ func (runtime *SessionRuntime) dispose(emitExtensionShutdown bool) {
 	if runtime == nil {
 		return
 	}
+	runtime.settleAborted()
 	runtime.disposeExtensions(emitExtensionShutdown)
-	runtime.Abort()
-	runtime.AbortCompaction()
-	runtime.AbortBranchSummary()
-	runtime.AbortBash()
 	runtime.disconnectFromAgent()
 	runtime.mu.Lock()
 	runtime.disposed = true
@@ -536,6 +536,17 @@ func (runtime *SessionRuntime) dispose(emitExtensionShutdown bool) {
 	}
 	// Provider session caches are process-scoped; upstream treats teardown as best-effort.
 	_ = ai.CleanupSessionResources(runtime.manager.GetSessionID())
+}
+
+// settleAborted aborts active work and waits for its tools to settle, so their results are recorded
+// before extensions are torn down. The wait is bounded: a tool that ignores its abort does not hold
+// the exit.
+func (runtime *SessionRuntime) settleAborted() {
+	runtime.Abort()
+	runtime.AbortBash()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = runtime.WaitForIdle(ctx)
 }
 
 // ErrSessionDisposed is returned instead of starting or queueing work on a
@@ -660,11 +671,9 @@ func (runtime *SessionRuntime) QueueInteractive(ctx context.Context, text string
 
 // enqueue expands text and queues it as a follow-up or steering message.
 func (runtime *SessionRuntime) enqueue(text string, images []*ai.ImageContent, followUp bool) error {
-	if runtime.slashResolver != nil {
-		var err error
-		if text, err = runtime.slashResolver.ExpandQueued(text); err != nil {
-			return err
-		}
+	text, err := runtime.slashResolver.Load().ExpandQueued(text)
+	if err != nil {
+		return err
 	}
 	runtime.mu.Lock()
 	runtime.queueLocked(runtime.userMessage(text, images), &text, followUp)
@@ -679,11 +688,9 @@ func (runtime *SessionRuntime) SteerRunning(text string, images []*ai.ImageConte
 	if err := runtime.checkLive(); err != nil {
 		return false, err
 	}
-	if runtime.slashResolver != nil {
-		var err error
-		if text, err = runtime.slashResolver.ExpandQueued(text); err != nil {
-			return false, err
-		}
+	text, err := runtime.slashResolver.Load().ExpandQueued(text)
+	if err != nil {
+		return false, err
 	}
 	return runtime.queueWhileRunning(runtime.userMessage(text, images), &text, false), nil
 }
@@ -712,10 +719,35 @@ func (runtime *SessionRuntime) queueLocked(message engine.AgentMessage, text *st
 	case text != nil:
 		runtime.steering = append(runtime.steering, *text)
 	}
+	if user, ok := message.(*ai.UserMessage); ok && text != nil {
+		if runtime.queuedTexts == nil {
+			runtime.queuedTexts = map[*ai.UserMessage]string{}
+		}
+		runtime.queuedTexts[user] = *text
+	}
 	if followUp {
 		runtime.agent.FollowUp(message)
 	} else {
 		runtime.agent.Steer(message)
+	}
+}
+
+// unlistQueued removes a delivered queued message from the listed queue.
+func (runtime *SessionRuntime) unlistQueued(message engine.AgentMessage) {
+	user, _ := message.(*ai.UserMessage)
+	runtime.mu.Lock()
+	text, queued := runtime.queuedTexts[user]
+	if queued {
+		delete(runtime.queuedTexts, user)
+		if index := slices.Index(runtime.steering, text); index >= 0 {
+			runtime.steering = append(runtime.steering[:index], runtime.steering[index+1:]...)
+		} else if index := slices.Index(runtime.followUps, text); index >= 0 {
+			runtime.followUps = append(runtime.followUps[:index], runtime.followUps[index+1:]...)
+		}
+	}
+	runtime.mu.Unlock()
+	if queued {
+		runtime.emitQueueUpdate()
 	}
 }
 
@@ -733,6 +765,7 @@ func (runtime *SessionRuntime) RunQueued(ctx context.Context) error {
 	if message == nil {
 		return nil
 	}
+	runtime.unlistQueued(message)
 	if user, ok := message.(*ai.UserMessage); ok && runtime.extensionState != nil {
 		text, images := userTextAndImages(user.Content)
 		return runtime.runOpening(ctx, runtime.extensionState, text, images, nil)
@@ -762,9 +795,30 @@ func (runtime *SessionRuntime) IsIdle() bool {
 		return true
 	}
 	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return runtime.idleLocked()
+}
+
+func (runtime *SessionRuntime) idleLocked() bool {
 	active := runtime.activeRuns != 0 || runtime.compactionCancel != nil || runtime.autoCompactionCancel != nil || runtime.branchCancel != nil || runtime.retryCancel != nil
-	runtime.mu.Unlock()
 	return !active && runtime.agent.IsIdle()
+}
+
+// beginPromptPreflight reserves the context through a prompt's input hooks and
+// auth checks, so tree navigation cannot install another one meanwhile, and
+// refuses a prompt while navigation summarizes a branch (upstream #9155).
+func (runtime *SessionRuntime) beginPromptPreflight() (func(), error) {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if runtime.branchCancel != nil {
+		return nil, errors.New("Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.") //nolint:staticcheck // Upstream session error is observable.
+	}
+	runtime.promptPreflights++
+	return func() {
+		runtime.mu.Lock()
+		runtime.promptPreflights--
+		runtime.mu.Unlock()
+	}, nil
 }
 
 func (runtime *SessionRuntime) PromptAfterPreflight(ctx context.Context, input any, images ...*ai.ImageContent) error {
@@ -774,12 +828,15 @@ func (runtime *SessionRuntime) PromptAfterPreflight(ctx context.Context, input a
 	if text, ok := input.(string); ok && runtime.extensionState != nil {
 		return runtime.promptExtensionInput(ctx, text, images, extensions.InputInteractive, true, nil, false, nil)
 	}
-	if text, ok := input.(string); ok && runtime.slashResolver != nil {
-		expanded, handled := runtime.slashResolver.ResolvePrompt(text)
+	if text, ok := input.(string); ok {
+		expanded, handled := runtime.slashResolver.Load().ResolvePrompt(text)
 		if handled {
 			return nil
 		}
 		input = expanded
+		if len(images) > 0 {
+			input, images = runtime.userMessage(expanded, images), nil
+		}
 	}
 	return runtime.runPolicies(ctx, func() error { return runtime.agent.Prompt(ctx, input, images...) })
 }
@@ -814,14 +871,70 @@ func (runtime *SessionRuntime) FollowUpImages(text string, images []*ai.ImageCon
 }
 
 func (runtime *SessionRuntime) Commands() []SlashCommandInfo {
-	if runtime == nil || runtime.slashResolver == nil {
+	if runtime == nil {
 		return []SlashCommandInfo{}
 	}
-	// A copy with the extensions' commands as of now: callers list commands concurrently (every
-	// follower's describe), and must not write the resolver prompts are expanded with.
-	resolver := *runtime.slashResolver
+	resolver := cloneSlashResolver(runtime.slashResolver.Load())
 	resolver.ExtensionCommands = runtime.registeredExtensionCommands()
-	return resolver.Commands(runtime.settings.GetEnableSkillCommands())
+	return resolver.Commands()
+}
+
+// OnExtensionError subscribes to extension and skill-expansion errors across
+// reloads of the session's extension runner.
+func (runtime *SessionRuntime) OnExtensionError(listener func(extensions.ExtensionError)) func() {
+	if runtime == nil || listener == nil {
+		return func() {}
+	}
+	runtime.mu.Lock()
+	runtime.nextErrorListenerID++
+	id := runtime.nextErrorListenerID
+	if runtime.errorListeners == nil {
+		runtime.errorListeners = make(map[uint64]func(extensions.ExtensionError))
+	}
+	runtime.errorListeners[id] = listener
+	runtime.mu.Unlock()
+	return func() {
+		runtime.mu.Lock()
+		delete(runtime.errorListeners, id)
+		runtime.mu.Unlock()
+	}
+}
+
+func (runtime *SessionRuntime) notifyExtensionErrorListeners(extensionError extensions.ExtensionError) {
+	runtime.mu.Lock()
+	listeners := make([]func(extensions.ExtensionError), 0, len(runtime.errorListeners))
+	for _, listener := range runtime.errorListeners {
+		listeners = append(listeners, listener)
+	}
+	runtime.mu.Unlock()
+	for _, listener := range listeners {
+		listener(extensionError)
+	}
+}
+
+func (runtime *SessionRuntime) reportExtensionError(extensionError extensions.ExtensionError) {
+	if state := runtime.extensionState; state != nil {
+		state.mu.Lock()
+		runner := state.runner
+		state.mu.Unlock()
+		if runner != nil {
+			runner.ReportError(extensionError)
+			return
+		}
+	}
+	runtime.notifyExtensionErrorListeners(extensionError)
+}
+
+// setSlashResolver publishes resolver, which is never written afterwards: RPC, bridge and
+// follower goroutines load it while extensions bind or reload.
+func (runtime *SessionRuntime) setSlashResolver(resolver *SlashResolver) {
+	resolver.OnError = func(err error) {
+		var failure *skillExpansionError
+		if errors.As(err, &failure) {
+			runtime.reportExtensionError(extensions.ExtensionError{ExtensionPath: failure.path, Event: "skill_expansion", Error: err.Error()})
+		}
+	}
+	runtime.slashResolver.Store(resolver)
 }
 
 // State is the agent's state with the session's effective system prompt,
@@ -871,6 +984,7 @@ func (runtime *SessionRuntime) ClearQueue() QueueUpdateEvent {
 	}
 	runtime.steering = []string{}
 	runtime.followUps = []string{}
+	clear(runtime.queuedTexts)
 	runtime.mu.Unlock()
 	runtime.agent.ClearAllQueues()
 	runtime.emitQueueUpdate()
@@ -923,6 +1037,26 @@ func (runtime *SessionRuntime) WaitForIdle(ctx context.Context) error {
 		}
 	}
 	return runtime.agent.WaitForIdle(ctx)
+}
+
+// recordThinkingLevel records the live thinking level on the current branch
+// when the branch implies another one: tree navigation can leave the latest
+// thinking_level_change on another branch (upstream #11451). The recorded level
+// is compared clamped to the model, so a level clamped on resume is not
+// recorded over the requested one.
+func (runtime *SessionRuntime) recordThinkingLevel() error {
+	for _, entry := range slices.Backward(runtime.manager.GetBranch()) {
+		if entry.Type != "thinking_level_change" {
+			continue
+		}
+		state := runtime.agent.StateWithoutMessages()
+		if ai.ClampThinkingLevel(state.Model, ai.ModelThinkingLevel(entry.ThinkingLevel)) == state.ThinkingLevel {
+			return nil
+		}
+		_, err := runtime.manager.AppendThinkingLevelChange(string(state.ThinkingLevel))
+		return err
+	}
+	return nil
 }
 
 func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() error) (err error) {
@@ -978,6 +1112,9 @@ func (runtime *SessionRuntime) runPolicies(ctx context.Context, start func() err
 			err = flushErr
 		}
 	}()
+	if err := runtime.recordThinkingLevel(); err != nil {
+		return err
+	}
 	for {
 		if err := start(); err != nil {
 			return err
@@ -1102,21 +1239,7 @@ func (runtime *SessionRuntime) handleAgentEvent(ctx context.Context, event engin
 			runtime.overflowAttempted = false
 			runtime.mu.Unlock()
 		}
-		if text := userMessageText(start.Message); text != "" {
-			changed := false
-			runtime.mu.Lock()
-			if index := indexOf(runtime.steering, text); index >= 0 {
-				runtime.steering = append(runtime.steering[:index], runtime.steering[index+1:]...)
-				changed = true
-			} else if index := indexOf(runtime.followUps, text); index >= 0 {
-				runtime.followUps = append(runtime.followUps[:index], runtime.followUps[index+1:]...)
-				changed = true
-			}
-			runtime.mu.Unlock()
-			if changed {
-				runtime.emitQueueUpdate()
-			}
-		}
+		runtime.unlistQueued(start.Message)
 	}
 	ephemeral := engine.IsEphemeralAgentEvent(ctx)
 	event = runtime.extensionLifecycleEvent(ctx, event)
@@ -1376,7 +1499,7 @@ func (runtime *SessionRuntime) checkCompaction(ctx context.Context, message *ai.
 
 func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason string, willRetry bool) (bool, error) {
 	var fromExtension bool
-	model := runtime.agent.State().Model
+	model := runtime.agent.StateWithoutMessages().Model
 	settings := runtime.settings.GetCompactionSettingsForModel(model)
 	branch := runtime.manager.GetBranch()
 	preparation, err := harness.PrepareLegacyCompaction(projectSessionEntries(branch), harness.CompactionSettings{
@@ -1413,7 +1536,7 @@ func (runtime *SessionRuntime) runAutoCompaction(ctx context.Context, reason str
 		compactErr = context.Canceled
 	} else if result == nil {
 		var harnessResult *harness.CompactionResult
-		harnessResult, compactErr = harness.CompactProduct(compactionContext, preparation, model, runtime.summarizationComplete("compaction", reason), "", runtime.agent.State().ThinkingLevel, nil)
+		harnessResult, compactErr = harness.CompactProduct(compactionContext, preparation, model, runtime.summarizationComplete("compaction", reason), "", runtime.agent.StateWithoutMessages().ThinkingLevel, nil)
 		result = codingCompactionResult(harnessResult)
 	}
 	wasCancelled := compactionContext.Err() != nil
@@ -1480,9 +1603,6 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 	if err := runtime.checkLive(); err != nil {
 		return nil, err
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	runtime.disconnectFromAgent()
 	defer runtime.reconnectToAgent()
 	runtime.Abort()
@@ -1502,13 +1622,13 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		runtime.mu.Unlock()
 	}()
 	runtime.emit(CompactionStartEvent{Reason: "manual"})
-	if model := runtime.agent.State().Model; model == nil || IsUnknownModel(model) {
+	if model := runtime.agent.StateWithoutMessages().Model; model == nil || IsUnknownModel(model) {
 		err := noModelSelectedError()
 		message := "Compaction failed: " + err.Error()
 		runtime.emitCompactionEnd(ctx, CompactionEndEvent{Reason: "manual", ErrorMessage: &message}, fromExtension)
 		return nil, err
 	}
-	model := runtime.agent.State().Model
+	model := runtime.agent.StateWithoutMessages().Model
 	settings := runtime.settings.GetCompactionSettingsForModel(model)
 	branch := runtime.manager.GetBranch()
 	preparation, err := harness.PrepareLegacyCompaction(projectSessionEntries(branch), harness.CompactionSettings{
@@ -1540,7 +1660,7 @@ func (runtime *SessionRuntime) Compact(ctx context.Context, customInstructions s
 		err = errors.New("Compaction cancelled")
 	} else if result == nil {
 		var harnessResult *harness.CompactionResult
-		harnessResult, err = harness.CompactProduct(compactionContext, preparation, model, runtime.summarizationComplete("compaction", "manual"), customInstructions, runtime.agent.State().ThinkingLevel, nil)
+		harnessResult, err = harness.CompactProduct(compactionContext, preparation, model, runtime.summarizationComplete("compaction", "manual"), customInstructions, runtime.agent.StateWithoutMessages().ThinkingLevel, nil)
 		result = codingCompactionResult(harnessResult)
 	}
 	if err == nil && compactionContext.Err() != nil {
@@ -1705,12 +1825,28 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 		}
 		defer finish()
 	}
-	if !runtime.IsIdle() {
+	branchContext, cancel := context.WithCancel(ctx)
+	runtime.mu.Lock()
+	idle := runtime.idleLocked() && runtime.promptPreflights == 0
+	if idle {
+		runtime.branchCancel = cancel
+		runtime.refreshIdleWaitLocked()
+	}
+	runtime.mu.Unlock()
+	if !idle {
+		cancel()
 		return NavigateTreeResult{}, errors.New("Wait for the current response to finish before navigating the session tree.")
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	release := sync.OnceFunc(func() {
+		runtime.mu.Lock()
+		runtime.branchCancel = nil
+		runtime.refreshIdleWaitLocked()
+		runtime.mu.Unlock()
+	})
+	defer func() {
+		cancel()
+		release()
+	}()
 	oldLeaf := runtime.manager.GetLeafID()
 	if oldLeaf != nil && *oldLeaf == targetID {
 		return NavigateTreeResult{}, nil
@@ -1732,18 +1868,6 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 		}
 	}
 	collected.Entries = projectSessionEntries(onBranch)
-	branchContext, cancel := context.WithCancel(ctx)
-	runtime.mu.Lock()
-	runtime.branchCancel = cancel
-	runtime.refreshIdleWaitLocked()
-	runtime.mu.Unlock()
-	defer func() {
-		cancel()
-		runtime.mu.Lock()
-		runtime.branchCancel = nil
-		runtime.refreshIdleWaitLocked()
-		runtime.mu.Unlock()
-	}()
 
 	var summary string
 	var details any = harness.BranchSummaryDetails{}
@@ -1808,9 +1932,9 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	if options.Summarize && len(collected.Entries) > 0 && !fromExtension {
 		settings := runtime.settings.GetBranchSummarySettings()
 		result, summaryErr := harness.GenerateProductBranchSummary(branchContext, collected.Entries, harness.GenerateBranchSummaryOptions{
-			Model: runtime.agent.State().Model, Complete: runtime.summarizationComplete("branchSummary", ""),
+			Model: runtime.agent.StateWithoutMessages().Model, Complete: runtime.summarizationComplete("branchSummary", ""),
 			CustomInstructions: customInstructions, ReplaceInstructions: replaceInstructions,
-			ReserveTokens: &settings.ReserveTokens, ThinkingLevel: runtime.agent.State().ThinkingLevel,
+			ReserveTokens: &settings.ReserveTokens, ThinkingLevel: runtime.agent.StateWithoutMessages().ThinkingLevel,
 		})
 		if summaryErr != nil {
 			if errors.Is(summaryErr, context.Canceled) || branchContext.Err() != nil {
@@ -1867,6 +1991,8 @@ func (runtime *SessionRuntime) NavigateTree(ctx context.Context, targetID string
 	}
 	runtime.RefreshContext()
 	runtime.restoreBranchTools()
+	// The selected context is installed; session_tree handlers may prompt or navigate again.
+	release()
 	if state := runtime.extensionState; state != nil && state.runner != nil && state.runner.HasHandlers(extensions.EventSessionTree) {
 		var fromExtensionValue *bool
 		if summary != "" {
@@ -2130,15 +2256,6 @@ func userMessageText(message engine.AgentMessage) string {
 		return *user.Content.Text
 	}
 	return ai.ContentText(user.Content.Blocks, "")
-}
-
-func indexOf(values []string, target string) int {
-	for index, value := range values {
-		if value == target {
-			return index
-		}
-	}
-	return -1
 }
 
 func decodeUserContentText(raw json.RawMessage) string {

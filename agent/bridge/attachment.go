@@ -137,7 +137,14 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 			a.appendMessage(a.swapImages(b))
 		}
 	}, func(event engine.AgentEvent) {
-		b, err := engine.MarshalAgentEvent(event)
+		// An update repeats the whole message in its assistantMessageEvent; followers read the message.
+		var b []byte
+		var err error
+		if update, ok := event.(engine.MessageUpdateEvent); ok {
+			b, err = ai.Marshal(update.Message)
+		} else {
+			b, err = engine.MarshalAgentEvent(event)
+		}
 		if err != nil {
 			return
 		}
@@ -148,7 +155,10 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 		}
 		b = a.swapImages(b)
 		switch event.(type) {
-		case engine.MessageStartEvent, engine.MessageUpdateEvent, engine.MessageEndEvent:
+		case engine.MessageUpdateEvent:
+			a.partial = b
+			b = append(append([]byte(`{"type":"message_update","message":`), b...), '}')
+		case engine.MessageStartEvent, engine.MessageEndEvent:
 			var fields struct {
 				Message json.RawMessage `json:"message"`
 			}
@@ -160,10 +170,6 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 				a.appendMessage(fields.Message)
 			} else {
 				a.partial = fields.Message
-			}
-			// An update repeats the whole message in its assistantMessageEvent; followers read the message.
-			if _, update := event.(engine.MessageUpdateEvent); update {
-				b = append(append([]byte(`{"type":"message_update","message":`), fields.Message...), '}')
 			}
 		case engine.AgentEndEvent:
 			a.partial = nil
@@ -513,8 +519,7 @@ func (a *Attachment) call(ctx context.Context, r bridge.Request) (json.RawMessag
 	}
 	// Retained receipts are checked before routing/session fences. Their original
 	// preconditions remain part of the semantic digest across reconnects.
-	if old, err := a.ledger.Get(r.Principal, r.Call.InstanceID, r.Call.OperationID); err == nil {
-		_ = old
+	if _, err := a.ledger.Get(r.Principal, r.Call.InstanceID, r.Call.OperationID); err == nil {
 		receipt, _, err := a.ledger.Accept(r)
 		return bridge.JSON(receipt), err
 	}

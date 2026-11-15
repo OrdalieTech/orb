@@ -239,7 +239,7 @@ func StreamOpenAIResponsesWithOptions(
 		return nil, errors.New("ai/api: OpenAI Responses model is nil")
 	}
 	output := newAssistantMessage(model)
-	if compat, err := getOpenAIResponsesCompat(model); err == nil {
+	if compat, err := getOpenAIResponsesCompat(model, false); err == nil {
 		if effort := responsesConfigurationUpdateEffort(model, options, compat); effort != "" {
 			output.ProviderThinkingLevel = &effort
 			ai.SetAssistantMessageProviderThinkingLevelBeforeResponseID(output, true)
@@ -265,17 +265,12 @@ func StreamOpenAIResponsesWithOptions(
 			fail(err)
 			return
 		}
-		payload, compat, err := buildOpenAIResponsesPayload(model, requestContext, options)
+		payload, prepared, err := buildOpenAIResponsesPayload(model, requestContext, options)
 		if err != nil {
 			fail(err)
 			return
 		}
-
-		grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, compat.supportsOpenAIGrammarTools)
-		if err != nil {
-			fail(err)
-			return
-		}
+		compat, grammarToolInputProperties := prepared.compat, prepared.messages.grammarToolInputProperties
 		hookedPayload, err := applyPayloadHook(ctx, model, streamOptions, payload)
 		if err != nil {
 			fail(err)
@@ -343,45 +338,64 @@ func responsesStreamOptions(options *OpenAIResponsesOptions) *ai.StreamOptions {
 	return &options.StreamOptions
 }
 
+// responsesInput is the request state the OpenAI, Codex and Azure Responses
+// builders share; the stream reads its grammar tool input properties too.
+type responsesInput struct {
+	compat   openAIResponsesCompat
+	context  ai.Context
+	tools    []ai.Tool
+	deferred map[string]ai.Tool
+	messages responsesMessageOptions
+}
+
+// prepareResponsesInput projects the transcript for a Responses request;
+// strictDefault is supportsStrictMode when the model's compat leaves it unset.
+func prepareResponsesInput(model *ai.Model, requestContext ai.Context, strictDefault bool) (responsesInput, error) {
+	compat, err := getOpenAIResponsesCompat(model, strictDefault)
+	if err != nil {
+		return responsesInput{}, err
+	}
+	transcript := ai.NormalizeContext(requestContext)
+	declared := ai.DeclaredTools(transcript.Messages)
+	grammar, err := createGrammarToolInputProperties(&declared, compat.supportsOpenAIGrammarTools)
+	if err != nil {
+		return responsesInput{}, err
+	}
+	if !compat.supportsMidConvoSystemMessages {
+		transcript = ai.CollapseSystemMessages(transcript)
+	}
+	tools, deferred, anchoredFrom := transcriptToolPlacement(transcript.Messages, compat.supportsAdditionalTools || compat.supportsToolSearch)
+	toolChanges, initialTools := responsesToolChanges(compat.supportsMidConvoSystemMessages && compat.supportsAdditionalTools, transcript.Messages, &tools)
+	return responsesInput{
+		compat: compat, context: projectTranscriptContext(transcript, true), tools: tools, deferred: deferred,
+		messages: responsesMessageOptions{
+			supportsDeveloperRole:      compat.supportsDeveloperRole,
+			grammarToolInputProperties: grammar,
+			deferredToolsMode:          responsesDeferredToolsMode(compat.supportsAdditionalTools, compat.supportsToolSearch),
+			toolsAnchoredFrom:          anchoredFrom,
+			toolChanges:                toolChanges,
+			initialTools:               initialTools,
+			toolOptions: responsesToolOptions{
+				supportsStrictMode: compat.supportsStrictMode, supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools,
+			},
+		},
+	}, nil
+}
+
 func buildOpenAIResponsesPayload(
 	model *ai.Model,
 	requestContext ai.Context,
 	options *OpenAIResponsesOptions,
-) (*OpenAIResponsesPayload, openAIResponsesCompat, error) {
-	compat, err := getOpenAIResponsesCompat(model)
+) (*OpenAIResponsesPayload, responsesInput, error) {
+	prepared, err := prepareResponsesInput(model, requestContext, false)
 	if err != nil {
-		return nil, compat, err
+		return nil, prepared, err
 	}
-	transcript := ai.NormalizeContext(requestContext)
-	if !compat.supportsMidConvoSystemMessages {
-		transcript = ai.CollapseSystemMessages(transcript)
-	}
-	requestTools, deferredTools, anchoredFrom := transcriptToolPlacement(
-		transcript.Messages, compat.supportsAdditionalTools || compat.supportsToolSearch,
-	)
-	toolChanges, initialTools := responsesToolChanges(compat.supportsMidConvoSystemMessages && compat.supportsAdditionalTools, transcript.Messages, &requestTools)
-	requestContext = projectTranscriptContext(transcript, true)
-	placement := responsesToolPlacement{immediate: requestTools, deferred: deferredTools}
-	grammarToolInputProperties, err := createGrammarToolInputProperties(requestContext.Tools, compat.supportsOpenAIGrammarTools)
+	compat := prepared.compat
+	prepared.messages.configurationUpdateEffort = responsesConfigurationUpdateEffort(model, options, compat)
+	input, err := convertResponsesMessagesWithOptions(model, prepared.context, prepared.deferred, prepared.messages)
 	if err != nil {
-		return nil, compat, err
-	}
-	toolOptions := responsesToolOptions{
-		supportsStrictMode:         compat.supportsStrictMode,
-		supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools,
-	}
-	input, err := convertResponsesMessagesWithOptions(model, requestContext, placement.deferred, responsesMessageOptions{
-		supportsDeveloperRole:      compat.supportsDeveloperRole,
-		grammarToolInputProperties: grammarToolInputProperties,
-		deferredToolsMode:          responsesDeferredToolsMode(compat.supportsAdditionalTools, compat.supportsToolSearch),
-		toolsAnchoredFrom:          anchoredFrom,
-		toolChanges:                toolChanges,
-		initialTools:               initialTools,
-		toolOptions:                toolOptions,
-		configurationUpdateEffort:  responsesConfigurationUpdateEffort(model, options, compat),
-	})
-	if err != nil {
-		return nil, compat, err
+		return nil, prepared, err
 	}
 	streamOptions := responsesStreamOptions(options)
 	cacheRetention := resolveCacheRetention(streamOptions)
@@ -391,7 +405,7 @@ func buildOpenAIResponsesPayload(
 		Stream: true,
 		Store:  false,
 	}
-	if cacheRetention != ai.CacheRetentionNone && streamOptions != nil && streamOptions.SessionID != nil {
+	if cacheRetention != ai.CacheRetentionNone && !compat.omitPromptCacheKey && streamOptions != nil && streamOptions.SessionID != nil {
 		value := clampOpenAIPromptCacheKey(streamOptions.SessionID)
 		if key, ok := value.(string); ok {
 			payload.PromptCacheKey = &key
@@ -421,15 +435,15 @@ func buildOpenAIResponsesPayload(
 		payload.ServiceTier = options.ServiceTier
 		payload.ToolChoice = options.ToolChoice
 	}
-	if len(placement.immediate) > 0 {
-		payload.Tools, err = convertResponsesToolsWithOptions(placement.immediate, toolOptions)
+	if len(prepared.tools) > 0 {
+		payload.Tools, err = convertResponsesToolsWithOptions(prepared.tools, prepared.messages.toolOptions)
 		if err != nil {
-			return nil, compat, err
+			return nil, prepared, err
 		}
 	}
-	applyResponsesReasoning(payload, model, options, responsesConfigurationUpdateEffort(model, options, compat) != "")
+	applyResponsesReasoning(payload, model, options, prepared.messages.configurationUpdateEffort != "")
 	payload.Extra = mergedSamplingParams(model, streamOptions)
-	return payload, compat, nil
+	return payload, prepared, nil
 }
 
 const chatGPTUsageURL = "https://chatgpt.com/settings/usage"
@@ -491,6 +505,7 @@ type openAIResponsesCompat struct {
 	supportsDeveloperRole           bool
 	supportsMidConvoSystemMessages  bool
 	sessionAffinityFormat           ai.SessionAffinityFormat
+	omitPromptCacheKey              bool
 	supportsLongCacheRetention      bool
 	supportsStrictMode              bool
 	supportsOpenAIGrammarTools      bool
@@ -501,7 +516,7 @@ type openAIResponsesCompat struct {
 	supportsMidConvoEffort          bool
 }
 
-func getOpenAIResponsesCompat(model *ai.Model) (openAIResponsesCompat, error) {
+func getOpenAIResponsesCompat(model *ai.Model, strictDefault bool) (openAIResponsesCompat, error) {
 	raw, err := decodeCompat[ai.OpenAIResponsesCompat](model)
 	if err != nil {
 		return openAIResponsesCompat{}, err
@@ -511,6 +526,7 @@ func getOpenAIResponsesCompat(model *ai.Model) (openAIResponsesCompat, error) {
 		supportsMaxOutputTokens:    true,
 		sessionAffinityFormat:      detectResponsesSessionAffinity(model),
 		supportsLongCacheRetention: true,
+		supportsStrictMode:         strictDefault,
 	}
 	if raw.SupportsMaxOutputTokens != nil {
 		compat.supportsMaxOutputTokens = *raw.SupportsMaxOutputTokens
@@ -527,6 +543,7 @@ func getOpenAIResponsesCompat(model *ai.Model) (openAIResponsesCompat, error) {
 	if raw.SessionAffinityFormat != nil {
 		compat.sessionAffinityFormat = *raw.SessionAffinityFormat
 	}
+	compat.omitPromptCacheKey = raw.PromptCacheKeyMode != nil && *raw.PromptCacheKeyMode == ai.PromptCacheKeyDisabled
 	if raw.SupportsLongCacheRetention != nil {
 		compat.supportsLongCacheRetention = *raw.SupportsLongCacheRetention
 	}
@@ -572,7 +589,7 @@ func buildOpenAIResponsesHeaders(
 		case ai.SessionAffinityOpenRouter:
 			headers.Set("x-session-id", sessionID)
 		case ai.SessionAffinityOpenAI:
-			headers.Set("session_id", sessionID)
+			headers.Set("session-id", sessionID)
 			headers.Set("x-client-request-id", sessionID)
 		case ai.SessionAffinityOpenAINoSession:
 			headers.Set("x-client-request-id", sessionID)
@@ -588,11 +605,6 @@ func buildOpenAIResponsesHeaders(
 	}
 	addOpenCodeSessionHeader(headers, model, options)
 	return headers
-}
-
-type responsesToolPlacement struct {
-	immediate []ai.Tool
-	deferred  map[string]ai.Tool
 }
 
 type responsesToolOptions struct {
@@ -678,7 +690,7 @@ func convertResponsesToolsWithOptions(tools []ai.Tool, options responsesToolOpti
 			result = append(result, converted)
 			continue
 		}
-		strict, err := resolveJSONSchemaStrictSampling(tool, options.supportsStrictMode)
+		strict, parameters, err := resolveJSONSchemaStrictSampling(tool, options.supportsStrictMode, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -688,10 +700,11 @@ func convertResponsesToolsWithOptions(tools []ai.Tool, options responsesToolOpti
 		if effectiveStrict == nil && !options.strictNull {
 			value := options.defaultStrict
 			effectiveStrict = &value
-		}
-		parameters, err := getJSONSchemaToolParameters(tool.Parameters, effectiveStrict != nil && *effectiveStrict)
-		if err != nil {
-			return nil, err
+			if value {
+				if parameters, err = makeStrictJSONSchema(tool.Parameters, nil); err != nil {
+					return nil, err
+				}
+			}
 		}
 		converted := OpenAIResponsesTool{
 			Type:        "function",
@@ -1767,61 +1780,14 @@ func (processor *openAIResponsesProcessor) backfillReasoningSignatures(items []j
 
 func setResponsesObjectField(object, name string, value []byte) (string, bool) {
 	normalized, err := ai.NormalizeJSONStringifyJSON([]byte(object))
-	if err != nil || len(normalized) < 2 || normalized[0] != '{' {
+	if err != nil {
 		return "", false
 	}
-	type member struct {
-		name  string
-		value json.RawMessage
-	}
-	decoder := json.NewDecoder(strings.NewReader(string(normalized)))
-	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+	members, ok := jsonwire.ParseRawObject(normalized)
+	if !ok || !json.Valid(value) {
 		return "", false
 	}
-	members := make([]member, 0)
-	indexes := make(map[string]int)
-	for decoder.More() {
-		token, err := decoder.Token()
-		if err != nil {
-			return "", false
-		}
-		memberName, ok := token.(string)
-		if !ok {
-			return "", false
-		}
-		var raw json.RawMessage
-		if decoder.Decode(&raw) != nil {
-			return "", false
-		}
-		if index, exists := indexes[memberName]; exists {
-			members[index].value = raw
-			continue
-		}
-		indexes[memberName] = len(members)
-		members = append(members, member{name: memberName, value: raw})
-	}
-	if token, err := decoder.Token(); err != nil || token != json.Delim('}') || !json.Valid(value) {
-		return "", false
-	}
-	if index, exists := indexes[name]; exists {
-		members[index].value = value
-	} else {
-		members = append(members, member{name: name, value: value})
-	}
-	var output strings.Builder
-	output.WriteByte('{')
-	for index, member := range members {
-		if index > 0 {
-			output.WriteByte(',')
-		}
-		encodedName, err := ai.Marshal(member.name)
-		if err != nil {
-			return "", false
-		}
-		output.Write(encodedName)
-		output.WriteByte(':')
-		output.Write(member.value)
-	}
-	output.WriteByte('}')
-	return output.String(), true
+	members.Set(name, value)
+	encoded, _ := members.MarshalJSON()
+	return string(encoded), true
 }

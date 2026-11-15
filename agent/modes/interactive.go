@@ -135,7 +135,6 @@ type InteractiveMode struct {
 	toolActivityTail           tui.Component
 	// lastReasoning is reasoning shown for the tools that follow it.
 	lastReasoning          tui.Component
-	expandables            []expandableComponent
 	statusIndicator        tui.Component
 	editorChromeWidth      int
 	editorChromeStatus     string
@@ -247,7 +246,6 @@ func (mode *InteractiveMode) addToolComponent(component *ToolExecutionComponent)
 	defer mode.mu.Unlock()
 	mode.toolComponents[component.toolCallID] = component
 	component.SetExpanded(mode.toolsExpanded)
-	mode.expandables = append(mode.expandables, component)
 	headed := mode.lastReasoning != nil && mode.chat.EndsWith(mode.lastReasoning)
 	if toolActivityKind(component.toolName) == "" {
 		component.headed = headed
@@ -342,6 +340,7 @@ func (mode *InteractiveMode) newBashExecutionComponent(command string, excludeFr
 	requester := &chatRenderRequester{mode: mode}
 	component := NewBashExecutionComponent(command, requester, excludeFromContext)
 	requester.Bind(component)
+	mode.addExpandable(component)
 	return component
 }
 
@@ -438,9 +437,7 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 		return 1
 	}
 	defer mode.cleanup()
-	mode.mu.Lock()
-	mode.unsubscribe = mode.session.Subscribe(mode.handleEvent)
-	mode.mu.Unlock()
+	mode.attachSession(mode.session)
 	defer mode.detachSession()
 	mode.session.SetExtensionShutdownHandler(mode.requestExtensionShutdown)
 	mode.session.StartExtensions()
@@ -454,8 +451,8 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 	}
 	stopTerminalBackground := mode.watchTerminalBackground(ctx)
 	defer stopTerminalBackground()
-	if host, ok := mode.options.Host.(InteractiveFooterHost); ok {
-		go host.WatchOthers(authContext, func(others string) {
+	if mode.options.Host != nil {
+		go mode.options.Host.WatchOthers(authContext, func(others string) {
 			mode.mu.Lock()
 			mode.others = others
 			mode.mu.Unlock()
@@ -524,8 +521,10 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 			if input.followUp {
 				delivery = extensions.DeliverFollowUp
 			}
+			// A host session replacement swaps mode.session from another goroutine.
+			session, _ := mode.sessionSnapshot()
 			if prompting {
-				if err := mode.session.QueueInteractive(ctx, input.text, input.images, delivery); err != nil {
+				if err := session.QueueInteractive(ctx, input.text, input.images, delivery); err != nil {
 					mode.showError(err)
 				}
 				continue
@@ -544,17 +543,18 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 			}
 			entry := input
 			go tui.Guarded(func() {
-				promptDone <- mode.session.SubmitInteractive(ctx, entry.text, entry.images, delivery)
+				promptDone <- session.SubmitInteractive(ctx, entry.text, entry.images, delivery)
 			})()
 		case err := <-promptDone:
 			// Input queued while this submission was out but after its run had ended (a run takes
 			// whatever is queued before it ends) is the next prompt, or back in the editor after a failure.
-			if mode.session.PendingMessageCount() > 0 && mode.session.IsIdle() && ctx.Err() == nil {
+			session, _ := mode.sessionSnapshot()
+			if session.PendingMessageCount() > 0 && session.IsIdle() && ctx.Err() == nil {
 				if err == nil {
-					go tui.Guarded(func() { promptDone <- mode.session.RunQueued(ctx) })()
+					go tui.Guarded(func() { promptDone <- session.RunQueued(ctx) })()
 					continue
 				}
-				mode.restoreToEditor(nil, mode.session.DequeueMessages())
+				mode.restoreToEditor(nil, session.DequeueMessages())
 			}
 			prompting = false
 			mode.mu.Lock()
@@ -569,7 +569,8 @@ func (mode *InteractiveMode) run(ctx context.Context) int {
 			mode.shutdown(true)
 			return 0
 		case <-ctx.Done():
-			mode.session.Abort()
+			session, _ := mode.sessionSnapshot()
+			session.Abort()
 			return 0
 		}
 	}
@@ -657,6 +658,17 @@ func (mode *InteractiveMode) init() error {
 	return nil
 }
 
+func (mode *InteractiveMode) attachSession(session *agent.SessionRuntime) {
+	unsubEvents := session.Subscribe(mode.handleEvent)
+	unsubErrors := session.OnExtensionError(mode.showExtensionError)
+	mode.mu.Lock()
+	mode.unsubscribe = func() {
+		unsubEvents()
+		unsubErrors()
+	}
+	mode.mu.Unlock()
+}
+
 func (mode *InteractiveMode) detachSession() {
 	mode.showStatusMessage("")
 	mode.cancelModelSelector()
@@ -706,9 +718,7 @@ func (mode *InteractiveMode) rebindHostSession(replacement *agent.SessionRuntime
 	settings := replacement.InteractiveSettings()
 	mode.editor.SetPaddingX(settings.EditorPaddingX)
 	mode.editor.SetAutocompleteMaxVisible(settings.AutocompleteMaxVisible)
-	mode.mu.Lock()
-	mode.unsubscribe = replacement.Subscribe(mode.handleEvent)
-	mode.mu.Unlock()
+	mode.attachSession(replacement)
 	replacement.SetExtensionShutdownHandler(mode.requestExtensionShutdown)
 	mode.renderInitialMessages()
 	mode.ui.SetFocus(mode.activeEditorFocus())
@@ -830,15 +840,31 @@ func (mode *InteractiveMode) applyTheme() {
 	}
 }
 
+// setBashMode runs on the UI goroutine, which therefore reads bashMode
+// unlocked; the agent event goroutine reads it under mu for the border.
+func (mode *InteractiveMode) setBashMode(on bool) {
+	mode.mu.Lock()
+	mode.bashMode = on
+	mode.mu.Unlock()
+	if on {
+		mode.editor.SetBorderColor(theme.BashModeBorderColor())
+	} else {
+		mode.editor.SetBorderColor(nil)
+	}
+}
+
 func (mode *InteractiveMode) updateEditorBorderColor() {
 	if mode.editor == nil {
 		return
 	}
 	color := theme.ThinkingBorderColor(engine.ThinkingOff)
-	if mode.bashMode {
+	mode.mu.Lock()
+	bashMode, session := mode.bashMode, mode.session
+	mode.mu.Unlock()
+	if bashMode {
 		color = theme.BashModeBorderColor()
-	} else if mode.session != nil {
-		color = theme.ThinkingBorderColor(mode.session.State().ThinkingLevel)
+	} else if session != nil {
+		color = theme.ThinkingBorderColor(session.State().ThinkingLevel)
 	}
 	mode.editor.SetBorderColor(color)
 	if appearance, ok := mode.currentExtensionEditor().(interface{ SetBorderColor(tui.StyleFunc) }); ok {
@@ -957,7 +983,7 @@ func (mode *InteractiveMode) Invalidate() {
 }
 
 func (mode *InteractiveMode) installEditorFactory(factory extensions.EditorFactory) {
-	currentText := mode.activeEditorText(false)
+	currentText := mode.activeEditorText(true)
 	if factory != nil {
 		replacement := factory(mode, themeAdapter{value: theme.Current()}, extensionKeybindings{mode.keybindings})
 		replacement.SetText(currentText)
@@ -1551,8 +1577,7 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 		}
 		if mode.bashMode {
 			mode.setActiveEditorText("")
-			mode.bashMode = false
-			mode.editor.SetBorderColor(nil)
+			mode.setBashMode(false)
 			return
 		}
 		if strings.TrimSpace(mode.activeEditorText(false)) != "" {
@@ -1591,11 +1616,16 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 
 	mode.editor.OnPasteImage = func() {
 		mode.attachImage(func() ([]byte, string, error) {
-			image := clipboard.ReadImage()
-			if image == nil {
-				return nil, "", errors.New("no image found on clipboard")
+			if image := clipboard.ReadImage(); image != nil {
+				return image.Bytes, image.MimeType, nil
 			}
-			return image.Bytes, image.MimeType, nil
+			text := clipboard.ReadText()
+			if text == "" {
+				return nil, "", errors.New("nothing to paste on the clipboard")
+			}
+			mode.editor.HandleInput(tui.KeyEvent{Raw: "\x1b[200~" + text + "\x1b[201~"})
+			mode.ui.RequestRender()
+			return nil, "", nil
 		})
 	}
 	mode.editor.OnPaste = func(text string) bool {
@@ -1652,20 +1682,17 @@ func (mode *InteractiveMode) setupKeyHandlers() {
 	})
 
 	mode.editor.OnAction("app.tools.expand", func() {
-		mode.mu.Lock()
-		expanded := !mode.toolsExpanded
-		mode.mu.Unlock()
-		mode.setToolsExpanded(expanded)
+		mode.setToolsExpanded(!mode.currentToolsExpanded())
 	})
 
 	mode.editor.OnAction("app.message.followUp", func() {
-		text := mode.editor.GetText()
+		text := strings.TrimSpace(mode.editor.GetExpandedText())
 		if text == "" {
 			return
 		}
 		mode.editor.SetText("")
 		// Like Enter, through the prompt loop: on an idle session it starts the turn.
-		mode.inputCh <- inputEntry{text: text, followUp: true}
+		mode.submitPrompt(text, true)
 	})
 
 	mode.editor.OnAction("app.message.dequeue", func() {
@@ -1731,8 +1758,7 @@ func (mode *InteractiveMode) setupEditorSubmitHandler() {
 			}
 			cmd = strings.TrimSpace(cmd)
 			if cmd != "" {
-				mode.bashMode = false
-				mode.editor.SetBorderColor(nil)
+				mode.setBashMode(false)
 				mode.editor.SetText("")
 				mode.editor.AddToHistory(text)
 				mode.executeUserBash(cmd, excludeContext)
@@ -1750,35 +1776,35 @@ func (mode *InteractiveMode) setupEditorSubmitHandler() {
 
 		// Detect bash mode toggle
 		if text == "!" {
-			mode.bashMode = !mode.bashMode
-			if mode.bashMode {
-				mode.editor.SetBorderColor(theme.BashModeBorderColor())
-			} else {
-				mode.editor.SetBorderColor(nil)
-			}
+			mode.setBashMode(!mode.bashMode)
 			mode.editor.SetText("")
 			return
 		}
 
-		// Normal message submission
-		prompt := text
-		if skills, ok := mode.autocomplete().(*skillAutocompleteProvider); ok {
-			prompt = exporthtml.SkillSubmission(text, skills.known)
-		}
-		mode.mu.Lock()
-		images := make([]*ai.ImageContent, 0, len(mode.pendingImages))
-		for index, image := range mode.pendingImages {
-			if strings.Contains(text, fmt.Sprintf("[Image #%d]", index+1)) {
-				images = append(images, image)
-			}
-		}
-		mode.pendingImages = nil
-		mode.imageDraftVersion++
-		mode.mu.Unlock()
-
-		mode.inputCh <- inputEntry{text: prompt, images: images}
-		mode.editor.AddToHistory(text)
+		mode.submitPrompt(text, false)
 	}
+}
+
+// submitPrompt sends a message with the images its markers reference, as a
+// follow-up when asked.
+func (mode *InteractiveMode) submitPrompt(text string, followUp bool) {
+	prompt := text
+	if skills, ok := mode.autocomplete().(*skillAutocompleteProvider); ok {
+		prompt = exporthtml.SkillSubmission(text, skills.known)
+	}
+	mode.mu.Lock()
+	images := make([]*ai.ImageContent, 0, len(mode.pendingImages))
+	for index, image := range mode.pendingImages {
+		if strings.Contains(text, fmt.Sprintf("[Image #%d]", index+1)) {
+			images = append(images, image)
+		}
+	}
+	mode.pendingImages = nil
+	mode.imageDraftVersion++
+	mode.mu.Unlock()
+
+	mode.inputCh <- inputEntry{text: prompt, images: images, followUp: followUp}
+	mode.editor.AddToHistory(text)
 }
 
 const maxImageInputBytes = 20 << 20
@@ -1841,6 +1867,9 @@ func (mode *InteractiveMode) attachImage(load func() ([]byte, string, error)) {
 		if err != nil {
 			mode.showStatusMessage("Image attachment failed: " + err.Error())
 			return
+		}
+		if data == nil {
+			return // the load pasted text instead
 		}
 		if len(data) > maxImageInputBytes {
 			mode.showStatusMessage("Image exceeds 20 MB")
@@ -1965,9 +1994,9 @@ func (mode *InteractiveMode) resolveSlashCommand(name, args string) (slashComman
 	case "trust":
 		return slashCommandAction{name: "showTrustSelector", arguments: noArguments, run: mode.showTrustSelector}, true
 	case "login":
-		return slashCommandAction{name: "handleLoginCommand", arguments: []string{args}, run: func() { mode.handleLoginCommand(args) }}, true
+		return slashCommandAction{name: "handleLoginCommand", arguments: []string{args}, run: func() { mode.authenticateProvider(args, false) }}, true
 	case "logout":
-		return slashCommandAction{name: "showOAuthSelector", arguments: []string{"logout"}, run: func() { mode.showOAuthSelector("logout") }}, true
+		return slashCommandAction{name: "showOAuthSelector", arguments: []string{"logout"}, run: func() { mode.authenticateProvider("", true) }}, true
 	case "resume":
 		return slashCommandAction{name: "showSessionSelector", arguments: noArguments, run: mode.showSessionSelector}, true
 	case "reload":
@@ -2105,9 +2134,9 @@ func (mode *InteractiveMode) executeUserBash(command string, excludeFromContext 
 		)
 		if err != nil {
 			exitCode := 1
-			comp.SetComplete(&exitCode, false)
+			comp.SetComplete(&exitCode, false, false, nil)
 		} else {
-			comp.SetComplete(result.ExitCode, result.Cancelled)
+			comp.SetComplete(result.ExitCode, result.Cancelled, result.Truncated, result.FullOutput)
 		}
 		mode.requestChatRender(comp)
 	}()
@@ -2512,7 +2541,16 @@ func exportThemeRef(value *theme.Theme) *exporthtml.ThemeRef {
 }
 
 func (mode *InteractiveMode) handleExportCommand(text string) {
-	outputPath := pathCommandArgument(text, "/export")
+	mode.exportSession(pathCommandArgument(text, "/export"), "Session exported to: ")
+}
+
+// handleShareCommand keeps upstream's gist description, but Orb has no gist
+// upload (divergence ledger: `/share`), so it says where the export went.
+func (mode *InteractiveMode) handleShareCommand() {
+	mode.exportSession("", "Sharing as a GitHub gist is unavailable; session exported to: ")
+}
+
+func (mode *InteractiveMode) exportSession(outputPath, exported string) {
 	var path string
 	var err error
 	if strings.HasSuffix(outputPath, ".jsonl") {
@@ -2527,12 +2565,8 @@ func (mode *InteractiveMode) handleExportCommand(text string) {
 	if err != nil {
 		mode.showError(errors.New("Failed to export session: " + err.Error()))
 	} else {
-		mode.showStatusMessage("Session exported to: " + path)
+		mode.showStatusMessage(exported + path)
 	}
-}
-
-func (mode *InteractiveMode) handleShareCommand() {
-	mode.handleExportCommand("/export")
 }
 
 func pathCommandArgument(text, command string) string {
@@ -2577,8 +2611,7 @@ func (mode *InteractiveMode) showUserMessageSelector() {
 		if !ok {
 			return
 		}
-		if mode.options.Host == nil {
-			mode.showError(errors.New("session host is unavailable"))
+		if mode.hostMissing() {
 			return
 		}
 		result, err := mode.options.Host.Fork(context.Background(), ids[selected], &extensions.ForkOptions{Position: extensions.ForkBefore})
@@ -2674,9 +2707,17 @@ func (mode *InteractiveMode) showTreeSelectorAt(initialSelectedID string) {
 
 // forkFromTree copies the branch up to the selected entry into a new session;
 // a prompt is forked from just before it and returns to the editor, as /fork.
+// hostMissing reports, and shows, that no session host is attached.
+func (mode *InteractiveMode) hostMissing() bool {
+	if mode.options.Host != nil {
+		return false
+	}
+	mode.showError(errors.New("session host is unavailable"))
+	return true
+}
+
 func (mode *InteractiveMode) forkFromTree(entryID string, before bool) {
-	if mode.options.Host == nil {
-		mode.showError(errors.New("session host is unavailable"))
+	if mode.hostMissing() {
 		return
 	}
 	if mode.sessionBusy() {
@@ -2801,8 +2842,7 @@ func treeEntryVisible(node *sessionstore.SessionTreeNode, current bool, filterMo
 }
 
 func (mode *InteractiveMode) showTrustSelector() {
-	if mode.options.Host == nil {
-		mode.showError(errors.New("session host is unavailable"))
+	if mode.hostMissing() {
 		return
 	}
 	state, err := mode.options.Host.TrustState()
@@ -2920,7 +2960,7 @@ func (mode *InteractiveMode) restoreToEditor(unsent *string, queued []string) {
 			parts = append(parts, message)
 		}
 	}
-	if current := mode.activeEditorText(false); strings.TrimSpace(current) != "" {
+	if current := mode.activeEditorText(true); strings.TrimSpace(current) != "" {
 		parts = append(parts, current)
 	}
 	if len(parts) == 0 {
@@ -3087,8 +3127,7 @@ func (mode *InteractiveMode) sessionBusy() bool {
 }
 
 func (mode *InteractiveMode) handleClearCommand() {
-	if mode.options.Host == nil {
-		mode.showError(errors.New("session host is unavailable"))
+	if mode.hostMissing() {
 		return
 	}
 	if mode.sessionBusy() {
@@ -3151,8 +3190,7 @@ func (mode *InteractiveMode) clearStatusIndicatorKind(kind StatusIndicatorKind) 
 }
 
 func (mode *InteractiveMode) handleCloneCommand() {
-	if mode.options.Host == nil {
-		mode.showError(errors.New("session host is unavailable"))
+	if mode.hostMissing() {
 		return
 	}
 	leaf := mode.session.Manager().GetLeafID()
@@ -3179,8 +3217,7 @@ func (mode *InteractiveMode) handleCloneCommand() {
 }
 
 func (mode *InteractiveMode) showSessionSelector() {
-	if mode.options.Host == nil {
-		mode.showError(errors.New("session host is unavailable"))
+	if mode.hostMissing() {
 		return
 	}
 	if mode.sessionBusy() {
@@ -3195,31 +3232,15 @@ func (mode *InteractiveMode) showSessionSelector() {
 		mode.ui.RequestRender()
 	}
 	options := SessionSelectorOptions{
-		CurrentSessions: func(progress sessionstore.SessionListProgress) []sessionstore.SessionInfo {
-			return mode.options.Host.ListProjectSessions(progress)
-		},
-		AllSessions: func(progress sessionstore.SessionListProgress) []sessionstore.SessionInfo {
-			return mode.options.Host.ListAllSessions(progress)
-		},
-		CurrentSessionPath: mode.session.Manager().GetSessionFile(),
-		Keybindings:        mode.keybindings,
-		RequestRender:      mode.ui.RequestRender,
+		CurrentSessionsContext: mode.options.Host.ListProjectSessionsContext,
+		AllSessionsContext:     mode.options.Host.ListAllSessionsContext,
+		CurrentSessionPath:     mode.session.Manager().GetSessionFile(),
+		Keybindings:            mode.keybindings,
+		RequestRender:          mode.ui.RequestRender,
 	}
 	if mode.session.Manager().GetSessionFile() == "" && mode.session.Manager().IsPersisted() {
 		options.CurrentSessionPath = mode.session.Manager().GetSessionID()
-	}
-	if deleter, ok := mode.options.Host.(interface {
-		DeleteSession(string) (SessionDeleteMethod, error)
-	}); ok && mode.session.Manager().GetSessionFile() == "" && mode.session.Manager().IsPersisted() {
-		options.DeleteSession = deleter.DeleteSession
-	}
-	type contextSessionLister interface {
-		ListProjectSessionsContext(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error)
-		ListAllSessionsContext(context.Context, sessionstore.SessionListUpdateFunc) ([]sessionstore.SessionInfo, error)
-	}
-	if lister, ok := mode.options.Host.(contextSessionLister); ok {
-		options.CurrentSessionsContext = lister.ListProjectSessionsContext
-		options.AllSessionsContext = lister.ListAllSessionsContext
+		options.DeleteSession = mode.options.Host.DeleteSession
 	}
 	selector := NewSessionSelectorComponent(options, func(path string) {
 		closeSelector()
@@ -3229,38 +3250,18 @@ func (mode *InteractiveMode) showSessionSelector() {
 	mode.ui.RequestRender()
 }
 
+// resumeSelectedSession switches to path; the host asks how to open a session
+// whose stored cwd is gone.
 func (mode *InteractiveMode) resumeSelectedSession(path string) {
-	ctx := context.Background()
-	result, err := mode.options.Host.SwitchSession(ctx, path, "", nil)
-	if err != nil {
-		var missingCWD *agent.MissingSessionCWDError
-		if !errors.As(err, &missingCWD) {
-			mode.showError(err)
-			return
-		}
-		selectedCWD, confirmed, confirmErr := mode.promptForMissingSessionCwd(ctx, missingCWD)
-		if confirmErr != nil {
-			mode.showError(confirmErr)
-			return
-		}
-		if !confirmed {
-			mode.showStatusMessage("Resume cancelled")
-			return
-		}
-		result, err = mode.options.Host.SwitchSession(ctx, path, selectedCWD, nil)
-		if err != nil {
-			mode.showError(err)
-			return
-		}
-		if !result.Cancelled {
-			mode.showStatusMessage("Resumed session in current cwd")
-		}
-		return
+	result, err := mode.options.Host.SwitchSession(context.Background(), path, "", nil)
+	switch {
+	case err != nil:
+		mode.showError(err)
+	case result.Cancelled:
+		mode.showStatusMessage("Resume cancelled")
+	default:
+		mode.showStatusMessage("Resumed session")
 	}
-	if result.Cancelled {
-		return
-	}
-	mode.showStatusMessage("Resumed session")
 }
 
 func (mode *InteractiveMode) handleImportCommand(text string) {
@@ -3269,8 +3270,7 @@ func (mode *InteractiveMode) handleImportCommand(text string) {
 		mode.showError(errors.New("Usage: /import <path.jsonl>")) //nolint:staticcheck // Upstream command text is observable.
 		return
 	}
-	if mode.options.Host == nil {
-		mode.showError(errors.New("session host is unavailable"))
+	if mode.hostMissing() {
 		return
 	}
 	if mode.sessionBusy() {
@@ -3284,28 +3284,10 @@ func (mode *InteractiveMode) handleImportCommand(text string) {
 			return
 		}
 		mode.clearStatusIndicator()
-		ctx := context.Background()
-		result, err := mode.options.Host.ImportSession(ctx, path, "")
+		result, err := mode.options.Host.ImportSession(context.Background(), path, "")
 		if err != nil {
-			var missingCWD *agent.MissingSessionCWDError
-			if !errors.As(err, &missingCWD) {
-				mode.showError(err)
-				return
-			}
-			selectedCWD, confirmed, confirmErr := mode.promptForMissingSessionCwd(ctx, missingCWD)
-			if confirmErr != nil {
-				mode.showError(confirmErr)
-				return
-			}
-			if !confirmed {
-				mode.showStatusMessage("Import cancelled")
-				return
-			}
-			result, err = mode.options.Host.ImportSession(ctx, path, selectedCWD)
-			if err != nil {
-				mode.showError(err)
-				return
-			}
+			mode.showError(err)
+			return
 		}
 		if result.Cancelled {
 			mode.showStatusMessage("Import cancelled")
@@ -3315,17 +3297,8 @@ func (mode *InteractiveMode) handleImportCommand(text string) {
 	}()
 }
 
-func (mode *InteractiveMode) promptForMissingSessionCwd(ctx context.Context, err *agent.MissingSessionCWDError) (string, bool, error) {
-	confirmed, confirmErr := mode.interactiveUI.Confirm(ctx, "Session cwd not found", MissingSessionCWDPrompt(err), nil)
-	if confirmErr != nil || !confirmed {
-		return "", confirmed, confirmErr
-	}
-	return err.FallbackCWD, true, nil
-}
-
 func (mode *InteractiveMode) handleReloadCommand() {
-	if mode.options.Host == nil {
-		mode.showError(errors.New("session host is unavailable"))
+	if mode.hostMissing() {
 		return
 	}
 	if mode.sessionBusy() {
@@ -3502,14 +3475,6 @@ func (mode *InteractiveMode) showLoginProviderSelector(ctx context.Context, cand
 		return
 	}
 	mode.startProviderLogin(ctx, selected)
-}
-
-func (mode *InteractiveMode) handleLoginCommand(provider string) {
-	mode.authenticateProvider(provider, false)
-}
-
-func (mode *InteractiveMode) showOAuthSelector(action string) {
-	mode.authenticateProvider("", action == "logout")
 }
 
 func matchingAuthProviders(options []InteractiveAuthProvider, provider string) []InteractiveAuthProvider {
@@ -3861,7 +3826,7 @@ func (interaction tuiAuthInteraction) Notify(event aiauth.AuthEvent) {
 // configured" warning.
 func (mode *InteractiveMode) handleOpenExternalEditor() {
 	command := mode.session.InteractiveModeSettings().ExternalEditor
-	content := mode.editor.GetText()
+	content := mode.editor.GetExpandedText()
 	if err := mode.ui.Stop(); err != nil {
 		mode.showError(err)
 		return
@@ -4029,22 +3994,48 @@ func (mode *InteractiveMode) applyScopedModelSelection(models []ai.Model, unavai
 	mode.ui.RequestRender()
 }
 
+// GitBranch reads HEAD as pi's footer does, so no git process runs unless the
+// repository keeps its branch in a reftable.
 func (mode *InteractiveMode) GitBranch() string {
 	_, cwd := mode.sessionSnapshot()
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "--no-optional-locks", "rev-parse", "--abbrev-ref", "HEAD")
-	cmd.Dir = cwd
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
+	for dir := cwd; ; dir = filepath.Dir(dir) {
+		gitDir := filepath.Join(dir, ".git")
+		info, err := os.Stat(gitDir)
+		if err != nil {
+			if dir == filepath.Dir(dir) {
+				return ""
+			}
+			continue
+		}
+		if !info.IsDir() { // a worktree's .git names its directory
+			content, _ := os.ReadFile(gitDir)
+			target, ok := strings.CutPrefix(strings.TrimSpace(string(content)), "gitdir: ")
+			if !ok {
+				return ""
+			}
+			if gitDir = target; !filepath.IsAbs(gitDir) {
+				gitDir = filepath.Join(dir, gitDir)
+			}
+		}
+		head, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
+		if err != nil {
+			return ""
+		}
+		branch, onBranch := strings.CutPrefix(strings.TrimSpace(string(head)), "ref: refs/heads/")
+		if onBranch && branch == ".invalid" {
+			ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, "git", "--no-optional-locks", "symbolic-ref", "--quiet", "--short", "HEAD")
+			cmd.Dir = dir
+			out, _ := cmd.Output()
+			branch = strings.TrimSpace(string(out))
+			onBranch = branch != ""
+		}
+		if !onBranch {
+			return "detached"
+		}
+		return branch
 	}
-	branch := strings.TrimSpace(string(out))
-	// rev-parse prints the literal "HEAD" on detached HEAD.
-	if branch == "HEAD" {
-		return "detached"
-	}
-	return branch
 }
 
 func (mode *InteractiveMode) AvailableProviderCount() int {
@@ -4157,11 +4148,10 @@ func (mode *InteractiveMode) Statuses() map[string]string {
 // planLimit is what the plan window nearest its end has left, as the apps show it, once under a
 // quarter is left (red under a tenth); "" otherwise.
 func (mode *InteractiveMode) planLimit() string {
-	host, ok := mode.options.Host.(InteractiveFooterHost)
-	if !ok {
+	if mode.options.Host == nil {
 		return ""
 	}
-	reading := host.PlanLimits()
+	reading := mode.options.Host.PlanLimits()
 	if reading == nil {
 		return ""
 	}
@@ -4601,6 +4591,22 @@ func (mode *InteractiveMode) showError(err error) {
 	mode.ui.RequestRender()
 }
 
+func (mode *InteractiveMode) showExtensionError(failure extensions.ExtensionError) {
+	mode.chat.AddChild(tui.NewSpacer(1))
+	mode.chat.AddChild(tui.NewText(theme.FG("error", fmt.Sprintf("Extension %q error: %s", failure.ExtensionPath, failure.Error)), 1, 0, nil))
+	if failure.Stack != "" {
+		lines := strings.Split(failure.Stack, "\n")
+		if len(lines) > 1 {
+			indented := make([]string, 0, len(lines)-1)
+			for _, line := range lines[1:] {
+				indented = append(indented, theme.FG("dim", "  "+strings.TrimSpace(line)))
+			}
+			mode.chat.AddChild(tui.NewText(strings.Join(indented, "\n"), 1, 0, nil))
+		}
+	}
+	mode.ui.RequestRender()
+}
+
 func (mode *InteractiveMode) addUserMessageToChat(text string) {
 	if skill, ok := agent.ParseSkillBlock(text); ok {
 		component := newSkillUserMessageComponent(skill, mode.skillDescription, mode.mdTheme, mode.currentOutputPad(), mode.markdownTransformers)
@@ -4810,7 +4816,6 @@ func (mode *InteractiveMode) renderInitialMessages() {
 	mode.toolComponents = make(map[string]*ToolExecutionComponent)
 	mode.toolActivity = nil
 	mode.toolActivityTail = nil
-	mode.expandables = nil
 	mode.mu.Unlock()
 	entries := mode.session.Manager().BuildContextEntries()
 	// A turn runs from a prompt to the last reply before the next one; its
@@ -4909,12 +4914,17 @@ func (mode *InteractiveMode) currentOutputPad() int {
 	return mode.outputPad
 }
 
+func (mode *InteractiveMode) currentToolsExpanded() bool {
+	mode.mu.Lock()
+	defer mode.mu.Unlock()
+	return mode.toolsExpanded
+}
+
 func isAssistantMessage(message any) bool { return asAssistantMessage(message) != nil }
 
 func (mode *InteractiveMode) addExpandable(component expandableComponent) {
 	mode.mu.Lock()
 	component.SetExpanded(mode.toolsExpanded)
-	mode.expandables = append(mode.expandables, component)
 	mode.mu.Unlock()
 }
 
@@ -5055,8 +5065,7 @@ func (mode *InteractiveMode) renderBashMessage(message harness.BashExecutionMess
 	if message.Output != "" {
 		component.AppendOutput(message.Output)
 	}
-	component.SetComplete(message.ExitCode, message.Cancelled)
-	mode.addExpandable(component)
+	component.SetComplete(message.ExitCode, message.Cancelled, message.Truncated, message.FullOutputPath)
 	mode.chat.AddChild(component)
 }
 
@@ -5082,16 +5091,14 @@ func (mode *InteractiveMode) renderCustomMessage(customType string, content, det
 	value := decodeMaybeJSON(content)
 	if runner := mode.session.ExtensionRunner(); runner != nil {
 		if renderer := runner.MessageRenderer(customType); renderer != nil {
-			component := renderer(extensions.CustomMessage{CustomType: customType, Content: value, Display: true, Details: decodeMaybeJSON(details)}, extensions.MessageRenderOptions{Expanded: mode.toolsExpanded, OutputPad: mode.currentOutputPad()}, themeAdapter{value: theme.Current()})
+			component := renderer(extensions.CustomMessage{CustomType: customType, Content: value, Display: true, Details: decodeMaybeJSON(details)}, extensions.MessageRenderOptions{Expanded: mode.currentToolsExpanded(), OutputPad: mode.currentOutputPad()}, themeAdapter{value: theme.Current()})
 			if component != nil {
 				mode.chat.AddChild(component)
 				return
 			}
 		}
 	}
-	component := NewCustomMessageComponent(customType, value, mode.mdTheme)
-	mode.addExpandable(component)
-	mode.chat.AddChild(component)
+	mode.chat.AddChild(NewCustomMessageComponent(customType, value, mode.mdTheme))
 }
 
 func (mode *InteractiveMode) renderCustomEntry(entry sessionstore.SessionEntry) {
@@ -5116,7 +5123,7 @@ func (mode *InteractiveMode) renderCustomEntry(entry sessionstore.SessionEntry) 
 	if len(entry.Data) > 0 {
 		entryValue["data"] = decodeJSONValue(entry.Data)
 	}
-	component := renderer(entryValue, extensions.EntryRenderOptions{Expanded: mode.toolsExpanded}, themeAdapter{value: theme.Current()})
+	component := renderer(entryValue, extensions.EntryRenderOptions{Expanded: mode.currentToolsExpanded()}, themeAdapter{value: theme.Current()})
 	if component != nil {
 		mode.chat.AddChild(component)
 	}

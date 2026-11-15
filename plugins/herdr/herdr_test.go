@@ -132,12 +132,12 @@ func waitForLines(t *testing.T, path string, count int) []string {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		contents, err := os.ReadFile(path)
-		if err == nil {
-			lines := strings.Split(strings.TrimSpace(string(contents)), "\n")
-			if len(lines) >= count {
+		// An empty or half-written log is not a call yet.
+		if text, whole := strings.CutSuffix(string(contents), "\n"); err == nil && whole {
+			if lines := strings.Split(text, "\n"); len(lines) >= count {
 				return lines
 			}
-		} else if !os.IsNotExist(err) {
+		} else if err != nil && !os.IsNotExist(err) {
 			t.Fatal(err)
 		}
 		time.Sleep(10 * time.Millisecond)

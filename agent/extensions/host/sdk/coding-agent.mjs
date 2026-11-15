@@ -1,5 +1,5 @@
 // orb-extension-sdk: @earendil-works/pi-coding-agent surface.
-// Pure symbols are ported from pi-coding-agent (pi 1.5.0, commit f9a26365,
+// Pure symbols are ported from pi-coding-agent (pi 1.5.2, commit b4afdddf,
 // MIT © Mario Zechner), trimmed to the contracts published extensions
 // exercise. The three protocol services (createAgentSession, ModelRuntime,
 // ModelRegistry) call the host transport through internal/services.mjs;

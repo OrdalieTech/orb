@@ -1392,6 +1392,43 @@ func TestSDKHostDrainsBackgroundAndTrailingEvents(t *testing.T) {
 	}
 }
 
+// A host retired mid-stream fills its frame buffer; the next turn must still start.
+func TestRetiredFloodingHostSettles(t *testing.T) {
+	_, driver := fixture(t)
+	dir := t.TempDir()
+	sdk := filepath.Join(dir, "sdk.mjs")
+	source := `export function query() {
+ const q=(async function*(){for(let i=0;i<200;i++) yield {type:'system',subtype:'status'};})();
+ q.close=()=>{};q.interrupt=async()=>{};return q;
+}`
+	if err := os.WriteFile(sdk, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h, err := driver.spawn(map[string]any{"type": "start", "sdk": sdk, "claude": "/unused", "cwd": dir}, []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); len(h.frames) < cap(h.frames); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("host never filled its frame buffer")
+		}
+	}
+	driver.mu.Lock()
+	driver.host = h
+	driver.retire()
+	driver.mu.Unlock()
+	settled := make(chan error, 1)
+	go func() { settled <- driver.share() }()
+	select {
+	case err := <-settled:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the next acquire waits forever on the retired host")
+	}
+}
+
 func TestNativeContextModelAndCompactionInvalidation(t *testing.T) {
 	host, driver := fixture(t)
 	seed := func() {

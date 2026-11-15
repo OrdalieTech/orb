@@ -860,3 +860,16 @@ func TestRunLoopFailsACallWithMalformedArguments(t *testing.T) {
 		t.Fatalf("messages = %#v", messages)
 	}
 }
+
+func TestParallelToolCallsRecoverWorkerPanics(t *testing.T) {
+	panicResponses := &loopResponseQueue{messages: []*ai.AssistantMessage{loopAssistant(ai.StopReasonToolUse, &ai.ToolCall{ID: "boom", Name: "boom", Arguments: map[string]any{}})}}
+	panicTool := AgentToolFunc{
+		AgentToolSpec: AgentToolSpec{Name: "boom", Parameters: jsonschema.Schema(`{"type":"object"}`)},
+		Run: func(context.Context, string, any, AgentToolUpdateCallback) (AgentToolResult, error) {
+			panic("nil pointer")
+		},
+	}
+	if _, err := RunLoop(context.Background(), AgentMessages{loopUser("go")}, AgentContext{Tools: []AgentTool{panicTool}}, AgentLoopConfig{Model: loopModel(), ToolExecution: ToolExecutionParallel}, nil, panicResponses.stream); err == nil || !strings.Contains(err.Error(), "tool boom panicked") {
+		t.Fatalf("panic error = %v, want recovered tool panic", err)
+	}
+}

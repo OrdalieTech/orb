@@ -19,9 +19,9 @@ const (
 	MaxFrameSize    = 4 << 20
 )
 
-// hostCapabilities is the capability list orb returns from the handshake. The
-// negotiated set is the intersection with what the host process advertised;
-// absence of a capability forbids every method it governs, which keeps
+// hostCapabilities is the capability list orb returns from the handshake,
+// whatever the host process advertised; the host intersects it with its own.
+// Absence of a capability forbids every method it governs, which keeps
 // protocol additions additive within version 1.
 var hostCapabilities = []string{
 	"tool_updates",
@@ -31,8 +31,8 @@ var hostCapabilities = []string{
 	// orb-extension-sdk services. sdk_v1 covers the services bridge bootstrap
 	// (handshake `services` payload, session-dir scheme) plus
 	// sdk_resource_reload; agent_session_v1 covers child agent sessions
-	// (agent_session_create/prompt/messages/abort/subscribe/stats/
-	// set_active_tools/append_info/dispose, the agent_session_event/_chunk
+	// (agent_session_create/prompt/abort/subscribe/set_active_tools/
+	// append_info/dispose, the agent_session_event/_chunk
 	// mirror, execute_session_tool callbacks, service_cancel);
 	// model_runtime_v1 covers model catalog/auth handles
 	// (model_runtime_create/get_available/dispose).

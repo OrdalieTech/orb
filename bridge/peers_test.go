@@ -5,40 +5,44 @@ import (
 	"encoding/json"
 	"net"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/OrdalieTech/orb/bridge/protocol"
 )
 
 func TestKeepaliveClosesAPeerThatStoppedAnswering(t *testing.T) {
-	gone := make(chan struct{})
-	defer close(gone)
 	for _, answers := range []bool{true, false} {
-		x, y := net.Pipe()
-		server := protocol.NewConn(y, func(_ context.Context, method string, _ json.RawMessage) (json.RawMessage, error) {
-			if method != "bridge.ping" {
-				// Peers serve bridge.ping alone: anything else breaks the wire contract.
-				t.Errorf("keepalive called %q", method)
+		// A bubble's clock: a loaded machine cannot make a live peer miss its ping.
+		synctest.Test(t, func(t *testing.T) {
+			gone := make(chan struct{})
+			x, y := net.Pipe()
+			server := protocol.NewConn(y, func(_ context.Context, method string, _ json.RawMessage) (json.RawMessage, error) {
+				if method != "bridge.ping" {
+					// Peers serve bridge.ping alone: anything else breaks the wire contract.
+					t.Errorf("keepalive called %q", method)
+				}
+				if !answers {
+					<-gone // half-open: the peer is gone but nothing says so
+				}
+				return JSON(struct{}{}), nil
+			})
+			client := protocol.NewConn(x, nil)
+			go Keepalive(t.Context(), client, time.Second)
+			select {
+			case <-client.Done():
+				if answers {
+					t.Error("a live peer was dropped")
+				}
+			case <-time.After(time.Minute):
+				if !answers {
+					t.Error("a silent peer was kept")
+				}
 			}
-			if !answers {
-				<-gone // half-open: the peer is gone but nothing says so
-			}
-			return JSON(struct{}{}), nil
+			close(gone)
+			_ = client.Close()
+			_ = server.Close()
 		})
-		client := protocol.NewConn(x, nil)
-		go Keepalive(t.Context(), client, 50*time.Millisecond)
-		select {
-		case <-client.Done():
-			if answers {
-				t.Fatal("a live peer was dropped")
-			}
-		case <-time.After(400 * time.Millisecond):
-			if !answers {
-				t.Fatal("a silent peer was kept")
-			}
-		}
-		_ = client.Close()
-		_ = server.Close()
 	}
 }
 

@@ -318,3 +318,51 @@ func TestOpenAICompletionsAnchorsAdditionsAfterARemoval(t *testing.T) {
 		t.Fatalf("payload = %s", encoded)
 	}
 }
+
+// pi 1.5.1: a tool-less request with tool history omits "tools" unless
+// requiresToolsWithToolHistory (#11843); requiresNonNullAssistantContent sends ""
+// for tool-call-only assistant messages (#8118); promptCacheKeyMode (#9442).
+func TestOpenAICompletionsCompatShapesBody(t *testing.T) {
+	call := &ai.ToolCall{ID: "call_1", Name: "echo", Arguments: map[string]any{}}
+	history := ai.MessageList{
+		&ai.UserMessage{Content: ai.NewUserText("go"), Timestamp: 1},
+		&ai.AssistantMessage{Content: ai.AssistantContent{call}, API: ai.APIOpenAICompletions, Provider: "openai", Model: "m", Usage: zeroUsage(), StopReason: ai.StopReasonToolUse, Timestamp: 2},
+		&ai.ToolResultMessage{ToolCallID: "call_1", ToolName: "echo", Content: ai.ToolResultContent{&ai.TextContent{Text: "ok"}}, Timestamp: 3},
+	}
+	session := "session-1"
+	for _, test := range []struct {
+		name, baseURL, compat string
+		retention             ai.CacheRetention
+		want, absent          string
+	}{
+		{name: "tools omitted", absent: `"tools"`},
+		{name: "tools kept", compat: `{"requiresToolsWithToolHistory":true}`, want: `"tools":[]`},
+		{name: "null assistant content", want: `"role":"assistant","content":null`},
+		{name: "non-null assistant content", compat: `{"requiresNonNullAssistantContent":true}`, want: `"role":"assistant","content":""`},
+		{name: "cache key auto on openai", baseURL: "https://api.openai.com/v1", retention: ai.CacheRetentionShort, want: `"prompt_cache_key":"session-1"`},
+		{name: "cache key auto elsewhere", retention: ai.CacheRetentionShort, absent: `"prompt_cache_key"`},
+		{name: "cache key enabled", compat: `{"promptCacheKeyMode":"enabled"}`, retention: ai.CacheRetentionShort, want: `"prompt_cache_key":"session-1"`},
+		{name: "cache key enabled without caching", compat: `{"promptCacheKeyMode":"enabled"}`, retention: ai.CacheRetentionNone, absent: `"prompt_cache_key"`},
+		{name: "cache key disabled", baseURL: "https://api.openai.com/v1", compat: `{"promptCacheKeyMode":"disabled"}`, retention: ai.CacheRetentionShort, absent: `"prompt_cache_key"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			baseURL := test.baseURL
+			if baseURL == "" {
+				baseURL = "https://proxy.example/v1"
+			}
+			model := &ai.Model{ID: "m", API: ai.APIOpenAICompletions, Provider: "proxy", BaseURL: baseURL, Compat: json.RawMessage(test.compat)}
+			compat, err := resolveOpenAICompletionsCompat(model)
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload, err := buildOpenAICompletionsPayload(model, ai.Context{Messages: history}, &OpenAICompletionsOptions{StreamOptions: ai.StreamOptions{SessionID: &session}}, compat, test.retention)
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, _ := ai.Marshal(openAICompletionsWireValue(payload, compat))
+			if body := string(encoded); test.want != "" && !strings.Contains(body, test.want) || test.absent != "" && strings.Contains(body, test.absent) {
+				t.Fatalf("body = %s", body)
+			}
+		})
+	}
+}

@@ -174,6 +174,7 @@
         "url": "https://api.anthropic.com/v1/messages?beta=true",
         "headers": {
           "accept": "application/json",
+          "anthropic-beta": "message-threads-2026-08-12",
           "anthropic-dangerous-direct-browser-access": "true",
           "anthropic-version": "2023-06-01",
           "content-type": "application/json",
@@ -182,7 +183,7 @@
           "x-model-header": "anthropic-text",
           "x-session-affinity": "anthropic-session"
         },
-        "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hello <fixture>\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"max_tokens\":777,\"stream\":true,\"system\":[{\"type\":\"text\",\"text\":\"You are concise.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"temperature\":0,\"tools\":[{\"name\":\"echo\",\"description\":\"Echo structured text\",\"eager_input_streaming\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]}},\"required\":[\"text\"]},\"cache_control\":{\"type\":\"ephemeral\"}}]}"
+        "body": "{\"model\":\"claude-opus-4-6\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hello <fixture>\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"max_tokens\":777,\"stream\":true,\"system\":[{\"type\":\"text\",\"text\":\"You are concise.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"temperature\":0,\"tools\":[{\"name\":\"echo\",\"description\":\"Echo structured text\",\"eager_input_streaming\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]}},\"required\":[\"text\"]},\"cache_control\":{\"type\":\"ephemeral\"}}],\"thread\":{\"type\":\"create\"}}"
       }
     },
     {
@@ -448,7 +449,7 @@
           "authorization": "Bearer sk-ant-oat-fixture",
           "content-type": "application/json",
           "x-app": "cli",
-          "user-agent": "claude-cli/2.1.280"
+          "user-agent": "claude-cli/2.1.322"
         },
         "body": "{\"model\":\"claude-opus-4-8\",\"messages\":[{\"role\":\"user\",\"content\":\"read it\"}],\"max_tokens\":32000,\"stream\":true,\"system\":[{\"type\":\"text\",\"text\":\"You are Claude Code, Anthropic's official CLI for Claude.\"},{\"type\":\"text\",\"text\":\"Read carefully.\"}],\"tools\":[{\"name\":\"Read\",\"description\":\"Echo structured text\",\"eager_input_streaming\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]}},\"required\":[\"text\"]}}],\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"xhigh\"},\"tool_choice\":{\"type\":\"auto\"}}"
       }

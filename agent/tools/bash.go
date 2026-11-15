@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/internal/jsonschema"
+	"github.com/OrdalieTech/orb/internal/proctree"
 	"github.com/OrdalieTech/orb/internal/truncate"
 )
 
@@ -225,8 +227,12 @@ func (tool *bashTool) Execute(
 		case message == "aborted":
 			return engine.AgentToolResult{}, upstreamToolError(appendBashStatus(formatBashSnapshot(output.accumulator, snapshot, ""), "Command aborted"))
 		case strings.HasPrefix(message, "timeout:"):
-			timeoutSeconds := strings.Split(message, ":")[1]
-			return engine.AgentToolResult{}, upstreamToolError(appendBashStatus(formatBashSnapshot(output.accumulator, snapshot, ""), "Command timed out after "+timeoutSeconds+" seconds"))
+			status := "Command timed out after " + strings.Split(message, ":")[1] + " seconds"
+			if failure := (*proctree.Error)(nil); errors.As(executeErr, &failure) && failure.ShellExit != nil {
+				status += fmt.Sprintf(". The shell exited with code %d after %s seconds, but background processes it started kept writing output until the timeout.",
+					failure.ShellExit.Code, formatJSNumber(math.Round(failure.ShellExit.After.Seconds()*10)/10))
+			}
+			return engine.AgentToolResult{}, upstreamToolError(appendBashStatus(formatBashSnapshot(output.accumulator, snapshot, ""), status))
 		default:
 			return engine.AgentToolResult{}, executeErr
 		}

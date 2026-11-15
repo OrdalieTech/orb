@@ -2,62 +2,11 @@
   "schemaVersion": 1,
   "cases": [
     {
-      "name": "detect-line-ending-empty",
-      "operation": "detect-line-ending",
-      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:detectLineEnding default",
-      "content": "",
-      "expected": "\n"
-    },
-    {
-      "name": "detect-line-ending-lf",
-      "operation": "detect-line-ending",
-      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve LF",
-      "content": "first\nsecond\n",
-      "expected": "\n"
-    },
-    {
-      "name": "detect-line-ending-crlf",
-      "operation": "detect-line-ending",
-      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve CRLF",
-      "content": "first\r\nsecond\r\n",
-      "expected": "\r\n"
-    },
-    {
-      "name": "detect-line-ending-first-sequence-wins-lf",
-      "operation": "detect-line-ending",
-      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:detectLineEnding mixed input",
-      "content": "first\nsecond\r\nthird\n",
-      "expected": "\n"
-    },
-    {
-      "name": "detect-line-ending-first-sequence-wins-crlf",
-      "operation": "detect-line-ending",
-      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:detectLineEnding mixed input",
-      "content": "first\r\nsecond\nthird\r\n",
-      "expected": "\r\n"
-    },
-    {
       "name": "normalize-lf-crlf-and-cr",
       "operation": "normalize-lf",
       "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:normalizeToLF",
       "content": "one\r\ntwo\rthree\nfour",
       "expected": "one\ntwo\nthree\nfour"
-    },
-    {
-      "name": "restore-line-endings-crlf",
-      "operation": "restore-line-endings",
-      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve CRLF",
-      "content": "one\ntwo\nthree\n",
-      "ending": "\r\n",
-      "expected": "one\r\ntwo\r\nthree\r\n"
-    },
-    {
-      "name": "restore-line-endings-lf",
-      "operation": "restore-line-endings",
-      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve LF",
-      "content": "one\ntwo\nthree\n",
-      "ending": "\n",
-      "expected": "one\ntwo\nthree\n"
     },
     {
       "name": "strip-bom-present",
@@ -806,6 +755,262 @@
       "expectedError": "Found 2 occurrences of the text in mixed-endings.txt. The text must be unique. Please provide more context to make it unique."
     },
     {
+      "name": "line-endings-default-lf-without-line-breaks",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:getLineEndingAt default",
+      "path": "single-line.txt",
+      "content": "only",
+      "edits": [
+        {
+          "oldText": "only",
+          "newText": "one\ntwo"
+        }
+      ],
+      "expected": {
+        "finalContent": "one\ntwo",
+        "baseContent": "only",
+        "newContent": "one\ntwo",
+        "diff": "-1 only\n+1 one\n+2 two",
+        "firstChangedLine": 1,
+        "patch": "--- single-line.txt\n+++ single-line.txt\n@@ -1,1 +1,2 @@\n-only\n\\ No newline at end of file\n+one\n+two\n\\ No newline at end of file\n"
+      }
+    },
+    {
+      "name": "line-endings-lf-for-inserted-lines",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/write LF for inserted lines in LF files",
+      "path": "lf-bytes.txt",
+      "content": "first\nsecond\nthird",
+      "edits": [
+        {
+          "oldText": "second\nthird",
+          "newText": "2a\r\n2b\nthird!"
+        }
+      ],
+      "expected": {
+        "finalContent": "first\n2a\n2b\nthird!",
+        "baseContent": "first\nsecond\nthird",
+        "newContent": "first\n2a\n2b\nthird!",
+        "diff": " 1 first\n-2 second\n-3 third\n+2 2a\n+3 2b\n+4 third!",
+        "firstChangedLine": 2,
+        "patch": "--- lf-bytes.txt\n+++ lf-bytes.txt\n@@ -1,3 +1,4 @@\n first\n-second\n-third\n\\ No newline at end of file\n+2a\n+2b\n+third!\n\\ No newline at end of file\n"
+      }
+    },
+    {
+      "name": "line-endings-crlf-for-inserted-lines",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/write CRLF for inserted lines in CRLF files",
+      "path": "crlf-bytes.txt",
+      "content": "first\r\nsecond\r\nthird",
+      "edits": [
+        {
+          "oldText": "second\nthird",
+          "newText": "2a\r\n2b\nthird!"
+        }
+      ],
+      "expected": {
+        "finalContent": "first\r\n2a\r\n2b\r\nthird!",
+        "baseContent": "first\nsecond\nthird",
+        "newContent": "first\n2a\n2b\nthird!",
+        "diff": " 1 first\n-2 second\n-3 third\n+2 2a\n+3 2b\n+4 third!",
+        "firstChangedLine": 2,
+        "patch": "--- crlf-bytes.txt\n+++ crlf-bytes.txt\n@@ -1,3 +1,4 @@\n first\n-second\n-third\n\\ No newline at end of file\n+2a\n+2b\n+third!\n\\ No newline at end of file\n"
+      }
+    },
+    {
+      "name": "line-endings-crlf-multi-line-replacement",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve CRLF",
+      "path": "crlf-multi-line.txt",
+      "content": "one\r\ntwo\r\nthree\r\n",
+      "edits": [
+        {
+          "oldText": "two\nthree\n",
+          "newText": "TWO\nTHREE\nFOUR\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "one\r\nTWO\r\nTHREE\r\nFOUR\r\n",
+        "baseContent": "one\ntwo\nthree\n",
+        "newContent": "one\nTWO\nTHREE\nFOUR\n",
+        "diff": " 1 one\n-2 two\n-3 three\n+2 TWO\n+3 THREE\n+4 FOUR",
+        "firstChangedLine": 2,
+        "patch": "--- crlf-multi-line.txt\n+++ crlf-multi-line.txt\n@@ -1,3 +1,4 @@\n one\n-two\n-three\n+TWO\n+THREE\n+FOUR\n"
+      }
+    },
+    {
+      "name": "line-endings-classic-mac-cr",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:getLineEndingAt lone CR without LF",
+      "path": "classic-mac.txt",
+      "content": "one\rtwo\rthree\r",
+      "edits": [
+        {
+          "oldText": "two\n",
+          "newText": "2a\n2b\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "one\r2a\r2b\rthree\r",
+        "baseContent": "one\ntwo\nthree\n",
+        "newContent": "one\n2a\n2b\nthree\n",
+        "diff": " 1 one\n-2 two\n+2 2a\n+3 2b\n 3 three",
+        "firstChangedLine": 2,
+        "patch": "--- classic-mac.txt\n+++ classic-mac.txt\n@@ -1,3 +1,4 @@\n one\n-two\n+2a\n+2b\n three\n"
+      }
+    },
+    {
+      "name": "mixed-endings-lf-first-keeps-crlf-lines",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/keep CRLF lines when the first line ends with LF (#8544)",
+      "path": "mixed-lf-first.txt",
+      "content": "a\nb\r\nX = 1\r\n",
+      "edits": [
+        {
+          "oldText": "X = 1",
+          "newText": "X = 2"
+        }
+      ],
+      "expected": {
+        "finalContent": "a\nb\r\nX = 2\r\n",
+        "baseContent": "a\nb\nX = 1\n",
+        "newContent": "a\nb\nX = 2\n",
+        "diff": " 1 a\n 2 b\n-3 X = 1\n+3 X = 2",
+        "firstChangedLine": 3,
+        "patch": "--- mixed-lf-first.txt\n+++ mixed-lf-first.txt\n@@ -1,3 +1,3 @@\n a\n b\n-X = 1\n+X = 2\n"
+      }
+    },
+    {
+      "name": "mixed-endings-crlf-first-keeps-lf-lines",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/keep LF lines when the first line ends with CRLF (#8544)",
+      "path": "mixed-crlf-first.txt",
+      "content": "a\r\nb\nc",
+      "edits": [
+        {
+          "oldText": "c",
+          "newText": "C"
+        }
+      ],
+      "expected": {
+        "finalContent": "a\r\nb\nC",
+        "baseContent": "a\nb\nc",
+        "newContent": "a\nb\nC",
+        "diff": " 1 a\n 2 b\n-3 c\n+3 C",
+        "firstChangedLine": 3,
+        "patch": "--- mixed-crlf-first.txt\n+++ mixed-crlf-first.txt\n@@ -1,3 +1,3 @@\n a\n b\n-c\n\\ No newline at end of file\n+C\n\\ No newline at end of file\n"
+      }
+    },
+    {
+      "name": "mixed-endings-multi-edit-takes-replaced-line-ending",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/line ending of the replaced line in multi-edit mode (#8544)",
+      "path": "mixed-multi.txt",
+      "content": "lf1\nlf2\ncr1\r\ncr2\r\n",
+      "edits": [
+        {
+          "oldText": "lf1\n",
+          "newText": "A\nB\n"
+        },
+        {
+          "oldText": "cr1\n",
+          "newText": "C\nD\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "A\nB\nlf2\nC\r\nD\r\ncr2\r\n",
+        "baseContent": "lf1\nlf2\ncr1\ncr2\n",
+        "newContent": "A\nB\nlf2\nC\nD\ncr2\n",
+        "diff": "-1 lf1\n+1 A\n+2 B\n 2 lf2\n-3 cr1\n+4 C\n+5 D\n 4 cr2",
+        "firstChangedLine": 1,
+        "patch": "--- mixed-multi.txt\n+++ mixed-multi.txt\n@@ -1,4 +1,6 @@\n-lf1\n+A\n+B\n lf2\n-cr1\n+C\n+D\n cr2\n"
+      }
+    },
+    {
+      "name": "mixed-endings-fuzzy-widened-lines",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/untouched endings when fuzzy matching widens the edit (#8544)",
+      "path": "mixed-fuzzy.txt",
+      "content": "a\r\nfoo   \r\nb\n",
+      "edits": [
+        {
+          "oldText": "foo\n",
+          "newText": "FOO\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "a\r\nFOO\r\nb\n",
+        "baseContent": "a\nfoo   \nb\n",
+        "newContent": "a\nFOO\nb\n",
+        "diff": " 1 a\n-2 foo   \n+2 FOO\n 3 b",
+        "firstChangedLine": 2,
+        "patch": "--- mixed-fuzzy.txt\n+++ mixed-fuzzy.txt\n@@ -1,3 +1,3 @@\n a\n-foo   \n+FOO\n b\n"
+      }
+    },
+    {
+      "name": "lone-cr-untouched-line-kept",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/keep a lone CR in an untouched line (#8544)",
+      "path": "lone-cr.txt",
+      "content": "a\rb\nX = 1\n",
+      "edits": [
+        {
+          "oldText": "X = 1",
+          "newText": "X = 2"
+        }
+      ],
+      "expected": {
+        "finalContent": "a\rb\nX = 2\n",
+        "baseContent": "a\nb\nX = 1\n",
+        "newContent": "a\nb\nX = 2\n",
+        "diff": " 1 a\n 2 b\n-3 X = 1\n+3 X = 2",
+        "firstChangedLine": 3,
+        "patch": "--- lone-cr.txt\n+++ lone-cr.txt\n@@ -1,3 +1,3 @@\n a\n b\n-X = 1\n+X = 2\n"
+      }
+    },
+    {
+      "name": "lone-cr-seam-inserted-line-feed",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/not merge a kept lone CR with a line feed after it",
+      "path": "cr-seam-insert.txt",
+      "content": "a\rb\nc",
+      "edits": [
+        {
+          "oldText": "b",
+          "newText": "\nB"
+        }
+      ],
+      "expected": {
+        "finalContent": "a\r\n\nB\nc",
+        "baseContent": "a\nb\nc",
+        "newContent": "a\n\nB\nc",
+        "diff": " 1 a\n-2 b\n+2 \n+3 B\n 3 c",
+        "firstChangedLine": 2,
+        "patch": "--- cr-seam-insert.txt\n+++ cr-seam-insert.txt\n@@ -1,3 +1,4 @@\n a\n-b\n+\n+B\n c\n\\ No newline at end of file\n"
+      }
+    },
+    {
+      "name": "lone-cr-seam-deleted-range",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/not merge a kept lone CR with a line feed after it",
+      "path": "cr-seam-delete.txt",
+      "content": "a\rb\nc",
+      "edits": [
+        {
+          "oldText": "b",
+          "newText": ""
+        }
+      ],
+      "expected": {
+        "finalContent": "a\r\n\nc",
+        "baseContent": "a\nb\nc",
+        "newContent": "a\n\nc",
+        "diff": " 1 a\n-2 b\n+2 \n 3 c",
+        "firstChangedLine": 2,
+        "patch": "--- cr-seam-delete.txt\n+++ cr-seam-delete.txt\n@@ -1,3 +1,3 @@\n a\n-b\n+\n c\n\\ No newline at end of file\n"
+      }
+    },
+    {
       "name": "bom-preserved-after-edit",
       "operation": "edit-pipeline",
       "upstreamCase": "packages/coding-agent/test/tools.test.ts:edit tool CRLF handling/preserve UTF-8 BOM",
@@ -949,6 +1154,31 @@
         "diff": "     ...\n  96 line 096\n  97 line 097\n  98 line 098\n  99 line 099\n-100 line 100\n+100 LINE 100\n 101 line 101\n 102 line 102\n 103 line 103\n 104 line 104\n     ...\n 296 line 296\n 297 line 297\n 298 line 298\n 299 line 299\n-300 line 300\n+300 LINE 300\n 301 line 301\n 302 line 302\n 303 line 303\n 304 line 304\n     ...\n 496 line 496\n 497 line 497\n 498 line 498\n 499 line 499\n-500 line 500\n+500 LINE 500\n 501 line 501\n 502 line 502\n 503 line 503\n 504 line 504\n     ...",
         "firstChangedLine": 100,
         "patch": "--- edit-multi-large-gap.txt\n+++ edit-multi-large-gap.txt\n@@ -96,9 +96,9 @@\n line 096\n line 097\n line 098\n line 099\n-line 100\n+LINE 100\n line 101\n line 102\n line 103\n line 104\n@@ -296,9 +296,9 @@\n line 296\n line 297\n line 298\n line 299\n-line 300\n+LINE 300\n line 301\n line 302\n line 303\n line 304\n@@ -496,9 +496,9 @@\n line 496\n line 497\n line 498\n line 499\n-line 500\n+LINE 500\n line 501\n line 502\n line 503\n line 504\n"
+      }
+    },
+    {
+      "name": "diff-window-nearby-edits-merge",
+      "operation": "edit-pipeline",
+      "upstreamCase": "packages/coding-agent/src/core/tools/edit-diff.ts:generateEditDiff overlapping windows merge",
+      "path": "edit-window-merge.txt",
+      "content": "line 001\nline 002\nline 003\nline 004\nline 005\nline 006\nline 007\nline 008\nline 009\nline 010\nline 011\nline 012\nline 013\nline 014\nline 015\nline 016\nline 017\nline 018\nline 019\nline 020\nline 021\nline 022\nline 023\nline 024\nline 025\nline 026\nline 027\nline 028\nline 029\nline 030\nline 031\nline 032\nline 033\nline 034\nline 035\nline 036\nline 037\nline 038\nline 039\nline 040\nline 041\nline 042\nline 043\nline 044\nline 045\nline 046\nline 047\nline 048\nline 049\nline 050\nline 051\nline 052\nline 053\nline 054\nline 055\nline 056\nline 057\nline 058\nline 059\nline 060\nline 061\nline 062\nline 063\nline 064\nline 065\nline 066\nline 067\nline 068\nline 069\nline 070\nline 071\nline 072\nline 073\nline 074\nline 075\nline 076\nline 077\nline 078\nline 079\nline 080\nline 081\nline 082\nline 083\nline 084\nline 085\nline 086\nline 087\nline 088\nline 089\nline 090\nline 091\nline 092\nline 093\nline 094\nline 095\nline 096\nline 097\nline 098\nline 099\nline 100\nline 101\nline 102\nline 103\nline 104\nline 105\nline 106\nline 107\nline 108\nline 109\nline 110\nline 111\nline 112\nline 113\nline 114\nline 115\nline 116\nline 117\nline 118\nline 119\nline 120\n",
+      "edits": [
+        {
+          "oldText": "line 030\n",
+          "newText": "LINE 030\nINSERTED\n"
+        },
+        {
+          "oldText": "line 070\nline 071\n",
+          "newText": "LINE 070\n"
+        }
+      ],
+      "expected": {
+        "finalContent": "line 001\nline 002\nline 003\nline 004\nline 005\nline 006\nline 007\nline 008\nline 009\nline 010\nline 011\nline 012\nline 013\nline 014\nline 015\nline 016\nline 017\nline 018\nline 019\nline 020\nline 021\nline 022\nline 023\nline 024\nline 025\nline 026\nline 027\nline 028\nline 029\nLINE 030\nINSERTED\nline 031\nline 032\nline 033\nline 034\nline 035\nline 036\nline 037\nline 038\nline 039\nline 040\nline 041\nline 042\nline 043\nline 044\nline 045\nline 046\nline 047\nline 048\nline 049\nline 050\nline 051\nline 052\nline 053\nline 054\nline 055\nline 056\nline 057\nline 058\nline 059\nline 060\nline 061\nline 062\nline 063\nline 064\nline 065\nline 066\nline 067\nline 068\nline 069\nLINE 070\nline 072\nline 073\nline 074\nline 075\nline 076\nline 077\nline 078\nline 079\nline 080\nline 081\nline 082\nline 083\nline 084\nline 085\nline 086\nline 087\nline 088\nline 089\nline 090\nline 091\nline 092\nline 093\nline 094\nline 095\nline 096\nline 097\nline 098\nline 099\nline 100\nline 101\nline 102\nline 103\nline 104\nline 105\nline 106\nline 107\nline 108\nline 109\nline 110\nline 111\nline 112\nline 113\nline 114\nline 115\nline 116\nline 117\nline 118\nline 119\nline 120\n",
+        "baseContent": "line 001\nline 002\nline 003\nline 004\nline 005\nline 006\nline 007\nline 008\nline 009\nline 010\nline 011\nline 012\nline 013\nline 014\nline 015\nline 016\nline 017\nline 018\nline 019\nline 020\nline 021\nline 022\nline 023\nline 024\nline 025\nline 026\nline 027\nline 028\nline 029\nline 030\nline 031\nline 032\nline 033\nline 034\nline 035\nline 036\nline 037\nline 038\nline 039\nline 040\nline 041\nline 042\nline 043\nline 044\nline 045\nline 046\nline 047\nline 048\nline 049\nline 050\nline 051\nline 052\nline 053\nline 054\nline 055\nline 056\nline 057\nline 058\nline 059\nline 060\nline 061\nline 062\nline 063\nline 064\nline 065\nline 066\nline 067\nline 068\nline 069\nline 070\nline 071\nline 072\nline 073\nline 074\nline 075\nline 076\nline 077\nline 078\nline 079\nline 080\nline 081\nline 082\nline 083\nline 084\nline 085\nline 086\nline 087\nline 088\nline 089\nline 090\nline 091\nline 092\nline 093\nline 094\nline 095\nline 096\nline 097\nline 098\nline 099\nline 100\nline 101\nline 102\nline 103\nline 104\nline 105\nline 106\nline 107\nline 108\nline 109\nline 110\nline 111\nline 112\nline 113\nline 114\nline 115\nline 116\nline 117\nline 118\nline 119\nline 120\n",
+        "newContent": "line 001\nline 002\nline 003\nline 004\nline 005\nline 006\nline 007\nline 008\nline 009\nline 010\nline 011\nline 012\nline 013\nline 014\nline 015\nline 016\nline 017\nline 018\nline 019\nline 020\nline 021\nline 022\nline 023\nline 024\nline 025\nline 026\nline 027\nline 028\nline 029\nLINE 030\nINSERTED\nline 031\nline 032\nline 033\nline 034\nline 035\nline 036\nline 037\nline 038\nline 039\nline 040\nline 041\nline 042\nline 043\nline 044\nline 045\nline 046\nline 047\nline 048\nline 049\nline 050\nline 051\nline 052\nline 053\nline 054\nline 055\nline 056\nline 057\nline 058\nline 059\nline 060\nline 061\nline 062\nline 063\nline 064\nline 065\nline 066\nline 067\nline 068\nline 069\nLINE 070\nline 072\nline 073\nline 074\nline 075\nline 076\nline 077\nline 078\nline 079\nline 080\nline 081\nline 082\nline 083\nline 084\nline 085\nline 086\nline 087\nline 088\nline 089\nline 090\nline 091\nline 092\nline 093\nline 094\nline 095\nline 096\nline 097\nline 098\nline 099\nline 100\nline 101\nline 102\nline 103\nline 104\nline 105\nline 106\nline 107\nline 108\nline 109\nline 110\nline 111\nline 112\nline 113\nline 114\nline 115\nline 116\nline 117\nline 118\nline 119\nline 120\n",
+        "diff": "     ...\n  26 line 026\n  27 line 027\n  28 line 028\n  29 line 029\n- 30 line 030\n+ 30 LINE 030\n+ 31 INSERTED\n  31 line 031\n  32 line 032\n  33 line 033\n  34 line 034\n     ...\n  66 line 066\n  67 line 067\n  68 line 068\n  69 line 069\n- 70 line 070\n- 71 line 071\n+ 71 LINE 070\n  72 line 072\n  73 line 073\n  74 line 074\n  75 line 075\n     ...",
+        "firstChangedLine": 30,
+        "patch": "--- edit-window-merge.txt\n+++ edit-window-merge.txt\n@@ -26,9 +26,10 @@\n line 026\n line 027\n line 028\n line 029\n-line 030\n+LINE 030\n+INSERTED\n line 031\n line 032\n line 033\n line 034\n@@ -66,10 +67,9 @@\n line 066\n line 067\n line 068\n line 069\n-line 070\n-line 071\n+LINE 070\n line 072\n line 073\n line 074\n line 075\n"
       }
     },
     {

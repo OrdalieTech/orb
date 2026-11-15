@@ -24,6 +24,7 @@ import (
 
 	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/internal/ctxsleep"
 	"github.com/OrdalieTech/orb/platforms/native"
 	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
@@ -75,24 +76,6 @@ func WaitStopped(ctx context.Context, client *protocol.Conn) error {
 	}
 }
 
-func Ready(ctx context.Context, client *protocol.Conn) (bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	var status struct {
-		SupportsFullAccess bool `json:"supports_full_access"`
-	}
-	if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
-		return false, err
-	}
-	if status.SupportsFullAccess {
-		return true, nil
-	}
-	if err := client.Call(ctx, "stop", struct{}{}, nil); err != nil {
-		return false, err
-	}
-	return false, WaitStopped(ctx, client)
-}
-
 func Start(ctx context.Context, state *native.State, profile string, explicit bool) error {
 	dir, err := nativebridge.Dir(profile)
 	if err != nil {
@@ -107,15 +90,7 @@ func Start(ctx context.Context, state *native.State, profile string, explicit bo
 	// A running Bridge is used whatever the stop marker says: the marker keeps Orb from starting
 	// one by itself, never from reaching one that runs (a systemd service, say).
 	if c, err := Admin(ctx, state, profile); err == nil {
-		ready, err := Ready(ctx, c)
-		_ = c.Close()
-		if err != nil || ready {
-			return err
-		}
-		// The older daemon writes its deliberate-stop marker during replacement.
-		if err = state.Write(ctx, stopped, nil); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
+		return c.Close()
 	} else if _, err = state.Read(ctx, stopped); err == nil && !explicit {
 		return errors.New("bridge stopped; start it explicitly")
 	}
@@ -186,7 +161,20 @@ type Service struct {
 // WebSocket; webURL, when set, is the address invitations give.
 func New(ctx context.Context, state *native.State, profile, version string, b *bridge.Bridge, node *transport.Node, webURL string) *Service {
 	peers := bridge.NewPeers(ctx, b)
-	peers.WebURL, peers.Locator = webURL, node.Locator
+	peers.WebURL = webURL
+	// The relay comes up behind the local sockets: an invitation or a join asked
+	// right as Bridge starts waits a while for the address it gives.
+	peers.Locator = func() (string, error) {
+		for deadline := time.Now().Add(25 * time.Second); ; {
+			l, err := node.Locator()
+			if err == nil || time.Now().After(deadline) {
+				return l, err
+			}
+			if ctxErr := ctxsleep.Sleep(ctx, 50*time.Millisecond); ctxErr != nil {
+				return "", ctxErr
+			}
+		}
+	}
 	peers.Dial = func(ctx context.Context, id, locator string) (net.Conn, error) {
 		if strings.HasPrefix(locator, "ws://") || strings.HasPrefix(locator, "wss://") {
 			return webtransport.Dial(ctx, locator)

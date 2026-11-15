@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -297,7 +298,7 @@ func TestTelegramAndACPConversationsShareTheAgentsMemory(t *testing.T) {
 	go func() {
 		done <- runLocalChat(ctx, filepath.Join(agentDir, "chat", "telegram"), []chat.Adapter{adapter},
 			[]func(context.Context, func(chat.Message) error) error{adapter.Poll}, nil,
-			func(chat.Message) error { return nil }, []chat.LocalProviderOption{agentWorkspace(agents, project, []chat.Adapter{adapter})}, agents.streams)
+			func(chat.Message) error { return nil }, []chat.LocalProviderOption{agentWorkspace(agents, project, []chat.Adapter{adapter})}, nil, agents.streams)
 	}()
 	for reply := ""; reply != "Noted."; {
 		select {
@@ -709,6 +710,90 @@ func TestACPOffersTheCurrentModelEvenUnlisted(t *testing.T) {
 	sessionID := created["result"].(map[string]any)["sessionId"]
 	if selected, _ := client.call("session/set_config_option", map[string]any{"sessionId": sessionID, "configId": "model", "value": current}); selected["error"] != nil {
 		t.Fatalf("selecting the current model = %v", selected)
+	}
+	client.close()
+}
+
+func TestACPSessionLoadReusesOpenSessionWithoutDuplicatingRuntime(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("HOME", root)
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage("First."),
+		faux.AssistantMessage("Second."),
+	})
+	var opens int
+	var opensMu sync.Mutex
+	dependencies := scriptedRuntime(provider)
+	create := dependencies.createRuntime
+	dependencies.createRuntime = func(cwd string, args CLIArgs, prior engine.AgentMessages) (runtimeInputs, error) {
+		opensMu.Lock()
+		opens++
+		opensMu.Unlock()
+		return create(cwd, args, prior)
+	}
+	stdinReader, stdinWriter := io.Pipe()
+	stdoutReader, stdoutWriter := io.Pipe()
+	client := &acpClient{t: t, in: stdinWriter, out: bufio.NewReader(stdoutReader), done: make(chan int, 1)}
+	go func() {
+		client.done <- runCLIWithDependencies(context.Background(), []string{"--mode", "acp"}, cliStreams{Stdin: stdinReader, Stdout: stdoutWriter, Stderr: io.Discard}, dependencies)
+		_ = stdoutWriter.Close()
+	}()
+	client.call("initialize", map[string]any{"protocolVersion": 2})
+	created, _ := client.call("session/new", map[string]any{"cwd": root, "mcpServers": []any{}})
+	id := created["result"].(map[string]any)["sessionId"].(string)
+	client.call("session/prompt", map[string]any{"sessionId": id, "prompt": []any{map[string]any{"type": "text", "text": "One."}}})
+
+	// Loading an already-open session replays it without opening a second runtime,
+	// and session/new with a stray sessionId still creates a distinct session.
+	if loaded, _ := client.call("session/load", map[string]any{"sessionId": id, "cwd": root, "mcpServers": []any{}}); loaded["error"] != nil {
+		t.Fatalf("session/load = %v", loaded)
+	}
+	opensMu.Lock()
+	afterLoad := opens
+	opensMu.Unlock()
+	if afterLoad != 1 {
+		t.Fatalf("opens after session/load on live session = %d, want 1", afterLoad)
+	}
+	distinct, _ := client.call("session/new", map[string]any{"sessionId": id, "cwd": root, "mcpServers": []any{}})
+	if distinct["result"].(map[string]any)["sessionId"] == id {
+		t.Fatal("session/new reused existing sessionId instead of creating a new session")
+	}
+	client.close()
+}
+
+func TestACPParallelToolCallsDoNotRaceSessionUpdates(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("HOME", root)
+	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
+	var calls ai.AssistantContent
+	for index := range 8 {
+		file := filepath.Join(root, fmt.Sprintf("f%d.txt", index))
+		if err := os.WriteFile(file, []byte("ok\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		calls = append(calls, faux.ToolCall("read", map[string]any{"path": file}))
+	}
+	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
+	provider.SetResponses([]faux.ResponseStep{
+		faux.AssistantMessage(calls, faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}),
+		faux.AssistantMessage("All read."),
+	})
+	client := startACP(t, provider)
+	client.call("initialize", map[string]any{"protocolVersion": 2})
+	created, _ := client.call("session/new", map[string]any{"cwd": root, "mcpServers": []any{}})
+	id := created["result"].(map[string]any)["sessionId"]
+	answered, notifications := client.call("session/prompt", map[string]any{
+		"sessionId": id, "prompt": []any{map[string]any{"type": "text", "text": "Read them all."}},
+	})
+	if result, _ := answered["result"].(map[string]any); result["stopReason"] != "end_turn" {
+		t.Fatalf("prompt = %v", answered)
+	}
+	if got := len(updates(notifications, "tool_call_update")); got != 8 {
+		t.Fatalf("tool_call_update count = %d, want 8", got)
 	}
 	client.close()
 }

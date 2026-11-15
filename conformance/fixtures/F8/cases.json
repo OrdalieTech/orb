@@ -43,7 +43,7 @@
       "name": "unescaped-quotes",
       "input": "\"quoted \\\"text\\\"\"",
       "expected": [
-        "quoted \\text\\"
+        "quoted \"text\""
       ]
     },
     {

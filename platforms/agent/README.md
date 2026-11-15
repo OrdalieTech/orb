@@ -93,9 +93,7 @@ variables, and each sidecar gets only the variables its platform declares.
 
 Model logins that need a refresh token (OAuth, such as `openai-codex`) go in
 `/agent/secrets/auth.json`: `orb-agent` makes it root's (0600) and hands the agent an open
-descriptor on it, so the agent reads and refreshes it while its tools cannot open it. An
-`auth.json` left in `config/` is moved there on start; if one ever sat in `config/` while the agent
-ran, the store under `state/` may hold a copy, so start such an agent on a fresh volume.
+descriptor on it, so the agent reads and refreshes it while its tools cannot open it.
 
 The agent posts on Buzz with `buzz messages send` as Buzz's prompt tells it; the `buzz` its shell
 runs is Orb, which has the agent run the real CLI with the Buzz key.

@@ -79,6 +79,15 @@ type SlashResolver struct {
 	OnError           func(error)
 }
 
+// skillExpansionError is a skill file that failed to expand, reported as an
+// extension error for that file the way pi reports it.
+type skillExpansionError struct {
+	path string
+	err  error
+}
+
+func (failure *skillExpansionError) Error() string { return failure.err.Error() }
+
 func (resolver *SlashResolver) report(err error) {
 	if err != nil && resolver != nil && resolver.OnError != nil {
 		resolver.OnError(err)
@@ -169,11 +178,11 @@ func ExpandSkillCommand(text string, skills []Skill) (string, error) {
 		}
 		contents, err := os.ReadFile(skill.FilePath)
 		if err != nil {
-			return text, fmt.Errorf("expand skill %s: %w", skill.Name, err)
+			return text, &skillExpansionError{skill.FilePath, err}
 		}
 		parsed, err := parseResourceFrontmatter(decodeResourceUTF8(contents))
 		if err != nil {
-			return text, fmt.Errorf("expand skill %s: %w", skill.Name, err)
+			return text, &skillExpansionError{skill.FilePath, err}
 		}
 		body := strings.TrimFunc(parsed.Body, jstrim.IsSpace)
 		block := fmt.Sprintf("<skill name=\"%s\" location=\"%s\">\nReferences are relative to %s.\n\n%s\n</skill>", skill.Name, skill.FilePath, skill.BaseDir, body)
@@ -190,9 +199,7 @@ func ExpandSkillCommand(text string, skills []Skill) (string, error) {
 }
 
 // Commands returns the core/RPC command-list order: extension, prompt, then skill.
-// enableSkillCommands is an interactive autocomplete setting and does not hide
-// commands from the session API.
-func (resolver *SlashResolver) Commands(_ bool) []SlashCommandInfo {
+func (resolver *SlashResolver) Commands() []SlashCommandInfo {
 	if resolver == nil {
 		return []SlashCommandInfo{}
 	}

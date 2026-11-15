@@ -24,7 +24,7 @@ var AppKeybindingDefinitions = []tui.KeybindingDefinition{
 	{ID: "app.message.copy", DefaultKeys: []tui.KeyID{"ctrl+x"}, Description: "Copy message to clipboard"},
 	{ID: "app.message.followUp", DefaultKeys: []tui.KeyID{"alt+enter"}, Description: "Queue follow-up message"},
 	{ID: "app.message.dequeue", DefaultKeys: []tui.KeyID{"alt+up"}, Description: "Restore queued messages"},
-	{ID: "app.clipboard.pasteImage", DefaultKeys: []tui.KeyID{"ctrl+v"}, Description: "Paste image from clipboard"},
+	{ID: "app.clipboard.pasteImage", DefaultKeys: []tui.KeyID{"ctrl+v", "alt+v"}, Description: "Paste an image or text from clipboard"},
 	{ID: "app.session.new", DefaultKeys: []tui.KeyID{"ctrl+n"}, Description: "Start a new session"},
 	{ID: "app.session.tree", DefaultKeys: nil, Description: "Open session tree"},
 	{ID: "app.session.fork", DefaultKeys: nil, Description: "Fork current session"},

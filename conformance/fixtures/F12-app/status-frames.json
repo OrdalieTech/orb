@@ -643,7 +643,7 @@
         "action:clear",
         "custom-action:kept"
       ],
-      "restoredText": "custom-change",
+      "restoredText": "expanded:custom-change",
       "restoredDefault": true,
       "focus": [
         "custom",

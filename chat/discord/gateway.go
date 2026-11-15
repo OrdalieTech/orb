@@ -11,8 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coder/websocket"
+
 	"github.com/OrdalieTech/orb/chat"
-	"github.com/OrdalieTech/orb/chat/internal/wsclient"
 )
 
 const (
@@ -30,6 +31,10 @@ const (
 const gatewayIntents = 1<<0 | 1<<9 | 1<<12 | 1<<15
 
 const helloTimeout = 30 * time.Second
+
+// maxGatewayMessage caps one incoming gateway message; READY for a bot in
+// many guilds outgrows the library's 32 KiB default.
+const maxGatewayMessage = 4 << 20
 
 const maxReconnectDelay = time.Minute
 
@@ -142,7 +147,7 @@ func (s *heartbeatState) pending(now time.Time, interval time.Duration) (bool, t
 // (bad token, disallowed intents) occurs. Connection losses reconnect with
 // capped exponential backoff, resuming the previous session whenever the
 // close code allows it — a fresh IDENTIFY is budgeted (1000/day), so resume
-// is always tried first. Run one Run per bot account.
+// is always tried first. Run one Poll per bot account.
 //
 // publish must enqueue durably and return fast: it is the ingress
 // publish-then-ack edge and must never wait on turn processing.
@@ -206,7 +211,7 @@ func (a *Adapter) gatewayCycle(ctx context.Context, st *gatewayState, publish fu
 		return false, nil
 	}
 	dialCtx, cancelDial := context.WithTimeout(ctx, a.gatewayDialTimeout)
-	conn, err := wsclient.Dial(dialCtx, wsURL, nil, nil)
+	conn, _, err := websocket.Dial(dialCtx, wsURL, nil)
 	cancelDial()
 	if err != nil {
 		if ctx.Err() != nil {
@@ -219,7 +224,8 @@ func (a *Adapter) gatewayCycle(ctx context.Context, st *gatewayState, publish fu
 		return false, nil
 	}
 	st.resetResumeDialFailures()
-	defer func() { _ = conn.Close() }()
+	conn.SetReadLimit(maxGatewayMessage)
+	defer func() { _ = conn.CloseNow() }()
 
 	// Hello must arrive promptly; a silent socket reconnects.
 	helloCtx, cancelHello := context.WithTimeout(ctx, helloTimeout)
@@ -238,19 +244,19 @@ func (a *Adapter) gatewayCycle(ctx context.Context, st *gatewayState, publish fu
 	}()
 	defer func() {
 		close(stopHeartbeat)
-		_ = conn.Close()
+		_ = conn.CloseNow()
 		<-heartbeatDone
 	}()
 
 	if resuming {
-		err = writeGatewayJSON(conn, opResume, struct {
+		err = writeGatewayJSON(ctx, conn, opResume, struct {
 			Token     string `json:"token"`
 			SessionID string `json:"session_id"`
 			Seq       int64  `json:"seq"`
 		}{Token: a.client.token, SessionID: sessionID, Seq: seq})
 	} else {
 		st.clearSession()
-		err = writeGatewayJSON(conn, opIdentify, struct {
+		err = writeGatewayJSON(ctx, conn, opIdentify, struct {
 			Token      string `json:"token"`
 			Intents    int    `json:"intents"`
 			Properties struct {
@@ -273,11 +279,11 @@ func (a *Adapter) gatewayCycle(ctx context.Context, st *gatewayState, publish fu
 	}
 
 	for {
-		opcode, data, err := conn.ReadMessage(ctx)
+		kind, data, err := conn.Read(ctx)
 		if err != nil {
 			return established, a.classifyGatewayError(st, err)
 		}
-		if opcode != wsclient.OpText {
+		if kind != websocket.MessageText {
 			continue
 		}
 		var payload gatewayPayload
@@ -295,18 +301,19 @@ func (a *Adapter) gatewayCycle(ctx context.Context, st *gatewayState, publish fu
 			}
 		case opHeartbeat:
 			// The server may request an immediate beat.
-			if err := a.sendHeartbeat(conn, st, hb); err != nil {
+			if err := a.sendHeartbeat(ctx, conn, st, hb); err != nil {
 				return established, a.classifyGatewayError(st, err)
 			}
 		case opHeartbeatACK:
 			hb.ack()
 		case opReconnect:
 			// Close non-1000 so the session stays resumable, then cycle.
-			_ = conn.WriteClose(4000, "reconnect requested")
+			_ = conn.Close(4000, "reconnect requested")
 			return established, nil
 		case opInvalidSession:
 			var canResume bool
 			_ = json.Unmarshal(payload.D, &canResume)
+			_ = conn.Close(4000, "invalid session")
 			if !canResume {
 				st.clearSession()
 				// The docs mandate a 1–5s random wait before re-identifying.
@@ -315,7 +322,6 @@ func (a *Adapter) gatewayCycle(ctx context.Context, st *gatewayState, publish fu
 					return established, err
 				}
 			}
-			_ = conn.WriteClose(4000, "invalid session")
 			return established, nil
 		case opHello:
 			// Duplicate hello; the heartbeater is already running.
@@ -362,8 +368,8 @@ func (a *Adapter) handleDispatch(st *gatewayState, payload gatewayPayload, publi
 	return false
 }
 
-func (a *Adapter) readHello(ctx context.Context, conn *wsclient.Conn) (time.Duration, error) {
-	_, data, err := conn.ReadMessage(ctx)
+func (a *Adapter) readHello(ctx context.Context, conn *websocket.Conn) (time.Duration, error) {
+	_, data, err := conn.Read(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -386,7 +392,7 @@ func (a *Adapter) readHello(ctx context.Context, conn *wsclient.Conn) (time.Dura
 	return time.Duration(hello.HeartbeatInterval) * time.Millisecond, nil
 }
 
-func (a *Adapter) heartbeatLoop(ctx context.Context, conn *wsclient.Conn, st *gatewayState, hb *heartbeatState, interval time.Duration, stop <-chan struct{}) {
+func (a *Adapter) heartbeatLoop(ctx context.Context, conn *websocket.Conn, st *gatewayState, hb *heartbeatState, interval time.Duration, stop <-chan struct{}) {
 	timer := time.NewTimer(time.Duration(float64(interval) * a.jitter()))
 	defer timer.Stop()
 	for {
@@ -403,31 +409,23 @@ func (a *Adapter) heartbeatLoop(ctx context.Context, conn *wsclient.Conn, st *ga
 				continue
 			}
 			a.logger.Warn("discord: heartbeat ack missed; recycling connection")
-			_ = conn.WriteClose(4000, "heartbeat ack timeout")
-			_ = conn.Close()
+			_ = conn.Close(4000, "heartbeat ack timeout")
 			return
 		}
-		if err := a.sendHeartbeat(conn, st, hb); err != nil {
+		if err := a.sendHeartbeat(ctx, conn, st, hb); err != nil {
 			return
 		}
 		timer.Reset(interval)
 	}
 }
 
-func (a *Adapter) sendHeartbeat(conn *wsclient.Conn, st *gatewayState, hb *heartbeatState) error {
-	payload := struct {
-		Op int    `json:"op"`
-		D  *int64 `json:"d"`
-	}{Op: opHeartbeat}
+func (a *Adapter) sendHeartbeat(ctx context.Context, conn *websocket.Conn, st *gatewayState, hb *heartbeatState) error {
+	var d *int64
 	if seq, ok := st.lastSeq(); ok {
-		payload.D = &seq
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("discord: encode heartbeat: %w", err)
+		d = &seq
 	}
 	hb.arm(time.Now())
-	if err := conn.WriteText(data); err != nil {
+	if err := writeGatewayJSON(ctx, conn, opHeartbeat, d); err != nil {
 		hb.ack()
 		return err
 	}
@@ -435,19 +433,19 @@ func (a *Adapter) sendHeartbeat(conn *wsclient.Conn, st *gatewayState, hb *heart
 }
 
 func (a *Adapter) classifyGatewayError(st *gatewayState, err error) error {
-	var ce *wsclient.CloseError
+	var ce websocket.CloseError
 	if errors.As(err, &ce) {
-		if reason, ok := fatalCloseReasons[ce.Code]; ok {
+		if reason, ok := fatalCloseReasons[int(ce.Code)]; ok {
 			return fmt.Errorf("discord: gateway closed with code %d: %s", ce.Code, reason)
 		}
-		a.logger.Warn("discord: gateway connection closed", "code", ce.Code, "reason", ce.Reason)
+		a.logger.Warn("discord: gateway connection closed", "code", int(ce.Code), "reason", ce.Reason)
 		return nil
 	}
 	a.logger.Warn("discord: gateway connection lost", "error", err)
 	return nil
 }
 
-func writeGatewayJSON(conn *wsclient.Conn, op int, d any) error {
+func writeGatewayJSON(ctx context.Context, conn *websocket.Conn, op int, d any) error {
 	data, err := json.Marshal(struct {
 		Op int `json:"op"`
 		D  any `json:"d"`
@@ -455,7 +453,9 @@ func writeGatewayJSON(conn *wsclient.Conn, op int, d any) error {
 	if err != nil {
 		return fmt.Errorf("discord: encode gateway payload: %w", err)
 	}
-	return conn.WriteText(data)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return conn.Write(ctx, websocket.MessageText, data)
 }
 
 func gatewayWSURL(raw string) (string, error) {

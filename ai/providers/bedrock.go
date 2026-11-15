@@ -102,6 +102,5 @@ func (bedrockAuth) Resolve(
 var amazonBedrockProvider = Provider{
 	ID:      "amazon-bedrock",
 	Name:    "Amazon Bedrock",
-	Auth:    AuthAPIKey,
 	Methods: auth.ProviderAuth{APIKey: bedrockAuth{}},
 }

@@ -25,6 +25,9 @@ func TestRetryAndOverflowClassification(t *testing.T) {
 		"The service is temporarily unavailable", "Unable to forward upstream stream",
 		"stream disconnected before completion: stream closed before response.completed", "upstream_stream_read_error",
 		"request to https://oauth2.googleapis.com/token failed, reason: ", "HTTP 503 Service", "error 429",
+		// A dropped stream after the reply began (upstream #11879), and Go's wording for one.
+		"Claude Code's stream from Anthropic was cut short after the reply had begun", "unexpected EOF",
+		"stream error: stream ID 3; CANCEL; received from peer", `http2: server sent GOAWAY and closed the connection; LastStreamID=1, ErrCode=NO_ERROR, debug=""`,
 	} {
 		if !IsRetryableAssistantError(failed(text)) {
 			t.Fatalf("not retryable: %q", text)

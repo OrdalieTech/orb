@@ -1,6 +1,6 @@
 // orb-extension-sdk: @earendil-works/pi-ai surface as extensions see it (upstream
-// packages/coding-agent/src/core/extensions/pi-ai-extension-view.ts, pi 1.5.0,
-// commit f9a26365): pi-ai's compat entry plus TypeBox's Type and a TypeBox
+// packages/coding-agent/src/core/extensions/pi-ai-extension-view.ts, pi 1.5.2,
+// commit b4afdddf): pi-ai's compat entry plus TypeBox's Type and a TypeBox
 // StringEnum, served for both the root and "/compat" (ai-compat.mjs).
 // modelsAreEqual is ported from pi-ai (packages/ai/src/models.ts, MIT (c) Mario
 // Zechner); every other upstream export throws OrbUnsupportedCapability on use.
@@ -30,6 +30,10 @@ export const ANTHROPIC_ORGANIZATION_ID_ENV = stub("ANTHROPIC_ORGANIZATION_ID_ENV
 export const ANTHROPIC_SERVICE_ACCOUNT_ID_ENV = stub("ANTHROPIC_SERVICE_ACCOUNT_ID_ENV");
 export const ANTHROPIC_WORKSPACE_ID_ENV = stub("ANTHROPIC_WORKSPACE_ID_ENV");
 export const AssistantMessageEventStream = stub("AssistantMessageEventStream");
+export const CACHE_WARMING_IDLE_CONTINUATION_PROBABILITY = stub("CACHE_WARMING_IDLE_CONTINUATION_PROBABILITY");
+export const CACHE_WARMING_MAX_AGE_MS = stub("CACHE_WARMING_MAX_AGE_MS");
+export const CACHE_WARMING_MAX_IDLE_AGE_MS = stub("CACHE_WARMING_MAX_IDLE_AGE_MS");
+export const CACHE_WARMING_MINIMUM_EXPECTED_SAVINGS = stub("CACHE_WARMING_MINIMUM_EXPECTED_SAVINGS");
 export const DEFAULT_MAX_AGENT_RETRY_DELAY_MS = stub("DEFAULT_MAX_AGENT_RETRY_DELAY_MS");
 export const EventStream = stub("EventStream");
 export const InMemoryCredentialStore = stub("InMemoryCredentialStore");
@@ -61,6 +65,7 @@ export const createProvider = stub("createProvider");
 export const declarationsEqual = stub("declarationsEqual");
 export const defaultProviderAuthContext = stub("defaultProviderAuthContext");
 export const envApiKeyAuth = stub("envApiKeyAuth");
+export const evaluateCacheWarming = stub("evaluateCacheWarming");
 export const extractDiagnosticError = stub("extractDiagnosticError");
 export const fauxAssistantMessage = stub("fauxAssistantMessage");
 export const fauxProvider = stub("fauxProvider");
@@ -75,6 +80,8 @@ export const generateImagesOpenRouter = stub("generateImagesOpenRouter");
 export const getApiProvider = stub("getApiProvider");
 export const getApiProviders = stub("getApiProviders");
 export const getAttributionHeaders = stub("getAttributionHeaders");
+export const getCacheWarmingDelayMs = stub("getCacheWarmingDelayMs");
+export const getCacheWarmingRequestOptions = stub("getCacheWarmingRequestOptions");
 export const getClientVersion = stub("getClientVersion");
 export const getCurrentSystemMessage = stub("getCurrentSystemMessage");
 export const getCurrentSystemPrompt = stub("getCurrentSystemPrompt");
@@ -92,6 +99,7 @@ export const getModelType = stub("getModelType");
 export const getModels = stub("getModels");
 export const getOpenCodeSessionHeaders = stub("getOpenCodeSessionHeaders");
 export const getOverflowPatterns = stub("getOverflowPatterns");
+export const getPromptCacheTtlMs = stub("getPromptCacheTtlMs");
 export const getProviders = stub("getProviders");
 export const getSupportedThinkingLevels = stub("getSupportedThinkingLevels");
 export const getSystemMessageText = stub("getSystemMessageText");
@@ -101,6 +109,7 @@ export const googleVertexApi = stub("googleVertexApi");
 export const hasApi = stub("hasApi");
 export const hasNonAdditiveToolChanges = stub("hasNonAdditiveToolChanges");
 export const hasToolRedefinitions = stub("hasToolRedefinitions");
+export const isCacheWarmingReplayable = stub("isCacheWarmingReplayable");
 export const isContextOverflow = stub("isContextOverflow");
 export const isModelType = stub("isModelType");
 export const isRecoverableLength = stub("isRecoverableLength");
@@ -131,6 +140,7 @@ export const resolveTranscript = stub("resolveTranscript");
 export const resolveTranscriptTools = stub("resolveTranscriptTools");
 export const retryAssistantCall = stub("retryAssistantCall");
 export const retryDelayMs = stub("retryDelayMs");
+export const setBedrockProviderLoader = stub("setBedrockProviderLoader");
 export const setBedrockProviderModule = stub("setBedrockProviderModule");
 export const stream = stub("stream");
 export const streamAnthropic = stub("streamAnthropic");

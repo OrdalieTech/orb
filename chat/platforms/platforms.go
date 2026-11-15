@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"slices"
@@ -38,9 +39,9 @@ type Platform struct {
 	// in *), and About says what it does, for help.
 	Env   []string
 	About string
-	// Open builds the adapter of a platform orb chat routes, and how its
-	// messages come in.
-	Open func(env Env) (chat.Adapter, chat.Inbound, error)
+	// Open builds the adapter of a platform orb chat routes, logging to
+	// logger, and how its messages come in.
+	Open func(env Env, logger *slog.Logger) (chat.Adapter, chat.Inbound, error)
 	// Front runs a platform that drives the agent's sessions itself.
 	Front func(ctx context.Context, agent chat.Agent, env Env) error
 	// Configure maps the platform's section of an agent file onto the
@@ -83,62 +84,62 @@ var All = []Platform{
 	},
 	{
 		Name: "discord", Env: []string{"DISCORD_BOT_TOKEN"}, About: "Discord bot token",
-		Open: func(env Env) (chat.Adapter, chat.Inbound, error) {
+		Open: func(env Env, logger *slog.Logger) (chat.Adapter, chat.Inbound, error) {
 			token, err := required(env, "DISCORD_BOT_TOKEN")
 			if err != nil {
 				return nil, chat.Inbound{}, err
 			}
-			return polled(discord.New(discord.Options{Token: token}))
+			return polled(discord.New(discord.Options{Token: token, Logger: logger}))
 		},
 	},
 	{
 		Name: "googlechat", Env: []string{"GOOGLE_CHAT_PROJECT_NUMBER", "GOOGLE_CHAT_CREDENTIALS_FILE"},
-		Open: func(env Env) (chat.Adapter, chat.Inbound, error) {
+		Open: func(env Env, logger *slog.Logger) (chat.Adapter, chat.Inbound, error) {
 			credentials, err := os.ReadFile(env.Get("GOOGLE_CHAT_CREDENTIALS_FILE"))
 			if err != nil {
 				return nil, chat.Inbound{}, fmt.Errorf("read GOOGLE_CHAT_CREDENTIALS_FILE: %w", err)
 			}
-			return webhook(googlechat.New(googlechat.Options{ProjectNumber: env.Get("GOOGLE_CHAT_PROJECT_NUMBER"), CredentialsJSON: credentials}))
+			return webhook(googlechat.New(googlechat.Options{ProjectNumber: env.Get("GOOGLE_CHAT_PROJECT_NUMBER"), CredentialsJSON: credentials, Logger: logger}))
 		},
 	},
 	{
 		Name: "messenger", Env: []string{"MESSENGER_TOKEN", "MESSENGER_PAGE_ID", "MESSENGER_APP_SECRET", "MESSENGER_VERIFY_TOKEN"},
-		Open: func(env Env) (chat.Adapter, chat.Inbound, error) {
+		Open: func(env Env, logger *slog.Logger) (chat.Adapter, chat.Inbound, error) {
 			return webhook(messenger.New(messenger.Options{
 				Token: env.Get("MESSENGER_TOKEN"), PageID: env.Get("MESSENGER_PAGE_ID"),
-				AppSecret: env.Get("MESSENGER_APP_SECRET"), VerifyToken: env.Get("MESSENGER_VERIFY_TOKEN"),
+				AppSecret: env.Get("MESSENGER_APP_SECRET"), VerifyToken: env.Get("MESSENGER_VERIFY_TOKEN"), Logger: logger,
 			}))
 		},
 	},
 	{
 		Name: "slack", Env: []string{"SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_BOT_USER_ID"},
-		Open: func(env Env) (chat.Adapter, chat.Inbound, error) {
+		Open: func(env Env, logger *slog.Logger) (chat.Adapter, chat.Inbound, error) {
 			return webhook(slack.New(slack.Options{
-				Token: env.Get("SLACK_BOT_TOKEN"), SigningSecret: env.Get("SLACK_SIGNING_SECRET"), BotUserID: env.Get("SLACK_BOT_USER_ID"),
+				Token: env.Get("SLACK_BOT_TOKEN"), SigningSecret: env.Get("SLACK_SIGNING_SECRET"), BotUserID: env.Get("SLACK_BOT_USER_ID"), Logger: logger,
 			}))
 		},
 	},
 	{
 		Name: "teams", Env: []string{"TEAMS_APP_ID", "TEAMS_APP_PASSWORD", "TEAMS_TENANT_ID"},
-		Open: func(env Env) (chat.Adapter, chat.Inbound, error) {
+		Open: func(env Env, logger *slog.Logger) (chat.Adapter, chat.Inbound, error) {
 			return webhook(teams.New(teams.Options{
-				AppID: env.Get("TEAMS_APP_ID"), AppPassword: env.Get("TEAMS_APP_PASSWORD"), TenantID: env.Get("TEAMS_TENANT_ID"),
+				AppID: env.Get("TEAMS_APP_ID"), AppPassword: env.Get("TEAMS_APP_PASSWORD"), TenantID: env.Get("TEAMS_TENANT_ID"), Logger: logger,
 			}))
 		},
 	},
 	{
 		Name: "telegram", Env: []string{"TELEGRAM_BOT_TOKEN"}, About: "Telegram bot token",
-		Open: func(env Env) (chat.Adapter, chat.Inbound, error) {
+		Open: func(env Env, logger *slog.Logger) (chat.Adapter, chat.Inbound, error) {
 			token, err := required(env, "TELEGRAM_BOT_TOKEN")
 			if err != nil {
 				return nil, chat.Inbound{}, err
 			}
-			return polled(telegram.New(telegram.Options{Token: token}))
+			return polled(telegram.New(telegram.Options{Token: token, Logger: logger}))
 		},
 	},
 	{
 		Name: "whatsapp", Env: []string{"WHATSAPP_TOKEN", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_APP_SECRET", "WHATSAPP_VERIFY_TOKEN"},
-		Open: func(env Env) (chat.Adapter, chat.Inbound, error) {
+		Open: func(env Env, logger *slog.Logger) (chat.Adapter, chat.Inbound, error) {
 			return webhook(whatsapp.New(whatsapp.Options{
 				Token: env.Get("WHATSAPP_TOKEN"), PhoneNumberID: env.Get("WHATSAPP_PHONE_NUMBER_ID"),
 				AppSecret: env.Get("WHATSAPP_APP_SECRET"), VerifyToken: env.Get("WHATSAPP_VERIFY_TOKEN"),

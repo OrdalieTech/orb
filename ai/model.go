@@ -38,6 +38,15 @@ const (
 	SessionAffinityOpenRouter      SessionAffinityFormat = "openrouter"
 )
 
+// PromptCacheKeyMode controls the OpenAI prompt_cache_key request field.
+type PromptCacheKeyMode string
+
+const (
+	PromptCacheKeyAuto     PromptCacheKeyMode = "auto"
+	PromptCacheKeyEnabled  PromptCacheKeyMode = "enabled"
+	PromptCacheKeyDisabled PromptCacheKeyMode = "disabled"
+)
+
 type InputModality string
 
 const (
@@ -206,6 +215,8 @@ type OpenAICompletionsCompat struct {
 	MaxTokensField                              *MaxTokensField           `json:"maxTokensField,omitempty"`
 	RequiresToolResultName                      *bool                     `json:"requiresToolResultName,omitempty"`
 	RequiresAssistantAfterToolResult            *bool                     `json:"requiresAssistantAfterToolResult,omitempty"`
+	RequiresNonNullAssistantContent             *bool                     `json:"requiresNonNullAssistantContent,omitempty"`
+	RequiresToolsWithToolHistory                *bool                     `json:"requiresToolsWithToolHistory,omitempty"`
 	RequiresThinkingAsText                      *bool                     `json:"requiresThinkingAsText,omitempty"`
 	RequiresReasoningContentOnAssistantMessages *bool                     `json:"requiresReasoningContentOnAssistantMessages,omitempty"`
 	ThinkingFormat                              *ThinkingFormat           `json:"thinkingFormat,omitempty"`
@@ -224,6 +235,7 @@ type OpenAICompletionsCompat struct {
 	SendSessionAffinityHeaders                  *bool                     `json:"sendSessionAffinityHeaders,omitempty"`
 	DeferredToolsMode                           *DeferredToolsMode        `json:"deferredToolsMode,omitempty"`
 	SessionAffinityFormat                       *SessionAffinityFormat    `json:"sessionAffinityFormat,omitempty"`
+	PromptCacheKeyMode                          *PromptCacheKeyMode       `json:"promptCacheKeyMode,omitempty"`
 	SupportsLongCacheRetention                  *bool                     `json:"supportsLongCacheRetention,omitempty"`
 	VLLMPriority                                *float64                  `json:"vllmPriority,omitempty"`
 }
@@ -232,6 +244,7 @@ type OpenAIResponsesCompat struct {
 	SupportsDeveloperRole           *bool                  `json:"supportsDeveloperRole,omitempty"`
 	SupportsMidConvoSystemMessages  *bool                  `json:"supportsMidConvoSystemMessages,omitempty"`
 	SessionAffinityFormat           *SessionAffinityFormat `json:"sessionAffinityFormat,omitempty"`
+	PromptCacheKeyMode              *PromptCacheKeyMode    `json:"promptCacheKeyMode,omitempty"`
 	SupportsLongCacheRetention      *bool                  `json:"supportsLongCacheRetention,omitempty"`
 	SupportsStrictMode              *bool                  `json:"supportsStrictMode,omitempty"`
 	SupportsOpenAIGrammarTools      *bool                  `json:"supportsOpenAIGrammarTools,omitempty"`
@@ -255,6 +268,7 @@ type AnthropicMessagesCompat struct {
 	SupportsMidConvoToolChanges     *bool                            `json:"supportsMidConvoToolChanges,omitempty"`
 	ForceAdaptiveThinking           *bool                            `json:"forceAdaptiveThinking,omitempty"`
 	SessionAffinityFormat           *SessionAffinityFormat           `json:"sessionAffinityFormat,omitempty"`
+	SupportsMessageThreads          *bool                            `json:"supportsMessageThreads,omitempty"`
 	AllowedFallbackModels           *[]AnthropicAllowedFallbackModel `json:"allowedFallbackModels,omitempty"`
 	SupportsToolReferences          *bool                            `json:"supportsToolReferences,omitempty"`
 }

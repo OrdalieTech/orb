@@ -35,7 +35,7 @@ func (unavailableBash) Exec(context.Context, string, string, BashExecOptions) (B
 }
 func KillTrackedDetachedChildren() {}
 
-func (*findTool) executeFD(context.Context, string, string, float64) (engine.AgentToolResult, error) {
+func (*findTool) executeFD(context.Context, string, string, int) (engine.AgentToolResult, error) {
 	return engine.AgentToolResult{}, nativeUnavailable()
 }
 func (*grepTool) Execute(context.Context, string, any, engine.AgentToolUpdateCallback) (engine.AgentToolResult, error) {
