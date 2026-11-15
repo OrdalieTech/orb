@@ -174,17 +174,36 @@ func runACP(ctx context.Context, args CLIArgs, dependencies cliDependencies, str
 	return 0
 }
 
-// chatConnectCommand is the command line of `orb chat connect` to socket,
-// which a chat platform's front gives an ACP client that starts its agent as
-// a command.
-func chatConnectCommand(socket string) ([]string, error) {
-	self, err := os.Executable()
-	return []string{self, "chat", "connect", socket}, err
+// serveSocket serves the agent over ACP on a Unix socket until ctx ends, one
+// session host per connection: how a timer outside Orb starts a turn in a
+// running agent (`orb chat connect`). Only the agent's user may connect.
+func (host acpHost) serveSocket(ctx context.Context, path string) error {
+	_ = os.Remove(path)
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		return err
+	}
+	context.AfterFunc(ctx, func() { _ = listener.Close() })
+	if err := os.Chmod(path, 0o600); err != nil {
+		return err
+	}
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return err
+		}
+		go func() {
+			defer func() { _ = conn.Close() }()
+			_ = host.serve(ctx, conn, conn)
+		}()
+	}
 }
 
-// runChatConnect relays stdio to a running `orb chat` agent's ACP socket, for
-// an ACP client that starts its agent as a command. It inherits that client's
-// environment, which may hold the client's own keys, so it hides it.
+// runChatConnect relays stdio to a running `orb chat` agent's ACP socket. It
+// inherits its caller's environment, which may hold keys, so it hides it.
 func runChatConnect(socket string, in io.Reader, out io.Writer) int {
 	teamenv.Hide()
 	conn, err := net.Dial("unix", socket)

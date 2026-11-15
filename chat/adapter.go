@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/OrdalieTech/orb/agent/extensions"
 )
 
 // Receipt records the platform message ids produced by a finalized delivery.
@@ -53,24 +55,18 @@ type Adapter interface {
 
 // Inbound is how a platform's messages reach the processor: it fetches them
 // itself (Poll), or it is called and its host serves the handler (Webhook).
+// Authorize, when set, admits the platform's senders in place of its host's
+// shared allowlist.
 type Inbound struct {
-	Poll    func(ctx context.Context, publish func(Message) error) error
-	Webhook func(publish func(Message) error) http.Handler
+	Poll      func(ctx context.Context, publish func(Message) error) error
+	Webhook   func(publish func(Message) error) http.Handler
+	Authorize func(Message) error
 }
 
-// Agent is the running agent as a front, a platform that drives its sessions
-// itself, reaches it.
-type Agent struct {
-	// Serve runs the agent's ACP server on one connection until it closes.
-	Serve func(ctx context.Context, in io.Reader, out io.Writer) error
-	// Connect returns the command line of a process that relays its stdio to
-	// the ACP socket at path, for a client that starts its agent as a command.
-	Connect func(socket string) ([]string, error)
-	// Environ is the environment the agent's tools get; Export adds to it.
-	Environ func() []string
-	Export  func(name, value string)
-	// Log receives the platform's diagnostics.
-	Log io.Writer
+// Extended is an [Adapter] whose platform gives the agent tools of its own:
+// its host attaches Extension to every session of the agent.
+type Extended interface {
+	Extension(api extensions.API) error
 }
 
 // Identity is how an agent presents itself on its platforms.

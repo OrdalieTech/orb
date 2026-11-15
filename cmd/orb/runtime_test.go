@@ -53,15 +53,13 @@ func modelListContains(models []ai.Model, provider, id string) bool {
 }
 
 // Claude Code's native tools stand in for Orb's, so a Claude session gets the
-// tools' environment: an agent's credentials stay out, and what Orb exports to
-// its tools, such as the buzz shim's socket, comes in.
+// tools' environment: an agent's credentials stay out.
 func TestClaudeRunsWithTheToolEnvironment(t *testing.T) {
 	t.Setenv(toolenv.Allow, "PATH,HOME")
 	t.Setenv("BUZZ_PRIVATE_KEY", "agent-secret")
 	t.Setenv("CLAUDE_CONFIG_DIR", "/claude")
-	toolenv.Export("ORB_TEST_EXPORT", "socket")
 	env := claudeEnv()
-	for _, want := range []string{"ORB_TEST_EXPORT=socket", "CLAUDE_CONFIG_DIR=/claude", "PATH=" + os.Getenv("PATH")} {
+	for _, want := range []string{"CLAUDE_CONFIG_DIR=/claude", "PATH=" + os.Getenv("PATH")} {
 		if !slices.Contains(env, want) {
 			t.Errorf("env lacks %s: %v", want, env)
 		}

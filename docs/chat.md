@@ -2,7 +2,7 @@
 
 The `chat` package (D27) turns the orb SDK into a multi-user messaging agent: a synchronous,
 at-least-once turn processor around `agent.AgentSession` with normalized platform messages,
-a `SessionProvider` ownership seam, and platform adapters in `chat/telegram`, `chat/whatsapp`,
+a `SessionProvider` ownership seam, and platform adapters in `chat/buzz`, `chat/telegram`, `chat/whatsapp`,
 `chat/slack`, `chat/teams`, `chat/discord`, `chat/messenger`, and `chat/googlechat` (D28; see
 [Platforms](#more-platforms)).
 Dependency direction is strictly `chat → agent`; nothing in the SDK imports `chat`.
@@ -263,6 +263,34 @@ publishing, populate `Message.Account` to match `Account()` (multi-account routi
 the pair), gate groups on an explicit mention with the mention stripped from `Text` (DMs always
 trigger), and normalize `/cmd` commands like the Telegram adapter. Streamed previews land where
 the platform allows them (Slack and Discord); Teams, Messenger, and Google Chat are final-only.
+
+### Buzz (`chat/buzz`)
+
+`buzz.New(buzz.Options{...})` requires `Key` (the agent's Nostr secret, hex or `nsec`) and
+`Relay`; `AuthTag` is the owner's NIP-OA tag, which names the owner and admits the agent on the
+owner's behalf. `Account()` is the agent's pubkey. Ingress is `Poll(ctx, publish)`: one
+WebSocket, NIP-42 authentication (the tag in AUTH), subscriptions to kinds 9, 45001 and 45003
+that `p`-tag the agent in the channels its rosters list, per batch of 128, and in each channel it is
+added to while connected (the relay fans a channel's events out only to subscriptions naming it;
+direct messages and Solo chats come in, as Buzz clients tag their participants), and another to
+every message of `Channels`. Reconnects back off up to a minute
+and resume from `Cursor`, a file kept past each stored batch and each live event; the agent's own
+events never trigger. `ChatID` is the channel, `ThreadID` the NIP-10 root (a top-level message is
+its own, a direct message has none, so it is one conversation). `Text` is `Name: content`,
+preceded by the thread's earlier messages the agent never got and followed by
+`[buzz: channel …, event …, from …]`; `imeta` media become attachments, downloaded from the
+relay's `/media/` with a Blossom authorization. Everything else goes through the relay's HTTP API
+under NIP-98 with the tag in `x-auth-tag`. Delivery is final-only: typing (kind 20002, on the
+WebSocket) refreshed every 3s, then kind 9 replies in the answered event's thread, chunked at
+16,000 runes, carrying the owner's tag; an empty reply posts nothing, and so does one in a
+conversation where the agent already posted with `buzz_publish` during the turn (a model that
+answers with the tool would otherwise say it twice). Presence (kind 20001) shows the agent online,
+renewed with the pings, and offline when it stops. `Authorize` is the sender
+gate for `Inbound.Authorize`: `RespondTo` `owner-only` (default), `allowlist` (the owner and
+`Allow`) or `anyone`. `buzz.Setup` is `orb chat setup buzz`: it makes the agent's key, takes or
+signs its owner's attestation (`--auth`, `--owner-key`, or `--attest` on the owner's machine),
+publishes the owner's record and the agent's profile, and returns the settings `orb chat` saves in
+`<data dir>/buzz.env` and reads back under the environment.
 
 ### Slack (`chat/slack`)
 

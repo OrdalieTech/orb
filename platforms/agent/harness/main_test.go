@@ -8,8 +8,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"github.com/OrdalieTech/orb/chat/platforms"
 )
 
 func testLayout(t *testing.T) layout {
@@ -52,7 +50,7 @@ platforms:
   buzz:
     respond_to: allowlist
     allow: [f59bcde6, 97303c06]
-    subscribe: mentions
+    channels: [4de8c05e]
   telegram:
     allow: [7311893094]
 `), image)
@@ -89,9 +87,8 @@ platforms:
 		t.Fatalf("browser = %v", browser)
 	}
 	for name, value := range map[string]string{
-		"BUZZ_ACP_DISPLAY_NAME": "Sales", "ORB_BUZZ_ABOUT": "Answers the sales team",
-		"BUZZ_ACP_RESPOND_TO": "allowlist", "BUZZ_ACP_RESPOND_TO_ALLOWLIST": "f59bcde6,97303c06", "BUZZ_ACP_SUBSCRIBE": "mentions",
-		"ORB_CHAT_ALLOWED_SENDERS": "7311893094",
+		"BUZZ_NAME": "Sales", "BUZZ_ABOUT": "Answers the sales team", "BUZZ_RESPOND_TO": "allowlist", "BUZZ_CHANNELS": "4de8c05e",
+		"ORB_CHAT_ALLOWED_SENDERS": "f59bcde6,97303c06,7311893094",
 	} {
 		if plan.env[name] != value {
 			t.Errorf("%s = %q, want %q", name, plan.env[name], value)
@@ -107,7 +104,7 @@ func TestAgentFileMistakesAreRefused(t *testing.T) {
 		"field modle not found":            "modle: x/y\nplatforms: {telegram: {}}\n",
 		"model must be <provider>/<model>": "model: gpt-5.4\nplatforms: {telegram: {}}\n",
 		`unknown platform "telgram"`:       "model: a/b\nplatforms: {telgram: {}}\n",
-		`buzz: unknown setting "respond"`:  "model: a/b\nplatforms: {buzz: {respond: anyone}}\n",
+		"buzz: settings are respond_to":    "model: a/b\nplatforms: {buzz: {respond: anyone}}\n",
 		"takes no settings besides allow":  "model: a/b\nplatforms: {telegram: {token: x}}\n",
 		"this image has no":                "model: a/b\nbrowser: chromium\nplatforms: {telegram: {}}\n",
 		"mcp.broken":                       "model: a/b\nmcp: {broken: {}}\nplatforms: {telegram: {}}\n",
@@ -136,15 +133,15 @@ func TestDroppedSectionsRemoveTheirFiles(t *testing.T) {
 	}
 }
 
-// Secrets reach the agent on its descriptor, never in its environment, and a
-// sidecar gets only what its platform declares.
+// Secrets reach the agent on its descriptor, never in its environment, and it
+// serves its ACP socket.
 func TestProcessesGetOnlyTheirOwnEnvironment(t *testing.T) {
 	image := testLayout(t)
-	image.socket, image.relay = "/run/orb/acp.sock", []string{"nc", "-U", "/run/orb/acp.sock"}
+	image.socket = "/run/orb/acp.sock"
 	environ := []string{"PATH=/bin", "HOME=/agent", "ORB_STATE_HOME=/agent/state", "OPENROUTER_API_KEY=sk-or", "BUZZ_PRIVATE_KEY=nostr"}
-	rendered := map[string]string{"BUZZ_ACP_RESPOND_TO": "allowlist", "ORB_BUZZ_ABOUT": "Sales"}
+	rendered := map[string]string{"BUZZ_RESPOND_TO": "allowlist", "BUZZ_ABOUT": "Sales"}
 
-	agent := agentProcess([]string{"buzz", "--tools"}, environ, rendered, image, true)
+	agent := agentProcess([]string{"buzz", "--tools"}, environ, rendered, image)
 	if strings.Join(agent.argv, " ") != "orb chat buzz --tools" {
 		t.Fatalf("argv = %v", agent.argv)
 	}
@@ -158,30 +155,13 @@ func TestProcessesGetOnlyTheirOwnEnvironment(t *testing.T) {
 			t.Errorf("the agent's environment lacks %s: %v", want, agent.env)
 		}
 	}
-	for _, want := range []string{"OPENROUTER_API_KEY=sk-or\n", "BUZZ_PRIVATE_KEY=nostr\n", "BUZZ_ACP_RESPOND_TO=allowlist\n", "ORB_BUZZ_ABOUT=Sales\n"} {
+	for _, want := range []string{"OPENROUTER_API_KEY=sk-or\n", "BUZZ_PRIVATE_KEY=nostr\n", "BUZZ_RESPOND_TO=allowlist\n", "BUZZ_ABOUT=Sales\n"} {
 		if !strings.Contains(agent.secrets, want) {
 			t.Errorf("the agent's descriptor lacks %q", want)
 		}
 	}
 
-	buzz, _ := platforms.Lookup("buzz")
-	sidecar := sidecarProcess(buzz, environ, rendered, image, "/home/sidecar")
-	if strings.Join(sidecar.argv, " ") != "buzz-acp" {
-		t.Fatalf("argv = %v", sidecar.argv)
-	}
-	// buzz-acp opens the agent's sessions in its working directory, which the
-	// agent's tools must be able to enter: the workspace, not its own home.
-	if agent.dir != image.workspace || sidecar.dir != image.workspace {
-		t.Errorf("agent runs in %q and its sidecar in %q, want both in the workspace %q", agent.dir, sidecar.dir, image.workspace)
-	}
-	for _, want := range []string{"HOME=/home/sidecar", "BUZZ_PRIVATE_KEY=nostr", "BUZZ_ACP_RESPOND_TO=allowlist", "BUZZ_ACP_AGENT_ARGS=-U,/run/orb/acp.sock", "BUZZ_ACP_NO_MEMORY=true"} {
-		if !slices.Contains(sidecar.env, want) {
-			t.Errorf("the sidecar lacks %s: %v", want, sidecar.env)
-		}
-	}
-	for _, entry := range sidecar.env {
-		if strings.Contains(entry, "sk-or") || strings.HasPrefix(entry, "ORB_") {
-			t.Errorf("the sidecar holds %s", entry)
-		}
+	if agent.dir != image.workspace {
+		t.Errorf("the agent runs in %q, want the workspace %q", agent.dir, image.workspace)
 	}
 }

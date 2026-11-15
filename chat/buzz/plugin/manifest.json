@@ -1,0 +1,16 @@
+{
+  "id": "netapy.orb",
+  "name": "Orb",
+  "apiVersion": 1,
+  "description": "Orb agents on this computer. Each thread an agent is mentioned in is one Orb session, and Orb's last message of a turn is its reply.",
+  "host": {
+    "processes": [
+      {
+        "id": "orb",
+        "program": "orb",
+        "args": ["--mode", "acp", "--provider", "claude-sessions", "--model", "claude-opus-5-5", "--thinking", "high"]
+      }
+    ],
+    "files": true
+  }
+}

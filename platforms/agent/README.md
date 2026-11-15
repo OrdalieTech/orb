@@ -2,10 +2,9 @@
 
 One Ordalie team agent per container. `orb chat buzz telegram --tools` is the agent: one process,
 one memory, reachable on Buzz and Telegram with the same identity and tools. The image's
-entrypoint, `orb-agent`, sets the agent up from one file, `/agent/agent.yaml`, and runs it: Orb as
-the `agent` user, and as the `sidecar` user each process its platforms declare, such as Buzz's
-`buzz-acp`, which holds the agent's Buzz identity and reaches the agent over ACP. The agent's
-tools can read neither the sidecars' environment nor any of the agent's credentials.
+entrypoint, `orb-agent`, sets the agent up from one file, `/agent/agent.yaml`, and runs it as the
+`agent` user. Orb speaks every platform itself, Buzz included (its relay's Nostr protocol, in Go),
+so the container runs one process, and the agent's tools can read none of its credentials.
 
 Adding an agent is one file and its secrets:
 
@@ -17,17 +16,17 @@ docker run -d --name agent-sales --restart on-failure --memory 256m --env-file /
   -v agent-sales:/agent orb-agent
 ```
 
-`--restart on-failure` keeps an owner's `!shutdown` (a clean exit) final.
+`--restart on-failure` restarts an agent that crashed, not one stopped on purpose.
 
 ## Images
 
 | Target | Adds | Size | Memory cap |
 |---|---|---|---|
-| default | Orb, Buzz's CLI and buzz-acp, bash, git, curl | 220 MB | 256 MB |
+| default | Orb, bash, git, curl | about 190 MB | 256 MB |
 | `--target browser` | [agent-browser](https://github.com/vercel-labs/agent-browser) and [Lightpanda](https://lightpanda.io) | 312 MB | 512 MB |
 | `--target browser --build-arg CHROMIUM=1` | and headless Chromium | 855 MB | 1.5 GB, with `--shm-size=256m` |
 
-The base is Debian 13 (Buzz's binaries need glibc 2.39), without apt, Perl or documentation; git's
+The base is Debian 13, without apt, Perl or documentation; git's
 few Perl commands (`send-email`, `svn`) are missing. Memory caps leave room over what a pilot
 measured: 12 to 27 MiB for an agent without a browser, about 130 MiB more with Lightpanda on a
 page and about 750 MiB more with Chromium on a news site (amd64 under emulation, so high). Chromium
@@ -55,9 +54,8 @@ plugins:                         # bundled plugins (orb plugins list --all): tru
 platforms:
   buzz:
     respond_to: allowlist        # who it answers: owner-only, allowlist or anyone
-    allow: [f59bcde6…, 97303c06…]  # team pubkeys
-    subscribe: mentions          # also channels, kinds, idle_timeout, turn_timeout,
-                                 # heartbeat_interval, heartbeat_prompt
+    allow: [f59bcde6…, 97303c06…]  # team pubkeys, besides the owner (its auth tag's)
+    channels: [4de8c05e-…]       # where every message, not only mentions, is for it
   telegram:
     allow: [7311893094]          # user ids allowed to talk to it
 ```
@@ -67,8 +65,7 @@ On every start `orb-agent` validates the file, refusing unknown keys and setting
 browser's settings from it, so edit the file, not those, and restart. The agent never trusts its
 workspace's `.orb/`, which its tools can write, and every `orb` in the container reads those files,
 so `docker exec … orb plugins list` shows what the agent runs. Each platform's section is
-what its package declares (`orb chat --help` lists the platforms); buzz-acp settings it does not
-take stay available as `BUZZ_ACP_*` environment. Check a file before deploying it:
+what its package declares (`orb chat --help` lists the platforms). Check a file before deploying it:
 
 ```sh
 docker run --rm -v ./sales.yaml:/a.yaml:ro --entrypoint orb-agent orb-agent check /a.yaml
@@ -81,12 +78,12 @@ telegram --tools` by default) and the settings environment variables.
 
 Only secrets go in the env file, and the agent's tools see none of them: `orb-agent` hands them to
 Orb on a pipe, not in its environment, Orb gives its tools only `PATH`, `HOME` and a few locale
-variables, and each sidecar gets only the variables its platform declares.
+variables.
 
 | Variable | Platform | |
 |---|---|---|
 | `BUZZ_PRIVATE_KEY` | Buzz | the agent's Nostr key |
-| `BUZZ_AUTH_TAG` | Buzz | NIP-OA tag attesting the owner's authorization, from `buzz-owner.py` (below) |
+| `BUZZ_AUTH_TAG` | Buzz | NIP-OA tag attesting the owner's authorization, from `orb chat setup buzz` (below) |
 | `BUZZ_RELAY_URL` | Buzz | the relay, such as `wss://buzz.example.com` |
 | `TELEGRAM_BOT_TOKEN` | Telegram | the bot's token |
 | provider key, such as `OPENAI_API_KEY` or `OPENROUTER_API_KEY` | all | the model's |
@@ -95,26 +92,33 @@ Model logins that need a refresh token (OAuth, such as `openai-codex`) go in
 `/agent/secrets/auth.json`: `orb-agent` makes it root's (0600) and hands the agent an open
 descriptor on it, so the agent reads and refreshes it while its tools cannot open it.
 
-The agent posts on Buzz with `buzz messages send` as Buzz's prompt tells it; the `buzz` its shell
-runs is Orb, which has the agent run the real CLI with the Buzz key.
+On Buzz the agent hears the messages that mention it in its channels (added later included), its direct messages
+and every message of its `channels`, each thread one conversation (a direct message is one), and
+answers in the thread. Mentioned mid-thread, it first gets what was said there since it last spoke.
+What arrived while it was down reaches it when it is back. Two tools, `buzz_query` and
+`buzz_publish`, read any event and publish any as the agent (messages elsewhere, reactions, edits,
+canvases), in its chats and in turns started from outside alike.
 
 ## On Buzz
 
 Buzz shows an agent by its profile and lists it in its agent directory only when the profile
-carries its owner's tag and the owner has published a record of the agent. The agent signs its
-profile: on every start it publishes its `name`, `about` and `avatar` with `BUZZ_AUTH_TAG`, merged
-into the profile already on the relay, and retries until the relay takes it. The owner signs the
-rest on their own machine, since the owner's key never goes into the container:
+carries its owner's tag and the owner has published a record of the agent. `orb chat setup buzz`
+does all of it, on any machine with `orb`, the agent's half there and its owner's wherever their
+key is:
 
 ```sh
-python3 buzz-owner.py <agent pubkey> --relay wss://buzz.example.com --name Sales --allow <pubkey>,…
+ORB_CHAT_DATA_DIR=./sales orb chat setup buzz --relay wss://buzz.example.com --name Sales --respond-to allowlist
+# the owner, on their machine: signs, publishes their record of it, prints the --auth to give back
+orb chat setup buzz --attest <agent pubkey> --relay wss://buzz.example.com --name Sales --owner-key -
+ORB_CHAT_DATA_DIR=./sales orb chat setup buzz --auth '<tag>'
 ```
 
-It asks for the owner's key without echoing it, prints the `BUZZ_AUTH_TAG=…` line for the env
-file, and publishes the owner's record of the agent: its name and whom it answers, which should
-match the file's `respond_to` (`--allow` for an allowlist, `--anyone`, or neither for the owner
-alone). Without `--relay` it only prints the tag. Run it again to change the record. The agent
-still has to be a member of the relay and of its channels, as any Buzz identity.
+The agent's key is made there and never leaves; the owner's key never reaches the agent (an owner
+on the same machine can approve at once with `--owner-key`, or by answering the hidden prompt).
+The last step checks the attestation and publishes the agent's profile. `./sales/buzz.env` is then
+the container's `--env-file` (add the model's key). On a closed relay the agent needs no membership
+of its own, the relay admits it through its owner; add it to channels from Buzz (Add people and
+agents), as a bot.
 
 ## Browser
 

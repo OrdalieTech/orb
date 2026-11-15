@@ -323,12 +323,15 @@ func (s *Scheduler) decide(ctx context.Context, session, text string, runner ext
 	return strings.Join(reports, "\n\n")
 }
 
-// approves reads a yes from the user's message: a Buzz event (buzz-acp)
-// carries it in its last Content field, after the agent's @mention, and a
-// group chat's after its sender's "Name: ".
+// approves reads a yes from the user's message: a Buzz message carries it
+// after the thread's earlier messages and before its [buzz: …] line, and a
+// group chat's comes after its sender's "Name: ", the agent's @mention aside.
 func approves(text string) bool {
-	if at := strings.LastIndex(text, "\nContent: "); at >= 0 {
-		text, _, _ = strings.Cut(text[at+len("\nContent: "):], "\n")
+	if at := strings.LastIndex(text, "\n\n[buzz: "); at >= 0 {
+		text = text[:at]
+		if strings.HasPrefix(text, "Earlier in the thread:\n") {
+			text = text[strings.LastIndex(text, "\n\n")+2:]
+		}
 	}
 	candidates := []string{text}
 	if name, rest, ok := strings.Cut(text, ": "); ok && len(strings.Fields(name)) <= 3 {

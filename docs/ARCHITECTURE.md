@@ -619,38 +619,38 @@ is native Go; executing package-provided JavaScript requires the D31 Node/Bun ru
 ### ACP and team agents
 
 `agent/acp` serves the Agent Client Protocol over newline-delimited JSON-RPC to any client (an
-editor such as Zed, or a chat platform's agent harness such as Buzz's `buzz-acp`). It names no CLI type: a `Host` opens sessions, and
+editor such as Zed, or a timer starting a turn through `orb chat connect`). It names no CLI type: a `Host` opens sessions, and
 `cmd/orb` opens each one exactly as the CLI opens its session (settings, plugins, skills, context
 files), adding the client's `mcpServers` and harness prompt. Each session claims its conversation
 separately, so one process holds many; idle ones past eight are disposed and reopen from the store.
 
-A team agent is one process with several fronts, all driving sessions of the same agent dir and
-store, hence one identity, one memory and one tool set:
+A team agent is one process on all its platforms, every conversation a session of the same agent
+dir and store, hence one identity, one memory and one tool set:
 
 ```
-orb-agent (root, PID 1)                   renders agent.yaml, starts both, ends with the first to exit
-├── orb chat buzz telegram --tools   user agent: the agent (volume /agent, non-dumpable)
-│   ├── telegram    chat adapter → chat.Processor → sessions built as ACP's are (agentWorkspace)
-│   ├── ACP socket  agent/acp at ORB_ACP_SOCKET, one connection per buzz-acp agent process
-│   └── buzz socket runs the real buzz CLI (execute-only) with the Buzz key for the shell's `buzz`
-└── buzz-acp                         user sidecar (Buzz's declared sidecar): relay identity, author gate, queues
-    └── nc -N -U <socket>            byte relay to the agent's ACP socket (`orb chat connect` outside the image)
+orb-agent (root, PID 1)              renders agent.yaml, hands over the credentials, ends with the agent
+└── orb chat buzz telegram --tools   user agent: the agent (volume /agent, non-dumpable)
+    ├── buzz        chat adapter: relay WebSocket in, relay HTTP out, signed as the agent
+    ├── telegram    chat adapter
+    │               → chat.Processor → sessions built as ACP's are (agentWorkspace)
+    └── ACP socket  agent/acp at ORB_ACP_SOCKET, for turns started from outside
 ```
 
 The agent receives its credentials on descriptors: secrets as KEY=VALUE lines (`ORB_SECRETS_FD`),
 OAuth logins as an open `auth.json` (`ORB_AUTH_FD`), so no path its in-process tools can open holds one.
 
-Without `ORB_ACP_SOCKET` (development), `orb chat buzz` starts buzz-acp itself, as its own user.
-
 `orb chat` knows its platforms only as rows of the `chat/platforms` catalog, which maps each
-one's environment onto its package's options: Telegram's adapter, Buzz's front, which reaches the
-agent only through `chat.Agent` (`Serve`, `Connect`, `Environ`, `Export`, `Log`). `chat/buzz` holds
-the whole Buzz side above, the ACP socket or buzz-acp, the buzz socket, exported to the tools,
-and the shell's `buzz`, the row's alias.
+one's environment onto its package's options and names its onboarding (`orb chat setup
+<platform>`, saving `<data dir>/<platform>.env`, read under the environment). A platform reaches the rest of Orb through
+`chat.Inbound.Authorize`, its own sender gate, and `chat.Extended`, an extension of its tools that
+`orb chat` adds to every session of the agent: Buzz's `buzz_query` and `buzz_publish`. `chat/buzz`
+is the whole Buzz side: BIP-340 signing (`nostr.go`), the subscription, its cursor, the replies and
+the tools; an SDK embedder uses it like any adapter, with `chat.New`. `chat/buzz/plugin` is the
+other way round, a Buzz app plugin that makes Orb an agent type the app hosts (`orb --mode acp`).
 
 Tools see only the `ORB_TOOL_ENV` allowlist (`internal/toolenv`). Measured natively (one process,
-eight sessions): the agent 36 MB PSS, the relay 17 MB and buzz-acp 4 MB, against about 650 MB per
-Hermes agent.
+eight sessions, with buzz-acp beside it, before Buzz was native): the agent 36 MB PSS, against
+about 650 MB per Hermes agent.
 
 ## Native persistence
 

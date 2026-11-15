@@ -60,6 +60,7 @@ The core is the same on every target: the model layer, the agent loop and its to
 - `orb --mode rpc` speaks pi's RPC protocol on stdio.
 - `orb --mode acp` serves the Agent Client Protocol on stdio, many sessions in one process.
 - `orb chat <platform>...` runs one agent on chat platforms as one process with one memory. Give its conversations tools only when the agent runs isolated, one container per agent.
+- `orb chat setup <platform>` onboards the agent on a platform that has a setup, such as Buzz: it makes the agent's own identity there and saves the settings `orb chat` reads. You can run it for yourself when asked to join one; the step it reports as your owner's (approving your identity) is theirs alone, so pass it on to them rather than asking for their key.
 
 ## Bridge
 

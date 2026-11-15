@@ -1,7 +1,6 @@
 // Command orb-agent is the team agent image's entrypoint: it sets an agent up
-// from one file, /agent/agent.yaml, and runs it, `orb chat` as the agent's user
-// and each sidecar its platforms declare as another. What it knows of a
-// platform is its row in the chat/platforms catalog.
+// from one file, /agent/agent.yaml, and runs it, `orb chat` as the agent's
+// user. What it knows of a platform is its row in the chat/platforms catalog.
 //
 //	orb-agent [orb chat arguments]   run the agent (as root, the image's entrypoint)
 //	orb-agent check <file>           validate an agent file and print its plan
