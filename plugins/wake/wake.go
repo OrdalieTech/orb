@@ -218,12 +218,15 @@ type heldCall struct {
 // decide settles session's held calls with the user's message: a yes runs them,
 // anything else denies them, and the model reads each outcome before the message.
 func (s *Scheduler) decide(ctx context.Context, api extensions.API, session, text string, runner extensions.Context) {
-	held := func(w Wake) bool { return w.Session == session && w.Call != nil }
+	// An expired call is past deciding: Advance delivers its expiry.
+	now := s.now()
+	held := func(w Wake) bool { return w.Session == session && w.Call != nil && w.Due.After(now) }
 	if wakes, err := s.read(ctx); err != nil || !slices.ContainsFunc(wakes, held) {
 		return
 	}
 	var taken []Wake
-	_ = s.update(ctx, func(wakes []Wake) ([]Wake, error) {
+	// Nothing runs until its removal is stored, so a call runs at most once.
+	if err := s.update(ctx, func(wakes []Wake) ([]Wake, error) {
 		taken = nil
 		return slices.DeleteFunc(wakes, func(w Wake) bool {
 			if held(w) {
@@ -232,7 +235,10 @@ func (s *Scheduler) decide(ctx context.Context, api extensions.API, session, tex
 			}
 			return false
 		}), nil
-	})
+	}); err != nil {
+		_ = send(ctx, api, "The held calls could not be settled, so none ran: "+err.Error(), false)
+		return
+	}
 	yes := approves(text)
 	for _, w := range taken {
 		report := fmt.Sprintf("The user denied the %s call, so it did not run.", w.Call.Tool)
@@ -357,14 +363,17 @@ func (s *Scheduler) schedule(ctx context.Context, _ string, raw any, _ engine.Ag
 		delay, err = time.ParseDuration(in.Delay)
 		w.Due = now.Add(delay)
 	default:
-		w.Due, err = nextTime(w.Cron, in.Timezone, now)
-		// Gaps over two days show a too frequent schedule without walking a year.
-		for at := w.Due; err == nil && at.Before(now.Add(48*time.Hour)); {
-			after, _ := nextTime(w.Cron, in.Timezone, at)
-			if after.Sub(at) < minPeriod {
-				err = fmt.Errorf("a recurring wake runs at most every %s", minPeriod)
+		if w.Due, err = nextTime(w.Cron, in.Timezone, now); err == nil {
+			// The minute and hour fields alone set the shortest gap, and two
+			// days of them, every day matching, show all of their gaps.
+			daily, day := strings.Join(strings.Fields(w.Cron)[:2], " ")+" * * *", time.Time{}
+			for at, _ := nextTime(daily, "UTC", day); err == nil && at.Before(day.Add(48*time.Hour)); {
+				after, _ := nextTime(daily, "UTC", at)
+				if after.Sub(at) < minPeriod {
+					err = fmt.Errorf("a recurring wake runs at most every %s", minPeriod)
+				}
+				at = after
 			}
-			at = after
 		}
 	}
 	if err == nil && !w.Due.After(now) {
