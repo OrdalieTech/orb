@@ -2,20 +2,79 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/acp"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/session"
+	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/internal/toolenv"
 	"github.com/OrdalieTech/orb/platforms/native/teamenv"
 	"github.com/OrdalieTech/orb/plugins/mcp"
+	"github.com/OrdalieTech/orb/plugins/wake"
 )
+
+// wakeSender is the sender of the wakes a chat conversation gets through the
+// gateway's inbox; no platform has such an ID.
+const wakeSender = "orb:wake"
+
+// teamWake gives a team agent its scheduler and returns the loop advancing it:
+// a routed wake (a chat conversation) enters through emit, the gateway's inbox,
+// so its ledger keeps it to one turn; another opens its session, as an ACP
+// prompt to its id does.
+func teamWake(agents *acpHost) func(context.Context, func(chat.Message) error) error {
+	state := agents.args.native
+	if state == nil {
+		return nil
+	}
+	var emit func(chat.Message) error
+	scheduler := wake.New(state.Document(filepath.Join(state.AgentDir, "wake.json")), time.Now, func(ctx context.Context, w wake.Wake) error {
+		if w.Route != "" {
+			var m chat.Message
+			if err := json.Unmarshal([]byte(w.Route), &m); err != nil || emit == nil {
+				return errors.Join(err, fmt.Errorf("no chat platform takes wake %s", w.ID))
+			}
+			m.EventID, m.SenderID, m.Text, m.SentAt = fmt.Sprintf("wake:%s:%d", w.ID, w.Due.Unix()), wakeSender, w.Text(), time.Now()
+			return emit(m)
+		}
+		runtime, release, err := agents.Open(ctx, acp.Options{ID: w.Session, CWD: w.CWD})
+		if err != nil {
+			return err
+		}
+		defer release()
+		trigger := true
+		return runtime.Session().SendCustomMessage(ctx, agent.CustomMessage{CustomType: "wake", Content: w.Text(), Display: true}, &agent.SendCustomMessageOptions{TriggerTurn: &trigger})
+	})
+	agents.args.wake = scheduler
+	return func(ctx context.Context, send func(chat.Message) error) error {
+		emit = send
+		for {
+			next, err := scheduler.Advance(ctx)
+			if err != nil {
+				_, _ = fmt.Fprintln(agents.streams.Stderr, "wake:", err)
+			}
+			// Sessions schedule meanwhile, so wait at most a few seconds.
+			wait := 10 * time.Second
+			if !next.IsZero() {
+				wait = min(wait, max(time.Until(next), 0))
+			}
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(wait):
+			}
+		}
+	}
+}
 
 // acpHost opens each ACP session the way the CLI opens one, so a client's
 // sessions get the CLI's settings, plugins, skills and context files.

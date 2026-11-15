@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -824,6 +825,7 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 		return reportCLIError(streams.Stderr, errors.New("usage: orb chat <platform>... [--tools]"))
 	}
 	agents := teamAgent(ctx, dependencies, streams)
+	wakes := teamWake(&agents)
 	var fronts []func(context.Context) error
 	var chats []string
 	for _, name := range selected {
@@ -837,11 +839,20 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 		}
 	}
 	if len(chats) == 0 {
+		if wakes != nil {
+			go func() { _ = wakes(ctx, nil) }()
+		}
 		return runFronts(ctx, fronts, streams)
 	}
-	authorize, err := gateway.Authorizer(os.Getenv(platforms.AllowedSenders))
+	allowed, err := gateway.Authorizer(os.Getenv(platforms.AllowedSenders))
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
+	}
+	authorize := func(m chat.Message) error {
+		if m.SenderID == wakeSender {
+			return nil
+		}
+		return allowed(m)
 	}
 	agentDir, err := migrateStartupAuth()
 	if err != nil {
@@ -869,6 +880,9 @@ func runChatCommand(ctx context.Context, args []string, streams cliStreams, depe
 		} else {
 			ingresses = append(ingresses, inbound.Poll)
 		}
+	}
+	if wakes != nil {
+		ingresses = append(ingresses, wakes)
 	}
 	if len(webhooks) > 0 {
 		ingress, err := gateway.Webhooks(strings.TrimSpace(os.Getenv("ORB_CHAT_LISTEN")), strings.TrimSpace(os.Getenv("ORB_CHAT_PATH")), webhooks)
@@ -904,6 +918,10 @@ func agentWorkspace(agents acpHost, cwd string, adapters []chat.Adapter) chat.Lo
 		runtime, close, err := openHeadless(ctx, args, agents.dependencies, agents.streams, manager)
 		if err != nil {
 			return nil, nil, err
+		}
+		if args.wake != nil {
+			route, _ := json.Marshal(chat.Message{Tenant: key.Tenant, Platform: key.Platform, Account: key.Account, ChatID: key.ChatID, ThreadID: key.ThreadID})
+			args.wake.Route(manager.GetSessionID(), string(route))
 		}
 		return runtime.Session(), close, nil
 	})

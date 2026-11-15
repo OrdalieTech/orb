@@ -133,61 +133,16 @@ sandbox.
 
 ## Scheduled turns
 
-Orb has no scheduler: a timer on the host starts a turn in the running agent through its ACP
-socket, in a session of its own, with the agent's memory, tools and identity. This script runs one
-turn and prints the agent's reply (bash and jq on the host):
+An agent schedules its own turns with the `wake` plugin, on unless the agent file turns it off
+(`plugins: {wake: false}`): asked "post the sales recap here every evening at 20:00", it calls
+`schedule_wake` with a cron schedule and a time zone, and each evening the prompt comes back in
+that conversation, a Buzz thread or a Telegram chat, where the agent answers as it does any message.
+`list_wakes` and `cancel_wake` manage them. Wakes live in the volume's state, so a restart keeps
+them, and one missed while the agent was down arrives once when it is back.
 
-```bash
-#!/usr/bin/env bash
-# agent-turn <container> <prompt>
-set -euo pipefail
-dir=$(mktemp -d)
-trap 'rm -rf "$dir"' EXIT
-mkfifo "$dir/in" "$dir/out"
-docker exec -i -u agent "$1" orb chat connect /run/orb/acp.sock <"$dir/in" >"$dir/out" &
-exec 3>"$dir/in" 4<"$dir/out"
-call() { # call <id> <method> <params>: sends a request and leaves its response in $reply
-  printf '{"jsonrpc":"2.0","id":%s,"method":"%s","params":%s}\n' "$1" "$2" "$3" >&3
-  while IFS= read -r reply <&4; do
-    [[ $(jq -r '.id // empty' <<<"$reply") == "$1" ]] && return
-    jq -j 'select(.params.update.sessionUpdate == "agent_message_chunk") | .params.update.content.text // empty' <<<"$reply"
-  done
-}
-call 1 initialize '{"protocolVersion":1}'
-call 2 session/new '{"cwd":"/agent/workspace","mcpServers":[]}'
-call 3 session/prompt "$(jq -nc --arg s "$(jq -r .result.sessionId <<<"$reply")" --arg t "$2" '{sessionId: $s, prompt: [{type: "text", text: $t}]}')"
-echo
-exec 3>&-
-wait
-```
-
-A prompt that asks the agent to post its result on Buzz (`… and post it in channel <id>`) makes it
-post as itself with `buzz messages send`. For Telegram, the timer sends the printed reply with
-the bot's token, which the host has in the env file:
-
-```sh
-reply=$(agent-turn agent-sales "Write the daily sales recap.")
-curl -s https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage -d chat_id=<chat> --data-urlencode text="$reply"
-```
-
-A systemd timer runs it on schedule, missed runs included (`Persistent=true`):
-
-```ini
-# /etc/systemd/system/sales-recap.timer
-[Timer]
-OnCalendar=*-*-* 20:00 Europe/Paris
-Persistent=true
-[Install]
-WantedBy=timers.target
-# /etc/systemd/system/sales-recap.service
-[Service]
-Type=oneshot
-EnvironmentFile=/secure/agent-sales.env
-ExecStart=/usr/local/bin/sales-recap
-```
-
-Not `docker exec … orb -p`: that starts a second Orb in the container whose tools inherit every
-secret in its environment, cannot use the `buzz` shim and cannot read an OAuth login.
+The same plugin holds a permission ask the agent cannot put to anyone at the time: it asks in the
+conversation, and the next message there approves (yes, oui, ok) or denies it; without an answer
+in 30 minutes the call does not run.
 
 ## The volume
 

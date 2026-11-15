@@ -112,6 +112,21 @@ through the same bash as foreground commands, so the sandbox, shell, command pre
 `permissions` rules for `bash` apply unchanged. At most 8 run at once. Claude models keep
 Claude Code's own background tasks and `Monitor`.
 
+### wake
+
+The agent wakes itself later. `schedule_wake` takes a prompt and one of `at` (RFC 3339, or a
+local time with `timezone`), `delay` (`30m`) or `cron` (5 fields, at most every 5 minutes); the
+prompt comes back as a message in the conversation that scheduled it and starts a turn.
+`list_wakes` and `cancel_wake` manage this conversation's wakes, 50 at most per agent. Wakes live
+in one Store document and are delivered once: a host calls `Advance`, which delivers what is due
+and returns the next due time, so the plugin runs no goroutine or timer. `orb chat` advances it for
+team agents, where it is on; an SDK host builds `wake.New(document, clock, deliver)`, adds its
+`Extension()`, sets it as `permissions.Policy.Defer` and calls `Advance` when it likes (see the
+package example). With it on, an ask no UI can answer is held instead of denied: the user's next
+message approves it (yes, oui, ok) and the plugin runs the call, or denies it, and after 30
+minutes without an answer the call does not run. Plain `orb` does not advance it yet, so enabling it
+there reports that it needs a host.
+
 ### activity
 
 Enable with `orb plugins enable activity` (or `/plugins`). One line above the TUI input

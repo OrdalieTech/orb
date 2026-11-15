@@ -100,6 +100,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		Compiled:   append(hostCompiled, args.compiled...),
 		MCP:        !args.NoExtensions && !args.metadataOnly,
 		MCPServers: args.mcpServers,
+		Wake:       args.wake,
 	})
 	var diagnostics []modes.StartupDiagnostic
 	resolved := assembly.Resolve(rows, settings, args.NoExtensions)

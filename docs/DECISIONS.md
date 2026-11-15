@@ -292,7 +292,8 @@ Each holds until changed by owner-signed decision.
   when a client asks for it, the provisional revision that carries the harness prompt in
   `session/new` instead of every message. Usage goes out as the `_goose/unstable/session/update`
   extension, which clients accept from any agent. No `session/request_permission`: the deployment
-  is the sandbox. A session runs where its client says: the `cwd` of `session/new` and
+  is the sandbox, and deferred approval lives at the conversation level, in the `wake` plugin
+  (owner, 2026-11-14). A session runs where its client says: the `cwd` of `session/new` and
   `session/load` is the session's, a stored session's included, and one the agent cannot enter
   is refused with its reason instead of failing every tool call.
 - **Team agents.** One agent is one process, `orb chat <front>... --tools`: every front drives
@@ -335,12 +336,13 @@ Each holds until changed by owner-signed decision.
   image's relay (`nc`), socket path and the `agent`/`sidecar` users are the harness's; and Buzz's
   section takes a chosen set of buzz-acp settings, the rest staying `BUZZ_ACP_*` environment.
   Owner, 2026-10-06.
-- **Orb has no scheduler.** A timer outside Orb (systemd on the host) starts a turn in a running
-  agent through its ACP socket (`orb chat connect`), in a session of its own, with the agent's
-  memory, tools and identity: it posts on Buzz with the shim, and the timer delivers the printed
-  reply elsewhere, such as Telegram with the bot's token; missed runs are systemd's
-  `Persistent=true`. Not `docker exec orb -p`: a second Orb whose tools inherit the container's
-  secrets. Owner, 2026-10-06.
+- **Orb schedules wakes, the `wake` plugin.** A model wakes itself later, once or on a cron
+  schedule, and the wake comes back as a message in the conversation that scheduled it, delivered
+  once, a missed one once at restart. An ask no UI can answer is held the same way: the user's next
+  message approves it (the plugin runs the call) or denies it, and without an answer in 30 minutes
+  it does not run. The plugin has no goroutine or timer: its host advances it and delivers to
+  sessions it has not open, `orb chat` for team agents (where it is on) or an SDK host. It replaces
+  the systemd timer that started turns through the ACP socket. Owner, 2026-11-14.
 - **A browser is a capability of the agent's image, not of Orb.** The `browser` image adds
   agent-browser, which the agent drives from its shell with its skill, and Lightpanda, its default
   engine (small, no rendering, partial Web APIs); built with `CHROMIUM=1` it adds headless
