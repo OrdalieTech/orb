@@ -1,28 +1,25 @@
-# Orb on Cloudflare Durable Objects and self-hosted Celld (platforms/worker/README.md).
+# Orb on Cloudflare Durable Objects and workerd (platforms/worker/README.md).
 # Included from the Makefile, or run standalone: make -f platforms/worker/worker.mk <target>.
 #
 #   worker-build         assemble .tools/worker: dist/worker.mjs + dist/orb.wasm + wrangler
 #   worker-dev           serve it locally in workerd (wrangler dev); ORB_TOKEN etc. from .tools/worker/.dev.vars
 #   worker-deploy        deploy it to the authenticated Cloudflare account (wrangler deploy)
-#   worker-celld-dev     serve it locally under Celld (celld dev)
 #   worker-test          Go suites for the Worker host, natively and in js/wasm with a fake DO storage
 #   worker-e2e-workerd   end-to-end in workerd, including a dev-server restart
-#   worker-e2e-celld     end-to-end under Celld, including a node restart
-#   worker-e2e-bridge-workerd|-celld  Bridge pairing both ways with a throwaway native `orb` (isolated under .tools)
+#   worker-e2e-bridge-workerd         Bridge pairing both ways with a throwaway native `orb` (isolated under .tools)
 #   worker-e2e-bridge-deployed        the same against ORB_WORKER_URL, redeploying WORKER_E2E_DIR to restart it
 #   worker-e2e-deployed  one phase (WORKER_E2E_PHASE=write|verify) against a deployed Worker (ORB_WORKER_URL, ORB_TOKEN)
 
 WORKER_DIR ?= $(CURDIR)/.tools/worker
 WORKER_E2E_DIR ?= $(CURDIR)/.tools/worker-e2e
 WORKER_GO_ENV ?= $(GO_ENV)
-CELLD ?= $(CURDIR)/.tools/bin/celld
 WORKER_WASM_EXEC = $$($(WORKER_GO_ENV) go env GOROOT)/lib/wasm
 
 WORKER_BRIDGE_DIR ?= $(CURDIR)/.tools/worker-bridge-e2e
 WORKER_BRIDGE_ARGS = --orb $(WORKER_BRIDGE_DIR)/orb --laptop $(WORKER_BRIDGE_DIR)/laptop
 
-.PHONY: worker-bridge-orb worker-e2e-bridge-workerd worker-e2e-bridge-celld worker-e2e-bridge-deployed
-.PHONY: worker-build worker-dev worker-deploy worker-celld-dev worker-test worker-e2e-workerd worker-e2e-celld worker-e2e-deployed worker-e2e-build
+.PHONY: worker-bridge-orb worker-e2e-bridge-workerd worker-e2e-bridge-deployed
+.PHONY: worker-build worker-dev worker-deploy worker-test worker-e2e-workerd worker-e2e-deployed worker-e2e-build
 
 # $(1): output directory; $(2): extra scripts prepended after wasm_exec.js.
 define worker_assemble
@@ -37,19 +34,12 @@ worker-build:
 	$(call worker_assemble,$(WORKER_DIR),)
 
 # cf dev/cf deploy (cf 0.4) delegate to Wrangler only through the experimental
-# cloudflare.config.ts, which Celld cannot read; Wrangler itself shares
-# wrangler.jsonc with Celld.
+# cloudflare.config.ts; Wrangler reads wrangler.jsonc directly.
 worker-dev: worker-build
 	cd $(WORKER_DIR) && npx wrangler dev
 
 worker-deploy: worker-build
 	cd $(WORKER_DIR) && npx wrangler deploy
-
-$(CELLD):
-	curl -fsSL https://celld.dev/install.sh | CELLD_INSTALL_ROOT=$(CURDIR)/.tools sh
-
-worker-celld-dev: worker-build $(CELLD)
-	$(CELLD) dev $(WORKER_DIR) --no-watch
 
 worker-test:
 	$(WORKER_GO_ENV) go test -count=1 ./platforms/worker/... ./cmd/orb-worker/...
@@ -57,9 +47,6 @@ worker-test:
 
 worker-e2e-workerd: worker-build
 	node platforms/worker/e2e/e2e.mjs --runtime workerd --dir $(WORKER_DIR)
-
-worker-e2e-celld: worker-build $(CELLD)
-	node platforms/worker/e2e/e2e.mjs --runtime celld --dir $(WORKER_DIR) --celld $(CELLD)
 
 # The deployed check runs the scripted model inside the Worker (fake-model.js
 # answers https://fake-model.invalid), so it needs no provider key.
@@ -78,9 +65,6 @@ worker-bridge-orb:
 
 worker-e2e-bridge-workerd: worker-build worker-bridge-orb
 	node platforms/worker/e2e/bridge.mjs --runtime workerd --dir $(WORKER_DIR) $(WORKER_BRIDGE_ARGS)
-
-worker-e2e-bridge-celld: worker-build worker-bridge-orb $(CELLD)
-	node platforms/worker/e2e/bridge.mjs --runtime celld --dir $(WORKER_DIR) --celld $(CELLD) $(WORKER_BRIDGE_ARGS)
 
 # Needs the deployed worker-e2e-build bundle in WORKER_E2E_DIR (its .orb-token
 # and Wrangler login); the check redeploys it once to restart the object.

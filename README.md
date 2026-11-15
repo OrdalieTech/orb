@@ -59,8 +59,9 @@ planned.
 
 Orb is a runtime you deploy, not a thin client of someone else's server: the same core runs on
 macOS and Linux, in containers, inside Go services and in a browser worker, and is being brought
-to Cloudflare Durable Objects, Celld cells, Windows, Android, iOS and WASI. Each deployment
-runs its own model calls, tools and sessions, and deployments reach each other as Bridge peers.
+to Cloudflare Durable Objects, self-hosted workerd, Windows, Android, iOS and WASI. Each
+deployment runs its own model calls, tools and sessions, and deployments reach each other as Bridge
+peers.
 [docs/deployments.md](docs/deployments.md) lists every target with its status, capabilities,
 deploy command and Bridge role.
 

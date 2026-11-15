@@ -1,23 +1,10 @@
-// Orb on Cloudflare Durable Objects and self-hosted Celld: one Durable Object
+// Orb on Cloudflare Durable Objects and self-hosted workerd: one Durable Object
 // per agent name, each with its own Orb over the object's storage, all of an
 // isolate's objects in one Go runtime (orb.wasm, cmd/orb-worker). `make
 // worker-build` prepends Go's wasm_exec.js
 // (which defines globalThis.Go) to this module, so the bundle is one
 // JavaScript module plus orb.wasm and needs no bundler.
 import orbModule from "./orb.wasm";
-
-// Go's syscall/js reaches these process members. wasm_exec.js installs them
-// only when there is no global process; Celld defines a partial one, so fill
-// in what it lacks with wasm_exec.js's own stubs.
-if (globalThis.process) {
-  const enosys = () => Object.assign(new Error("not implemented"), { code: "ENOSYS" });
-  const stubs = {
-    getuid: () => -1, getgid: () => -1, geteuid: () => -1, getegid: () => -1,
-    getgroups() { throw enosys(); }, umask() { throw enosys(); }, cwd() { throw enosys(); }, chdir() { throw enosys(); },
-  };
-  for (const [name, stub] of Object.entries(stubs)) if (typeof process[name] !== "function") process[name] = stub;
-  for (const name of ["pid", "ppid"]) if (typeof process[name] !== "number") process[name] = -1;
-}
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

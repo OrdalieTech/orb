@@ -1,10 +1,10 @@
-# Orb on Durable Objects and Celld
+# Orb on Durable Objects
 
 The Worker host runs the full Orb runtime inside a Cloudflare Durable Object. The
-same bundle and the same `wrangler.jsonc` also run on a self-hosted
-[Celld](https://github.com/denoland/celld) cell. It is a runtime, not a thin
-client: the agent loop, tools, session journal and provider calls all run in the
-object.
+same bundle and the same `wrangler.jsonc` also run in a self-hosted
+[workerd](https://github.com/cloudflare/workerd), the open-source runtime behind
+Workers. It is a runtime, not a thin client: the agent loop, tools, session
+journal and provider calls all run in the object.
 
 ## What runs where
 
@@ -23,14 +23,12 @@ client ──HTTPS/WSS──▶ Worker (dist/worker.mjs default export)
 - **Bundle.** `make -f platforms/worker/worker.mk worker-build` writes
   `.tools/worker/dist/worker.mjs` and `.tools/worker/dist/orb.wasm`. `worker.mjs` is
   Go's `wasm_exec.js` followed by `deploy/worker.mjs`, so the bundle is one
-  JavaScript module plus a Wasm module. `no_bundle: true` means neither Wrangler
-  nor Celld runs a bundler, and Celld does not need esbuild.
+  JavaScript module plus a Wasm module. `no_bundle: true` means Wrangler runs no
+  bundler.
 - **Objects.** Each agent name gets its own Durable Object, with its own storage,
   session and Go instance. The name must match `[A-Za-z0-9._~-]{1,128}`. Use one
   name per conversation or per long-lived agent instance. `idFromName` is
-  deterministic, so the same name always reaches the same object. On Celld, the
-  id also depends on the Worker name: renaming the Worker there moves every name
-  to a new, empty object.
+  deterministic, so the same name always reaches the same object.
 - **Lifecycle.** An object opens its Orb on its first event after a start,
   eviction or hibernation. Opening restores the files and documents from storage
   and resumes the current session. There is no in-memory state that storage does
@@ -111,22 +109,14 @@ Cloudflare, with Wrangler credentials from `npx wrangler login` or
 make -f platforms/worker/worker.mk worker-deploy        # builds .tools/worker, then wrangler deploy
 ```
 
-Celld, with a fleet bucket:
-
-```sh
-make -f platforms/worker/worker.mk worker-build && .tools/bin/celld deploy .tools/worker --bucket s3://my-cells-bucket
-```
-
 The installed `cf` CLI (0.4) delegates `cf dev` and `cf deploy` to Wrangler only
-through the experimental `cloudflare.config.ts`, which Celld cannot read. The
-targets therefore call the Wrangler version pinned in `deploy/package.json`,
-which shares `wrangler.jsonc` with Celld.
+through the experimental `cloudflare.config.ts`. The targets therefore call the
+Wrangler version pinned in `deploy/package.json`, which reads `wrangler.jsonc`.
 
 Local servers read `.tools/worker/.dev.vars` (dotenv format, never committed):
 
 ```sh
 make -f platforms/worker/worker.mk worker-dev           # workerd via wrangler dev, http://127.0.0.1:8787
-make -f platforms/worker/worker.mk worker-celld-dev     # Celld, http://127.0.0.1:9876 (installs celld into .tools)
 ```
 
 ## Secrets and configuration
@@ -139,10 +129,8 @@ make -f platforms/worker/worker.mk worker-celld-dev     # Celld, http://127.0.0.
 | `ORB_MODELS` | var | Default `models.json`, for custom providers. |
 
 On Cloudflare, set secrets with `cd .tools/worker && npx wrangler secret put ORB_TOKEN`
-and do the same for each provider key. Celld has no secret store: `celld dev`
-reads `.dev.vars`, and a fleet takes string `vars` from the deployed config.
-Keep that config out of git. A client can change the model of a session with the
-RPC `set_model` command.
+and do the same for each provider key. A client can change the model of a
+session with the RPC `set_model` command.
 
 ## Endpoint contract
 
@@ -181,25 +169,19 @@ EOF
   (89 MB for 40 objects under Node). Linear memory only grows, so this figure is
   also the peak.
 - **Time.** In local workerd a boot takes 0.3–1.7 s, and the first frame after a
-  restart arrives in 0.25–0.75 s. Celld's first activation of a cell also
-  compiles the module, which takes about 2.8 s in its isolate log. The Durable
-  Object CPU limit is 30 s per event by default.
+  restart arrives in 0.25–0.75 s. The Durable Object CPU limit is 30 s per event
+  by default.
 - **Timers.** After each provider request, Go's js/wasm scheduler leaves a
   JavaScript timer pending for up to `httpIdleTimeoutMs` (5 minutes by default).
   A pending timer keeps the object out of hibernation until it fires.
 - **Runs.** One run per object at a time. A prompt sent while a run streams needs
   `streamingBehavior`, as in RPC mode.
-- **Celld.** `performance.now()` stays fixed while JavaScript runs, so `bootMs`
-  reads 0. Celld's `process` global is partial, and the shim fills in the members
-  Go needs.
 
 ## Delete
 
-- **Cloudflare.** `cd .tools/worker && npx wrangler delete --name orb-agent`
-  removes the Worker. To erase stored objects first, deploy a migration with
-  `"deleted_classes": ["OrbAgent"]`.
-- **Celld.** Locally, `celld dev --clean` discards `.tools/worker/.celld/dev`. For
-  a fleet, remove the deployment's prefix from the bucket.
+`cd .tools/worker && npx wrangler delete --name orb-agent` removes the Worker. To
+erase stored objects first, deploy a migration with
+`"deleted_classes": ["OrbAgent"]`.
 
 ## Tests and gates
 
@@ -208,7 +190,6 @@ EOF
 | `go test ./platforms/worker/... ./cmd/orb-worker/...` | FS conformance (`envtest`), restart persistence and key hygiene, documents, session resume, `new_session` and `switch_session`. It also runs the real bundle in Node against a Map-backed Durable Object storage, restarts the object and asserts the frames. |
 | `GOOS=js GOARCH=wasm go test -exec="$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./platforms/worker/...` | The same suites through the syscall/js storage bridge, against an asynchronous fake `ctx.storage`. |
 | `make -f platforms/worker/worker.mk worker-e2e-workerd` | workerd (`wrangler dev`) with a local scripted OpenAI-compatible model: write then read over WebSocket, a dev-server restart, then history and file checks over HTTP NDJSON. |
-| `make -f platforms/worker/worker.mk worker-e2e-celld` | The same scenario under `celld dev`, including a node restart. |
-| `make -f platforms/worker/worker.mk worker-e2e-bridge-workerd` (and `-celld`) | Bridge in both directions with this tree's native `orb`, confined to `.tools/worker-bridge-e2e/laptop` (its own `HOME`, `ORB_STATE_HOME`, `ORB_BRIDGE_HOME` and `ORB_AGENT_DIR`, profile `e2e`). The object invites, the laptop joins over the advertised URL, and the owner approves. The laptop lists, inspects and prompts the object and reads the conversation back with `orb bridge remote`. The object's agent then calls the laptop's Orb with `bridge_call` under its own instance grant. After a restart the laptop reconnects to the same identity. |
+| `make -f platforms/worker/worker.mk worker-e2e-bridge-workerd` | Bridge in both directions with this tree's native `orb`, confined to `.tools/worker-bridge-e2e/laptop` (its own `HOME`, `ORB_STATE_HOME`, `ORB_BRIDGE_HOME` and `ORB_AGENT_DIR`, profile `e2e`). The object invites, the laptop joins over the advertised URL, and the owner approves. The laptop lists, inspects and prompts the object and reads the conversation back with `orb bridge remote`. The object's agent then calls the laptop's Orb with `bridge_call` under its own instance grant. After a restart the laptop reconnects to the same identity. |
 | `make -f platforms/worker/worker.mk worker-e2e-bridge-deployed ORB_WORKER_URL=…` | The same against a deployed `worker-e2e-build` bundle. It redeploys `.tools/worker-e2e` once to restart the object. |
 | `worker-e2e-build`, then `worker-e2e-deployed` | A deployed check. `worker-e2e-build` adds `e2e/fake-model.js`, so the scripted model runs inside the Worker and no provider key is needed. `node platforms/worker/e2e/e2e.mjs --configure-deploy .tools/worker-e2e --name orb-do-e2e` writes its `wrangler.json`. Deploy that directory and set `ORB_TOKEN`. Then run `WORKER_E2E_PHASE=write`, redeploy (a new version restarts every object) and run `WORKER_E2E_PHASE=verify`, with `ORB_WORKER_URL` and `ORB_TOKEN` set. |

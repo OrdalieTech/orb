@@ -1,6 +1,6 @@
 // Package worker is the Worker host (DECISIONS.md P2, P10): the ports an Orb
-// runtime needs inside a Cloudflare Durable Object or a self-hosted Celld
-// cell, backed by the object's key-value storage, plus the assembly that
+// runtime needs inside a Durable Object, on Cloudflare or a self-hosted
+// workerd, backed by the object's key-value storage, plus the assembly that
 // resumes one session per object and serves it over kernel RPC frames.
 //
 // The package is portable; only durable_js.go binds a live Durable Object

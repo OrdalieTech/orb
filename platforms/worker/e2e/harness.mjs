@@ -1,6 +1,6 @@
 // Shared pieces of the Worker end-to-end checks: the scripted model served
-// over local HTTP, dev-server lifecycle for workerd and Celld, the RPC
-// transports, and frame assertions.
+// over local HTTP, the workerd dev-server lifecycle, the RPC transports, and
+// frame assertions.
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import http from "node:http";
@@ -59,12 +59,9 @@ export async function freePort() {
   return port;
 }
 
-export function launch(runtime, port, fresh, { dir, celld }) {
-  const command =
-    runtime === "celld"
-      ? [celld, ["dev", dir, "--port", String(port), "--no-watch", ...(fresh ? ["--clean"] : [])]]
-      : [join(dir, "node_modules", ".bin", "wrangler"), ["dev", "--port", String(port), "--ip", "127.0.0.1", "--persist-to", join(dir, ".e2e-state"), "--show-interactive-dev-session=false"]];
-  const child = spawn(command[0], command[1], { cwd: dir, detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, NO_COLOR: "1" } });
+export function launch(port, dir) {
+  const wrangler = join(dir, "node_modules", ".bin", "wrangler");
+  const child = spawn(wrangler, ["dev", "--port", String(port), "--ip", "127.0.0.1", "--persist-to", join(dir, ".e2e-state"), "--show-interactive-dev-session=false"], { cwd: dir, detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, NO_COLOR: "1" } });
   child.log = "";
   const collect = chunk => {
     child.log += chunk;
