@@ -122,6 +122,11 @@ func main() {
 		teamenv.Hide()
 	}
 	setEntryIdentity()
+	// Mitosis is the public brand for the peer network formerly called Bridge. Its env
+	// aliases resolve to the stable ORB_BRIDGE_* names, which stay the on-disk contract.
+	if v := os.Getenv("ORB_MITOSIS_HOME"); v != "" && os.Getenv("ORB_BRIDGE_HOME") == "" {
+		_ = os.Setenv("ORB_BRIDGE_HOME", v)
+	}
 	os.Exit(runNativeCLI(context.Background(), os.Args[1:], cliStreams{
 		Stdin:     os.Stdin,
 		Stdout:    os.Stdout,
@@ -238,7 +243,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			return agent.MissingSessionCWDChoice(choice), err
 		}
 	}
-	if len(argv) > 0 && argv[0] == "bridge" {
+	if len(argv) > 0 && (argv[0] == "mitosis" || argv[0] == "bridge") {
 		return runBridgeCommand(ctx, argv[1:], streams)
 	}
 	if len(argv) > 0 && argv[0] == "app" {
@@ -1117,10 +1122,10 @@ Commands:
   orb mcp <command>           Check MCP servers, sign in to or out of OAuth servers
   orb auth <command>           Print credentials for external clients
   orb storage <command>        Migrate, import/export, back up, or recover conversations
-  orb bridge <command>        Connect this Orb to your other devices and servers as Bridge peers
+  orb mitosis <command>       Connect this Orb to your other devices and servers as Mitosis peers (alias: bridge)
   orb skill                   Print the skill that teaches an agent Orb; each Orb start refreshes it in
                               <agent-dir>/host/skills/orb, so link it: ln -s ~/.orb/agent/host/skills/orb ~/.claude/skills/orb
-  orb <command> --help        Show help for bridge/chat/plugins/mcp/auth/storage/login/logout/install/remove/update/list/config
+  orb <command> --help        Show help for mitosis/chat/plugins/mcp/auth/storage/login/logout/install/remove/update/list/config
 
 Global prefixes (before runtime options/subcommands):
   --agent-dir <dir>              Agent resources/config directory (ORB_AGENT_DIR; default ~/.orb/agent)
