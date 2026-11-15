@@ -32,7 +32,7 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
   Tier-1 targets are built and tested by the gate: native static binaries for linux, darwin and
   windows × amd64/arm64, linux/386 and linux/arm (iSH and small hosts), android/arm64 (Termux);
   `js/wasm` (browser workers, and one Worker host shared by Cloudflare Workers/Durable Objects and
-  self-hosted Celld); `wasip1/wasm`. Standalone iOS and Android apps embed the same core; cgo
+  self-hosted workerd); `wasip1/wasm`. Standalone iOS and Android apps embed the same core; cgo
   appears only where the platform linker demands it, in the app shell, never in Orb packages.
   Stdlib first, internal helper next, dependency last and only via the ARCHITECTURE §8 table.
   Dev-only exceptions: `-race` test builds, Node as fixture-extraction and `js/wasm` test tooling.
@@ -104,16 +104,16 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
   scenarios produce identical kernel output on every host.
 - **P11 — Deployable anywhere, connected as peers.** Orb is a runtime to deploy, not a remote
   client: every P2 target runs the full core with its own model calls, tools, sessions and state,
-  and hosted targets (Cloudflare Durable Objects, Celld) are in scope. Deployments reach each other
-  as Bridge peers: people control conversations on any Orb that granted them, and an Orb's agent
-  calls another Orb only under its own grants. A target is supported only with evidence: its ports
-  pass the conformance suites, the cross-host scenario matches native, a target end-to-end test
-  runs in CI, one documented command deploys and removes it, and it states its capability profile
-  and Bridge role. `docs/deployments.md` is the catalogue; a target's status there changes only
-  with that evidence. Bridge is core: every Orb, on every host, has a peer identity, registers its
-  sessions as instances, and dials peers through the transports its host supplies. Listening,
-  advertised addresses and every grant stay explicit and owner-approved; controller and
-  agent-subject authority never merge.
+  and hosted targets (Cloudflare Durable Objects, self-hosted workerd) are in scope. Deployments
+  reach each other as Bridge peers: people control conversations on any Orb that granted them, and
+  an Orb's agent calls another Orb only under its own grants. A target is supported only with
+  evidence: its ports pass the conformance suites, the cross-host scenario matches native, a target
+  end-to-end test runs in CI, one documented command deploys and removes it, and it states its
+  capability profile and Bridge role. `docs/deployments.md` is the catalogue; a target's status
+  there changes only with that evidence. Bridge is core: every Orb, on every host, has a peer
+  identity, registers its sessions as instances, and dials peers through the transports its host
+  supplies. Listening, advertised addresses and every grant stay explicit and owner-approved;
+  controller and agent-subject authority never merge.
 
 Older numbers still cited in code and docs map as follows: D1/D3 → P1, D7/D8 → P2, D16 and
 D32–D34 → P3/P4, D2/D4/D5/D6/D13 → P5, D30/D35 → P6, D31 → P7, G4 (self-update) → "Releases".

@@ -52,7 +52,7 @@ An Orb reads its plugins when it starts; `/plugins` reloads the session it runs 
   their next message: at once between turns, after the running one otherwise. A conversation there shows
   what its plugins show beside it in a terminal: widget lines (the task list), statuses, and the
   last notice until the next turn; widgets drawn only for a terminal (activity) stay there.
-- **Worker and Celld:** an object runs `titles`, `tasks`, `questions` and `memtree` from its own
+- **Worker:** an object runs `titles`, `tasks`, `questions` and `memtree` from its own
   settings, its questions answered by whatever app or peer drives it; the others need processes
   or files of their own.
 - **SDK:** an embedder picks factories from `assembly.Catalog`, or registers its own.

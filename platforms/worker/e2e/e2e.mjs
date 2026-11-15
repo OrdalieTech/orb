@@ -1,10 +1,9 @@
-// End-to-end check of the Orb Worker in a real runtime: workerd (wrangler dev),
-// Celld (celld dev) or a deployed Worker. A scripted model makes the agent
-// write then read a file over the WebSocket transport; after a restart the
-// HTTP NDJSON transport must show the same session history and file.
+// End-to-end check of the Orb Worker in a real runtime: workerd (wrangler dev)
+// or a deployed Worker. A scripted model makes the agent write then read a file
+// over the WebSocket transport; after a restart the HTTP NDJSON transport must
+// show the same session history and file.
 //
 //   node e2e.mjs --runtime workerd --dir .tools/worker
-//   node e2e.mjs --runtime celld --dir .tools/worker --celld .tools/bin/celld
 //   ORB_TOKEN=... node e2e.mjs --runtime remote --url https://orb-do-e2e.<account>.workers.dev --phase write|verify
 //   node e2e.mjs --configure-deploy .tools/worker-e2e --name orb-do-e2e   (writes its wrangler.json)
 import { randomBytes } from "node:crypto";
@@ -23,7 +22,6 @@ const { values: args } = parseArgs({
   options: {
     runtime: { type: "string" },
     dir: { type: "string" },
-    celld: { type: "string", default: "celld" },
     url: { type: "string" },
     phase: { type: "string", default: "all" },
     agent: { type: "string" },
@@ -33,7 +31,6 @@ const { values: args } = parseArgs({
 });
 
 if (args.dir) args.dir = resolve(args.dir);
-if (args.celld.includes("/")) args.celld = resolve(args.celld);
 
 if (args["configure-deploy"]) {
   // The deployed check runs the model inside the Worker (fake-model.js), so
@@ -99,7 +96,7 @@ if (args.runtime === "remote") {
     check(report.statsAfterVerify.bootId !== before.bootId, "the object was not restarted between the phases");
   }
 } else {
-  check(args.runtime === "workerd" || args.runtime === "celld", "--runtime must be workerd, celld or remote");
+  check(args.runtime === "workerd", "--runtime must be workerd or remote");
   check(args.dir, "pass --dir");
   const wasm = readFileSync(join(args.dir, "dist", "orb.wasm"));
   report.wasm = { rawBytes: statSync(join(args.dir, "dist", "orb.wasm")).size, gzipBytes: gzipSync(wasm, { level: 9 }).length };
@@ -115,7 +112,7 @@ if (args.runtime === "remote") {
   let child;
   try {
     let started = performance.now();
-    child = launch(args.runtime, port, true, args);
+    child = launch(port, args.dir);
     await waitHealthy(base, child);
     report.startupMs = Math.round(performance.now() - started);
     const unauthorized = await fetch(`${base}/agents/${agent}/rpc`, { method: "POST", body: "{}" });
@@ -129,7 +126,7 @@ if (args.runtime === "remote") {
 
     await stop(child);
     started = performance.now();
-    child = launch(args.runtime, port, false, args);
+    child = launch(port, args.dir);
     await waitHealthy(base, child);
     report.restartMs = Math.round(performance.now() - started);
     const verified = await phaseVerify(base, agent, token, written);

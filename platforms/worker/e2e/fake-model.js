@@ -2,7 +2,7 @@
 // It is a plain script so it can be prepended to a Worker bundle: it defines
 // globalThis.orbFakeModel and answers fetches to https://fake-model.invalid
 // itself, so a deployed test Worker needs no provider key. e2e.mjs serves the
-// same handler over local HTTP for workerd and Celld.
+// same handler over local HTTP for workerd.
 //
 // A prompt "orb-e2e write <path> <text...>" makes the model call write, then
 // read, then answer "read back: <file>"; "orb-e2e read <path>" skips the write.

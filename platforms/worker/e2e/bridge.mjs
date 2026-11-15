@@ -7,7 +7,7 @@
 //       bridge_call under the object's own instance grant.
 // Locally the object restarts and the laptop reconnects to the same identity.
 //
-//   node bridge.mjs --runtime workerd|celld --dir .tools/worker --orb .tools/worker-bridge-e2e/orb --laptop .tools/worker-bridge-e2e/laptop [--celld .tools/bin/celld]
+//   node bridge.mjs --runtime workerd --dir .tools/worker --orb .tools/worker-bridge-e2e/orb --laptop .tools/worker-bridge-e2e/laptop
 //   node bridge.mjs --runtime remote --url https://orb-do-e2e.<account>.workers.dev --token-file .tools/worker-e2e/.orb-token --orb … --laptop … [--redeploy .tools/worker-e2e]
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -19,13 +19,12 @@ import { MODELS, check, fail, finalText, freePort, launch, modelStats, overHTTP,
 
 const { values: args } = parseArgs({
   options: {
-    runtime: { type: "string" }, dir: { type: "string" }, celld: { type: "string", default: "celld" },
+    runtime: { type: "string" }, dir: { type: "string" },
     url: { type: "string" }, "token-file": { type: "string" }, orb: { type: "string" }, laptop: { type: "string" },
     agent: { type: "string" }, profile: { type: "string", default: "e2e" }, redeploy: { type: "string" },
   },
 });
 for (const key of ["dir", "orb", "laptop", "token-file", "redeploy"]) if (args[key]) args[key] = resolve(args[key]);
-if (args.celld.includes("/")) args.celld = resolve(args.celld);
 check(args.orb && args.laptop, "pass --orb and --laptop");
 check(!args.laptop.startsWith(resolve(process.env.HOME ?? "/nonexistent", ".orb")), "--laptop must not be the real ~/.orb");
 check(/^[a-z0-9_-]+$/.test(args.profile) && args.profile !== "personal", "use a throwaway --profile, never personal");
@@ -193,7 +192,7 @@ try {
       check(code === 0, "the redeploy failed");
     }));
   } else {
-    check(args.runtime === "workerd" || args.runtime === "celld", "--runtime must be workerd, celld or remote");
+    check(args.runtime === "workerd", "--runtime must be workerd or remote");
     const token = randomBytes(24).toString("hex");
     const settings = JSON.stringify({ defaultProvider: "fake", defaultModel: "scripted", plugins: { "bridge-agent-calls": true } });
     writeFileSync(join(args.dir, ".dev.vars"), [
@@ -203,13 +202,13 @@ try {
     rmSync(join(args.dir, ".e2e-state"), { recursive: true, force: true });
     const port = await freePort();
     const base = `http://127.0.0.1:${port}`;
-    server = launch(args.runtime, port, true, args);
+    server = launch(port, args.dir);
     await waitHealthy(base, server);
     await scenario(base, token, async () => {
       await stop(server);
-      // A node can hold the port briefly while it closes open streams.
+      // The dev server can hold the port briefly while it closes open streams.
       await until("the port to close", async () => !(await fetch(`${base}/health`).then(() => true, () => false)));
-      server = launch(args.runtime, port, false, args);
+      server = launch(port, args.dir);
       await waitHealthy(base, server);
     });
   }

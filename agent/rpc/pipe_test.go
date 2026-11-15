@@ -81,7 +81,7 @@ func newPipeRuntime(t *testing.T) *agent.AgentSessionRuntime {
 }
 
 // TestServeOverInMemoryPipes drives a full embedded session over io.Pipe, the
-// transport every non-process host (browser worker, Worker/Celld, WASI,
+// transport every non-process host (browser worker, Worker, WASI,
 // mobile) uses, and asserts the kernel frames a pi RPC client reads.
 func TestServeOverInMemoryPipes(t *testing.T) {
 	runtime := newPipeRuntime(t)

@@ -5,6 +5,7 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Celld is no longer a target: the Worker host's self-hosted runtime is workerd, and `make worker-celld-dev`, `worker-e2e-celld` and `worker-e2e-bridge-celld` are gone.
 - The iOS app builds again: its Home (every thread, pairing, and the box that starts a conversation on a paired machine) had gone with the Mac app's sidebar.
 
 ## [0.21.0] - 2026-11-11

@@ -45,7 +45,6 @@ is tested but is not released or is limited. **In progress** is under active dev
 | Windows | Preview: full suite green in CI, not released yet | all | SQLite | full peer | build from source |
 | Browser (Wasm worker) | Preview | FS tools | tab memory | outbound client | static files |
 | Cloudflare Durable Objects | Preview: end-to-end in workerd (CI) and on Cloudflare | FS tools | Durable Object storage | full peer (accepts streams) | `make worker-deploy` |
-| Celld cells | Preview: local end-to-end under `celld dev` (CI) | FS tools | cell SQLite | full peer (accepts streams) | `make worker-celld-dev` |
 | Android (Termux) | Preview: builds, not validated on device | all | SQLite | full peer | build from source |
 | iOS via iSH | Preview: builds, not validated on device | all (slow) | SQLite | full peer | build from source |
 | WASI runtimes | Planned (core suites pass under wazero) | FS tools | preopened directories | — | — |
@@ -142,7 +141,7 @@ make worker-deploy        # your Cloudflare account (wrangler login first)
 Each object is also a Bridge peer at `/agents/<name>/bridge`: its identity and grants persist in
 object storage, a native Orb pairs with it through `orb bridge pair join`, and the owner
 administers it through `/agents/<name>/bridge/admin` (behind `ORB_TOKEN`; the stream route itself
-is authenticated by Bridge's pinned TLS). Verified on Cloudflare and in workerd and Celld: a laptop
+is authenticated by Bridge's pinned TLS). Verified on Cloudflare and in workerd: a laptop
 Orb lists, prompts and reads the object's conversation, and the object's agent calls the laptop
 through `bridge_call` under its own grant. The object cannot dial out, so it reaches a peer only
 over a connection that peer opened.
@@ -152,13 +151,6 @@ process filesystem, not the FS port), session fork and clone are unsupported, an
 awake for up to five minutes after a model call before it can hibernate (Go's idle HTTP timer).
 The deploy path, endpoint contract, secrets and removal are in
 [platforms/worker](../platforms/worker/README.md).
-
-### Celld
-
-[Celld](https://github.com/denoland/celld) runs Workers and Durable Objects on your own machines
-with bucket-backed durability. The Durable Object bundle and `wrangler.jsonc` above run on Celld
-unchanged: `make worker-celld-dev` serves it locally with no cloud account, and `celld deploy`
-publishes it to a fleet.
 
 ### Android (Termux)
 
@@ -265,7 +257,7 @@ A target moves up this page only with evidence (DECISIONS.md P11):
 1. its host passes the port conformance suites (`engine/harness/envtest` for FS today; Store and
    Env suites join as those ports gain second implementations);
 2. `conformance/scenario` produces the same session on it as natively;
-3. a target end-to-end test runs in CI (for Workers: `wrangler dev` and `celld dev`);
+3. a target end-to-end test runs in CI (for Workers: `wrangler dev`);
 4. one documented command deploys it, and one removes it;
 5. it states its capability profile and its Bridge role;
 6. its artifacts are produced by the release workflow and appear in the release notes.
