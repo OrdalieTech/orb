@@ -12,6 +12,7 @@ import (
 	"github.com/OrdalieTech/orb/platforms/native"
 	"github.com/OrdalieTech/orb/plugins/mcp"
 	"github.com/OrdalieTech/orb/plugins/usage"
+	"github.com/OrdalieTech/orb/plugins/wake"
 )
 
 var validThinkingLevels = map[string]struct{}{
@@ -86,7 +87,9 @@ type CLIArgs struct {
 	extensionRegistry *extensions.Registry
 	// compiled are extensions the session's assembly adds, such as a chat
 	// conversation's tools.
-	compiled          []extensions.CompiledExtension
+	compiled []extensions.CompiledExtension
+	// wake is a team agent's scheduler, which orb chat advances.
+	wake              *wake.Scheduler
 	extensionWarnings []modes.StartupDiagnostic
 	// resolvedProjectTrust carries the trust decision loadStartupExtensions
 	// already made in this process, so the runtime neither re-fires the

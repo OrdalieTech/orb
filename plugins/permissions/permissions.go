@@ -76,6 +76,12 @@ type Policy struct {
 	// Guards are hard deny-only constraints: any non-empty reason denies,
 	// even in log mode.
 	Guards []func(context.Context, ToolCallInfo) string `json:"-"`
+	// Defer, when set, holds an ask no UI can answer instead of applying a
+	// deny AskFallback, and approves the held call once the user says so.
+	Defer interface {
+		Defer(ctx context.Context, session, cwd, tool string, args any) string
+		Approved(ctx context.Context, tool string) bool
+	} `json:"-"`
 
 	mu        sync.Mutex
 	ask       chan struct{}
@@ -637,6 +643,17 @@ func Extension(policy *Policy, settings *config.SettingsManager, parent extensio
 			}
 			ui, interactive := permissionUI(extensionContext, parent)
 			request := extensions.InputHandlerFromContext(ctx)
+			// A child's ask stays the child's: its parent cannot run the call for it.
+			if !interactive && request == nil && fallback == Deny && policy.Defer != nil && parent == nil {
+				if policy.Defer.Approved(ctx, info.Tool) {
+					decision.Resolved, decision.Resolution = Allow, "deferred approval"
+					record(ctx, decision)
+					return extensions.ToolCallResult{Approved: true}, nil
+				}
+				decision.Resolved, decision.Resolution = Deny, "deferred"
+				record(ctx, decision)
+				return extensions.ToolCallResult{Block: true, Reason: policy.Defer.Defer(ctx, info.SessionID, info.CWD, info.Tool, info.Args)}, nil
+			}
 			if !interactive && request == nil {
 				decision.Resolved, decision.Resolution = fallback, "askFallback"
 				record(ctx, decision)

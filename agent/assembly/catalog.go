@@ -21,6 +21,7 @@ import (
 	"github.com/OrdalieTech/orb/plugins/titles"
 	"github.com/OrdalieTech/orb/plugins/usage"
 	"github.com/OrdalieTech/orb/plugins/usage/footer"
+	"github.com/OrdalieTech/orb/plugins/wake"
 	"github.com/OrdalieTech/orb/plugins/websearch"
 )
 
@@ -43,9 +44,12 @@ type CatalogOptions struct {
 	CodexSessions extensions.Factory
 	// Bash builds the host's bash tool, which background jobs run through.
 	Bash jobs.Bash
+	// Wake is the host's scheduler, which the host advances; on, it also holds
+	// asks no UI can answer.
+	Wake *wake.Scheduler
 }
 
-var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "codex-sessions", "provider-usage", "bridge", "bridge-agent-calls"}
+var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "codex-sessions", "provider-usage", "bridge", "bridge-agent-calls", "wake"}
 
 var descriptions = map[string]string{
 	"activity":           "Compact, expandable statuses for agents and background processes",
@@ -58,6 +62,7 @@ var descriptions = map[string]string{
 	"subagents":          "Single or parallel child agents, including configured external CLIs",
 	"jobs":               "Background bash jobs that report when they end, monitored output, stop_job",
 	"permissions":        "Tool-call permissions, explicit approvals and optional audit mode",
+	"wake":               "Wake yourself later, once or on a schedule, and hold approvals until the user answers",
 	"memory":             "Bounded persistent remember, recall, replace, and forget tools",
 	"memtree":            "Experimental: zoomable summary tree of each session for lossless compaction or fresh turns",
 	"claude-sessions":    "Claude models and accounts through Claude Code and the official Agent SDK",
@@ -131,6 +136,15 @@ func Catalog(options CatalogOptions) map[string]extensions.Factory {
 	if policy == nil {
 		policy = &permissions.Policy{}
 	}
+	wakeRow := func(extensions.API) error {
+		return fmt.Errorf("wake requires a host that advances it (orb chat, an SDK host)")
+	}
+	if options.Wake != nil {
+		wakeRow = options.Wake.Extension()
+		if options.Settings != nil && options.Settings.GetPlugins()["wake"] {
+			policy.Defer = options.Wake
+		}
+	}
 	if options.Bridge == nil {
 		options.Bridge = func(extensions.API) error { return fmt.Errorf("bridge requires host assembly") }
 	}
@@ -155,6 +169,7 @@ func Catalog(options CatalogOptions) map[string]extensions.Factory {
 		"permissions":    permissions.Extension(policy, options.Settings, nil),
 		"memory":         memoryExtension(options.Memory, options.AgentDir),
 		"memtree":        memtreeExtension(options.Settings),
+		"wake":           wakeRow,
 		"provider-usage": footer.Extension(usage.Client{HTTPClient: options.HTTPClient, Cache: options.UsageCache}, options.Accounts),
 	}
 }

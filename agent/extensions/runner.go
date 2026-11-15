@@ -1315,7 +1315,8 @@ func (runner *Runner) EmitInput(
 	source InputSource,
 	streamingBehavior *DeliveryMode,
 ) InputResult {
-	extensionContext := runner.CreateContext()
+	// A ToolContext, so a handler can run a call the input settles (wake approvals).
+	extensionContext := runner.CreateToolContext("input")
 	currentText := text
 	currentImages := images
 	for _, extension := range runner.extensions {

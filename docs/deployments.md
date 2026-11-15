@@ -83,8 +83,8 @@ one memory (see `platforms/agent/README.md`). Buzz is Orb's own: no Buzz binary,
 shell, git and curl for the agent's tools beside Orb, and `browser` variants add agent-browser
 with Lightpanda or Chromium. `orb chat` never trusts the project it works in, where those tools
 write, so the agent's settings come from the agent file alone. The volume `/agent` holds the agent
-file, config, state and workspace; secrets arrive as environment only. Scheduled turns come from a
-host timer through the agent's ACP socket. The same `orb chat buzz` runs outside the image, on any
+file, config, state and workspace; secrets arrive as environment only. Scheduled turns come from the
+`wake` plugin, which `orb chat` advances. The same `orb chat buzz` runs outside the image, on any
 platform Orb builds for, with the key in its environment. Evidence so far: the Go suite drives
 `orb --mode acp`, a Telegram conversation sharing memory with an ACP session, the harness's
 rendering and the Buzz adapter against a fake relay (authentication, subscription, cursor,

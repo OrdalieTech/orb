@@ -147,12 +147,12 @@ func parse(path string) (agentFile, error) {
 	return file, nil
 }
 
-// settingsFile is Orb's settings.json: the model, the plugins (memory on unless
-// turned off) and the skills, agent-browser's included when the agent has a
+// settingsFile is Orb's settings.json: the model, the plugins (memory and wake
+// on unless turned off) and the skills, agent-browser's included when the agent has a
 // browser.
 func settingsFile(file agentFile, image layout, browser bool) []byte {
 	provider, model, _ := strings.Cut(file.Model, "/")
-	plugins := map[string]any{"memory": file.Memory == nil || *file.Memory}
+	plugins := map[string]any{"memory": file.Memory == nil || *file.Memory, "wake": true}
 	for name, on := range file.Plugins {
 		plugins[name] = on
 	}
