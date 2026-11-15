@@ -44,10 +44,12 @@ type relay struct {
 	ephemeral []event
 	filters   []map[string]any
 	live      chan event
+	// closing has the relay close a subscription, as a refused REQ does.
+	closing chan string
 }
 
 func newRelay(t *testing.T, stored ...event) *relay {
-	r := &relay{t: t, stored: stored, live: make(chan event, 4)}
+	r := &relay{t: t, stored: stored, live: make(chan event, 4), closing: make(chan string, 1)}
 	r.server = httptest.NewServer(r)
 	t.Cleanup(r.server.Close)
 	return r
@@ -138,6 +140,18 @@ func (r *relay) subscribe(w http.ResponseWriter, request *http.Request) {
 				}
 			}
 			subscriptionsMu.Unlock()
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case id := <-r.closing:
+				subscriptionsMu.Lock()
+				write("CLOSED", id, "restricted: not a member")
+				subscriptionsMu.Unlock()
+			}
 		}
 	}()
 	for {
@@ -278,11 +292,37 @@ func TestPollPublishesMentionsWithTheirThread(t *testing.T) {
 	if m := <-messages; m.ChatID != "solo-chat" || m.ThreadID != "" {
 		t.Fatalf("solo message %+v", m)
 	}
+	// A sender's clock ahead of the relay's does not move the cursor past now.
+	ahead := signed(alice, 9, [][]string{{"h", channel}, {"p", agentKey.public}}, "from the future", now+3600)
+	r.live <- ahead
+	if m := <-messages; m.EventID != ahead.ID {
+		t.Fatalf("future-dated message %+v", m)
+	}
+	// Events are handled in order: once the next one is published, the
+	// cursor has taken the future-dated one.
+	next := signed(alice, 9, [][]string{{"h", channel}, {"p", agentKey.public}}, "now again", now)
+	r.live <- next
+	if m := <-messages; m.EventID != next.ID {
+		t.Fatalf("message %+v", m)
+	}
+	if data, _ := os.ReadFile(cursor); strings.TrimSpace(string(data)) > strconv.FormatInt(time.Now().Unix(), 10) {
+		t.Fatalf("cursor %s is ahead of now", data)
+	}
 	select {
 	case extra := <-messages:
 		t.Fatalf("unexpected message %+v", extra)
 	case <-time.After(50 * time.Millisecond):
 	}
+
+	// A subscription the relay closes is taken again on a new connection.
+	subscriptions := func() int {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return len(r.filters)
+	}
+	before := subscriptions()
+	r.closing <- "mentions-0"
+	waitFor(t, func() bool { return subscriptions() > before })
 }
 
 // Replies go in the thread of the event they answer, signed by the agent
@@ -319,7 +359,7 @@ func TestDeliveryRepliesInTheThread(t *testing.T) {
 	// An agent that posted in the conversation itself during the turn has
 	// said its piece: its last words are not posted on top.
 	during := adapter.NewDelivery(chat.ConversationKey{ChatID: channel, ThreadID: root}, parent, "")
-	adapter.saying(event{ID: strings.Repeat("3", 64), Tags: [][]string{{"h", channel}, {"e", root, "", "root"}, {"e", parent, "", "reply"}}})
+	adapter.saying(event{ID: strings.Repeat("3", 64), Tags: [][]string{{"h", channel}, {"e", root, "", "root"}, {"e", parent, "", "reply"}}, Content: "Yes, the release is on Friday."})
 	r.mu.Lock()
 	before := len(r.published)
 	r.mu.Unlock()
@@ -329,10 +369,22 @@ func TestDeliveryRepliesInTheThread(t *testing.T) {
 	if receipt, err := adapter.NewDelivery(chat.ConversationKey{ChatID: channel, ThreadID: root}, parent, "").Finalize(context.Background(), "Next turn."); err != nil || len(receipt.MessageIDs) != 1 {
 		t.Fatalf("the next turn's reply: %v (%v)", receipt, err)
 	}
+	// A short post during the turn ("on it") does not stand for the answer,
+	// unless the answer only quotes it.
+	working := adapter.NewDelivery(chat.ConversationKey{ChatID: channel, ThreadID: root}, parent, "")
+	adapter.saying(event{ID: strings.Repeat("4", 64), Tags: [][]string{{"h", channel}, {"e", root, "", "root"}, {"e", parent, "", "reply"}}, Content: "On it."})
+	if receipt, err := working.Finalize(context.Background(), "Done: the release moved to Monday, and the changelog says so."); err != nil || len(receipt.MessageIDs) != 1 {
+		t.Fatalf("the answer after a progress post: %v (%v)", receipt, err)
+	}
+	quoting := adapter.NewDelivery(chat.ConversationKey{ChatID: channel, ThreadID: root}, parent, "")
+	adapter.saying(event{ID: strings.Repeat("5", 64), Tags: [][]string{{"h", channel}, {"e", root, "", "root"}, {"e", parent, "", "reply"}}, Content: "Monday."})
+	if receipt, err := quoting.Finalize(context.Background(), "I posted it: Monday."); err != nil || len(receipt.MessageIDs) != 0 {
+		t.Fatalf("a reply quoting its post: %v (%v)", receipt, err)
+	}
 	r.mu.Lock()
 	after := len(r.published)
 	r.mu.Unlock()
-	if after != before+1 {
+	if after != before+2 {
 		t.Fatalf("published %d events, want 1", after-before)
 	}
 }

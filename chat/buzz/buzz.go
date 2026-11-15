@@ -89,11 +89,17 @@ type Adapter struct {
 	conn          *websocket.Conn
 	names         map[string]string
 	conversations map[string]bool
-	// said is the agent's last post with its tools in each conversation, by
-	// its rank among them all, posts: a count, since clock readings can tie.
-	said  map[string]int
+	// said is the agent's last post with its tools in each conversation:
+	// its rank among them all, posts (a count, since clock readings can tie),
+	// and its text.
+	said  map[string]post
 	posts int
 	seen  map[string]bool
+}
+
+type post struct {
+	rank int
+	text string
 }
 
 var (
@@ -135,7 +141,7 @@ func New(options Options) (*Adapter, error) {
 		key: k, respondTo: options.RespondTo, channels: options.Channels, profile: options.Profile, cursor: options.Cursor,
 		http: options.HTTPClient, logger: options.Logger, host: relay.Host,
 		base: httpScheme + "://" + relay.Host + relay.Path, socket: wsScheme + "://" + relay.Host + relay.Path, origin: wsScheme + "://" + relay.Host, media: httpScheme + "://" + relay.Host + "/media/",
-		names: map[string]string{}, conversations: map[string]bool{}, said: map[string]int{}, seen: map[string]bool{},
+		names: map[string]string{}, conversations: map[string]bool{}, said: map[string]post{}, seen: map[string]bool{},
 	}
 	if a.http == nil {
 		a.http = &http.Client{Timeout: time.Minute}
@@ -356,9 +362,12 @@ func (a *Adapter) listen(ctx context.Context, publish func(chat.Message) error, 
 			if len(frame) < 2 || json.Unmarshal(frame[1], &e) != nil {
 				continue
 			}
+			// created_at is the sender's clock: one ahead of the relay's must
+			// not move the cursor past what is still to come.
+			at := min(e.CreatedAt, time.Now().Unix())
 			if e.Kind == 44100 {
 				if channel := e.tag("h"); channel != "" {
-					err = subscribe("mentions-"+channel, []string{channel}, true, e.CreatedAt)
+					err = subscribe("mentions-"+channel, []string{channel}, true, at)
 				}
 			} else {
 				err = a.receive(ctx, e, publish)
@@ -366,14 +375,15 @@ func (a *Adapter) listen(ctx context.Context, publish func(chat.Message) error, 
 			if err != nil {
 				return true, err
 			}
-			newest = max(newest, e.CreatedAt)
+			newest = max(newest, at)
 		case "CLOSED":
+			// A closed subscription would leave the agent online but deaf to
+			// its channels: reconnecting resubscribes, after a growing delay.
 			var reason string
 			if len(frame) > 1 {
 				_ = json.Unmarshal(frame[1], &reason)
 			}
-			a.logger.Warn("buzz: the relay closed a subscription", "subscription", subscription, "reason", reason)
-			fallthrough
+			return false, fmt.Errorf("the relay closed subscription %s: %s", subscription, reason)
 		case "EOSE":
 			delete(pending, subscription)
 		case "AUTH":
@@ -498,7 +508,7 @@ func (a *Adapter) saying(e event) {
 	}
 	a.mu.Lock()
 	a.posts++
-	a.said[e.tag("h")+"/"+root] = a.posts
+	a.said[e.tag("h")+"/"+root] = post{a.posts, strings.TrimSpace(e.Content)}
 	a.mu.Unlock()
 }
 
@@ -793,14 +803,16 @@ func (d *delivery) Preview(context.Context, string) error { return nil }
 func (d *delivery) PreviewID() string { return "" }
 
 // Finalize implements [chat.Delivery]; an empty reply posts nothing, and
-// neither does one in a conversation where the agent already posted with
-// buzz_publish during the turn: its last words would repeat what it posted.
+// neither does one that repeats what the agent posted in the conversation with
+// buzz_publish during the turn: no longer than that post, or quoting it. A
+// longer reply after a short post ("on it") is the answer, and is posted.
 func (d *delivery) Finalize(ctx context.Context, text string) (chat.Receipt, error) {
 	d.typing.Stop()
 	d.adapter.mu.Lock()
-	posted := d.adapter.said[d.place] > d.started
+	last := d.adapter.said[d.place]
 	d.adapter.mu.Unlock()
-	if posted {
+	reply := strings.TrimSpace(text)
+	if last.rank > d.started && (len(reply) <= len(last.text) || last.text != "" && strings.Contains(reply, last.text)) {
 		return chat.Receipt{At: time.Now().UTC()}, nil
 	}
 	for _, chunk := range runechunk.Split(text, maxChunk)[len(d.sent):] {
@@ -875,7 +887,7 @@ func (a *Adapter) Extension(api extensions.API) error {
 				return engine.AgentToolResult{}, err
 			}
 			if *input.Kind == 9 {
-				a.saying(event{Tags: input.Tags, ID: id})
+				a.saying(event{Tags: input.Tags, ID: id, Content: input.Content})
 			}
 			return engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: "Published event " + id}}}, nil
 		},
