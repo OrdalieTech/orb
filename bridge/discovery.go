@@ -23,6 +23,61 @@ func (b *Bridge) X25519Public() ([]byte, error) {
 	return k.PublicKey().Bytes(), nil
 }
 
+// SetVault records the profile vault this peer publishes to a scope; the next
+// PublishContact carries it. Passing a nil document clears it.
+func (b *Bridge) SetVault(scope string, doc *vault.Document) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.state.Scopes[scope] == nil {
+		return Fail("unauthorized")
+	}
+	if doc == nil {
+		delete(b.state.Vaults, scope)
+		return b.save()
+	}
+	raw := JSON(doc)
+	if len(raw) > protocol.MaxRecord {
+		return Fail("resource_exhausted")
+	}
+	b.state.Vaults[scope] = raw
+	return b.save()
+}
+
+// ScopeVault returns the newest vault published to a scope by any member, with the
+// PeerID that published it, or a nil document when none has been.
+func (b *Bridge) ScopeVault(scope string) (*vault.Document, string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed || b.failed {
+		return nil, "", Fail("unavailable")
+	}
+	prefix := scope + "/"
+	var best *vault.Document
+	var from string
+	for k, r := range b.state.Records {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		c, err := r.Verify()
+		if err != nil || c.Withdrawn {
+			continue
+		}
+		raw, ok := c.Extensions["vault"]
+		if !ok {
+			continue
+		}
+		var doc vault.Document
+		if json.Unmarshal(raw, &doc) != nil || doc.Schema != vault.Schema {
+			continue
+		}
+		if best == nil || doc.Revision > best.Revision {
+			d := doc
+			best, from = &d, c.Peer
+		}
+	}
+	return best, from, nil
+}
+
 // ScopeMembers lists the peers in a scope that advertise a sealing key, newest
 // records only, sorted by PeerID. It is what the owner seals a vault to.
 func (b *Bridge) ScopeMembers(scope string) ([]vault.Member, error) {
@@ -148,6 +203,14 @@ func (b *Bridge) PublishContact(scope, name string, endpoints []Locator, withdra
 		if enc, err := json.Marshal(base64.RawURLEncoding.EncodeToString(xpub)); err == nil {
 			ext = map[string]json.RawMessage{"x25519": enc}
 		}
+	}
+	// A peer that has set a profile vault carries it in its own record, so it
+	// gossips to the scope on the existing reconcile loop with no extra plumbing.
+	if doc := b.state.Vaults[scope]; len(doc) > 0 && !withdraw {
+		if ext == nil {
+			ext = map[string]json.RawMessage{}
+		}
+		ext["vault"] = doc
 	}
 	c := Contact{Schema: "orb.peer-record/1", Scope: scope, Peer: b.PeerID(), Revision: strconv.FormatUint(rev+1, 10), Name: name, Protocols: []string{protocol.Version}, Endpoints: endpoints, Withdrawn: withdraw, Extensions: ext}
 	data, err := protocol.Canonical(JSON(c))

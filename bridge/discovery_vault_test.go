@@ -71,6 +71,106 @@ func TestScopeMembersAdvertiseSealingKeys(t *testing.T) {
 	}
 }
 
+func TestScopeVaultGossipsAndOpens(t *testing.T) {
+	a, b, c := newBridge(t), newBridge(t), newBridge(t)
+	all := []*Bridge{a, b, c}
+	scope := protocol.NewID()
+	for _, x := range all {
+		if err := x.SetScope(scope, []string{a.PeerID(), b.PeerID(), c.PeerID()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, x := range all {
+		rec, err := x.PublishContact(scope, "n", nil, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.MergeContact(x.PeerID(), rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	members, err := a.ScopeMembers(scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := vault.Build(members, 1, 1, vault.Bundle{Credentials: json.RawMessage(`{"openai":"sk-o"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetVault(scope, &doc); err != nil {
+		t.Fatal(err)
+	}
+	// a republishes its contact, now carrying the vault, and b receives it.
+	rec, err := a.PublishContact(scope, "A", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.MergeContact(a.PeerID(), rec); err != nil {
+		t.Fatal(err)
+	}
+	got, from, err := b.ScopeVault(scope)
+	if err != nil || got == nil {
+		t.Fatalf("b found no vault: %v", err)
+	}
+	if from != a.PeerID() {
+		t.Fatalf("vault publisher = %s, want %s", from, a.PeerID())
+	}
+	priv, err := vault.X25519FromSeed(b.state.Key[:ed25519.SeedSize])
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := got.OpenBundle(b.PeerID(), priv)
+	if err != nil {
+		t.Fatalf("b could not open the gossiped vault: %v", err)
+	}
+	if string(bundle.Credentials) != `{"openai":"sk-o"}` {
+		t.Fatalf("wrong bundle: %s", bundle.Credentials)
+	}
+	// Clearing removes it from future publications.
+	if err := a.SetVault(scope, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVaultPersistsAcrossRestart(t *testing.T) {
+	a := newBridge(t)
+	scope := protocol.NewID()
+	if err := a.SetScope(scope, []string{a.PeerID()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PublishContact(scope, "A", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	members, err := a.ScopeMembers(scope)
+	if err != nil || len(members) != 1 {
+		t.Fatalf("members=%v err=%v", members, err)
+	}
+	doc, err := vault.Build(members, 1, 1, vault.Bundle{Config: json.RawMessage(`{"defaultModel":"x"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetVault(scope, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.PublishContact(scope, "A", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	// Reopen from the same store: the vault (state) and the record both survive.
+	restarted, err := Open(a.store, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := restarted.ScopeVault(scope)
+	if err != nil || got == nil {
+		t.Fatalf("vault lost across restart: %v", err)
+	}
+	priv, _ := vault.X25519FromSeed(restarted.state.Key[:ed25519.SeedSize])
+	bundle, err := got.OpenBundle(restarted.PeerID(), priv)
+	if err != nil || string(bundle.Config) != `{"defaultModel":"x"}` {
+		t.Fatalf("restarted peer could not open its own vault: %v", err)
+	}
+}
+
 func TestScopeMembersExcludesWithdrawn(t *testing.T) {
 	a, b := newBridge(t), newBridge(t)
 	scope := protocol.NewID()
