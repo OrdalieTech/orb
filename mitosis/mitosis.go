@@ -70,6 +70,8 @@ type state struct {
 	Records     map[string]Record          `json:"records"`
 	Peers       map[string]string          `json:"peers"`
 	Group       string                     `json:"sync_group,omitempty"`
+	Shared      []string                   `json:"sync_shared,omitempty"` // providers in the owner's set a member last applied
+	Merged      map[string]string          `json:"sync_merged,omitempty"` // member -> revision of the hand-in the owner merged
 	Transport   json.RawMessage            `json:"transport,omitempty"`
 }
 type registration struct {
@@ -88,7 +90,7 @@ type Mitosis struct {
 	changes        chan struct{}
 	host           Host
 	name           string
-	credentials    document.Document
+	credentials    Credentials
 	synced         string // what Sync last published, so an unchanged round publishes nothing
 }
 

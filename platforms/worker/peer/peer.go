@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"net"
 	"path"
 	"slices"
@@ -59,7 +60,7 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 	if err != nil {
 		return nil, err
 	}
-	b.SetCredentials(store.Document(path.Join(worker.AgentDir, "auth.json")))
+	b.SetCredentials(aiauth.NewDocumentStore(store.Document(path.Join(worker.AgentDir, "auth.json"))))
 	enrolled := store.Document(instanceDocument)
 	raw, err := enrolled.Read(context.Background())
 	if err != nil {

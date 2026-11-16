@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"net"
 	"net/http"
 	"os"
@@ -250,7 +251,7 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 	service := New(serviceCtx, state, profile, version, b, node, web.URL)
 	b.SetHost(service.host)
 	b.SetName(machineName())
-	b.SetCredentials(state.Credentials(state.AgentDir))
+	b.SetCredentials(aiauth.NewDocumentStore(state.Credentials(state.AgentDir)))
 	defer service.stopLaunched()
 	reexec := ""
 	service.restart = func(path string) { reexec = path; time.AfterFunc(300*time.Millisecond, stop) }

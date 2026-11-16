@@ -806,17 +806,23 @@ opened only from current, unblocked members.
 
 A native device runs a round on every reconciliation (every 15 s and on each change), so a group
 converges with no command; `orb mitosis sync` (the `sync` admin method on every host with a
-Mitosis) runs one at once, which is how a Worker object, which cannot dial, syncs. A round reads
-before it publishes: the owner merges into auth.json the entries members handed it, keeping its
-own; a member takes the owner's entries over its own, then hands the result to the owner. Either
-way an OAuth entry that expires later wins, so a token refreshed on any device replaces the copies
-its refresh made stale. Entries merge by name and are never deleted; auth.json is written only
-when an entry changes, and a vault is republished only when what it seals does. The bundle is one
-JSON object per data class; v1 carries credentials only, and a class added later is one more
-field. A removed or blocked device keeps what it already received and gets nothing sealed after;
-a device that boots unattended holds the key to its own vault, so a low-trust host belongs in a
-profile of its own with capped credentials. A record stays under 16 KiB, which bounds the bundle
-and the group.
+Mitosis) runs one at once, which is how a Worker object, which cannot dial, syncs. The core is format-blind:
+what a class means lives with it (credentials: `ai/auth`'s `Store.Shareable` and `MergeShared`).
+A round reads before it publishes: the owner merges in what members handed it, keeping its own; a
+member takes the owner's set over its own, drops what the owner stopped sharing, and hands the
+owner only what that set lacks or holds otherwise. Between two OAuth logins the one that expires
+later wins, so a token refreshed on any device replaces the copies its refresh made stale. An entry
+removed on the owner is removed everywhere; one removed on a member comes back from the owner's
+set. Only API keys and OAuth logins are shared, never one whose key is a command (`!…`, which would
+run on every device), invalid entries are ignored, auth.json keeps pi's format and is written only
+when an entry changes, and a vault is republished only when what it seals does. A running session
+offers a provider as soon as its credential arrives. The bundle is one JSON object per data class;
+v1 carries credentials only, and a class added later is one more field. A removed or blocked device
+keeps what it already received and gets nothing sealed after. A device that boots unattended holds
+the key to its own vault, and every Mitosis profile of a machine shares its agent directory's
+auth.json, so a low-trust host belongs in a group of its own, with an agent directory of its own
+holding capped credentials. A record stays under 16 KiB, which bounds the bundle and the group: an
+added device that no longer fits is taken out again.
 
 ### Native v1 method schemas
 

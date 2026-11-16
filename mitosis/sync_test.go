@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/internal/document"
 )
 
@@ -16,7 +17,7 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 	for x, auth := range map[*Mitosis]string{owner: `{"openai":{"type":"api_key","key":"o1"}}`, b: `{"anthropic":{"type":"api_key","key":"a1"}}`, c: ``} {
 		stores[x] = &document.Memory{}
 		_ = document.Replace(ctx, stores[x], []byte(auth))
-		x.SetCredentials(stores[x])
+		x.SetCredentials(aiauth.NewDocumentStore(stores[x]))
 	}
 	admin := func(x *Mitosis, params string) {
 		t.Helper()
@@ -25,8 +26,11 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		}
 	}
 	group := groupID(owner.PeerID())
-	round := func() {
-		for _, x := range []*Mitosis{b, c, owner, b, c} {
+	round := func(devices ...*Mitosis) {
+		if devices == nil {
+			devices = []*Mitosis{b, c, owner, b, c}
+		}
+		for _, x := range devices {
 			admin(x, `{}`)
 			for _, from := range []*Mitosis{owner, b, c} {
 				for _, to := range []*Mitosis{owner, b, c} {
@@ -79,12 +83,29 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 	}
 
 	// A token refreshed on a member replaces the stale copies, the owner's included.
-	_ = document.Replace(ctx, stores[b], []byte(`{"anthropic":{"type":"oauth","refresh":"r2","access":"a2","expires":2000},"openai":{"type":"api_key","key":"o1"}}`))
 	_ = document.Replace(ctx, stores[owner], []byte(`{"anthropic":{"type":"oauth","refresh":"r1","access":"a1","expires":1000},"openai":{"type":"api_key","key":"o1"}}`))
+	round()
+	_ = document.Replace(ctx, stores[b], []byte(`{"anthropic":{"type":"oauth","refresh":"r2","access":"a2","expires":2000},"openai":{"type":"api_key","key":"o1"}}`))
 	round()
 	for _, x := range []*Mitosis{owner, b, c} {
 		if raw, _ := stores[x].Read(ctx); !strings.Contains(string(raw), `"r2"`) {
 			t.Fatalf("stale token kept: %s", raw)
+		}
+	}
+
+	// A command key never leaves its device, and what the owner drops is dropped everywhere.
+	_ = document.Replace(ctx, stores[b], []byte(`{"evil":{"type":"api_key","key":"!touch /tmp/x"},"anthropic":{"type":"oauth","refresh":"r2","access":"a2","expires":2000},"openai":{"type":"api_key","key":"o1"}}`))
+	_ = document.Replace(ctx, stores[c], []byte(`{"groq":{"type":"api_key","key":"g1"}}`))
+	round(b, c, owner, b)
+	if raw, _ := stores[owner].Read(ctx); strings.Contains(string(raw), "evil") || !strings.Contains(string(raw), "groq") {
+		t.Fatalf("a command key was shared, or a member's entry was not: %s", raw)
+	}
+	// c stops running rounds; its stale hand-in must not bring back what the owner drops.
+	_ = document.Replace(ctx, stores[owner], []byte(`{"openai":{"type":"api_key","key":"o1"},"anthropic":{"type":"oauth","refresh":"r2","access":"a2","expires":2000}}`))
+	round(b, owner, b)
+	for _, x := range []*Mitosis{owner, b} {
+		if raw, _ := stores[x].Read(ctx); strings.Contains(string(raw), "groq") {
+			t.Fatalf("an entry the owner removed was kept: %s", raw)
 		}
 	}
 
@@ -93,7 +114,7 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 	_ = owner.SavePeer(d.PeerID(), "paired")
 	_ = c.SavePeer(d.PeerID(), "paired")
 	stores[d] = &document.Memory{}
-	d.SetCredentials(stores[d])
+	d.SetCredentials(aiauth.NewDocumentStore(stores[d]))
 	admin(owner, `{"add":"`+d.PeerID()+`"}`)
 	admin(d, `{"join":"`+owner.PeerID()+`"}`)
 	if _, err := d.MergeContact(b.PeerID(), owner.state.Records[group+"/"+owner.PeerID()]); err != nil {

@@ -12,10 +12,10 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"math/big"
 	"slices"
 
-	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
 )
 
@@ -35,10 +35,16 @@ type bundle struct {
 	Credentials map[string]json.RawMessage `json:"credentials"`
 }
 
-// SetCredentials is the document Sync shares: the host's auth.json.
-func (b *Mitosis) SetCredentials(d document.Document) {
+// Credentials is the class a sync group shares, as its host keeps it (ai/auth's Store over
+// auth.json): what this device may share, and the merge of what the group shared.
+type Credentials interface {
+	Shareable(ctx context.Context) (map[string]json.RawMessage, error)
+	MergeShared(ctx context.Context, incoming []map[string]json.RawMessage, keepOwn bool, removed []string) ([]string, error)
+}
+
+func (b *Mitosis) SetCredentials(c Credentials) {
 	b.mu.Lock()
-	b.credentials = d
+	b.credentials = c
 	b.mu.Unlock()
 }
 
@@ -62,20 +68,28 @@ func (b *Mitosis) setGroup(join, add, remove string) error {
 			return err
 		}
 	}
+	members := b.state.Scopes[b.state.Group]
 	switch {
 	case join != "":
-		delete(b.state.Scopes, b.state.Group)
-		b.state.Group = groupID(join)
-		b.state.Scopes[b.state.Group] = []string{join, self}
-	case remove != "" && b.state.Group != "" && b.state.Scopes[b.state.Group][0] == remove:
-		delete(b.state.Scopes, b.state.Group)
-		b.state.Group = ""
-	case add != "" || remove != "":
-		if b.state.Group == "" {
-			b.state.Group = groupID(self)
-			b.state.Scopes[b.state.Group] = []string{self}
+		if len(b.state.Scopes) >= 128 && len(members) == 0 {
+			return Fail("resource_exhausted")
 		}
-		members := b.state.Scopes[b.state.Group]
+		delete(b.state.Scopes, b.state.Group)
+		b.state.Group, b.state.Shared, b.state.Merged = groupID(join), nil, nil
+		b.state.Scopes[b.state.Group] = []string{join, self}
+	case remove != "" && len(members) == 0:
+		return Fail("not_found")
+	case remove != "" && members[0] == remove:
+		delete(b.state.Scopes, b.state.Group)
+		b.state.Group, b.state.Shared, b.state.Merged = "", nil, nil
+	case add != "" || remove != "":
+		if len(members) == 0 {
+			if len(b.state.Scopes) >= 128 {
+				return Fail("resource_exhausted")
+			}
+			b.state.Group = groupID(self)
+			members = []string{self}
+		}
 		if members[0] != self {
 			return Fail("unauthorized")
 		}
@@ -96,7 +110,8 @@ func (b *Mitosis) setGroup(join, add, remove string) error {
 }
 
 // SyncAdmin is the sync admin method: one membership change, then a round. endpoints, when set,
-// are where this device is reached; nil keeps the ones it published before.
+// are where this device is reached; nil keeps the ones it published before. An added device
+// whose envelope no longer fits the owner's record is taken out again.
 func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoints []Locator) (json.RawMessage, error) {
 	var p struct {
 		Join   string `json:"join,omitempty"`
@@ -115,76 +130,94 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 	if left && p.Remove != "" {
 		return JSON(struct{}{}), nil
 	}
-	return b.Sync(ctx, endpoints)
+	result, err := b.Sync(ctx, endpoints)
+	if p.Add != "" && Code(err) == "resource_exhausted" {
+		_ = b.setGroup("", "", p.Add)
+	}
+	return result, err
 }
 
-// Sync runs one round of the group: the owner folds in the entries members handed it, keeping its
-// own, then seals the whole set to every current, unblocked member; a member takes the owner's set
-// over its own, then hands the result to the owner. Either way an OAuth entry that expires later
-// wins, so a token refreshed on any device replaces the copies its refresh made stale. It returns
-// the group and what it received.
+// Sync runs one round of the group: the owner folds in what members handed it, keeping its own,
+// then seals the whole set to every current, unblocked member; a member takes the owner's set
+// over its own, drops what the owner stopped sharing, and hands the owner only what its set lacks
+// or holds otherwise. It returns the group and the entries the round changed here.
 func (b *Mitosis) Sync(ctx context.Context, endpoints []Locator) (json.RawMessage, error) {
 	b.mu.Lock()
 	group, credentials, self := b.state.Group, b.credentials, b.PeerID()
-	members := slices.Clone(b.state.Scopes[group])
+	members := b.state.Scopes[group]
 	if group == "" || len(members) == 0 || credentials == nil {
 		b.mu.Unlock()
 		return nil, Fail("not_found")
 	}
 	owner := members[0]
-	from := []string{owner}
-	if owner == self {
-		from = members[1:]
-	}
 	var incoming []map[string]json.RawMessage
-	for _, peer := range from {
-		if in, ok := b.received(group, peer); ok {
-			incoming = append(incoming, in.Credentials)
+	var ownerSet map[string]json.RawMessage
+	var removed []string
+	// The owner merges each member's hand-in once: an entry it deleted since comes back only
+	// when the member hands it in again.
+	merged := map[string]string{}
+	if owner == self {
+		for _, peer := range members[1:] {
+			if in, revision, ok := b.received(group, peer); ok && b.state.Merged[peer] != revision {
+				incoming = append(incoming, in.Credentials)
+				merged[peer] = revision
+			}
+		}
+	} else if in, _, ok := b.received(group, owner); ok {
+		ownerSet = in.Credentials
+		if ownerSet == nil {
+			ownerSet = map[string]json.RawMessage{}
+		}
+		incoming = append(incoming, ownerSet)
+		for _, name := range b.state.Shared {
+			if _, kept := ownerSet[name]; !kept {
+				removed = append(removed, name)
+			}
 		}
 	}
-	recipients := slices.DeleteFunc(slices.Clone(from), func(p string) bool { return b.state.Blocked[p] })
 	b.mu.Unlock()
 
-	var received []string
-	var shared map[string]json.RawMessage
-	fold := func(current []byte) ([]byte, error) {
-		received, shared = []string{}, map[string]json.RawMessage{}
-		local := map[string]json.RawMessage{}
-		if len(current) > 0 {
-			if err := json.Unmarshal(current, &local); err != nil {
-				return nil, err
-			}
-		}
-		for _, in := range incoming {
-			for name, entry := range in {
-				have, ok := local[name]
-				if ok && (bytes.Equal(compact(have), entry) || expires(have) > expires(entry) || owner == self && expires(have) == expires(entry)) {
-					continue
-				}
-				local[name] = entry
-				received = append(received, name)
-			}
-		}
-		for name, entry := range local {
-			shared[name] = compact(entry)
-		}
-		if len(received) == 0 {
-			return current, nil
-		}
-		return json.MarshalIndent(local, "", "  ")
-	}
-	current, err := credentials.Read(ctx)
-	if err == nil {
-		_, err = fold(current)
-	}
-	if err == nil && len(received) > 0 {
-		err = credentials.Update(ctx, fold)
-	}
+	changed, err := credentials.MergeShared(ctx, incoming, owner == self, removed)
 	if err != nil {
 		return nil, err
 	}
+	shared, err := credentials.Shareable(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for name, entry := range shared {
+		if ownerSet != nil && bytes.Equal(ownerSet[name], entry) {
+			delete(shared, name)
+		}
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.state.Group != group || len(b.state.Scopes[group]) == 0 || b.state.Scopes[group][0] != owner {
+		return nil, Fail("not_found")
+	}
+	recipients := []string{owner}
+	if owner == self {
+		recipients = slices.Clone(b.state.Scopes[group][1:])
+	}
+	recipients = slices.DeleteFunc(recipients, func(p string) bool { return b.state.Blocked[p] })
+	if len(merged) > 0 {
+		if b.state.Merged == nil {
+			b.state.Merged = map[string]string{}
+		}
+		maps.Copy(b.state.Merged, merged)
+		if err = b.save(); err != nil {
+			return nil, err
+		}
+	}
+	if ownerSet != nil {
+		names := slices.Sorted(maps.Keys(ownerSet))
+		if !slices.Equal(names, b.state.Shared) {
+			b.state.Shared = names
+			if err = b.save(); err != nil {
+				return nil, err
+			}
+		}
+	}
 	r, published := b.state.Records[group+"/"+self]
 	if published && endpoints == nil {
 		c, _ := r.Verify()
@@ -204,25 +237,28 @@ func (b *Mitosis) Sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		}
 		b.synced = digest
 	}
-	slices.Sort(received)
-	return JSON(map[string]any{"group_id": group, "owner": owner, "members": b.state.Scopes[group], "received": received}), nil
+	if changed == nil {
+		changed = []string{}
+	}
+	slices.Sort(changed)
+	return JSON(map[string]any{"group_id": group, "owner": owner, "members": b.state.Scopes[group], "received": changed}), nil
 }
 
 // received opens the vault peer published to the group, if it is sealed to this device. A member
 // also takes the owner's recipients as the group, so it gossips with them while the owner is away.
-func (b *Mitosis) received(group, peer string) (bundle, bool) {
+func (b *Mitosis) received(group, peer string) (bundle, string, bool) {
 	r, ok := b.state.Records[group+"/"+peer]
 	if !ok || b.state.Blocked[peer] {
-		return bundle{}, false
+		return bundle{}, "", false
 	}
 	c, err := r.Verify()
 	var v vault
 	if err != nil || c.Withdrawn || json.Unmarshal(c.Extensions["vault"], &v) != nil || v.Schema != vaultSchema {
-		return bundle{}, false
+		return bundle{}, "", false
 	}
 	in, err := b.open(v)
 	if err != nil {
-		return bundle{}, false
+		return bundle{}, "", false
 	}
 	if members := b.state.Scopes[group]; members[0] == peer {
 		next := []string{peer}
@@ -232,7 +268,7 @@ func (b *Mitosis) received(group, peer string) (bundle, bool) {
 		slices.Sort(next[1:])
 		b.state.Scopes[group] = next
 	}
-	return in, true
+	return in, c.Revision, true
 }
 
 // seal encrypts the bundle once under a fresh key, and that key to each recipient's X25519 key.
@@ -340,20 +376,4 @@ func aead(key, data, ad []byte, encrypt bool) ([]byte, error) {
 		return gcm.Seal(nil, nil, data, ad), nil
 	}
 	return gcm.Open(nil, nil, data, ad)
-}
-
-func expires(entry json.RawMessage) float64 {
-	var e struct {
-		Expires float64 `json:"expires"`
-	}
-	_ = json.Unmarshal(entry, &e)
-	return e.Expires
-}
-
-func compact(raw json.RawMessage) json.RawMessage {
-	var out bytes.Buffer
-	if json.Compact(&out, raw) != nil {
-		return raw
-	}
-	return out.Bytes()
 }

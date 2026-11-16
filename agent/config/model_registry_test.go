@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -848,5 +849,25 @@ func TestModelRegistrySerializesExplicitReloadSnapshots(t *testing.T) {
 	current, ok := registry.Find("serial", "serial-model")
 	if !ok || current.Name != "Second" {
 		t.Fatalf("serialized reload model = %#v, ok=%v", current, ok)
+	}
+}
+
+func TestModelRegistryOffersAProviderLoggedInElsewhere(t *testing.T) {
+	directory := t.TempDir()
+	registry, err := NewOfflineModelRegistry(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	has := func() bool {
+		return slices.ContainsFunc(registry.Available(nil), func(model ai.Model) bool { return model.Provider == "mistral" })
+	}
+	if has() {
+		t.Fatal("available before any login")
+	}
+	if err := os.WriteFile(filepath.Join(directory, "auth.json"), []byte(`{"mistral":{"type":"api_key","key":"k"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !has() {
+		t.Fatal("a provider stored after start stays unavailable")
 	}
 }
