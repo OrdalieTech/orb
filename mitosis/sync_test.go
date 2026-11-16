@@ -72,6 +72,12 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		}
 	}
 
+	published := owner.state.Records[group+"/"+owner.PeerID()]
+	admin(owner, `{}`)
+	if owner.state.Records[group+"/"+owner.PeerID()] != published {
+		t.Fatal("an unchanged round published again")
+	}
+
 	// A token refreshed on a member replaces the stale copies, the owner's included.
 	_ = document.Replace(ctx, stores[b], []byte(`{"anthropic":{"type":"oauth","refresh":"r2","access":"a2","expires":2000},"openai":{"type":"api_key","key":"o1"}}`))
 	_ = document.Replace(ctx, stores[owner], []byte(`{"anthropic":{"type":"oauth","refresh":"r1","access":"a1","expires":1000},"openai":{"type":"api_key","key":"o1"}}`))

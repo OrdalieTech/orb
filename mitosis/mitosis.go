@@ -89,6 +89,7 @@ type Mitosis struct {
 	host           Host
 	name           string
 	credentials    document.Document
+	synced         string // what Sync last published, so an unchanged round publishes nothing
 }
 
 // Host serves a peer's machine-level calls — the threads stored on this machine, and starting

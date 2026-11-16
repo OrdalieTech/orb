@@ -278,11 +278,7 @@ func (ps *Peers) Admin(ctx context.Context, method string, params json.RawMessag
 		}
 		return ps.Remote(ctx, p.PeerID, p.Method, p.Params)
 	case "sync":
-		var endpoints []Locator
-		if locator, err := ps.Locator(); err == nil {
-			endpoints = []Locator{{Transport: "tailcat/1", Locator: locator}}
-		}
-		return ps.Mitosis.SyncAdmin(ctx, params, endpoints)
+		return ps.Mitosis.SyncAdmin(ctx, params, ps.endpoints())
 	case "publish":
 		var p struct {
 			Scope    string `json:"scope_id"`
@@ -375,6 +371,8 @@ func (ps *Peers) Reconcile() {
 		case <-ticker.C:
 		case <-ps.Mitosis.Changes():
 		}
+		// A device in a sync group runs a round each time, so the group converges with no command.
+		_, _ = ps.Mitosis.Sync(ps.ctx, ps.endpoints())
 		raw, err := ps.Mitosis.Admin(ps.ctx, "status", JSON(struct{}{}))
 		if err != nil {
 			continue
@@ -424,6 +422,17 @@ func (ps *Peers) Reconcile() {
 			}
 		}
 	}
+}
+
+// endpoints is where this device is reached, once its transport is up.
+func (ps *Peers) endpoints() []Locator {
+	if ps.Locator == nil {
+		return nil
+	}
+	if locator, err := ps.Locator(); err == nil {
+		return []Locator{{Transport: "tailcat/1", Locator: locator}}
+	}
+	return nil
 }
 
 // FullGrant is what an invitation offers: control of every conversation, current and

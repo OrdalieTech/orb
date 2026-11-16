@@ -804,15 +804,19 @@ PeerID. Recipients are checked at seal time: the owner seals to every current, u
 a member seals to the owner alone. Only the owner's vault reaches the group, and vaults are
 opened only from current, unblocked members.
 
-A round (`orb mitosis sync`, the `sync` admin method on every host with a Mitosis) reads before it
-publishes: the owner merges into auth.json the entries members handed it, keeping its own; a
-member takes the owner's entries over its own, then hands the result to the owner. Either way an
-OAuth entry that expires later wins, so a token refreshed on any device replaces the copies its
-refresh made stale. Entries merge by name and are never deleted. The bundle is one JSON object per data class; v1 carries
-credentials only, and a class added later is one more field. Sync runs on demand. A removed or
-blocked device keeps what it already received and gets nothing sealed after; a device that boots
-unattended holds the key to its own vault, so a low-trust host belongs in a profile of its own
-with capped credentials. A record stays under 16 KiB, which bounds the bundle and the group.
+A native device runs a round on every reconciliation (every 15 s and on each change), so a group
+converges with no command; `orb mitosis sync` (the `sync` admin method on every host with a
+Mitosis) runs one at once, which is how a Worker object, which cannot dial, syncs. A round reads
+before it publishes: the owner merges into auth.json the entries members handed it, keeping its
+own; a member takes the owner's entries over its own, then hands the result to the owner. Either
+way an OAuth entry that expires later wins, so a token refreshed on any device replaces the copies
+its refresh made stale. Entries merge by name and are never deleted; auth.json is written only
+when an entry changes, and a vault is republished only when what it seals does. The bundle is one
+JSON object per data class; v1 carries credentials only, and a class added later is one more
+field. A removed or blocked device keeps what it already received and gets nothing sealed after;
+a device that boots unattended holds the key to its own vault, so a low-trust host belongs in a
+profile of its own with capped credentials. A record stays under 16 KiB, which bounds the bundle
+and the group.
 
 ### Native v1 method schemas
 

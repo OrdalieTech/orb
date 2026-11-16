@@ -147,7 +147,7 @@ func (b *Mitosis) Sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 
 	var received []string
 	var shared map[string]json.RawMessage
-	err := credentials.Update(ctx, func(current []byte) ([]byte, error) {
+	fold := func(current []byte) ([]byte, error) {
 		received, shared = []string{}, map[string]json.RawMessage{}
 		local := map[string]json.RawMessage{}
 		if len(current) > 0 {
@@ -172,26 +172,37 @@ func (b *Mitosis) Sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			return current, nil
 		}
 		return json.MarshalIndent(local, "", "  ")
-	})
+	}
+	current, err := credentials.Read(ctx)
+	if err == nil {
+		_, err = fold(current)
+	}
+	if err == nil && len(received) > 0 {
+		err = credentials.Update(ctx, fold)
+	}
 	if err != nil {
 		return nil, err
 	}
-	var ext map[string]json.RawMessage
-	if len(recipients) > 0 {
-		v, err := seal(recipients, bundle{Credentials: shared})
-		if err != nil {
-			return nil, err
-		}
-		ext = map[string]json.RawMessage{"vault": JSON(v)}
-	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if r, ok := b.state.Records[group+"/"+self]; ok && endpoints == nil {
+	r, published := b.state.Records[group+"/"+self]
+	if published && endpoints == nil {
 		c, _ := r.Verify()
 		endpoints = c.Endpoints
 	}
-	if _, err = b.publishContact(group, b.name, endpoints, false, ext); err != nil {
-		return nil, err
+	if digest := string(JSON([]any{recipients, shared, endpoints, b.name})); !published || digest != b.synced {
+		var ext map[string]json.RawMessage
+		if len(recipients) > 0 {
+			v, err := seal(recipients, bundle{Credentials: shared})
+			if err != nil {
+				return nil, err
+			}
+			ext = map[string]json.RawMessage{"vault": JSON(v)}
+		}
+		if _, err = b.publishContact(group, b.name, endpoints, false, ext); err != nil {
+			return nil, err
+		}
+		b.synced = digest
 	}
 	slices.Sort(received)
 	return JSON(map[string]any{"group_id": group, "owner": owner, "members": b.state.Scopes[group], "received": received}), nil
