@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-17
+
+Bridge becomes Mitosis, with no alias, and shares credentials: the devices of a profile hold each other's logins, sealed to each device, and keep them when the others are off. Peers paired before must be paired again.
+
 - Bridge is now Mitosis, everywhere and with no alias: `orb mitosis`, `/mitosis`, `ORB_MITOSIS_HOME`, the `mitosis` and `mitosis-agent-calls` plugins, the `mitosis_call` and `mitosis_agents` tools, the `orb-mitosis` service and the apps' pages. The protocol is renamed too (`orb-mitosis/1`, `orb-mitosis:v1:` invitations), and state lives in a new place, so peers paired before must be paired again: run `orb mitosis pair` on one device and join from the other, and install the service again where it was installed.
 
 - Mitosis shares credentials across a profile's devices, sealed to each device's key so none is ever copied in the clear: on one device, `orb mitosis sync add <peer-id>` makes it the owner of the profile's sync group and admits a paired device, which runs `orb mitosis sync join <owner-peer-id>`. Each round then hands this device's logins to the owner, who merges them into the group's set and seals it to every member, so devices that each hold a different provider end up with both, and keep them when the others are off. A login refreshed on any device replaces the older copies, a provider removed on the owner is removed everywhere, and a key that is a command (`!…`) is never shared. A running Orb offers a provider as soon as its credential arrives. `orb mitosis sync remove <peer-id>` or `orb mitosis block <peer-id>` on the owner keeps that device out of every later set. A member leaves with `orb mitosis sync remove <owner-peer-id>`, and can then join or start another group, which is how a profile recovers from losing its owner. Native devices run a round on their own every 15 seconds and on each change; `orb mitosis sync` runs one at once, which is how a Worker object, which cannot dial, syncs. Sync shares credentials only.
