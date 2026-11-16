@@ -10,7 +10,54 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/bridge/protocol"
+	"github.com/OrdalieTech/orb/bridge/vault"
 )
+
+// X25519Public is this peer's Mitosis sealing key, derived from its Ed25519
+// identity (vault.X25519FromSeed), so profile secrets can be sealed to it.
+func (b *Bridge) X25519Public() ([]byte, error) {
+	k, err := vault.X25519FromSeed(b.state.Key[:ed25519.SeedSize])
+	if err != nil {
+		return nil, err
+	}
+	return k.PublicKey().Bytes(), nil
+}
+
+// ScopeMembers lists the peers in a scope that advertise a sealing key, newest
+// records only, sorted by PeerID. It is what the owner seals a vault to.
+func (b *Bridge) ScopeMembers(scope string) ([]vault.Member, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed || b.failed {
+		return nil, Fail("unavailable")
+	}
+	prefix := scope + "/"
+	var out []vault.Member
+	for k, r := range b.state.Records {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		c, err := r.Verify()
+		if err != nil || c.Withdrawn {
+			continue
+		}
+		raw, ok := c.Extensions["x25519"]
+		if !ok {
+			continue
+		}
+		var enc string
+		if json.Unmarshal(raw, &enc) != nil {
+			continue
+		}
+		pub, err := base64.RawURLEncoding.Strict().DecodeString(enc)
+		if err != nil || len(pub) != 32 {
+			continue
+		}
+		out = append(out, vault.Member{PeerID: c.Peer, Public: pub})
+	}
+	slices.SortFunc(out, func(a, z vault.Member) int { return strings.Compare(a.PeerID, z.PeerID) })
+	return out, nil
+}
 
 type Locator struct {
 	Transport string `json:"transport"`
@@ -96,7 +143,13 @@ func (b *Bridge) PublishContact(scope, name string, endpoints []Locator, withdra
 	if rev == ^uint64(0) {
 		return Record{}, Fail("resource_exhausted")
 	}
-	c := Contact{Schema: "orb.peer-record/1", Scope: scope, Peer: b.PeerID(), Revision: strconv.FormatUint(rev+1, 10), Name: name, Protocols: []string{protocol.Version}, Endpoints: endpoints, Withdrawn: withdraw}
+	var ext map[string]json.RawMessage
+	if xpub, err := b.X25519Public(); err == nil {
+		if enc, err := json.Marshal(base64.RawURLEncoding.EncodeToString(xpub)); err == nil {
+			ext = map[string]json.RawMessage{"x25519": enc}
+		}
+	}
+	c := Contact{Schema: "orb.peer-record/1", Scope: scope, Peer: b.PeerID(), Revision: strconv.FormatUint(rev+1, 10), Name: name, Protocols: []string{protocol.Version}, Endpoints: endpoints, Withdrawn: withdraw, Extensions: ext}
 	data, err := protocol.Canonical(JSON(c))
 	if err != nil || len(data) > protocol.MaxRecord {
 		return Record{}, Fail("resource_exhausted")
