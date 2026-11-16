@@ -121,7 +121,10 @@ func (b *Mitosis) MergeContact(sender string, r Record) (bool, error) {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.state.Blocked[sender] || !slices.Contains(b.state.Scopes[c.Scope], sender) {
+	members := b.state.Scopes[c.Scope]
+	// A member takes its sync group owner's record from anyone, so it catches up while the owner is away.
+	relayed := c.Scope == b.state.Group && len(members) > 0 && c.Peer == members[0]
+	if b.state.Blocked[sender] || b.state.Blocked[c.Peer] || !slices.Contains(members, sender) && !relayed {
 		return false, Fail("unauthorized")
 	}
 	k := c.Scope + "/" + c.Peer

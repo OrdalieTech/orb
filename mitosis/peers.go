@@ -277,6 +277,12 @@ func (ps *Peers) Admin(ctx context.Context, method string, params json.RawMessag
 			return nil, err
 		}
 		return ps.Remote(ctx, p.PeerID, p.Method, p.Params)
+	case "sync":
+		var endpoints []Locator
+		if locator, err := ps.Locator(); err == nil {
+			endpoints = []Locator{{Transport: "tailcat/1", Locator: locator}}
+		}
+		return ps.Mitosis.SyncAdmin(ctx, params, endpoints)
 	case "publish":
 		var p struct {
 			Scope    string `json:"scope_id"`

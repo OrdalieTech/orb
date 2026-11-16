@@ -17,6 +17,7 @@ import (
 	"slices"
 
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/mitosis/protocol"
 )
 
 // A profile's sync group is a scope whose first member is its owner. Only the owner admits and
@@ -88,10 +89,27 @@ func (b *Mitosis) setGroup(join, add, remove string) error {
 	return b.save()
 }
 
+// SyncAdmin is the sync admin method: one membership change, then a round. endpoints, when set,
+// are where this device is reached; nil keeps the ones it published before.
+func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoints []Locator) (json.RawMessage, error) {
+	var p struct {
+		Join   string `json:"join,omitempty"`
+		Add    string `json:"add,omitempty"`
+		Remove string `json:"remove,omitempty"`
+	}
+	if err := protocol.Decode(params, &p); err != nil {
+		return nil, err
+	}
+	if err := b.setGroup(p.Join, p.Add, p.Remove); err != nil {
+		return nil, err
+	}
+	return b.Sync(ctx, endpoints)
+}
+
 // Sync runs one round of the group: the owner folds in the entries members handed it, keeping its
 // own, then seals the whole set to every current, unblocked member; a member takes the owner's set
 // over its own, then hands the result to the owner. It returns the group and what it received.
-func (b *Mitosis) Sync(ctx context.Context) (json.RawMessage, error) {
+func (b *Mitosis) Sync(ctx context.Context, endpoints []Locator) (json.RawMessage, error) {
 	b.mu.Lock()
 	group, credentials, self := b.state.Group, b.credentials, b.PeerID()
 	members := slices.Clone(b.state.Scopes[group])
@@ -154,8 +172,7 @@ func (b *Mitosis) Sync(ctx context.Context) (json.RawMessage, error) {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	var endpoints []Locator
-	if r, ok := b.state.Records[group+"/"+self]; ok {
+	if r, ok := b.state.Records[group+"/"+self]; ok && endpoints == nil {
 		c, _ := r.Verify()
 		endpoints = c.Endpoints
 	}

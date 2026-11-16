@@ -182,18 +182,7 @@ func (b *Mitosis) Admin(ctx context.Context, method string, params json.RawMessa
 		b.state.Instances[p.Instance] = r
 		return JSON(struct{}{}), b.save()
 	case "sync":
-		var p struct {
-			Join   string `json:"join,omitempty"`
-			Add    string `json:"add,omitempty"`
-			Remove string `json:"remove,omitempty"`
-		}
-		if err := protocol.Decode(params, &p); err != nil {
-			return nil, err
-		}
-		if err := b.setGroup(p.Join, p.Add, p.Remove); err != nil {
-			return nil, err
-		}
-		return b.Sync(ctx)
+		return b.SyncAdmin(ctx, params, nil)
 	case "takeover":
 		var p struct {
 			Instance string `json:"instance_id"`

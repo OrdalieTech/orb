@@ -65,6 +65,20 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		}
 	}
 
+	// A device added last catches up from another member, with the owner away.
+	d := newMitosis(t)
+	stores[d] = &document.Memory{}
+	d.SetCredentials(stores[d])
+	admin(owner, `{"add":"`+d.PeerID()+`"}`)
+	admin(d, `{"join":"`+owner.PeerID()+`"}`)
+	if _, err := d.MergeContact(b.PeerID(), owner.state.Records[group+"/"+owner.PeerID()]); err != nil {
+		t.Fatal(err)
+	}
+	admin(d, `{}`)
+	if key(d, "openai") != "o1" || key(d, "anthropic") != "a1" {
+		t.Fatal("the new device did not catch up through a member")
+	}
+
 	_ = document.Replace(ctx, stores[owner], []byte(`{"openai":{"type":"api_key","key":"o2"}}`))
 	admin(owner, `{"remove":"`+c.PeerID()+`"}`)
 	round()
