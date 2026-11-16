@@ -351,18 +351,13 @@ func (state *State) Settings(cwd, agentDir string, options ...config.Option) (*c
 }
 
 func (state *State) Auth(agentDir string) (*config.AuthStorage, error) {
-	if state == nil {
+	switch {
+	case state == nil:
 		return config.NewAuthStorage(filepath.Join(agentDir, "auth.json"))
+	case state.credentials != nil:
+		return config.NewAuthStorageWithDocument(state.credentials)
 	}
-	return config.NewAuthStorageWithDocument(state.Credentials(agentDir))
-}
-
-// Credentials is the auth.json document under agentDir, or the one that replaces it.
-func (state *State) Credentials(agentDir string) host.Document {
-	if state.credentials != nil {
-		return state.credentials
-	}
-	return state.Document(filepath.Join(agentDir, "auth.json"))
+	return config.NewAuthStorageWithDocument(state.Document(filepath.Join(agentDir, "auth.json")))
 }
 
 func (state *State) Trust(agentDir string) (*config.ProjectTrustStore, error) {
