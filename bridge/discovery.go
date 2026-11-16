@@ -16,6 +16,18 @@ import (
 // A Bridge is the Store the vault sync orchestration drives.
 var _ vault.Store = (*Bridge)(nil)
 
+// OpenVault reads the scope's current vault and decrypts it with this peer's
+// identity-derived key. ok is false (no error) when nothing is sealed to this
+// peer — never admitted, or revoked — so callers leave local secrets untouched.
+// Decryption uses the private key, which never leaves this process.
+func (b *Bridge) OpenVault(scope string) (vault.Bundle, bool, error) {
+	priv, err := vault.X25519FromSeed(b.state.Key[:ed25519.SeedSize])
+	if err != nil {
+		return vault.Bundle{}, false, err
+	}
+	return vault.Apply(b, scope, b.PeerID(), priv)
+}
+
 // X25519Public is this peer's Mitosis sealing key, derived from its Ed25519
 // identity (vault.X25519FromSeed), so profile secrets can be sealed to it.
 func (b *Bridge) X25519Public() ([]byte, error) {

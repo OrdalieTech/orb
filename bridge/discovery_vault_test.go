@@ -132,6 +132,56 @@ func TestScopeVaultGossipsAndOpens(t *testing.T) {
 	}
 }
 
+func TestOpenVaultDecryptsWithIdentityKey(t *testing.T) {
+	a, b := newBridge(t), newBridge(t)
+	scope := protocol.NewID()
+	for _, x := range []*Bridge{a, b} {
+		if err := x.SetScope(scope, []string{a.PeerID(), b.PeerID()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, x := range []*Bridge{a, b} {
+		rec, err := x.PublishContact(scope, "n", nil, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.MergeContact(x.PeerID(), rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	members, _ := a.ScopeMembers(scope)
+	doc, err := vault.Build(members, 1, 1, vault.Bundle{Credentials: json.RawMessage(`{"p":"k"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetVault(scope, &doc); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := a.PublishContact(scope, "A", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.MergeContact(a.PeerID(), rec); err != nil {
+		t.Fatal(err)
+	}
+	// b opens with its own identity, no key material passed in.
+	bundle, ok, err := b.OpenVault(scope)
+	if err != nil || !ok {
+		t.Fatalf("b OpenVault ok=%v err=%v", ok, err)
+	}
+	if string(bundle.Credentials) != `{"p":"k"}` {
+		t.Fatalf("wrong bundle: %s", bundle.Credentials)
+	}
+	// A bridge with no vault in scope is a clean no-op.
+	c := newBridge(t)
+	if err := c.SetScope(scope, []string{c.PeerID()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := c.OpenVault(scope); ok || err != nil {
+		t.Fatalf("empty scope should be a no-op, got ok=%v err=%v", ok, err)
+	}
+}
+
 func TestVaultPersistsAcrossRestart(t *testing.T) {
 	a := newBridge(t)
 	scope := protocol.NewID()
