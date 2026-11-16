@@ -236,23 +236,30 @@ Done (branch `mitosis`, fixtures-first, all green; `bridge/vault` + `bridge`):
 5. ✅ **Orchestration seam** (`bridge/vault/sync.go`): `vault.Publish`/`Apply`,
    `Bridge.OpenVault` (decrypts with the identity key, which never leaves the process).
 
+6. ✅ **Credential merge** (`ai/auth/merge.go`): `MergeCredentials` (overlay wins per provider,
+   never deletes a local-only login), `Store.Export`/`Store.MergeIn` (atomic).
+7. ✅ **Daemon method + CLI**: `daemon.MitosisScope` (deterministic per-profile scope),
+   `Service.mitosisSync` (join scope, advertise key, seal credentials, return this device's vault),
+   and `orb mitosis sync [--push|--pull]` (`cmd/orb/mitosis_sync.go`) which exports the local auth
+   store, has the daemon seal it, and merges back what is sealed to this device. Covered by an
+   in-process two-bridge end-to-end test with real stores and a real daemon-method test (the
+   sandbox blocks socket-level live daemons; the Go tests run the identical path).
+
 Remaining:
 
-6. **Owner-side publish in the `Peers`/daemon layer.** Must rebuild the bundle from the local
-   credential + settings stores and call a publish that **re-publishes the self contact preserving
-   its network locator** (endpoints) — hence it belongs where `Peers.Locator` lives, not a naive
-   core method. Trigger: an owner admin method `vault.publish {scope, bundle}` (the daemon holds the
-   Bridge identity; the CLI passes the bundle it read) and, for apply, `vault.open {scope}` →
-   `Bridge.OpenVault` → bundle back to the CLI, which writes it. Clean split: daemon = crypto +
-   identity, CLI = store I/O over the same-UID admin socket.
-7. **Bundle ↔ stores mapping + CLI** (`cmd/orb`): read/merge `vault.Bundle.Credentials` against
-   `config.AuthStorage` (`native.State.Auth`) provider-by-provider (never clobbering local-only
-   credentials), and `Config` against the settings document; `orb mitosis sync` (status + one-shot
-   push/pull), per-profile opt-in, low-trust capped-profile guidance. The credential-writing merge
-   is the security-sensitive part — build it test-first in isolation before wiring the command.
-8. **Automatic sync in `Peers.Reconcile`** (owner publishes on credential/membership change; peers
-   apply on receipt), once the manual command is proven.
-9. (Later) `memory` class; delegated spawn vouchers for non-owner authorship.
+8. **Automatic sync in `Peers.Reconcile`** (owner re-seals on credential/membership change; peers
+   apply on receipt), so devices converge without running the command. v1 is the manual command.
+9. **Config/models class** (currently credentials only) and per-profile opt-in + low-trust
+   capped-profile guidance in the UI.
+10. (Later) `memory` class; delegated spawn vouchers for non-owner authorship; a live two-machine
+    acceptance test (needs an environment that permits a persistent daemon and the relay).
+
+### What works today, end to end
+
+`orb mitosis sync` on each device of a profile shares that device's stored credentials with the
+others, sealed per device (X25519), merged without wiping local-only logins, and revocable by
+removing a device from the scope (the next publish reseals only to the survivors). No raw key is
+ever copied. It is eventually consistent over the reconcile loop; run it once per device to join.
 
 ## 7. What this unlocks
 
