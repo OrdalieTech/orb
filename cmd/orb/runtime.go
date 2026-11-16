@@ -472,7 +472,7 @@ func hasNonControlExtensions(registry *extensions.Registry) bool {
 		return false
 	}
 	for _, extension := range registry.Extensions() {
-		if extension.Path != "builtin:plugin-control" && extension.Path != "builtin:bridge" {
+		if extension.Path != "builtin:plugin-control" && extension.Path != "builtin:mitosis" {
 			return true
 		}
 	}

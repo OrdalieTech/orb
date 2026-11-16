@@ -704,9 +704,9 @@ async function validationCases(Type: any, StringEnum: any): Promise<ValidationCa
 	const zoomSchema = await goSchema("plugins/memtree/memtree.go", "zoomSchema = ");
 	const dateSchema = await goSchema("plugins/memtree/memtree.go", "dateSchema = ");
 	const questionSchema = await goSchema("plugins/questions/questions.go", "var schema = ");
-	const agentsSchema = await goSchema("plugins/bridgeagents/bridgeagents.go", "var schema = ");
+	const agentsSchema = await goSchema("plugins/mitosisagents/mitosisagents.go", "var schema = ");
 	const sendFileSchema = await goSchema("chat/attachment.go", 'Name: "send_file"');
-	const bridgeCallSchema = await goSchema("agent/bridge/tool/tool.go", 'Name: "bridge_call"');
+	const mitosisCallSchema = await goSchema("agent/mitosis/tool/tool.go", 'Name: "mitosis_call"');
 	const toolSearchSchema = await goSchema("plugins/mcp/tool_search.go", "Parameters:");
 	// plugins/jobs extends bash's schema through a decoded map, so Go re-encodes it with sorted keys.
 	const jobsBashSchema = goMarshalled({
@@ -830,15 +830,15 @@ async function validationCases(Type: any, StringEnum: any): Promise<ValidationCa
 		{ name: "send-file-number", tool: "send_file", schema: sendFileSchema, arguments: j({ path: 5 }) },
 		{ name: "send-file-missing", tool: "send_file", schema: sendFileSchema, arguments: j({}) },
 		{
-			name: "bridge-call-valid",
-			tool: "bridge_call",
-			schema: bridgeCallSchema,
+			name: "mitosis-call-valid",
+			tool: "mitosis_call",
+			schema: mitosisCallSchema,
 			arguments: j({ peer_id: "p", call: { instance_id: "i", service: "orb.instance/1", method: "inspect", args: {} } }),
 		},
 		{
-			name: "bridge-call-errors",
-			tool: "bridge_call",
-			schema: bridgeCallSchema,
+			name: "mitosis-call-errors",
+			tool: "mitosis_call",
+			schema: mitosisCallSchema,
 			arguments: j({
 				peer_id: "p",
 				call: { instance_id: "i", service: "orb.instance/2", method: "Prompt", expected: { registration_generation: "1" }, extra: 1 },

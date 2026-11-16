@@ -1,5 +1,5 @@
 // Package native is the native host's durable state: the SQLite database that
-// holds settings, credentials, model catalogs, sessions and Bridge documents,
+// holds settings, credentials, model catalogs, sessions and Mitosis documents,
 // its one-time import from Pi-compatible files, and the per-conversation owner
 // locks that keep one Orb process writing each conversation (DECISIONS.md
 // "Native SQLite storage").
@@ -24,11 +24,11 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
-	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/host"
+	"github.com/OrdalieTech/orb/mitosis/protocol"
 	nativeaccounts "github.com/OrdalieTech/orb/platforms/native/accounts"
-	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
+	nativemitosis "github.com/OrdalieTech/orb/platforms/native/mitosis"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/gofrs/flock"
@@ -78,14 +78,14 @@ type State struct {
 }
 
 // Path is the database file for agentDir: ORB_STATE_HOME, else beside an
-// explicit agent dir or Bridge home, else ~/.orb/state.
+// explicit agent dir or Mitosis home, else ~/.orb/state.
 func Path(agentDir string) (string, error) {
 	root := os.Getenv("ORB_STATE_HOME")
 	if root == "" && os.Getenv(config.EnvAgentDir) != "" {
 		root = filepath.Join(agentDir, "state")
 	}
-	if root == "" && os.Getenv("ORB_BRIDGE_HOME") != "" {
-		root = filepath.Join(os.Getenv("ORB_BRIDGE_HOME"), "state")
+	if root == "" && os.Getenv("ORB_MITOSIS_HOME") != "" {
+		root = filepath.Join(os.Getenv("ORB_MITOSIS_HOME"), "state")
 	}
 	if root == "" {
 		home, err := os.UserHomeDir()
@@ -166,7 +166,7 @@ func Open(ctx context.Context, agentDir string, migrate bool, credentials host.D
 }
 
 // Document implements host.Store: kernel paths under the agent dir and the
-// Bridge homes map to their namespaces, anything else is keyed by its path.
+// Mitosis homes map to their namespaces, anything else is keyed by its path.
 func (state *State) Document(path string) host.Document {
 	namespace, key := state.address(path)
 	return state.DB.Document(namespace, key)
@@ -239,11 +239,11 @@ func (state *State) migrationSources(sessionDirs []string) ([]sqlite.MigrationSo
 			return nil, err
 		}
 	}
-	bridge, err := nativebridge.Dir("personal")
+	mitosis, err := nativemitosis.Dir("personal")
 	if err != nil {
 		return nil, err
 	}
-	for _, root := range []string{filepath.Dir(bridge), filepath.Join(filepath.Dir(filepath.Dir(bridge)), "instances"), filepath.Join(state.AgentDir, "memory"), filepath.Join(state.AgentDir, "chat"), os.Getenv("ORB_CHAT_DATA_DIR")} {
+	for _, root := range []string{filepath.Dir(mitosis), filepath.Join(filepath.Dir(filepath.Dir(mitosis)), "instances"), filepath.Join(state.AgentDir, "memory"), filepath.Join(state.AgentDir, "chat"), os.Getenv("ORB_CHAT_DATA_DIR")} {
 		if err := walk(root, func(path string, entry fs.DirEntry) (sqlite.MigrationSource, bool) {
 			namespace, key := state.address(path)
 			source := sqlite.MigrationSource{Path: path, Namespace: namespace, Key: key, Kind: "json"}
@@ -323,8 +323,8 @@ func (state *State) address(path string) (string, string) {
 	if filepath.Dir(path) == state.AgentDir {
 		return "config", filepath.Base(path)
 	}
-	bridge, _ := nativebridge.Dir("personal")
-	for _, root := range []struct{ path, prefix string }{{filepath.Dir(bridge), "bridge"}, {filepath.Join(filepath.Dir(filepath.Dir(bridge)), "instances"), "instances"}} {
+	mitosis, _ := nativemitosis.Dir("personal")
+	for _, root := range []struct{ path, prefix string }{{filepath.Dir(mitosis), "mitosis"}, {filepath.Join(filepath.Dir(filepath.Dir(mitosis)), "instances"), "instances"}} {
 		relative, err := filepath.Rel(root.path, path)
 		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 			return root.prefix + "/" + filepath.ToSlash(filepath.Dir(relative)), filepath.Base(relative)
@@ -387,11 +387,11 @@ func (state *State) Models(agentDir string, credentials auth.CredentialStore, of
 	return config.NewModelRegistryWithDocuments(agentDir, credentials, state.Document(filepath.Join(agentDir, "models.json")), state.Document(filepath.Join(agentDir, "models-store.json")), !offline)
 }
 
-func (state *State) BridgeStore(path string, quota int) (*nativebridge.Store, error) {
+func (state *State) MitosisStore(path string, quota int) (*nativemitosis.Store, error) {
 	if state == nil {
-		return nativebridge.OpenStore(path, quota, nil)
+		return nativemitosis.OpenStore(path, quota, nil)
 	}
-	return nativebridge.OpenStore(path, quota, state.Document(path))
+	return nativemitosis.OpenStore(path, quota, state.Document(path))
 }
 
 // Read and Write fall back to private files without a database; an absent
@@ -482,7 +482,7 @@ func (state *State) ServeHeld(ctx context.Context, id string, handler protocol.H
 	if err != nil {
 		return nil, err
 	}
-	return nativebridge.Listen(ctx, path, nil, id, handler)
+	return nativemitosis.Listen(ctx, path, nil, id, handler)
 }
 
 // Holder calls the Orb process that holds conversation id open.
@@ -491,7 +491,7 @@ func (state *State) Holder(ctx context.Context, id string) (*protocol.Conn, erro
 	if err != nil {
 		return nil, err
 	}
-	return nativebridge.Dial(ctx, path, nativebridge.Auth{Credential: id}, nil, nil)
+	return nativemitosis.Dial(ctx, path, nativemitosis.Auth{Credential: id}, nil, nil)
 }
 
 // BindSession claims manager's conversation and keeps the claim.

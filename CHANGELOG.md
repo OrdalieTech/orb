@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Bridge is now Mitosis, everywhere and with no alias: `orb mitosis`, `/mitosis`, `ORB_MITOSIS_HOME`, the `mitosis` and `mitosis-agent-calls` plugins, the `mitosis_call` and `mitosis_agents` tools, the `orb-mitosis` service and the apps' pages. The protocol is renamed too (`orb-mitosis/1`, `orb-mitosis:v1:` invitations), and state lives in a new place, so peers paired before must be paired again: run `orb mitosis pair` on one device and join from the other, and install the service again where it was installed.
+
+- Mitosis shares credentials across a profile's devices, sealed to each device's key so none is ever copied in the clear: on one device, `orb mitosis sync add <peer-id>` makes it the owner of the profile's sync group and admits a paired device, which runs `orb mitosis sync join <owner-peer-id>`. Each `orb mitosis sync` then hands this device's logins to the owner, who merges them into the group's set and seals it to every member, so devices that each hold a different provider end up with both, and keep them when the others are off. `orb mitosis sync remove <peer-id>` or `orb mitosis block <peer-id>` on the owner keeps that device out of every later set. Sync runs on demand, and shares credentials only.
+
 ## [0.22.0] - 2026-11-15
 
 Orb speaks Buzz itself and agents wake themselves: `orb chat buzz` makes a Buzz agent of one static `orb`, with no buzz-acp or Buzz binary, the `wake` plugin brings a prompt back later or on a schedule and holds the approvals no one can answer at the time, and the desktop opens Settings in a tile.

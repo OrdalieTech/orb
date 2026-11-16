@@ -21,13 +21,13 @@ import (
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/bridge"
-	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/chat"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
-	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
-	"github.com/OrdalieTech/orb/platforms/native/bridge/daemon"
+	"github.com/OrdalieTech/orb/mitosis"
+	"github.com/OrdalieTech/orb/mitosis/protocol"
+	nativemitosis "github.com/OrdalieTech/orb/platforms/native/mitosis"
+	"github.com/OrdalieTech/orb/platforms/native/mitosis/daemon"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/OrdalieTech/orb/plugins/memory"
 )
@@ -451,7 +451,7 @@ func TestNativeSessionMigrationRestartAndResume(t *testing.T) {
 	agentDir := filepath.Join(root, "agent")
 	t.Setenv(config.EnvAgentDir, agentDir)
 	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
-	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
+	t.Setenv("ORB_MITOSIS_HOME", filepath.Join(root, "mitosis"))
 	t.Setenv("ORB_CHAT_DATA_DIR", "")
 	cwd := t.TempDir()
 	legacy, err := session.Create(cwd, "", session.WithAgentDir(agentDir))
@@ -570,7 +570,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	agentDir := filepath.Join(root, "agent")
 	t.Setenv(config.EnvAgentDir, agentDir)
 	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
-	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
+	t.Setenv("ORB_MITOSIS_HOME", filepath.Join(root, "mitosis"))
 	t.Setenv("ORB_CHAT_DATA_DIR", "")
 	t.Setenv("ORB_OFFLINE", "1")
 	if err := os.MkdirAll(agentDir, 0700); err != nil {
@@ -596,23 +596,23 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if err = memoryStore.Delete(ctx, deleted); err != nil {
 		t.Fatal(err)
 	}
-	dir, err := nativebridge.Dir("personal")
+	dir, err := nativemitosis.Dir("personal")
 	if err != nil {
 		t.Fatal(err)
 	}
-	bridgePath := filepath.Join(dir, "state.json")
-	store, err := nativebridge.OpenStore(bridgePath, protocol.MaxFrame, nil)
+	mitosisPath := filepath.Join(dir, "state.json")
+	store, err := nativemitosis.OpenStore(mitosisPath, protocol.MaxFrame, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := bridge.Open(store, true)
+	b, err := mitosis.Open(store, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	peer := b.PeerID()
 	_ = b.Close()
 	_ = store.Close()
-	originalBridge, err := os.ReadFile(bridgePath)
+	originalMitosis, err := os.ReadFile(mitosisPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -679,15 +679,15 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if err = queue.Put(ctx, chat.Message{EventID: "after-migration", Text: "new"}); err != nil {
 		t.Fatal(err)
 	}
-	store, err = state.BridgeStore(bridgePath, protocol.MaxFrame)
+	store, err = state.MitosisStore(mitosisPath, protocol.MaxFrame)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err = bridge.Open(store, false)
+	b, err = mitosis.Open(store, false)
 	if err != nil || b.PeerID() != peer {
 		t.Fatal("pairing identity changed", err)
 	}
-	remote, err := bridge.Open(&document.Memory{}, true)
+	remote, err := mitosis.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -722,7 +722,7 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if err != nil || len(pending) != 1 || pending[0].EventID != "after-migration" {
 		t.Fatal("restart replayed old spool", pending, err)
 	}
-	for path, want := range map[string][]byte{settingsPath: settingsBytes, bridgePath: originalBridge, spoolPath: originalSpool} {
+	for path, want := range map[string][]byte{settingsPath: settingsBytes, mitosisPath: originalMitosis, spoolPath: originalSpool} {
 		got, err := os.ReadFile(path)
 		if err != nil || !bytes.Equal(got, want) {
 			t.Fatalf("original changed: %s, %v", path, err)
@@ -736,7 +736,7 @@ func TestNativeChatResetRetainsDeliveryHistory(t *testing.T) {
 	agentDir := filepath.Join(root, "agent")
 	t.Setenv(config.EnvAgentDir, agentDir)
 	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
-	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
+	t.Setenv("ORB_MITOSIS_HOME", filepath.Join(root, "mitosis"))
 	t.Setenv("ORB_CHAT_DATA_DIR", "")
 	t.Setenv("ORB_OFFLINE", "1")
 	state, err := openNativeState(ctx, agentDir, true)
@@ -812,7 +812,7 @@ func TestStorageSessionsListsStoredConversationsAsJSONLines(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
 	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
-	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
+	t.Setenv("ORB_MITOSIS_HOME", filepath.Join(root, "mitosis"))
 	t.Setenv("ORB_OFFLINE", "1")
 	jsonl := filepath.Join(root, "s.jsonl")
 	if err := os.WriteFile(jsonl, []byte(`{"type":"session","version":3,"id":"11111111-2222-4333-8444-555555555555","timestamp":"2026-09-27T10:00:00.000Z","cwd":"/work"}

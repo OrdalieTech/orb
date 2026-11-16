@@ -107,7 +107,7 @@ func (r Request) ValidateReply(raw string) error {
 type Panel func(request Request, theme extensions.Theme, height func() int, invalidate func(), done func(Result)) extensions.Component
 
 // Draw is how a terminal draws questions: the panel it asks them in, and their lines in the
-// transcript. A host without a terminal leaves it zero: its controller (an app, a Bridge peer)
+// transcript. A host without a terminal leaves it zero: its controller (an app, a Mitosis peer)
 // answers them from the presentation.
 type Draw struct {
 	Panel Panel

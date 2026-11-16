@@ -1440,7 +1440,7 @@ func TestTurnEndAndBeforeSettleBoundariesPersistEntriesAndContinue(t *testing.T)
 	}
 }
 
-// A steer sent while a run settles, by a sender that still saw it going (an RPC client, the Bridge
+// A steer sent while a run settles, by a sender that still saw it going (an RPC client, the Mitosis
 // app, an SDK caller), starts the next run instead of waiting in the queue for one.
 func TestSteeringQueuedAsARunSettlesRunsNext(t *testing.T) {
 	cwd := t.TempDir()

@@ -1,7 +1,7 @@
 # Orb for the desktop
 
-The desktop app for macOS, Linux and Windows draws `orb app` (`bridge/view`): the conversations
-open on this computer's Bridge, the CLI's own, and on its paired machines. It holds no logic of
+The desktop app for macOS, Linux and Windows draws `orb app` (`mitosis/view`): the conversations
+open on this computer's Mitosis, the CLI's own, and on its paired machines. It holds no logic of
 its own; the view, shared with the Android and iOS apps, does. It is Go, drawn by
 [MyGo](https://github.com/egoist/mygo)'s native UI (no webview, no cgo), in the Android app's look:
 tiles, as a tiling window manager cuts the window, each with its tabs as a browser has them: the

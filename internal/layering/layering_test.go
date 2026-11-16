@@ -30,7 +30,7 @@ const (
 	library    = iota // internal and tui: leaf code
 	providers         // ai
 	loop              // engine
-	core              // agent, bridge, host: the closed core (P10)
+	core              // agent, mitosis, host: the closed core (P10)
 	capability        // plugins (P3)
 	driver            // interfaces: TUI mode, RPC, ACP, chat platforms (P1)
 	hostLayer         // platforms: port implementations
@@ -42,9 +42,9 @@ const (
 var layers = map[string]int{
 	".": library, "internal": library, "tui": library,
 	"ai": providers, "engine": loop,
-	"agent": core, "bridge": core, "host": core,
+	"agent": core, "mitosis": core, "host": core,
 	"plugins":     capability,
-	"agent/modes": driver, "agent/rpc": driver, "agent/acp": driver, "agent/bridge": driver,
+	"agent/modes": driver, "agent/rpc": driver, "agent/acp": driver, "agent/mitosis": driver,
 	"agent/clipboard": driver, "agent/extensions/host": driver, "chat": driver,
 	"platforms": hostLayer,
 	"cmd":       assembly, "agent/assembly": assembly, "agent/examples": assembly, "chat/examples": assembly, "chat/platforms": assembly,
@@ -239,9 +239,9 @@ func TestCapabilityDependencies(t *testing.T) {
 		{"plugins/memory/agent", []string{"/agent", "/tui", "/plugins/memory/filestore", "/plugins/memory/extension", "/platforms/native/sqlite"}},
 		{"plugins/memory/extension", []string{"/agent/assembly", "/plugins/memory/filestore", "/platforms/native/sqlite"}},
 		{"plugins/usage", []string{"/agent", "/engine", "/tui", "/plugins/usage/footer", "/platforms/native/sqlite"}},
-		{"agent/bridge/tool", []string{"/agent/session", "/agent/extensions", "/agent/config", "/agent/modes", "/tui", "/platforms", "/plugins"}},
+		{"agent/mitosis/tool", []string{"/agent/session", "/agent/extensions", "/agent/config", "/agent/modes", "/tui", "/platforms", "/plugins"}},
 		{"platforms/websocket", []string{"/agent", "/tui", "/platforms/native", "/plugins"}},
-		{"bridge", []string{"/agent", "/ai", "/engine", "/tui", "/platforms", "/plugins"}},
+		{"mitosis", []string{"/agent", "/ai", "/engine", "/tui", "/platforms", "/plugins"}},
 		{"plugins/tasks", []string{"/agent/assembly", "/tui", "/plugins/subagents", "/plugins/websearch", "/plugins/mcp"}},
 		{"plugins/questions", []string{"/agent/assembly", "/tui"}},
 		{"platforms/worker/peer", []string{"/agent/assembly", "/agent/modes", "/tui", "/platforms/native", "/platforms/websocket"}},

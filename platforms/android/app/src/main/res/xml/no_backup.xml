@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Keys, credentials and this phone's Bridge identity stay on this phone: no cloud backup, no transfer. -->
+<!-- Keys, credentials and this phone's Mitosis identity stay on this phone: no cloud backup, no transfer. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" />

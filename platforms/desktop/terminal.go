@@ -11,7 +11,7 @@ import (
 )
 
 // shell is the terminal where a conversation runs: a login shell in its folder on this computer, a
-// peer's through `orb bridge shell`. It lives while its conversation is open; hidden, it keeps its
+// peer's through `orb mitosis shell`. It lives while its conversation is open; hidden, it keeps its
 // state.
 type shell struct {
 	term *terminal.Terminal
@@ -46,7 +46,7 @@ func (a *app) newShell(t *Tab) *shell {
 		Cursor:    terminal.CursorBar,
 	}
 	if t.Remote {
-		opts.Command, opts.Dir = []string{binary(), "bridge", "shell", t.Peer, t.CWD}, ""
+		opts.Command, opts.Dir = []string{binary(), "mitosis", "shell", t.Peer, t.CWD}, ""
 	}
 	s := &shell{}
 	id := t.ID

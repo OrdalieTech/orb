@@ -12,7 +12,7 @@ import (
 func TestFooterTooltipExpiresWithoutMouseLeave(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		initTestTheme(t)
-		data := &clickableFooterData{fakeFooterDataProvider: fakeFooterDataProvider{cwd: "/workspace", statuses: map[string]string{"bridge": "●"}}}
+		data := &clickableFooterData{fakeFooterDataProvider: fakeFooterDataProvider{cwd: "/workspace", statuses: map[string]string{"mitosis": "●"}}}
 		footer := NewFooterComponent(layoutFooterSession{}, data, false)
 		label := ""
 		footer.tooltip = func(text string, _, _ int) { label = text }
@@ -25,7 +25,7 @@ func TestFooterTooltipExpiresWithoutMouseLeave(t *testing.T) {
 		column := tui.VisibleWidth(line[:strings.LastIndex(line, "●")])
 		hover := tui.MouseEvent{Type: tui.MouseMove, Column: column}
 		footer.HandleMouse(hover)
-		if got := tooltip(); got != "Bridge" {
+		if got := tooltip(); got != "Mitosis" {
 			t.Fatalf("tooltip = %q", got)
 		}
 		// Leaving a terminal pane produces no mouse-leave report.
@@ -34,7 +34,7 @@ func TestFooterTooltipExpiresWithoutMouseLeave(t *testing.T) {
 		if got := tooltip(); got != "" {
 			t.Fatalf("tooltip survived absent mouse reports: %q", got)
 		}
-		if !footer.HandleMouse(hover) || tooltip() != "Bridge" {
+		if !footer.HandleMouse(hover) || tooltip() != "Mitosis" {
 			t.Fatal("expired hover could not show its tooltip again")
 		}
 		footer.HandleMouse(tui.MouseEvent{Type: tui.MouseMove, Row: -1})
@@ -49,7 +49,7 @@ func TestFooterTooltipExpiresWithoutMouseLeave(t *testing.T) {
 		footer.HandleMouse(hover)
 		time.Sleep(1100 * time.Millisecond)
 		synctest.Wait()
-		if got := tooltip(); got != "Bridge" {
+		if got := tooltip(); got != "Mitosis" {
 			t.Fatalf("previous hover expiry hid a newer tooltip: %q", got)
 		}
 		time.Sleep(time.Second)

@@ -209,7 +209,7 @@ private fun Flow(f: Login, state: String, tint: androidx.compose.ui.graphics.Col
         "browser" -> {
             LaunchedEffect(f.url) { f.url.takeIf { it.isNotEmpty() }?.let { context.browse(it, tint) } }
             T("Continue in the browser", size = Size.Title, weight = Strong)
-            // A device signing in over Bridge listens on its own localhost: the code or final URL comes back by paste.
+            // A device signing in over Mitosis listens on its own localhost: the code or final URL comes back by paste.
             T(if (remote) "Finish on the page that opened, then paste the code it shows or the final redirect URL here." else "Finish on the page that opened. It redirects to Orb on this phone, which brings you back here.", color = p.mute)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Btn("open again", inverted = true) { f.url.takeIf { it.isNotEmpty() }?.let { context.browse(it, tint) } }; Btn("cancel", onClick = close) }
             f.prompt?.takeIf { it.kind == "manual_code" }?.let { pr ->

@@ -120,7 +120,7 @@ struct Conversation: View {
     }
 }
 
-/// What the person said sits at right on a soft ground (a peer's says it came by Bridge); Orb just
+/// What the person said sits at right on a soft ground (a peer's says it came by Mitosis); Orb just
 /// speaks, full width, its actions inline. A turn redraws only when its rows change.
 private struct Turn: View, Equatable {
     @Environment(Nav.self) private var nav

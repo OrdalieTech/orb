@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/mitosis"
 )
 
 func TestRejectNonTailcatAndEmbeddedRelay(t *testing.T) {
@@ -20,7 +20,7 @@ func TestRejectNonTailcatAndEmbeddedRelay(t *testing.T) {
 }
 
 func TestLiveNativePath(t *testing.T) {
-	locator := os.Getenv("ORB_BRIDGE_LIVE_LOCATOR")
+	locator := os.Getenv("ORB_MITOSIS_LIVE_LOCATOR")
 	if locator == "" {
 		t.Skip("native live fixture")
 	}
@@ -31,12 +31,12 @@ func TestLiveNativePath(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = n.Close() }()
-	peer := os.Getenv("ORB_BRIDGE_LIVE_PEER")
+	peer := os.Getenv("ORB_MITOSIS_LIVE_PEER")
 	stream, err := n.Dial(ctx, peer, locator)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := bridge.Open(&document.Memory{}, true)
+	b, err := mitosis.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestLiveNativePath(t *testing.T) {
 		t.Fatal("pin mismatch")
 	}
 	// The unknown identity can negotiate, but cannot read any catalog.
-	if err = c.Call(ctx, "instances.list", struct{}{}, nil); bridge.Code(err) != "unauthorized" {
+	if err = c.Call(ctx, "instances.list", struct{}{}, nil); mitosis.Code(err) != "unauthorized" {
 		t.Fatal(err)
 	}
 	client := n.clients[peer]

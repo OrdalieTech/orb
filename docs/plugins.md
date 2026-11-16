@@ -34,7 +34,7 @@ A plugin's value is either a boolean or an object holding its settings:
 object settings; `orb plugins set <name> <key> <json>` writes one setting and leaves the gate as it
 was. Settings that take one of a few values (`permissions.mode`, `memtree.mode`) are checked
 against them, and the whole object is checked as the plugin reads it before anything is saved.
-`orb plugins list --json` prints what `/plugins` lists (Bridge and provider usage have pages of
+`orb plugins list --json` prints what `/plugins` lists (Mitosis and provider usage have pages of
 their own), one object per plugin with its gate and those choices, which the apps draw. `orb plugins list --all` prints the full resolved composition
 (compiled extensions, plugins, MCP row, discovered JS extensions) with the
 settings layer that decided each state — through the same code path the real
@@ -47,8 +47,8 @@ An Orb reads its plugins when it starts; `/plugins` reloads the session it runs 
 - **Terminal, Mac and Android:** every Orb is the `orb` CLI, so every bundled plugin is there.
   The phone's own Orb leaves out those that read a computer's Claude Code or Codex.
 - **Apps:** Settings › Plugins shows the plugins of any paired machine the app may start Orb on,
-  through that machine's Bridge (`host.plugins`, `host.plugins.set`), and opens on the machine of
-  the conversation in front. The Orbs that Bridge started for the app reopen with a change at
+  through that machine's Mitosis (`host.plugins`, `host.plugins.set`), and opens on the machine of
+  the conversation in front. The Orbs that Mitosis started for the app reopen with a change at
   their next message: at once between turns, after the running one otherwise. A conversation there shows
   what its plugins show beside it in a terminal: widget lines (the task list), statuses, and the
   last notice until the next turn; widgets drawn only for a terminal (activity) stay there.
@@ -90,15 +90,15 @@ environment, and is bounded: 10-minute timeout, 1 MiB output caps, whole
 process group killed on cancellation. The model can only ever pick a
 configured name — never supply a command.
 
-### bridge-agent-calls
+### mitosis-agent-calls
 
-Agent access, switched on in `/bridge` → Advanced. An agent gets an `agents` tool for its owner's
+Agent access, switched on in `/mitosis` → Advanced. An agent gets an `agents` tool for its owner's
 other conversations, on this machine and on connected devices: `list` gives each one's id,
 machine, folder, title and state (idle, working, waiting for an answer), `read` its latest
 messages (tool output left out), and `send` gives it a message, queued after its current turn
 while it works, opening with a line that names the sender (its id, title and machine) so the
 recipient can answer. The agent acts with your reach, as the apps do. The tool exists for the model only
-while Bridge is on and another conversation is reachable, so it costs nothing otherwise.
+while Mitosis is on and another conversation is reachable, so it costs nothing otherwise.
 
 ### jobs
 
@@ -298,7 +298,7 @@ Tab and Left/Right move between questions and the final review; Enter submits th
 choice submits immediately. Escape leaves custom editing first, then dismisses without answering.
 Answers remain normal tool results in the session transcript; there is no separate question store.
 Headless hosts need an attached controller to answer. Claude uses this same panel for its native
-`AskUserQuestion`, independently of whether the Orb tool is enabled. Bridge views render the same
+`AskUserQuestion`, independently of whether the Orb tool is enabled. Mitosis views render the same
 panel and send execution-bound replies; disconnecting never invents an answer.
 
 ## Claude Sessions
@@ -358,7 +358,7 @@ used by running sessions. A failed download can be retried. Custom SDK paths rem
 The SDK and native executable are not bundled in Orb's static binary. Installation happens when
 starting a Claude session; opening settings installs nothing.
 
-The same host can attach with `--bridge <profile> --instance <alias>`. Pairing and routing are
+The same host can attach with `--mitosis <profile> --instance <alias>`. Pairing and routing are
 unchanged; the remote device needs neither Node nor Claude credentials. A pending permission or
 question appears in the remote view. Questions use the shared panel; `/reply <choice or text>`
 answers ordinary approvals, and `/cancel` cancels the execution. `/models` lists the executing host's models and effort levels; `/model <provider/id>
@@ -386,7 +386,7 @@ sandbox configurations because it cannot enforce them for Claude's native execut
 The footer shows subscription quota from native SDK rate-limit events, for example
 `Claude 7d 40% left`, identifying the active window with the least quota remaining.
 It appears after Claude reports a reading, normally after the first
-reply, and is also shown in Bridge views. These are subscription limits, not session token counts.
+reply, and is also shown in Mitosis views. These are subscription limits, not session token counts.
 Readings older than five minutes are marked stale; expired windows are omitted, and missing
 percentages remain an explicit status rather than a fabricated number. Another Claude client can
 consume quota between updates. Orb never reads native credentials. After each reply the plugin requests the SDK context summary

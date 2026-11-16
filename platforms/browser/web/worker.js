@@ -4,9 +4,9 @@ importScripts("wasm_exec.js");
 self.onmessage = ({ data }) => {
   try {
     const error = self.orbDispatch(JSON.stringify(data));
-    if (error) self.postMessage(JSON.stringify({ type: data.id ? "bridge.result" : "error", id: data.id, error }));
+    if (error) self.postMessage(JSON.stringify({ type: data.id ? "mitosis.result" : "error", id: data.id, error }));
   } catch (error) {
-    self.postMessage(JSON.stringify({ type: data.id ? "bridge.result" : "error", id: data.id, error: error.message }));
+    self.postMessage(JSON.stringify({ type: data.id ? "mitosis.result" : "error", id: data.id, error: error.message }));
   }
 };
 

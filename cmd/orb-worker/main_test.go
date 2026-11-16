@@ -49,14 +49,14 @@ func TestDurableObjectBundle(t *testing.T) {
 	t.Log(strings.TrimSpace(string(output)))
 }
 
-// TestShimKnowsTheBridgeStateKey keeps the shim's pre-boot check on the key
+// TestShimKnowsTheMitosisStateKey keeps the shim's pre-boot check on the key
 // the Go peer writes.
-func TestShimKnowsTheBridgeStateKey(t *testing.T) {
+func TestShimKnowsTheMitosisStateKey(t *testing.T) {
 	shim, err := os.ReadFile("../../platforms/worker/deploy/worker.mjs")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(shim), `const BRIDGE_STATE_KEY = "`+peer.StateKey+`";`) {
+	if !strings.Contains(string(shim), `const MITOSIS_STATE_KEY = "`+peer.StateKey+`";`) {
 		t.Fatalf("worker.mjs does not check %s", peer.StateKey)
 	}
 }

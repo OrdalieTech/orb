@@ -15,15 +15,15 @@ import (
 
 	ws "github.com/coder/websocket"
 
-	"github.com/OrdalieTech/orb/bridge"
-	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/mitosis"
+	"github.com/OrdalieTech/orb/mitosis/protocol"
 )
 
 func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	b, err := bridge.Open(&document.Memory{}, true)
+	b, err := mitosis.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,13 +39,13 @@ func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	peer := bridge.PeerID(pub)
+	peer := mitosis.PeerID(pub)
 	dial := func(pin string) (*protocol.Conn, error) {
 		stream, err := Dial(ctx, address)
 		if err != nil {
 			return nil, err
 		}
-		return bridge.ConnectClient(ctx, stream, key, pin)
+		return mitosis.ConnectClient(ctx, stream, key, pin)
 	}
 	if c, err := dial(peer); err == nil {
 		_ = c.Close()
@@ -59,7 +59,7 @@ func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 	if err = c.Call(ctx, "instances.list", struct{}{}, nil); err == nil {
 		t.Fatal("unpaired client has access")
 	}
-	inv, err := b.Invite([]bridge.Grant{{GroupID: b.PersonalGroup(), IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect"}}})
+	inv, err := b.Invite([]mitosis.Grant{{GroupID: b.PersonalGroup(), IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,20 +83,20 @@ func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpoint := bridge.NewLocal(func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
-		return bridge.JSON(struct{}{}), nil
+	endpoint := mitosis.NewLocal(func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
+		return mitosis.JSON(struct{}{}), nil
 	})
 	if _, err = b.Attach(instance.ID, token, protocol.NewID(), endpoint); err != nil {
 		t.Fatal(err)
 	}
-	call := bridge.Call{InstanceID: instance.ID, Service: protocol.Service, Method: "inspect", Args: bridge.JSON(struct{}{})}
+	call := mitosis.Call{InstanceID: instance.ID, Service: protocol.Service, Method: "inspect", Args: mitosis.JSON(struct{}{})}
 	if err = c.Call(ctx, "instances.call", call, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err = c.Call(ctx, "instances.call", struct {
-		bridge.Call
-		Subject bridge.Subject `json:"subject"`
-	}{call, bridge.Subject{Kind: "instance", InstanceID: protocol.NewID()}}, nil); err == nil {
+		mitosis.Call
+		Subject mitosis.Subject `json:"subject"`
+	}{call, mitosis.Subject{Kind: "instance", InstanceID: protocol.NewID()}}, nil); err == nil {
 		t.Fatal("controller grant leaked to agent")
 	}
 	// No runtime or listener exists on the client side. The server registers
@@ -136,7 +136,7 @@ func TestOriginsAndURLs(t *testing.T) {
 			t.Errorf("accepted %s", address)
 		}
 	}
-	for _, address := range []string{"ws://127.0.0.1:1234", "ws://[::1]:1234", "wss://example.com/bridge"} {
+	for _, address := range []string{"ws://127.0.0.1:1234", "ws://[::1]:1234", "wss://example.com/mitosis"} {
 		if err := ValidateURL(address); err != nil {
 			t.Fatal(err)
 		}
@@ -144,7 +144,7 @@ func TestOriginsAndURLs(t *testing.T) {
 	if err := ValidateOrigins([]string{"*"}); err == nil {
 		t.Fatal("wildcard origin accepted")
 	}
-	b, err := bridge.Open(&document.Memory{}, true)
+	b, err := mitosis.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/bridge"
-	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/mitosis"
+	"github.com/OrdalieTech/orb/mitosis/protocol"
 	"github.com/OrdalieTech/orb/platforms/worker"
 )
 
@@ -59,7 +59,7 @@ func (kv *mapKV) Write(_ context.Context, put map[string][]byte, del []string) e
 	return nil
 }
 
-// object opens a Worker object with bridge_call enabled, its peer opened lazily.
+// object opens a Worker object with mitosis_call enabled, its peer opened lazily.
 func object(t *testing.T, kv worker.KV, provider *faux.Provider) (*worker.Instance, func(context.Context) (*Peer, error)) {
 	t.Helper()
 	var instance *worker.Instance
@@ -71,7 +71,7 @@ func object(t *testing.T, kv worker.KV, provider *faux.Provider) (*worker.Instan
 		return self, openErr
 	}
 	instance, err := worker.Open(t.Context(), worker.Options{KV: kv, Model: provider.GetModel(), StreamFn: provider.StreamSimple,
-		Settings: []byte(`{"plugins":{"bridge-agent-calls":true}}`), Tools: AgentCalls(open)})
+		Settings: []byte(`{"plugins":{"mitosis-agent-calls":true}}`), Tools: AgentCalls(open)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func object(t *testing.T, kv worker.KV, provider *faux.Provider) (*worker.Instan
 
 // dial connects laptop to the object over an in-memory stream, as a laptop
 // dials the object's wss:// locator.
-func dial(t *testing.T, self *Peer, laptop *bridge.Bridge) *protocol.Conn {
+func dial(t *testing.T, self *Peer, laptop *mitosis.Mitosis) *protocol.Conn {
 	t.Helper()
 	server, client := net.Pipe()
 	go func() { _ = self.Serve(t.Context(), server) }()
@@ -93,16 +93,16 @@ func dial(t *testing.T, self *Peer, laptop *bridge.Bridge) *protocol.Conn {
 
 func admin(t *testing.T, self *Peer, method string, params any) json.RawMessage {
 	t.Helper()
-	raw, err := self.Admin(t.Context(), method, bridge.JSON(params), "wss://orb.test/agents/a/bridge")
+	raw, err := self.Admin(t.Context(), method, mitosis.JSON(params), "wss://orb.test/agents/a/mitosis")
 	if err != nil {
 		t.Fatalf("admin %s: %v", method, err)
 	}
 	return raw
 }
 
-// TestPeerPairsAndCallsBothWays pairs a laptop Bridge with the object, then
+// TestPeerPairsAndCallsBothWays pairs a laptop Mitosis with the object, then
 // the laptop lists, prompts and reads the object's Orb, and the object's
-// agent calls the laptop's instance through bridge_call under its own grant.
+// agent calls the laptop's instance through mitosis_call under its own grant.
 func TestPeerPairsAndCallsBothWays(t *testing.T) {
 	ctx := t.Context()
 	kv := &mapKV{data: map[string][]byte{}}
@@ -113,18 +113,18 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	laptop, err := bridge.Open(&document.Memory{}, true)
+	laptop, err := mitosis.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = laptop.Close() }()
 
-	var invitation bridge.Invitation
-	if err = json.Unmarshal(admin(t, self, "invite", struct{}{}), &invitation); err != nil || invitation.Locator != "wss://orb.test/agents/a/bridge" || invitation.PeerID != self.PeerID() {
+	var invitation mitosis.Invitation
+	if err = json.Unmarshal(admin(t, self, "invite", struct{}{}), &invitation); err != nil || invitation.Locator != "wss://orb.test/agents/a/mitosis" || invitation.PeerID != self.PeerID() {
 		t.Fatalf("invitation = %+v, %v", invitation, err)
 	}
 	channel := dial(t, self, laptop)
-	var claimed bridge.Invitation
+	var claimed mitosis.Invitation
 	if err = channel.Call(ctx, "pair.claim", map[string]string{"invitation_id": invitation.ID, "token": invitation.Token}, &claimed); err != nil || claimed.Claimant != laptop.PeerID() {
 		t.Fatalf("claim = %+v, %v", claimed, err)
 	}
@@ -132,7 +132,7 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 
 	// Laptop → object: list, inspect, prompt, read back.
 	var catalog struct {
-		Items []bridge.Instance `json:"items"`
+		Items []mitosis.Instance `json:"items"`
 	}
 	if err = channel.Call(ctx, "instances.list", struct{}{}, &catalog); err != nil || len(catalog.Items) != 1 || catalog.Items[0].ID != self.InstanceID() || !catalog.Items[0].Available || catalog.Items[0].Alias != "durable-object-1" {
 		t.Fatalf("catalog = %+v, %v", catalog, err)
@@ -144,14 +144,14 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 			Revision  string `json:"session_revision"`
 		} `json:"target"`
 	}
-	call := bridge.Call{InstanceID: self.InstanceID(), Service: protocol.Service, Method: "inspect", Args: json.RawMessage(`{}`)}
+	call := mitosis.Call{InstanceID: self.InstanceID(), Service: protocol.Service, Method: "inspect", Args: json.RawMessage(`{}`)}
 	if err = channel.Call(ctx, "instances.call", call, &described); err != nil || described.Target.SessionID == "" {
 		t.Fatalf("inspect = %+v, %v", described, err)
 	}
 	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("hello laptop")})
-	call = bridge.Call{InstanceID: self.InstanceID(), Service: protocol.Service, Method: "prompt", SessionID: described.Target.SessionID,
-		Expected: bridge.Expected{Generation: described.Generation, Revision: described.Target.Revision}, OperationID: protocol.NewID(), Args: json.RawMessage(`{"text":"hi from the laptop"}`)}
-	var receipt bridge.Receipt
+	call = mitosis.Call{InstanceID: self.InstanceID(), Service: protocol.Service, Method: "prompt", SessionID: described.Target.SessionID,
+		Expected: mitosis.Expected{Generation: described.Generation, Revision: described.Target.Revision}, OperationID: protocol.NewID(), Args: json.RawMessage(`{"text":"hi from the laptop"}`)}
+	var receipt mitosis.Receipt
 	if err = channel.Call(ctx, "instances.call", call, &receipt); err != nil || receipt.Status != "accepted" {
 		t.Fatalf("prompt receipt = %+v, %v", receipt, err)
 	}
@@ -170,43 +170,43 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 		t.Fatalf("conversation read back = %s, %v", snapshot, err)
 	}
 
-	// Object → laptop: bridge_call under the object's own instance grant.
-	var received []bridge.Request
+	// Object → laptop: mitosis_call under the object's own instance grant.
+	var received []mitosis.Request
 	var mu sync.Mutex
 	registration, credential, err := laptop.Enroll("laptop", laptop.PersonalGroup())
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpoint := bridge.NewLocal(func(_ context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-		var request bridge.Request
+	endpoint := mitosis.NewLocal(func(_ context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+		var request mitosis.Request
 		if err := json.Unmarshal(params, &request); err != nil {
 			return nil, err
 		}
 		mu.Lock()
 		received = append(received, request)
 		mu.Unlock()
-		return bridge.JSON(map[string]string{"answered_by": "laptop"}), nil
+		return mitosis.JSON(map[string]string{"answered_by": "laptop"}), nil
 	})
 	if _, err = laptop.Attach(registration.ID, credential, protocol.NewID(), endpoint); err != nil {
 		t.Fatal(err)
 	}
-	subject := bridge.Principal{PeerID: self.PeerID(), Subject: bridge.Subject{Kind: "instance", InstanceID: self.InstanceID()}}
-	if err = laptop.AddGrant(bridge.Grant{Principal: subject, Instances: []string{registration.ID}, Permissions: []string{"instance.inspect"}}); err != nil {
+	subject := mitosis.Principal{PeerID: self.PeerID(), Subject: mitosis.Subject{Kind: "instance", InstanceID: self.InstanceID()}}
+	if err = laptop.AddGrant(mitosis.Grant{Principal: subject, Instances: []string{registration.ID}, Permissions: []string{"instance.inspect"}}); err != nil {
 		t.Fatal(err)
 	}
 	arguments := map[string]any{"peer_id": laptop.PeerID(), "call": map[string]any{"instance_id": registration.ID, "service": protocol.Service, "method": "inspect", "args": map[string]any{}}}
 	// Without the object's own destination grant the call is refused on the
 	// object; with it, the laptop answers.
 	provider.SetResponses([]faux.ResponseStep{
-		faux.AssistantMessage(faux.ToolCall("bridge_call", arguments, faux.ToolCallOptions{ID: "denied"})),
+		faux.AssistantMessage(faux.ToolCall("mitosis_call", arguments, faux.ToolCallOptions{ID: "denied"})),
 		faux.AssistantMessage("refused"),
-		faux.AssistantMessage(faux.ToolCall("bridge_call", arguments, faux.ToolCallOptions{ID: "granted"})),
+		faux.AssistantMessage(faux.ToolCall("mitosis_call", arguments, faux.ToolCallOptions{ID: "granted"})),
 		faux.AssistantMessage("called the laptop"),
 	})
 	if err = instance.Session().Prompt(ctx, "Inspect the laptop."); err != nil {
 		t.Fatal(err)
 	}
-	admin(t, self, "grant", bridge.Grant{Principal: subject, Destination: laptop.PeerID(), Instances: []string{registration.ID}, Permissions: []string{"instance.inspect"}})
+	admin(t, self, "grant", mitosis.Grant{Principal: subject, Destination: laptop.PeerID(), Instances: []string{registration.ID}, Permissions: []string{"instance.inspect"}})
 	if err = instance.Session().Prompt(ctx, "Inspect the laptop again."); err != nil {
 		t.Fatal(err)
 	}
@@ -247,12 +247,12 @@ func TestPeerIdentitySurvivesRestart(t *testing.T) {
 	if _, ok := kv.data[StateKey]; !ok {
 		t.Fatalf("no %s after opening the peer", StateKey)
 	}
-	laptop, _ := bridge.Open(&document.Memory{}, true)
+	laptop, _ := mitosis.Open(&document.Memory{}, true)
 	defer func() { _ = laptop.Close() }()
 	admin(t, self, "trust", map[string]string{"peer_id": laptop.PeerID()})
 	admin(t, self, "trust", map[string]string{"peer_id": laptop.PeerID()})
 	var status struct {
-		Grants []bridge.Grant `json:"grants"`
+		Grants []mitosis.Grant `json:"grants"`
 	}
 	if json.Unmarshal(admin(t, self, "status", struct{}{}), &status) != nil || len(status.Grants) != 1 {
 		t.Fatalf("trust is not idempotent: %+v", status.Grants)
@@ -272,7 +272,7 @@ func TestPeerIdentitySurvivesRestart(t *testing.T) {
 	channel := dial(t, again, laptop)
 	defer func() { _ = channel.Close() }()
 	var catalog struct {
-		Items []bridge.Instance `json:"items"`
+		Items []mitosis.Instance `json:"items"`
 	}
 	if err = channel.Call(ctx, "instances.list", struct{}{}, &catalog); err != nil || len(catalog.Items) != 1 || catalog.Items[0].Generation != "2" {
 		t.Fatalf("catalog after restart = %+v, %v", catalog, err)

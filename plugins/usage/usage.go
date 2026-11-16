@@ -36,7 +36,7 @@ type Accounts interface {
 	Use(ctx context.Context, provider, id string) error
 }
 
-// Window and Snapshot are also Bridge wire: an instance describes its provider's limits with them.
+// Window and Snapshot are also Mitosis wire: an instance describes its provider's limits with them.
 type Window struct {
 	Name      string    `json:"name"`
 	Remaining float64   `json:"remaining"` // percent

@@ -25,17 +25,17 @@
           <p id="hint">Enter your model and API key, then send a message. Credentials stay in this tab. Changing model settings starts a new conversation.</p>
         </form>
       </details>
-      <details id="bridge-panel" name="inspector">
-        <summary>Bridge <span id="bridge-status">Disconnected</span></summary>
+      <details id="mitosis-panel" name="inspector">
+        <summary>Mitosis <span id="mitosis-status">Disconnected</span></summary>
         <div class="panel">
-          <label>Invitation JSON<textarea id="bridge-invitation" rows="3" placeholder="Paste an invitation from your remote Bridge" spellcheck="false"></textarea></label>
-          <button id="bridge-connect" type="button" disabled>Connect</button>
-          <button id="bridge-disconnect" type="button" disabled>Disconnect</button>
-          <button id="bridge-refresh" type="button">Refresh</button>
-          <p id="bridge-notice" role="status">Connects directly; no local Bridge service starts. This browser keeps its pairing identity across reloads.</p>
-          <pre id="bridge-identity"></pre>
-          <label><input id="bridge-agent" type="checkbox"> Allow the local model to call this Bridge</label>
-          <details><summary>Agent authorization</summary><p>Agent calls need their own grant on the remote Bridge. Controller pairing does not grant model access. Save this JSON and pass it to <code>orb bridge grant</code> on the remote host, adjusting its scope as needed.</p><pre id="bridge-grant"></pre></details>
+          <label>Invitation JSON<textarea id="mitosis-invitation" rows="3" placeholder="Paste an invitation from your remote Mitosis" spellcheck="false"></textarea></label>
+          <button id="mitosis-connect" type="button" disabled>Connect</button>
+          <button id="mitosis-disconnect" type="button" disabled>Disconnect</button>
+          <button id="mitosis-refresh" type="button">Refresh</button>
+          <p id="mitosis-notice" role="status">Connects directly; no local Mitosis service starts. This browser keeps its pairing identity across reloads.</p>
+          <pre id="mitosis-identity"></pre>
+          <label><input id="mitosis-agent" type="checkbox"> Allow the local model to call this Mitosis</label>
+          <details><summary>Agent authorization</summary><p>Agent calls need their own grant on the remote Mitosis. Controller pairing does not grant model access. Save this JSON and pass it to <code>orb mitosis grant</code> on the remote host, adjusting its scope as needed.</p><pre id="mitosis-grant"></pre></details>
         </div>
       </details>
       <details id="debug" name="inspector">

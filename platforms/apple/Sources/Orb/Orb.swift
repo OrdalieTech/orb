@@ -37,7 +37,7 @@ struct Failure: LocalizedError { let errorDescription: String? }
     var rows: [Row] = []
 }
 
-/// The app's side of `orb app`, the view every Orb app draws (bridge/view): what it shows, kept as
+/// The app's side of `orb app`, the view every Orb app draws (mitosis/view): what it shows, kept as
 /// the view sends it, and the intents it sends back. Everything the app does with Orb goes here.
 @MainActor @Observable final class Orb {
     private(set) var state = ViewState.blank

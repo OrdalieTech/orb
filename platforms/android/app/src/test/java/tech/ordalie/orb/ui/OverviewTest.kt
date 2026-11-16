@@ -54,7 +54,7 @@ class OverviewTest {
         app.applicationInfo.nativeLibraryDir = dir.path
         ShadowEnvironment.addExternalDir(File(dir, "storage").path)
         say(JSONObject().put("t", "state").put("self", "me").put("tabs", JSONArray()
-            .put(tab("a", "bridge reconnect profile") { put("busy", true).put("context", 0.34) })
+            .put(tab("a", "mitosis reconnect profile") { put("busy", true).put("context", 0.34) })
             .put(tab("b", "fix flaky e2e") { put("ask", JSONObject().put("id", "q").put("title", "run tests?").put("message", "Run the suite?")) })
             .put(tab("c", "release 0.21 notes") { put("peer", "mac").put("remote", true).put("where", "Baud's MacBook").put("context", 0.86) })
             .put(tab("d", "worker bundle size"))))
@@ -64,7 +64,7 @@ class OverviewTest {
             "c" to listOf("Draft the 0.21 notes", "Tiles on the desktop, the model chosen on Home, slimmer cards."),
         )) say(JSONObject().put("t", "rows").put("tab", id).put("at", 0).put("rows", JSONArray()
             .put(JSONObject().put("k", "0").put("kind", "you").put("text", lines[0]))
-            .put(JSONObject().put("k", "1").put("kind", "run").put("what", "read bridge/attach.go"))
+            .put(JSONObject().put("k", "1").put("kind", "run").put("what", "read mitosis/attach.go"))
             .put(JSONObject().put("k", "2").put("kind", "md").put("block", md(lines[1])))))
         val until = System.currentTimeMillis() + 10_000
         while (rt.view.state.tabs.size != 4 || rt.view.rows["c"].isNullOrEmpty()) {

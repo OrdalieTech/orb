@@ -1,0 +1,491 @@
+package main
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math/rand/v2"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
+
+	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
+	attach "github.com/OrdalieTech/orb/agent/mitosis"
+	"github.com/OrdalieTech/orb/agent/tools"
+	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/mitosis"
+	"github.com/OrdalieTech/orb/mitosis/protocol"
+	"github.com/OrdalieTech/orb/platforms/native"
+	nativemitosis "github.com/OrdalieTech/orb/platforms/native/mitosis"
+	"github.com/OrdalieTech/orb/plugins/claudesessions"
+	"github.com/OrdalieTech/orb/plugins/usage"
+	"github.com/OrdalieTech/orb/tui"
+)
+
+type cliMitosisLink struct {
+	mu         sync.Mutex
+	connection *protocol.Conn
+	configure  func(bool) error
+	instance   string // the instance this Orb attached as
+}
+
+// self is the instance this Orb attached as, empty before it attaches.
+func (l *cliMitosisLink) self() string {
+	if l == nil {
+		return ""
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.instance
+}
+
+func (l *cliMitosisLink) invoke(ctx context.Context, method string, p any, result any) error {
+	if l == nil {
+		return mitosis.Fail("unavailable")
+	}
+	l.mu.Lock()
+	c := l.connection
+	l.mu.Unlock()
+	if c == nil {
+		return mitosis.Fail("unavailable")
+	}
+	return c.Call(ctx, method, p, result)
+}
+func (l *cliMitosisLink) set(c *protocol.Conn) { l.mu.Lock(); l.connection = c; l.mu.Unlock() }
+
+type attachmentIdentity struct {
+	Version    int    `json:"version"`
+	PeerID     string `json:"peer_id"`
+	InstanceID string `json:"instance_id"`
+	Credential string `json:"credential"`
+}
+
+func attachEnabledMitosis(lifetime context.Context, host attach.Host, args CLIArgs, settings *config.SettingsManager, writer io.Writer) (func(), error) {
+	profile := args.MitosisProfile
+	if profile == "" {
+		if settings == nil || !settings.GetPlugins()["mitosis"] {
+			return func() {}, nil
+		}
+		profile = "personal"
+	}
+	// A Mitosis that starts Orb for a peer (host.launch) names it, but it is as ephemeral as an unnamed one.
+	alias, throwaway := args.InstanceAlias, args.InstanceAlias == "" || os.Getenv("ORB_MITOSIS_EPHEMERAL") == "1"
+	_ = os.Unsetenv("ORB_MITOSIS_EPHEMERAL") // not inherited by what this Orb runs
+	if alias == "" {
+		alias = "instance-" + strings.ToLower(protocol.NewID()[:8])
+	}
+	if !nativemitosis.ValidName(alias) {
+		return nil, errors.New("invalid mitosis instance alias")
+	}
+	dir, err := nativemitosis.Dir(profile)
+	if err != nil {
+		return nil, err
+	}
+	if err = startMitosis(lifetime, profile, false); err != nil {
+		_, _ = fmt.Fprintln(writer, "Mitosis disconnected:", err)
+	}
+	stateDir := filepath.Join(filepath.Dir(filepath.Dir(dir)), "instances", profile, alias)
+	stateStore, err := args.native.MitosisStore(filepath.Join(stateDir, "attachment.json"), 4096)
+	if err != nil {
+		return nil, err
+	}
+	cleanup := func() { _ = stateStore.Close() }
+	raw, err := stateStore.Read(lifetime)
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+	var identity attachmentIdentity
+	if len(raw) == 0 {
+		admin, err := mitosisAdmin(lifetime, profile)
+		if err != nil {
+			cleanup()
+			return nil, err
+		}
+		var enrolled struct {
+			Instance   mitosis.Instance `json:"instance"`
+			Credential string           `json:"credential"`
+		}
+		err = admin.Call(lifetime, "enroll", map[string]string{"alias": alias}, &enrolled)
+		var status struct {
+			PeerID string `json:"peer_id"`
+		}
+		if err == nil {
+			err = admin.Call(lifetime, "status", struct{}{}, &status)
+		}
+		_ = admin.Close()
+		if err != nil {
+			cleanup()
+			return nil, err
+		}
+		identity = attachmentIdentity{1, status.PeerID, enrolled.Instance.ID, enrolled.Credential}
+		if err = document.Replace(lifetime, stateStore, mitosis.JSON(identity)); err != nil {
+			cleanup()
+			return nil, err
+		}
+	} else {
+		if err = protocol.Decode(raw, &identity); err != nil || identity.Version != 1 || !protocol.ValidID(identity.InstanceID) {
+			cleanup()
+			return nil, errors.New("invalid instance attachment state")
+		}
+	}
+	ledger, err := args.native.MitosisStore(filepath.Join(stateDir, "operations.json"), protocol.MaxFrame)
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+	link := args.mitosisLink
+	if link == nil {
+		link = &cliMitosisLink{}
+	}
+	link.mu.Lock()
+	link.instance = identity.InstanceID
+	link.mu.Unlock()
+	quota := &providerUsage{cache: args.usageCache}
+	a, err := attach.Attach(lifetime, host, attach.Options{InstanceID: identity.InstanceID, Store: ledger, Status: func(s *agent.AgentSession) string {
+		if model := s.Agent().Model(); model != nil && model.Provider == claudesessions.Name {
+			return claudesessions.LimitsStatus(s.Manager(), time.Now())
+		}
+		return ""
+	}, Usage: quota.read, Complete: completeAt, Authorize: func(r mitosis.Request) bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var allowed bool
+		return link.invoke(ctx, "authorize", r, &allowed) == nil && allowed
+	}})
+	if err != nil {
+		_ = ledger.Close()
+		cleanup()
+		return nil, err
+	}
+	ctx, cancel := context.WithCancel(lifetime)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		delay := 100 * time.Millisecond
+		boot := protocol.NewID()
+		for {
+			if ctx.Err() != nil {
+				return
+			}
+			c, err := nativemitosis.Dial(ctx, filepath.Join(dir, "attach.sock"), nativemitosis.Auth{Credential: identity.Credential, InstanceID: identity.InstanceID, BootID: boot}, a.Invoke, a.SetGeneration)
+			if err == nil {
+				link.set(c)
+				delay = 100 * time.Millisecond
+				select {
+				case <-ctx.Done():
+					_ = c.Close()
+				case <-c.Done():
+				}
+				link.set(nil)
+			}
+			timer := time.NewTimer(delay + time.Duration(rand.Int64N(int64(delay/4)+1)))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			// The service is a local socket: a failed dial costs nothing, and a
+			// restarted Mitosis should see its instances again within seconds.
+			delay = min(delay*2, 2*time.Second)
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
+		_ = a.Close()
+		// A throwaway instance's alias is never used again: it leaves no registration or state behind.
+		if throwaway {
+			ctx, stop := context.WithTimeout(context.WithoutCancel(lifetime), 2*time.Second)
+			if admin, err := mitosisAdmin(ctx, profile); err == nil {
+				_ = admin.Call(ctx, "retire", map[string][]string{"instance_ids": {identity.InstanceID}}, nil)
+				_ = admin.Close()
+			}
+			_ = document.Replace(ctx, ledger, nil)
+			_ = document.Replace(ctx, stateStore, nil)
+			stop()
+		}
+		_ = ledger.Close()
+		cleanup()
+		if throwaway {
+			_ = os.RemoveAll(stateDir)
+		}
+	}, nil
+}
+
+// attachCLIMitosis keeps this Orb attached to Mitosis while the mitosis plugin is
+// enabled; failures are reported to writer and retried, never returned.
+func attachCLIMitosis(lifetime context.Context, host attach.Host, args CLIArgs, settings *config.SettingsManager, writer io.Writer) func() {
+	link := args.mitosisLink
+	if link == nil {
+		link = &cliMitosisLink{}
+		args.mitosisLink = link
+	}
+	configured := args
+	if configured.MitosisProfile == "" {
+		configured.MitosisProfile = "personal"
+	}
+	retryCtx, cancelRetry := context.WithCancel(lifetime)
+	var mu sync.Mutex
+	var detach func()
+	var retryOnce sync.Once
+	closed, desired, initial := false, false, true
+	attach := func(explicit bool) error {
+		if err := startMitosis(retryCtx, configured.MitosisProfile, explicit); err != nil {
+			return err
+		}
+		var err error
+		detach, err = attachEnabledMitosis(lifetime, host, configured, settings, writer)
+		return err
+	}
+	configure := func(enabled bool) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if closed {
+			return mitosis.Fail("unavailable")
+		}
+		explicit := enabled && !desired && !initial
+		initial = false
+		desired = enabled
+		if !enabled {
+			if detach != nil {
+				detach()
+				detach = nil
+			}
+			return nil
+		}
+		retryOnce.Do(func() {
+			go func() {
+				tick := time.NewTicker(10 * time.Second)
+				defer tick.Stop()
+				for {
+					select {
+					case <-retryCtx.Done():
+						return
+					case <-tick.C:
+						mu.Lock()
+						if !closed && desired && detach == nil {
+							_ = attach(false)
+						}
+						mu.Unlock()
+					}
+				}
+			}()
+		})
+		if detach != nil {
+			return nil
+		}
+		return attach(explicit)
+	}
+	link.mu.Lock()
+	link.configure = configure
+	link.mu.Unlock()
+	enabled := args.MitosisProfile != "" || settings != nil && settings.GetPlugins()["mitosis"]
+	if err := configure(enabled); err != nil {
+		_, _ = fmt.Fprintln(writer, "Mitosis disconnected:", err)
+	}
+	stopHolding := holdOpen(lifetime, host, args.native, configured.MitosisProfile, func() error { return configure(true) })
+	return func() {
+		stopHolding()
+		cancelRetry()
+		mu.Lock()
+		closed = true
+		if detach != nil {
+			detach()
+		}
+		mu.Unlock()
+	}
+}
+
+// holdOpen answers the other Orbs on this machine that open the conversation this one holds, on
+// its socket, since one engine writes a conversation: a terminal follows it here through an
+// attachment of its own (heldRemote), and the machine's Mitosis asks it on Mitosis (join) for a
+// peer opening it, as an Orb the Mitosis launched would be.
+func holdOpen(lifetime context.Context, host attach.Host, state *native.State, profile string, join func() error) func() {
+	if state == nil {
+		return func() {}
+	}
+	var mu sync.Mutex
+	stop := func() {}
+	unobserve := host.ObserveSessions(func(s *agent.AgentSession) {
+		mu.Lock()
+		defer mu.Unlock()
+		stop()
+		stop = func() {}
+		if m := s.Manager(); !m.IsHarnessBacked() || !m.IsPersisted() {
+			return
+		}
+		id := s.Manager().GetSessionID()
+		ctx, cancel := context.WithCancel(lifetime)
+		var followMu sync.Mutex
+		var follow *attach.Attachment
+		closeSocket, err := state.ServeHeld(ctx, id, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+			if method == "mitosis" {
+				var p struct {
+					Profile string `json:"profile"`
+				}
+				if err := protocol.Decode(params, &p); err != nil || p.Profile != profile {
+					return nil, mitosis.Fail("not_found")
+				}
+				return mitosis.JSON(struct{}{}), join()
+			}
+			followMu.Lock()
+			a := follow
+			followMu.Unlock()
+			if a == nil {
+				// Attached outside followMu: attaching waits for a session switch, which stops this socket.
+				created, err := attach.Attach(ctx, host, attach.Options{InstanceID: heldInstance(id), Store: &document.Memory{}, Complete: completeAt, Authorize: func(mitosis.Request) bool { return true }})
+				if err != nil {
+					return nil, err
+				}
+				_ = created.SetGeneration("1")
+				followMu.Lock()
+				if follow == nil && ctx.Err() == nil {
+					follow = created
+				}
+				a = follow
+				followMu.Unlock()
+				if a != created {
+					_ = created.Close()
+				}
+				if a == nil {
+					return nil, mitosis.Fail("unavailable")
+				}
+			}
+			return a.Invoke(ctx, method, params)
+		})
+		if err != nil {
+			cancel()
+			return
+		}
+		stop = func() {
+			cancel()
+			closeSocket()
+			followMu.Lock()
+			if follow != nil {
+				_ = follow.Close()
+			}
+			followMu.Unlock()
+		}
+	})
+	return func() {
+		unobserve()
+		mu.Lock()
+		stop()
+		mu.Unlock()
+	}
+}
+
+// heldInstance is the instance a conversation's holder answers its followers as.
+func heldInstance(id string) string {
+	sum := sha256.Sum256([]byte("held\x00" + id))
+	return base64.RawURLEncoding.EncodeToString(sum[:16])
+}
+
+func (l *cliMitosisLink) configureMitosis(enabled bool) error {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	configure := l.configure
+	l.mu.Unlock()
+	if configure == nil {
+		return nil
+	}
+	return configure(enabled)
+}
+
+// providerUsage reads the plan limits of the session's provider without ever waiting, as the
+// Mitosis pulse asks often: Claude's arrive with its turns, so they are read again only when the
+// conversation moves; the others are read behind it, at most once a minute, through the process's
+// quota cache (shared with the TUI footer, cleared when accounts change).
+type providerUsage struct {
+	cache          *usage.Cache
+	mu             sync.Mutex
+	provider, leaf string
+	reading        *usage.Snapshot
+	asked          time.Time
+}
+
+func (u *providerUsage) read(s *agent.AgentSession) *usage.Snapshot {
+	model := s.Agent().Model()
+	if model == nil {
+		return nil
+	}
+	provider, leaf := string(model.Provider), ""
+	if id := s.Manager().GetLeafID(); id != nil {
+		leaf = *id
+	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if provider != u.provider {
+		u.provider, u.leaf, u.reading, u.asked = provider, "", nil, time.Time{}
+	}
+	switch {
+	case provider == claudesessions.Name && leaf != u.leaf:
+		u.leaf, u.reading = leaf, claudesessions.Limits(s.Manager(), time.Now())
+	case provider != claudesessions.Name && time.Since(u.asked) >= time.Minute:
+		u.asked = time.Now()
+		go u.refresh(s, provider)
+	}
+	return u.reading
+}
+
+func (u *providerUsage) refresh(s *agent.AgentSession, provider string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	runner := s.ExtensionRunner()
+	if runner == nil || runner.ModelRegistry() == nil {
+		return
+	}
+	resolved, err := runner.ModelRegistry().ResolveProviderAuth(ctx, provider, nil)
+	if err != nil || resolved == nil {
+		return
+	}
+	reading, err := usage.Client{Cache: u.cache}.Fetch(ctx, provider, resolved.Auth)
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if err == nil && provider == u.provider {
+		u.reading = &reading
+	}
+}
+
+// completeAt is the TUI's `@` completion for a Mitosis client: the session's skills, which insert
+// their `/skill:name` token, then the files in its folder. A path query is files only.
+func completeAt(ctx context.Context, s *agent.AgentSession, query string) []attach.Completion {
+	var items []attach.Completion
+	if !strings.ContainsAny(query, `/\"`) {
+		var skills []agent.SlashCommandInfo
+		for _, command := range s.Commands() {
+			if command.Source == agent.SlashCommandSkill {
+				skills = append(skills, command)
+			}
+		}
+		for _, skill := range tui.FuzzyFilter(skills, query, func(c agent.SlashCommandInfo) string { return strings.TrimPrefix(c.Name, "skill:") }) {
+			items = append(items, attach.Completion{Text: "/" + skill.Name, Label: strings.TrimPrefix(skill.Name, "skill:"), Detail: skill.Description})
+		}
+	}
+	var files *tui.AutocompleteSuggestions
+	at := ""
+	if fd := tools.ManagedFDPath(); fd != "" {
+		files = tui.NewCombinedAutocompleteProvider(nil, s.Manager().GetCWD(), fd).GetSuggestions(ctx, []string{"@" + query}, 0, utf8.RuneCountInString(query)+1, false)
+	} else {
+		// Without fd (a phone cannot run one), the folder lists as the TUI's Tab completion lists it.
+		files, at = tui.NewCombinedAutocompleteProvider(nil, s.Manager().GetCWD(), "").GetSuggestions(ctx, []string{query}, 0, utf8.RuneCountInString(query), true), "@"
+	}
+	if files != nil {
+		for _, file := range files.Items {
+			items = append(items, attach.Completion{Text: at + file.Value, Label: file.Label, Detail: file.Description})
+		}
+	}
+	return items
+}

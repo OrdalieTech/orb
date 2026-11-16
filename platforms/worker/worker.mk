@@ -6,8 +6,8 @@
 #   worker-deploy        deploy it to the authenticated Cloudflare account (wrangler deploy)
 #   worker-test          Go suites for the Worker host, natively and in js/wasm with a fake DO storage
 #   worker-e2e-workerd   end-to-end in workerd, including a dev-server restart
-#   worker-e2e-bridge-workerd         Bridge pairing both ways with a throwaway native `orb` (isolated under .tools)
-#   worker-e2e-bridge-deployed        the same against ORB_WORKER_URL, redeploying WORKER_E2E_DIR to restart it
+#   worker-e2e-mitosis-workerd         Mitosis pairing both ways with a throwaway native `orb` (isolated under .tools)
+#   worker-e2e-mitosis-deployed        the same against ORB_WORKER_URL, redeploying WORKER_E2E_DIR to restart it
 #   worker-e2e-deployed  one phase (WORKER_E2E_PHASE=write|verify) against a deployed Worker (ORB_WORKER_URL, ORB_TOKEN)
 
 WORKER_DIR ?= $(CURDIR)/.tools/worker
@@ -15,10 +15,10 @@ WORKER_E2E_DIR ?= $(CURDIR)/.tools/worker-e2e
 WORKER_GO_ENV ?= $(GO_ENV)
 WORKER_WASM_EXEC = $$($(WORKER_GO_ENV) go env GOROOT)/lib/wasm
 
-WORKER_BRIDGE_DIR ?= $(CURDIR)/.tools/worker-bridge-e2e
-WORKER_BRIDGE_ARGS = --orb $(WORKER_BRIDGE_DIR)/orb --laptop $(WORKER_BRIDGE_DIR)/laptop
+WORKER_MITOSIS_DIR ?= $(CURDIR)/.tools/worker-mitosis-e2e
+WORKER_MITOSIS_ARGS = --orb $(WORKER_MITOSIS_DIR)/orb --laptop $(WORKER_MITOSIS_DIR)/laptop
 
-.PHONY: worker-bridge-orb worker-e2e-bridge-workerd worker-e2e-bridge-deployed
+.PHONY: worker-mitosis-orb worker-e2e-mitosis-workerd worker-e2e-mitosis-deployed
 .PHONY: worker-build worker-dev worker-deploy worker-test worker-e2e-workerd worker-e2e-deployed worker-e2e-build
 
 # $(1): output directory; $(2): extra scripts prepended after wasm_exec.js.
@@ -57,16 +57,16 @@ WORKER_E2E_PHASE ?= write
 worker-e2e-deployed:
 	node platforms/worker/e2e/e2e.mjs --runtime remote --url "$(ORB_WORKER_URL)" --phase $(WORKER_E2E_PHASE)
 
-# The laptop side of the Bridge checks: this tree's `orb`, run with HOME,
-# ORB_STATE_HOME, ORB_BRIDGE_HOME and ORB_AGENT_DIR under $(WORKER_BRIDGE_DIR).
-worker-bridge-orb:
-	mkdir -p $(WORKER_BRIDGE_DIR)
-	$(WORKER_GO_ENV) CGO_ENABLED=0 go build -o $(WORKER_BRIDGE_DIR)/orb ./cmd/orb
+# The laptop side of the Mitosis checks: this tree's `orb`, run with HOME,
+# ORB_STATE_HOME, ORB_MITOSIS_HOME and ORB_AGENT_DIR under $(WORKER_MITOSIS_DIR).
+worker-mitosis-orb:
+	mkdir -p $(WORKER_MITOSIS_DIR)
+	$(WORKER_GO_ENV) CGO_ENABLED=0 go build -o $(WORKER_MITOSIS_DIR)/orb ./cmd/orb
 
-worker-e2e-bridge-workerd: worker-build worker-bridge-orb
-	node platforms/worker/e2e/bridge.mjs --runtime workerd --dir $(WORKER_DIR) $(WORKER_BRIDGE_ARGS)
+worker-e2e-mitosis-workerd: worker-build worker-mitosis-orb
+	node platforms/worker/e2e/mitosis.mjs --runtime workerd --dir $(WORKER_DIR) $(WORKER_MITOSIS_ARGS)
 
 # Needs the deployed worker-e2e-build bundle in WORKER_E2E_DIR (its .orb-token
 # and Wrangler login); the check redeploys it once to restart the object.
-worker-e2e-bridge-deployed: worker-bridge-orb
-	node platforms/worker/e2e/bridge.mjs --runtime remote --url "$(ORB_WORKER_URL)" --token-file $(WORKER_E2E_DIR)/.orb-token --redeploy $(WORKER_E2E_DIR) $(WORKER_BRIDGE_ARGS)
+worker-e2e-mitosis-deployed: worker-mitosis-orb
+	node platforms/worker/e2e/mitosis.mjs --runtime remote --url "$(ORB_WORKER_URL)" --token-file $(WORKER_E2E_DIR)/.orb-token --redeploy $(WORKER_E2E_DIR) $(WORKER_MITOSIS_ARGS)

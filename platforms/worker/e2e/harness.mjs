@@ -19,8 +19,8 @@ export const MODELS = baseUrl => JSON.stringify({
     },
   },
 });
-// bridge-agent-calls gives the object's agent bridge_call (the Bridge scenario).
-export const SETTINGS = JSON.stringify({ defaultProvider: "fake", defaultModel: "scripted", plugins: { "bridge-agent-calls": true } });
+// mitosis-agent-calls gives the object's agent mitosis_call (the Mitosis scenario).
+export const SETTINGS = JSON.stringify({ defaultProvider: "fake", defaultModel: "scripted", plugins: { "mitosis-agent-calls": true } });
 
 export function fail(message) {
   throw new Error(message);

@@ -1,6 +1,6 @@
 import Foundation
 
-// What `orb app` (bridge/view) sends, as the app draws it; its Go types name each field. Go leaves
+// What `orb app` (mitosis/view) sends, as the app draws it; its Go types name each field. Go leaves
 // empty fields out, so each takes its empty value when absent (@D).
 
 protocol Empty { init() }

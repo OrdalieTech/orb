@@ -88,7 +88,7 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 						ink = rupture
 					}
 					dot(c, map[bool]ui.Color{true: pal.fg, false: pal.rule}[o.state.Up], 6, !o.state.Up, false)
-					ui.Text(c, cmp.Or(o.state.Summary, "starting Bridge…")).Grow(1).Basis(0).FontSize(12).TextColor(ink).SingleLine()
+					ui.Text(c, cmp.Or(o.state.Summary, "starting Mitosis…")).Grow(1).Basis(0).FontSize(12).TextColor(ink).SingleLine()
 					if link(c, "settings", keys(",")) {
 						a.settings()
 					}
@@ -102,7 +102,7 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 					ui.Text(c, "Pair ›").FontWeight(medium)
 				})
 				if press(row) {
-					a.push(screen{kind: "bridge"})
+					a.push(screen{kind: "mitosis"})
 				}
 			})
 		}
@@ -447,8 +447,8 @@ func nonEmpty(s ...string) []string {
 }
 
 // boot is what starting is doing, line by line as each part answers, as an EVA's entry plug reads
-// out its start: shown while this computer's Bridge is not up yet, and only when that takes long
-// enough to read (a Bridge already running answers before it would show).
+// out its start: shown while this computer's Mitosis is not up yet, and only when that takes long
+// enough to read (a Mitosis already running answers before it would show).
 func (a *app) boot(c *ui.Context) {
 	o, pal := a.o, p(c)
 	if o.state.Up {
@@ -468,7 +468,7 @@ func (a *app) boot(c *ui.Context) {
 	lines := []line{{"orb app", "starting"}}
 	if o.running != "" {
 		lines[0].what = tidy(o.running)
-		lines = append(lines, line{"bridge", "starting Bridge on this computer…"})
+		lines = append(lines, line{"mitosis", "starting Mitosis on this computer…"})
 	}
 	if len(o.home.Machines) > 0 {
 		lines = append(lines, line{"peers", fmt.Sprintf("%d of %d connected", connected, len(o.home.Machines)-1)})

@@ -52,7 +52,7 @@ func fakeStorage() js.Value {
 	`).Invoke()
 }
 
-func TestDurableKVBridge(t *testing.T) {
+func TestDurableKVMitosis(t *testing.T) {
 	ctx := t.Context()
 	storage := fakeStorage()
 	kv := NewDurableKV(storage)

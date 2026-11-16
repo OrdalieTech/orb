@@ -252,7 +252,7 @@ func (a *app) pending(c *ui.Context) {
 	})
 }
 
-// turn: what the person said sits at right on a soft ground (a peer's says it came by Bridge); Orb
+// turn: what the person said sits at right on a soft ground (a peer's says it came by Mitosis); Orb
 // just speaks, full width, its actions inline.
 func (a *app) turn(c *ui.Context, rows []Row, first bool, t *Tab) {
 	pal := p(c)
@@ -634,7 +634,7 @@ func (a *app) interrupt(c *ui.Context, ask Ask, answer func(*string)) {
 	switch ask.Owner {
 	case "permissions":
 		word, caption = "APPROVAL", "APPROVAL REQUIRED"
-	case "bridge":
+	case "mitosis":
 		word, caption = "PAIR", "PAIRING REQUEST"
 	}
 	ink := charcoal
@@ -650,7 +650,7 @@ func (a *app) interrupt(c *ui.Context, ask Ask, answer func(*string)) {
 		if _, ok := a.asked[ask.ID]; !ok {
 			a.asked[ask.ID] = time.Now()
 		}
-		armed := ask.Owner != "bridge" && time.Since(a.asked[ask.ID]) > 800*time.Millisecond
+		armed := ask.Owner != "mitosis" && time.Since(a.asked[ask.ID]) > 800*time.Millisecond
 		ui.Column(c).FillWidth().MaxWidth(900).Margin(0, ui.Auto).Grow(1).Children(func() {
 			ui.Row(c).FillWidth().Padding(16, margin).Children(func() {
 				label(c, ask.Owner).Grow(1).TextColor(ink)

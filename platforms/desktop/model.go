@@ -1,7 +1,7 @@
 package main
 
-// What `orb app` (bridge/view) sends, as the app draws it; bridge/view's Go types name each field.
-// The app declares them itself, as the Android and iOS apps do: importing bridge/view would link
+// What `orb app` (mitosis/view) sends, as the app draws it; mitosis/view's Go types name each field.
+// The app declares them itself, as the Android and iOS apps do: importing mitosis/view would link
 // the whole runtime into a program that only draws.
 
 type State struct {

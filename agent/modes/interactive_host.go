@@ -58,8 +58,8 @@ type InteractiveSessionHost interface {
 
 	// PlanLimits is the session's provider plan windows as last read, or nil; it never waits.
 	PlanLimits() *usage.Snapshot
-	// WatchOthers reports what this machine's other Orbs on Bridge are doing ("" when they are
-	// quiet or Bridge is off) until ctx ends.
+	// WatchOthers reports what this machine's other Orbs on Mitosis are doing ("" when they are
+	// quiet or Mitosis is off) until ctx ends.
 	WatchOthers(ctx context.Context, changed func(string))
 
 	Dispose()

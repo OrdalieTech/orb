@@ -7,7 +7,7 @@ import kotlinx.coroutines.*
 import tech.ordalie.orb.core.*
 
 /**
- * The app's whole model: this phone's Orb setup, and the view of every conversation on Bridge,
+ * The app's whole model: this phone's Orb setup, and the view of every conversation on Mitosis,
  * this phone's own included (`orb app`). What only a phone has — its Linux, its updates, being on
  * screen or not — lives here; the rest is the view's.
  */

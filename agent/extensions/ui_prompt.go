@@ -75,7 +75,7 @@ func (runner *Runner) queueUIPromptEvent(event Event) {
 }
 
 // Slot is what extensions show beside a conversation rather than in it: a status line, a widget's
-// lines, or the last notice until the next run starts. Apps following a session on Bridge draw them.
+// lines, or the last notice until the next run starts. Apps following a session on Mitosis draw them.
 type Slot struct {
 	Key   string   `json:"key"`
 	Lines []string `json:"lines"`

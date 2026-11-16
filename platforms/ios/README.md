@@ -1,6 +1,6 @@
 # Orb for iOS
 
-The iPhone app draws `orb app` (`bridge/view`) like the desktop and Android apps, and holds no logic of
+The iPhone app draws `orb app` (`mitosis/view`) like the desktop and Android apps, and holds no logic of
 its own. It drives the Orbs of the machines it is paired with: the owner's Mac, a server. iOS 18 or
 later; iPad comes later.
 
@@ -11,16 +11,16 @@ later; iPad comes later.
 2. **The same Go core, in process.** iOS runs no binary but the app's, so `cmd/orb` is linked into
    it as a static library (`go build -buildmode=c-archive`) with one exported entry,
    `core/app.go`, laid into `cmd/orb` at build time (`-overlay`, `-tags appshell`), which keeps cgo
-   in the app shell (P2). `OrbApp(home, in, out)` runs `orb bridge run`, then `orb app` over two
+   in the app shell (P2). `OrbApp(home, in, out)` runs `orb mitosis run`, then `orb app` over two
    pipes: the very CLI the desktop app runs as a process, with pipes instead of a process, and the same
-   JSON lines. Orb's state lives in the app's `Library`; the Bridge's sockets under `Library/b`
+   JSON lines. Orb's state lives in the app's `Library`; the Mitosis's sockets under `Library/b`
    (a short profile, `p`, so their paths fit the 104 bytes macOS allows; the simulator's container
    is deeper, and unsandboxed, so there they are under `/tmp`).
 3. **What it runs.** No shell and no exec, so the phone starts no Orb of its own: a new
-   conversation starts on a paired machine, and the phone's Bridge is a peer like the Android
-   app's. Pairing is the Android app's: scan the code the desktop app shows (Bridge, invite a
-   device) or that `orb bridge pair` prints, from the app (VisionKit) or the system camera,
-   whose `orb-bridge:` link opens the app; a pasted code works too. Then approve the fingerprint
+   conversation starts on a paired machine, and the phone's Mitosis is a peer like the Android
+   app's. Pairing is the Android app's: scan the code the desktop app shows (Mitosis, invite a
+   device) or that `orb mitosis pair` prints, from the app (VisionKit) or the system camera,
+   whose `orb-mitosis:` link opens the app; a pasted code works too. Then approve the fingerprint
    on the other machine.
 4. **Look.** The Android app's: Ubuntu Sans Mono, the same inks and the one red, stretched
    capitals on interrupts, the Android app's mark for the icon.
@@ -36,7 +36,7 @@ xcrun simctl launch booted tech.ordalie.orb
 ```
 
 `.github/workflows/ios.yml` does that on a macOS runner for every change under `platforms/`,
-`bridge/view/` or `cmd/orb/`, pairs the simulator with an Orb on the runner and keeps screenshots.
+`mitosis/view/` or `cmd/orb/`, pairs the simulator with an Orb on the runner and keeps screenshots.
 
 Without Xcode, the Swift still type-checks for iOS as Mac Catalyst, from `platforms/apple`
 (`SDK=$(xcrun --show-sdk-path)`, `F=$SDK/System/iOSSupport`):
@@ -56,7 +56,7 @@ swift build --triple arm64-apple-ios18.0-macabi --scratch-path .build/catalyst \
   boot time and disk space the Go runtime and the store read, and the app's own defaults.
 - Info.plist asks for the camera (to read a pairing code) and the local network (to reach paired
   devices directly).
-- Export compliance: `ITSAppUsesNonExemptEncryption` is true. Bridge secures its links itself, with
+- Export compliance: `ITSAppUsesNonExemptEncryption` is true. Mitosis secures its links itself, with
   standard algorithms only: Ed25519 identities, WireGuard through Tailscale's tailcat (X25519,
   ChaCha20-Poly1305) and TLS, all from Go's and Tailscale's libraries. In App Store Connect the
   answer is "standard encryption algorithms instead of, or in addition to, the operating system's",

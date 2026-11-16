@@ -54,7 +54,7 @@ func TestRowsEnumerateInBootOrder(t *testing.T) {
 		CWD: root, AgentDir: agentDir, Settings: settings,
 		Compiled: compiled("alpha", "beta"), MCP: true,
 	})
-	want := []string{"alpha", "beta", "plugin-control", "tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "provider-usage", "bridge", "bridge-agent-calls", "wake", "tool-search", "mcp"}
+	want := []string{"alpha", "beta", "plugin-control", "tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "provider-usage", "mitosis", "mitosis-agent-calls", "wake", "tool-search", "mcp"}
 	got := rowIDs(rows)
 	if len(got) != len(want) {
 		t.Fatalf("row ids = %v, want %v", got, want)
@@ -164,31 +164,31 @@ func TestConcurrentAssembliesAreIndependent(t *testing.T) {
 	wg.Wait()
 }
 
-func TestBridgeManagementIsAvailableWithoutEnablingNetworking(t *testing.T) {
-	settings, root, dir := newTestSettings(t, `{"plugins":{"bridge":false,"bridge-agent-calls":false}}`)
-	rows := assembly.Rows(assembly.Options{CWD: root, AgentDir: dir, Settings: settings, Bridge: noopFactory, BridgeManagement: true})
+func TestMitosisManagementIsAvailableWithoutEnablingNetworking(t *testing.T) {
+	settings, root, dir := newTestSettings(t, `{"plugins":{"mitosis":false,"mitosis-agent-calls":false}}`)
+	rows := assembly.Rows(assembly.Options{CWD: root, AgentDir: dir, Settings: settings, Mitosis: noopFactory, MitosisManagement: true})
 	for _, row := range assembly.Resolve(rows, settings, false) {
 		switch row.ID {
-		case "bridge":
+		case "mitosis":
 			if !row.Enabled || !row.Hidden {
-				t.Fatalf("Bridge management must be built in: %+v", row)
+				t.Fatalf("Mitosis management must be built in: %+v", row)
 			}
-		case "bridge-agent-calls":
+		case "mitosis-agent-calls":
 			if row.Enabled || !row.Hidden {
-				t.Fatalf("Agent calls must remain optional inside Bridge: %+v", row)
+				t.Fatalf("Agent calls must remain optional inside Mitosis: %+v", row)
 			}
 		}
 	}
-	if settings.GetPlugins()["bridge"] {
+	if settings.GetPlugins()["mitosis"] {
 		t.Fatal("opening management enabled networking")
 	}
 }
 
-func TestBridgeFactoryRemainsOptInForExistingAssemblies(t *testing.T) {
+func TestMitosisFactoryRemainsOptInForExistingAssemblies(t *testing.T) {
 	settings, root, dir := newTestSettings(t, "")
-	rows := assembly.Rows(assembly.Options{CWD: root, AgentDir: dir, Settings: settings, Bridge: noopFactory})
+	rows := assembly.Rows(assembly.Options{CWD: root, AgentDir: dir, Settings: settings, Mitosis: noopFactory})
 	for _, row := range assembly.Resolve(rows, settings, false) {
-		if row.ID == "bridge" && row.Enabled {
+		if row.ID == "mitosis" && row.Enabled {
 			t.Fatal("host factory enabled without explicit management opt-in")
 		}
 	}

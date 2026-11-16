@@ -39,9 +39,9 @@ type Row struct {
 // environment.
 type Options struct {
 	CatalogOptions
-	// BridgeManagement exposes the host-supplied settings page before service activation.
-	BridgeManagement bool
-	CWD              string
+	// MitosisManagement exposes the host-supplied settings page before service activation.
+	MitosisManagement bool
+	CWD               string
 	// Compiled rows supplied by the assembly owner (cmd/orb's compiled
 	// extensions, or an embedder's own), first in boot order.
 	Compiled []extensions.CompiledExtension
@@ -74,7 +74,7 @@ func Rows(options Options) []Row {
 			ID: name, Description: Description(name),
 			Source: SourcePlugin, Factory: catalog[name],
 			Hidden:         Paged(name),
-			DefaultEnabled: name == "bridge" && options.BridgeManagement && options.Bridge != nil,
+			DefaultEnabled: name == "mitosis" && options.MitosisManagement && options.Mitosis != nil,
 		})
 	}
 	rows = append(rows, Row{
@@ -101,7 +101,7 @@ type Resolved struct {
 
 // Resolve applies the settings gates: DefaultEnabled, then the goExtensions
 // override, then — for plugin rows — the plugins gates (plugin-control is
-// always on, as is host-supplied Bridge management; capability execution stays opt-in).
+// always on, as is host-supplied Mitosis management; capability execution stays opt-in).
 // disableAll (--no-extensions) turns everything off.
 func Resolve(rows []Row, settings *config.SettingsManager, disableAll bool) []Resolved {
 	goOverrides := settings.GetGoExtensions()
@@ -113,7 +113,7 @@ func Resolve(rows []Row, settings *config.SettingsManager, disableAll bool) []Re
 			entry.Enabled, entry.DecidedBy = override, "goExtensions"
 		}
 		if row.Source == SourcePlugin {
-			if row.ID == "plugin-control" || (row.ID == "bridge" && row.DefaultEnabled) {
+			if row.ID == "plugin-control" || (row.ID == "mitosis" && row.DefaultEnabled) {
 				entry.Enabled, entry.DecidedBy = true, "always"
 			} else if gate, exists := pluginGates[row.ID]; exists {
 				entry.Enabled, entry.DecidedBy = gate, "plugins"

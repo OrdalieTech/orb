@@ -1,4 +1,4 @@
-// Package websocket carries Bridge's pinned TLS stream over browser WebSockets.
+// Package websocket carries Mitosis's pinned TLS stream over browser WebSockets.
 package websocket
 
 import (
@@ -10,11 +10,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/OrdalieTech/orb/bridge"
+	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/coder/websocket"
 )
 
-// ValidateURL permits cleartext outer transport only on loopback. Bridge still
+// ValidateURL permits cleartext outer transport only on loopback. Mitosis still
 // authenticates and encrypts the inner stream independently of HTTPS proxies.
 func ValidateURL(address string) error {
 	u, err := url.Parse(address)
@@ -23,7 +23,7 @@ func ValidateURL(address string) error {
 	}
 	ip := net.ParseIP(u.Hostname())
 	if u.Scheme != "wss" && (u.Scheme != "ws" || u.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback())) {
-		return fmt.Errorf("use wss:// for remote Bridges (ws:// is allowed on loopback)")
+		return fmt.Errorf("use wss:// for remote Mitosis peers (ws:// is allowed on loopback)")
 	}
 	return nil
 }
@@ -37,10 +37,10 @@ func Dial(ctx context.Context, address string) (net.Conn, error) {
 }
 
 // Handler exposes no admin API. Origins are exact scheme://host values, never
-// wildcard patterns. Clients without Origin still require Bridge authentication.
-func Handler(ctx context.Context, b *bridge.Bridge, origins []string) (http.Handler, error) {
+// wildcard patterns. Clients without Origin still require Mitosis authentication.
+func Handler(ctx context.Context, b *mitosis.Mitosis, origins []string) (http.Handler, error) {
 	if b == nil {
-		return nil, fmt.Errorf("bridge is required")
+		return nil, fmt.Errorf("mitosis is required")
 	}
 	if err := ValidateOrigins(origins); err != nil {
 		return nil, err

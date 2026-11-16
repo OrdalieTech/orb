@@ -122,11 +122,6 @@ func main() {
 		teamenv.Hide()
 	}
 	setEntryIdentity()
-	// Mitosis is the public brand for the peer network formerly called Bridge. Its env
-	// aliases resolve to the stable ORB_BRIDGE_* names, which stay the on-disk contract.
-	if v := os.Getenv("ORB_MITOSIS_HOME"); v != "" && os.Getenv("ORB_BRIDGE_HOME") == "" {
-		_ = os.Setenv("ORB_BRIDGE_HOME", v)
-	}
 	os.Exit(runNativeCLI(context.Background(), os.Args[1:], cliStreams{
 		Stdin:     os.Stdin,
 		Stdout:    os.Stdout,
@@ -243,8 +238,8 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 			return agent.MissingSessionCWDChoice(choice), err
 		}
 	}
-	if len(argv) > 0 && (argv[0] == "mitosis" || argv[0] == "bridge") {
-		return runBridgeCommand(ctx, argv[1:], streams)
+	if len(argv) > 0 && argv[0] == "mitosis" {
+		return runMitosisCommand(ctx, argv[1:], streams)
 	}
 	if len(argv) > 0 && argv[0] == "app" {
 		return runApp(ctx, argv[1:], streams)
@@ -270,7 +265,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 
 	args := normalizeRuntimeCLIArgs(ParseArgs(argv))
 	args.native = stateFromContext(ctx)
-	args.bridgeLink = &cliBridgeLink{}
+	args.mitosisLink = &cliMitosisLink{}
 	args.usageCache = &usage.Cache{}
 	args.accounts = &hostAccounts{}
 	offlineValue, networkDisabled := os.LookupEnv("ORB_OFFLINE")
@@ -460,7 +455,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	manager, sessionContext, err := createCLISession(cwd, args, streams, dependencies.selectSession)
 	// A conversation another Orb here holds opens as a live view of that Orb, and here once it lets go.
 	for held := (native.HeldError{}); isInteractive && errors.As(err, &held); {
-		if code := runBridgeView(ctx, remoteLink{instance: held.ID, held: args.native}, streams); code != 0 || args.native.Held(held.ID) {
+		if code := runMitosisView(ctx, remoteLink{instance: held.ID, held: args.native}, streams); code != 0 || args.native.Held(held.ID) {
 			return code
 		}
 		args.Session = &held.ID
@@ -549,7 +544,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 				return refreshStartupModels(refreshContext, !networkDisabled, agentDir, inputs.ModelRegistry, dependencies.refreshModels)
 			}
 		}
-		defer attachCLIBridge(ctx, host.AgentSessionRuntime, args, inputs.Settings, streams.Stderr)()
+		defer attachCLIMitosis(ctx, host.AgentSessionRuntime, args, inputs.Settings, streams.Stderr)()
 
 		bindings, err := nativeKeybindings(args.native)
 		if err != nil {
@@ -591,7 +586,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	defer attachCLIBridge(ctx, sessionHost, args, sessionHost.Services().SettingsManager, streams.Stderr)()
+	defer attachCLIMitosis(ctx, sessionHost, args, sessionHost.Services().SettingsManager, streams.Stderr)()
 	if services := sessionHost.Services(); services != nil {
 		startStartupModelRefresh(ctx, args.Mode, offlineMode, !networkDisabled, services.AgentDir, services.ModelRegistry, dependencies.refreshModels)
 	}
@@ -1122,7 +1117,7 @@ Commands:
   orb mcp <command>           Check MCP servers, sign in to or out of OAuth servers
   orb auth <command>           Print credentials for external clients
   orb storage <command>        Migrate, import/export, back up, or recover conversations
-  orb mitosis <command>       Connect this Orb to your other devices and servers as Mitosis peers (alias: bridge)
+  orb mitosis <command>        Connect this Orb to your other devices and servers as Mitosis peers
   orb skill                   Print the skill that teaches an agent Orb; each Orb start refreshes it in
                               <agent-dir>/host/skills/orb, so link it: ln -s ~/.orb/agent/host/skills/orb ~/.claude/skills/orb
   orb <command> --help        Show help for mitosis/chat/plugins/mcp/auth/storage/login/logout/install/remove/update/list/config
@@ -1130,7 +1125,7 @@ Commands:
 Global prefixes (before runtime options/subcommands):
   --agent-dir <dir>              Agent resources/config directory (ORB_AGENT_DIR; default ~/.orb/agent)
   --state-home <dir>             Native database directory (ORB_STATE_HOME; default ~/.orb/state)
-  --bridge-home <dir>            Bridge directory (ORB_BRIDGE_HOME; default ~/.orb/bridge)
+  --mitosis-home <dir>            Mitosis directory (ORB_MITOSIS_HOME; default ~/.orb/mitosis)
   --pi-files                     Use Pi-compatible file storage in Orb's selected agent directory
   Directory prefixes and --pi-files may appear in any order.
   An explicit agent directory defaults state to <agent-dir>/state unless --state-home or ORB_STATE_HOME is set.
@@ -1153,8 +1148,8 @@ Global prefixes (before runtime options/subcommands):
   --name, -n <name>              Set the session display name
   --session-dir <dir>            Session directory in --pi-files compatibility mode
   --no-session                   Don't save session (ephemeral)
-  --bridge <profile>             Attach this session to a Bridge profile (default personal)
-  --instance <alias>             Keep this session's Bridge instance under a stable alias
+  --mitosis <profile>             Attach this session to a Mitosis profile (default personal)
+  --instance <alias>             Keep this session's Mitosis instance under a stable alias
   --export <path|id> [output]    Export a session to HTML or Markdown and exit
   --tools, -t <names>            Comma-separated tool allowlist
   --exclude-tools, -xt <names>   Comma-separated tool denylist

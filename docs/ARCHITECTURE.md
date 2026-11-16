@@ -22,12 +22,12 @@ orb/
 │   │   └── accounts/         named credential store over ai/auth; explicit document and base store
 │   └── models/               catalog: generated data, models.dev refresh, models.json overlay
 ├── host/                     host ports; Store hands out transactional Documents
-├── bridge/                   core Bridge: identity, grants, routing, ledger, attachment contracts
+├── mitosis/                   core Mitosis: identity, grants, routing, ledger, attachment contracts
 │   └── protocol/             bounded strict JSON-RPC stream
 ├── platforms/native/         native host: State (the CLI's stores over sqlite/ or files), sandbox/, accounts/
-│                             sidecar file, bridge/ IPC, persistence and daemon, tailcat/ network transport,
+│                             sidecar file, mitosis/ IPC, persistence and daemon, tailcat/ network transport,
 │                             selfupdate/, teamenv/ (team agent credentials received off the environment)
-├── platforms/websocket/      Bridge's pinned TLS stream over WebSockets (browser, Worker, native listener)
+├── platforms/websocket/      Mitosis's pinned TLS stream over WebSockets (browser, Worker, native listener)
 ├── platforms/agent/          container image for one team agent; harness/ is its entrypoint, orb-agent
 ├── platforms/desktop/        the desktop app (macOS, Linux, Windows): `orb app` drawn by MyGo, a module of its own
 ├── engine/                    port of packages/agent     — loop, Agent, harness
@@ -41,8 +41,8 @@ orb/
 │   ├── config/               settings manager, trust, keybindings, auth storage, models.json
 │   ├── modes/                tui, print, json, rpc
 │   ├── acp/                  Agent Client Protocol server: one client, many sessions (`orb --mode acp`)
-│   ├── bridge/               runtime attachment, operation ledger adapter
-│   │   └── tool/             headless bridge_call tool (Workers)
+│   ├── mitosis/               runtime attachment, operation ledger adapter
+│   │   └── tool/             headless mitosis_call tool (Workers)
 │   └── assembly/             product catalog, enablement and plugin management UI
 ├── chat/                     chat processing + platform adapters, configured by options (chat → agent only)
 │   ├── gateway/              runs an agent's platforms as one process: ingress (polling or webhooks) → processor
@@ -58,7 +58,7 @@ orb/
 │   ├── titles/               names a session after its first exchange, once
 │   ├── websearch/            HTTP search/fetch, native credential and DNS defaults
 │   ├── subagents/            child agents and native CLI execution
-│   ├── bridgeagents/         agents tool: list, read and message the owner's other conversations
+│   ├── mitosisagents/         agents tool: list, read and message the owner's other conversations
 │   ├── activity/             headless session-local work observations; TUI view in agent/assembly
 │   ├── permissions/          policy, hooks and configuration UI
 │   │   └── native/           native bash/file containment through tool-operation options
@@ -105,11 +105,11 @@ Memory keeps three concrete boundaries: its Store contract, the `engine.Agent` a
 and the product extension adapter. File storage lives in `plugins/memory/filestore`; only
 product assembly selects the default home-directory backend, lazily when enabled. SDK callers
 pass an explicit Store. `plugins/usage` stays usable without the optional `footer` adapter.
-Bridge keeps native IPC and Tailcat in separate packages; the protocol stays in `bridge/protocol`.
+Mitosis keeps native IPC and Tailcat in separate packages; the protocol stays in `mitosis/protocol`.
 
 `internal/layering` checks both source edges and transitive dependencies: memory and usage
 cannot pull in presentation, memory attachments cannot pull in file/SQLite backends, and
-portable Bridge cannot pull in native hosts/transports. The Wasm probe executes injected
+portable Mitosis cannot pull in native hosts/transports. The Wasm probe executes injected
 filesystem/shell tools plus memory, tasks and quota fetching without a host filesystem on
 `js/wasm`; `wasip1/wasm` is compile-checked. This proves selected compositions, not a complete
 browser application. Native subagents, process-backed MCP, Herdr and native transports still
@@ -172,11 +172,11 @@ retaining the entered credentials; reload discards all state. The debug
 model descriptor assumes a 32K context window and 4K output limit; it does not discover model
 capabilities. Read/write/edit are attached explicitly to a virtual `/workspace` capped at 128
 files and 1 MiB. No shell, native Claude executor, plugin catalog, durable workspace storage or
-automatic compaction is included. The optional Bridge panel uses an outbound WebSocket connection:
-`bridge.ConnectClient` shares pinned TLS and the protocol handshake, rejects incoming runtime calls,
-and starts no local Bridge, listener, subprocess, or native transport. The remote host explicitly
-runs `orb bridge run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787`;
-`--web-url wss://host/bridge` advertises a reverse-proxied endpoint in invitations. Remote browser
+automatic compaction is included. The optional Mitosis panel uses an outbound WebSocket connection:
+`mitosis.ConnectClient` shares pinned TLS and the protocol handshake, rejects incoming runtime calls,
+and starts no local Mitosis, listener, subprocess, or native transport. The remote host explicitly
+runs `orb mitosis run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787`;
+`--web-url wss://host/mitosis` advertises a reverse-proxied endpoint in invitations. Remote browser
 URLs require WSS; loopback WS is allowed. The listener checks exact allowed origins, limits active
 connections, and exposes the existing peer protocol without the owner/admin API.
 
@@ -186,11 +186,11 @@ the remote owner approves the displayed browser identity, then Refresh lists aut
 The UI switches between the local agent and remote conversations, pages snapshots and sessions,
 uses cursor replay, checks session/generation fences, and never automatically replays mutations.
 Disconnect releases observation without cancelling remote execution. Reload retains pairing but
-requires explicit reconnection. A Worker's `bridge_call` is separately opt-in and uses an instance
+requires explicit reconnection. A Worker's `mitosis_call` is separately opt-in and uses an instance
 subject with its own remote grants, never the human controller's authority.
 
-`agent/bridge/tool.NewTool` is headless. Transport stays in `platforms/websocket`,
-worker ownership in `cmd/orb-wasm`, and browser controller state in `platforms/browser/web/bridge.js`. Tests execute the built Wasm
+`agent/mitosis/tool.NewTool` is headless. Transport stays in `platforms/websocket`,
+worker ownership in `cmd/orb-wasm`, and browser controller state in `platforms/browser/web/mitosis.js`. Tests execute the built Wasm
 without a host filesystem and cover event forwarding, tool execution, concurrent-prompt rejection,
 cancellation and session replacement, alongside native workspace and dependency checks.
 
@@ -413,7 +413,7 @@ user's own Claude ask rule forces.
 
 `SessionRuntime.RequestInput` is the small, vendor-neutral approval/input seam. A question has an
 unguessable, single-use ID, bounded title and choices, and a cancellation context. The owning TUI
-and authorized controllers race to provide the first valid answer. Bridge describes pending input
+and authorized controllers race to provide the first valid answer. Mitosis describes pending input
 and routes `input.reply` through the existing durable operation ledger and session/execution fences;
 its new `instance.input.reply` grant is explicit. Native model discovery uses the official SDK's
 `supportedModels()` control without a prompt or persisted session. The plugin adapts names, resolved
@@ -422,7 +422,7 @@ in the existing pickers; an account is a Claude Code configuration directory, re
 auth pipeline, and no token endpoint is impersonated. `session.model` uses generic model IDs and optional thinking levels, resolves only
 the runtime's advertised catalog, and requires an idle revision-fenced session-management grant.
 Descriptions include display-only model metadata, never model headers or credentials. No Claude event, tool name, account or session type
-enters Bridge. Disconnect does not answer, cancel or broaden a pending permission request.
+enters Mitosis. Disconnect does not answer, cancel or broaden a pending permission request.
 
 For comparison, [Hermes DirectSDK](https://hermes-agent.nousresearch.com/docs/plugins/claude-subscription-directsdk),
 source `NousResearch/hermes-plugin-claude-subscription-directsdk@c92c27c9f919178a58974a72333b473c6cb2e71d`,
@@ -525,7 +525,7 @@ source from its load hook so the package manager's own layout keeps governing re
 `orb-extension-sdk` (`agent/extensions/host/sdk/`, versioned by `sdk.json`, go:embed-ed and materialized
 content-addressed beside `host.mjs`): pure ports of the exercised upstream symbols, thin
 session/settings/resource handles, and capability-negotiated services (`sdk_v1`,
-`agent_session_v1`, `model_runtime_v1`) that bridge `createAgentSession`, `ModelRuntime`, and
+`agent_session_v1`, `model_runtime_v1`) that mitosis `createAgentSession`, `ModelRuntime`, and
 `ModelRegistry` onto the Go runtime (`agent.ExtensionAgentSessionService`); every other
 upstream export throws a precise `OrbUnsupportedCapability` diagnostic. `make sdk-surface`
 re-declares that export surface from the pinned upstream sources at each pin bump. The loader refuses — as a
@@ -561,7 +561,7 @@ palette also exposes model selection on legacy terminals. Ctrl+N starts a sessio
 keybindings win over these new defaults. Native composer slash suggestions appear above the input with commands, skills, and templates;
 extension editors keep the complete pi completion surface. Selecting a resource
 inserts its canonical invocation into the draft for arguments and explicit submission. Plugins
-and Bridge are page destinations: selecting them opens their UI immediately and preserves the draft. Floating
+and Mitosis are page destinations: selecting them opens their UI immediately and preserves the draft. Floating
 modals dim the background; non-capturing extension overlays keep their opt-in backdrop. The native
 composer reserves Shift+Enter for newlines, including ambiguous legacy Escape+Return input;
 explicit protocol Alt+Enter continues to queue follow-ups.
@@ -572,7 +572,7 @@ plan-limit windows inline and their resets below. Enter switches to the selected
 the model when the provider has it; the cursor opens on the current provider's other account with
 the most quota left. Tab, or Enter on the account in use, renames, reconnects or disconnects it.
 `accountBook` (`cmd/orb`) lists accounts, reads limits and switches; the TUI and `orb accounts
---json` / `orb accounts use`, which Bridge serves as `host.accounts` to the apps, share it.
+--json` / `orb accounts use`, which Mitosis serves as `host.accounts` to the apps, share it.
 `accounts.Store` (`ai/auth/accounts`) wraps an explicit `ai/auth.CredentialStore`, keeping the
 provider-keyed `auth.json` unchanged when adding accounts and recording extra credentials and
 selection in an atomic, locked, 0600 `accounts.json` sidecar (`platforms/native/accounts`). The CLI attaches it; importing the
@@ -597,7 +597,7 @@ switches to the one chosen and continues with a visible `provider-usage` message
 nor usage imports agent/TUI code, and no quota network
 request blocks startup or rendering. The compact footer keeps the model and reasoning level on the
 left, with the current session working directory, the provider quota, and a rounded context
-percentage on the right. Healthy Bridge adds no redundant
+percentage on the right. Healthy Mitosis adds no redundant
 footer label; startup disconnection stays visible. Compact rendering does not probe Git metadata.
 
 **Slash commands / skills / templates / themes:** resolution order extension → input hook →
@@ -665,7 +665,7 @@ separation does not rename conversations or copy the native database.
 `cmd/orb/storage.go` selects one explicitly opened SQLite database for native CLI state.
 `platforms/native/sqlite` supplies transactional documents, Pi v3 journals, memory and chat-spool
 repositories; existing SDK constructors keep file defaults and import no SQLite driver.
-Global settings, credentials/accounts, trust, model catalogs, keybindings, Bridge identity/grants,
+Global settings, credentials/accounts, trust, model catalogs, keybindings, Mitosis identity/grants,
 attachment credentials/receipts and foreign previews share the database. Project configuration,
 installed resources, exports, sockets, process locks and diagnostic logs remain ordinary files.
 
@@ -688,19 +688,19 @@ it must use a separate legacy root after native cutover. The unchanged upstream 
 through this entry point. Native exports use the same Pi JSONL/HTML/Markdown codecs. Backup uses
 SQLite `VACUUM INTO`, with private permissions and durability barriers. `storage restore` merges
 conversation journals from a backup and rejects conflicting histories; it never rolls back
-credentials, Bridge authority, receipts or chat delivery state. Whole-database authority rollback
-is deliberately not exposed. Managed remote hosting and the unified multi-Bridge selector remain
+credentials, Mitosis authority, receipts or chat delivery state. Whole-database authority rollback
+is deliberately not exposed. Managed remote hosting and the unified multi-Mitosis selector remain
 separate, pending slices of the active plan.
 
-## Orb Bridge v1 — implementation contract
+## Orb Mitosis v1 — implementation contract
 
-The owner-approved native delivery is one `orb` executable: `orb bridge` administers an
-explicit profile, while `orb --bridge <profile> --instance <alias>` attaches a runtime.
-Bridge management is built into Settings, Ctrl+P, and `/bridge`; opening it starts no service.
+The owner-approved native delivery is one `orb` executable: `orb mitosis` administers an
+explicit profile, while `orb --mitosis <profile> --instance <alias>` attaches a runtime.
+Mitosis management is built into Settings, Ctrl+P, and `/mitosis`; opening it starts no service.
 Its home page contains the service switch, Add device, pending approvals, and a live device list.
 Add device offers SSH setup or invitation exchange; selecting a device opens its live conversations
 directly. Advanced contains only agent access and the local fingerprint. Groups, grants,
-scopes, and receipts remain CLI administration. Bridge has no duplicate toggles in Plugins.
+scopes, and receipts remain CLI administration. Mitosis has no duplicate toggles in Plugins.
 Pairing explicitly activates the service when needed. Invitations are bounded,
 versioned copy/paste codes; each owner confirms trust in the other identity. New TUI/SSH pairings
 grant full controller access to all current and future conversations in both directions, including
@@ -715,45 +715,45 @@ explicit activation.
 Networking remains explicitly enabled, and its focused remote conversation view requires no local model credentials.
 Restricted launching remains excluded; mobile apps and hosted deployments follow P11 and
 [deployments.md](deployments.md). The optional
-WebSocket transport accepts outbound browser clients without a local Bridge service.
+WebSocket transport accepts outbound browser clients without a local Mitosis service.
 
 The owner-requested SSH pairing shortcut lives entirely in `cmd/orb`. It invokes the host's
 existing OpenSSH client with strict host-key verification and noninteractive authentication.
 Setup checks PATH and the user's install directory, reuses a compatible Orb, or downloads the
 server's release through the existing checksum-verifying updater. It streams the verified binary
-over SSH, validates Bridge support in a temporary executable, then atomically installs it in
+over SSH, validates Mitosis support in a temporary executable, then atomically installs it in
 `~/.local/bin` without elevation or shell edits. An incompatible published release leaves the
 existing binary intact. It then starts Orb and approves a one-use invitation through the owner's
 SSH session. Invitations never enter command-line arguments. SSH ends after setup; conversation
-traffic uses the same pinned Bridge transport and two directional grants.
+traffic uses the same pinned Mitosis transport and two directional grants.
 No SSH service, helper binary, key copying, or additional Go dependency is shipped.
 
 | Layer | Responsibility |
 |---|---|
-| `bridge` | Versioned calls, receipts, observations, non-owning attachment contracts; identity, pairing, directional grants, registration, routing, scoped contacts |
-| `agent/bridge` | Existing `AgentSessionRuntime` adaptation; operation ledger and bounded observations |
-| `platforms/native/bridge`, `platforms/native/tailcat`, `platforms/websocket` | Explicit persistence, profile locks, IPC roles/credentials, network streams |
+| `mitosis` | Versioned calls, receipts, observations, non-owning attachment contracts; identity, pairing, directional grants, registration, routing, scoped contacts |
+| `agent/mitosis` | Existing `AgentSessionRuntime` adaptation; operation ledger and bounded observations |
+| `platforms/native/mitosis`, `platforms/native/tailcat`, `platforms/websocket` | Explicit persistence, profile locks, IPC roles/credentials, network streams |
 | `cmd/orb` and UI assemblies | Lifecycle, management, capability selection, remote conversation view |
 
 Existing SDK constructors, interfaces, subscription semantics, and defaults remain unchanged.
-Neither `ai`, `engine`, nor the `agent` root package imports Bridge, Tailcat, or new UI
-dependencies; `agent/bridge` adapts runtimes to Bridge. Closing an
-attachment, view, or bridge never disposes a runtime. Stores, credentials, transports,
+Neither `ai`, `engine`, nor the `agent` root package imports Mitosis, Tailcat, or new UI
+dependencies; `agent/mitosis` adapts runtimes to Mitosis. Closing an
+attachment, view, or Mitosis service never disposes a runtime. Stores, credentials, transports,
 and lifetimes are explicit; imports create no files or network activity. Multiple independent
-bridges and runtimes can coexist in one process. Only interchangeable attachment and persistence
-boundaries need interfaces. Native storage stays outside Pi-managed files and keeps bridge
+Mitosis instances and runtimes can coexist in one process. Only interchangeable attachment and persistence
+boundaries need interfaces. Native storage stays outside Pi-managed files and keeps mitosis
 metadata, instance attachment credentials, and operation ledgers separately owned.
 
 Native IPC separates local-owner administration from scoped instance attachment, checks OS peer
 credentials, fences registrations with persistent generations, and refuses simultaneous writers.
-Bridge loss marks instances unavailable while their local work continues. Pairing pins Ed25519
+Mitosis loss marks instances unavailable while their local work continues. Pairing pins Ed25519
 PeerIDs and requires a recoverable one-use invitation claim plus local-owner approval of exact
 grants. Group membership is administrative; fixed selectors snapshot InstanceIDs, while future
 membership requires explicit selection. Discovery scopes grant no execution authority. Agent
 calls require source and destination grants, derive subjects from attachment credentials, and
-never transparently forward execution through a third bridge.
+never transparently forward execution through a third peer.
 
-The transport is pinned TLS 1.3 with ALPN `orb-bridge/1` over Tailcat streams, without TLS
+The transport is pinned TLS 1.3 with ALPN `orb-mitosis/1` over Tailcat streams, without TLS
 resumption or Tailcat shell/file/proxy/exit-node services. Persist transport keys and PSKs.
 JSON-RPC frames use four-byte big-endian lengths, at most 1 MiB each, depth 64, 64 in-flight
 requests, pages of at most 128 items, and 4 MiB queued output. Reject duplicate keys, invalid
@@ -775,7 +775,7 @@ new acceptance. Identical
 retries retrieve authorized receipts before stale-generation checks; conflicting payloads fail.
 Recheck authorization and target preconditions at dispatch, never retarget, and reconcile crash
 ambiguity as `outcome_unknown` rather than replaying effects. Accepted work belongs to the runtime.
-Remote prompts cannot invoke bridge administration slash commands.
+Remote prompts cannot invoke mitosis administration slash commands.
 
 Snapshot state and its continuation cursor are established atomically. Paginated transcript
 snapshots have stable identities and explicit expiry. Replay and subscriptions are bounded;
@@ -783,15 +783,39 @@ slow consumers receive a resnapshot signal and cannot stall runtimes or other in
 Use bounded callbacks, never the existing lossless `SubscribeChan` adapter. No transcript replica,
 hidden command queue, compression, arbitrary file transfer, or general plugin framework.
 
-Explicit enable starts a background `orb bridge run` process that survives TUI exit. Enabled
+Explicit enable starts a background `orb mitosis run` process that survives TUI exit. Enabled
 launches restore it if needed; deliberate Stop persists until Start or re-enable. No login service
 or implicit SDK startup. Begin with a personal profile/group, with all state profile-scoped.
-Bridge protocol tests are Orb-owned checks, separate from Pi conformance families.
+Mitosis protocol tests are Orb-owned checks, separate from Pi conformance families.
+
+### Profile sync
+
+A profile has at most one sync group (`mitosis/sync.go`): a discovery scope whose ID derives from
+its owner's PeerID and whose first member is the owner. Membership is explicit and the owner's:
+`sync add|remove` changes it on the owner, `sync join <owner>` follows one; nothing rebuilds it
+from paired peers, so a removed device stays out. Each device publishes one vault in its own
+signed record of the group scope (`extensions.vault`, `orb.mitosis-vault/1`), so vaults travel on
+the existing reconciliation and any member relays the owner's while the owner is off. A vault is
+the bundle sealed once with AES-256-GCM under a fresh 256-bit key, and that key sealed to each
+recipient (ephemeral X25519, SHA-256 key derivation, AES-256-GCM), all stdlib. A peer's X25519
+key is the Montgomery form of its Ed25519 identity (RFC 7748 §4.1), so sealing needs only a
+PeerID. Recipients are checked at seal time: the owner seals to every current, unblocked member;
+a member seals to the owner alone. Only the owner's vault reaches the group, and vaults are
+opened only from current, unblocked members.
+
+A round (`orb mitosis sync`, the `sync` admin method on every host with a Mitosis) reads before it
+publishes: the owner merges into auth.json the entries members handed it, keeping its own; a
+member takes the owner's entries over its own, then hands the result to the owner. Entries merge
+by name and are never deleted. The bundle is one JSON object per data class; v1 carries
+credentials only, and a class added later is one more field. Sync runs on demand. A removed or
+blocked device keeps what it already received and gets nothing sealed after; a device that boots
+unattended holds the key to its own vault, so a low-trust host belongs in a profile of its own
+with capped credentials. A record stays under 16 KiB, which bounds the bundle and the group.
 
 ### Native v1 method schemas
 
 Every request is one JSON-RPC 2.0 object with a string ID; batches and notifications are
-unsupported. `bridge.hello` exchanges `peer_id`, `bridge_boot_id`, `protocol`, `max_frame`,
+unsupported. `mitosis.hello` exchanges `peer_id`, `mitosis_boot_id`, `protocol`, `max_frame`,
 and `max_page` before application methods. Frame limits are the smaller advertised limit
 (minimum 1 KiB); oversized results fail explicitly, and pages respect the smaller item limit.
 Counters use canonical unsigned decimal strings; operation, instance, group, scope, and boot
@@ -799,7 +823,7 @@ IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain 
 
 | Method | Parameters and result |
 |---|---|
-| `bridge.ping` | `{}` → optional `name`, what the machine is called, for a peer granted anything there |
+| `mitosis.ping` | `{}` → optional `name`, what the machine is called, for a peer granted anything there |
 | `pair.claim` | `invitation_id`, secret `token`, optional claimant `locator` → recoverable invitation status |
 | `pair.status` | `invitation_id` → status for its authenticated claimant |
 | `instances.list` | optional `cursor` → authorized `items`, optional continuation `cursor` |
@@ -820,7 +844,7 @@ is `{}`, switch is `{session_id}`, fork is `{entry_id}`, and model selection is
 session's skills then the files fd finds, under `instance.prompt`; an image is `{ref, size}` →
 `{data, mime_type}`, fitted within `size` pixels and half a frame, under `instance.inspect`.
 Read-only inspection needs no operation ID. An optional `subject` on remote calls
-is restricted to an instance subject and comes from the source bridge's credential-bound
+is restricted to an instance subject and comes from the source mitosis's credential-bound
 outbound route; administrative methods never appear in this routing table.
 
 The CLI caches visited remote session summaries and visible message excerpts through
@@ -835,17 +859,17 @@ Receipts retain the operation ID, target, expected revision/generation, method, 
 canonical payload digest, status, and bounded result/error. When a write would exceed the ledger
 quota, the oldest terminal receipts are evicted first; accepted and running receipts (and the
 operation being recorded) are never evicted. A failed storage barrier makes the writer unavailable until reopened; unfinished
-receipts recover as `outcome_unknown`. Bridge profiles and ledgers each cap storage at 1 MiB.
+receipts recover as `outcome_unknown`. Mitosis profiles and ledgers each cap storage at 1 MiB.
 Snapshot retention is four snapshots per attachment for one minute, over a transcript mirror of
 the newest 8 MiB/16,384 messages; a message larger than a page keeps the ends of its texts.
 Replay retains 2,048 events within 4 MiB. `cursor_expired` explicitly requests resnapshotting. Catalog/contact
 cursors bind the complete ordered content digest and expire if that content changes. Catalog
 observers return an empty replay while unchanged and explicitly request a fresh snapshot after
-a catalog or visibility change; the bridge retains no per-client catalog history.
+a catalog or visibility change; the mitosis retains no per-client catalog history.
 
 The native adapter serves separate `admin.sock` and `attach.sock` endpoints with same-UID checks.
 Its stores use an exclusive file lock, private permissions, atomic replacement, file fsync,
-and directory fsync. `ORB_BRIDGE_HOME` explicitly overrides the profile root for isolated hosts.
+and directory fsync. `ORB_MITOSIS_HOME` explicitly overrides the profile root for isolated hosts.
 Transport metadata contains the pinned server key, PSK, relay region, and per-peer client keys.
 No remote-supplied relay map or embedded relay definition is accepted. Contact changes trigger
 reconciliation, with a 15-second retry sweep; signed recovery locators must authenticate the
@@ -853,11 +877,11 @@ already-pinned PeerID. Native direct and forced-relay tests are separate from th
 
 ### App view (`orb app`)
 
-Every Orb app renders one view and holds no logic of its own. `bridge/view`, in the portable
-core, follows the conversations open on Bridge (this machine's and its peers', with the owner
+Every Orb app renders one view and holds no logic of its own. `mitosis/view`, in the portable
+core, follows the conversations open on Mitosis (this machine's and its peers', with the owner
 calls above), folds their events into rows, keeps machines, threads and tabs, and runs what the
 app asks; the host injects the owner API, this machine's CLI (storage), tab persistence and
-the latest release. A machine's providers, accounts and plugins are its Bridge's `host.*` calls,
+the latest release. A machine's providers, accounts and plugins are its Mitosis's `host.*` calls,
 this machine's included, so every app manages any machine it may start Orb on. `orb app [--name "this phone"]` serves it as JSON lines:
 
 - in, intents `{"do": …}`, with an `id` when a reply is expected;
@@ -926,7 +950,7 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | klauspost/compress | ai/api | zstd request compression required by the OpenAI Codex Responses wire |
 | aws-sdk-go-v2/config | ai/api/bedrock (native hosts) | AWS shared config and credential chain for Bedrock (D10) |
 | modelcontextprotocol/go-sdk | mcp, mcp/serve | official MCP SDK v1.6+ |
-| yuin/goldmark | tui, chat, bridge/view | CommonMark parsing (render stays ours) |
+| yuin/goldmark | tui, chat, mitosis/view | CommonMark parsing (render stays ours) |
 | alecthomas/chroma/v2 | tui | syntax highlighting (upstream: highlight.js) |
 | rivo/uniseg | tui | grapheme/East-Asian width |
 | golang.org/x/{term,sys,image,text} | cli, tui, tools | terminal detection/raw mode, signals, image decode/resize, encoding |
@@ -935,11 +959,11 @@ dependency; a well-maintained official SDK beats reinventing a provider.
 | gopkg.in/yaml.v3 | skills, config | frontmatter + YAML settings surfaces |
 | aymanbagabas/go-udiff | tools | unified diff for edit rendering (upstream: `diff`) |
 | tailscale/tailcat v0.7.0 | CLI transport assembly | Stream-only WireGuard/NAT traversal and DERP; tested below the existing size/startup budgets with upstream omission tags; no SDK dependency |
-| coder/websocket v1.8.15 | optional Bridge WebSocket transport, `chat/discord` gateway | Reuses the installed dependency for native and browser streams; Bridge retains pinned TLS authentication inside the stream |
+| coder/websocket v1.8.15 | optional Mitosis WebSocket transport, `chat/discord` gateway | Reuses the installed dependency for native and browser streams; Mitosis retains pinned TLS authentication inside the stream |
 | tailscale.com | `platforms/native/tailcat` | the node-key and DERP-region types tailcat's API takes; already in the build through tailcat |
-| creack/pty | `platforms/native/bridge/daemon` | the pseudo-terminal behind a terminal opened on a paired machine |
+| creack/pty | `platforms/native/mitosis/daemon` | the pseudo-terminal behind a terminal opened on a paired machine |
 | dlclark/regexp2/v2 | `internal/chromalexers` | the regexp engine chroma's lexers are written for; already in the build through chroma |
-| gofrs/flock | memory, native bridge storage | file locking for the JSONL memory store (session/config use internal/filelock) |
+| gofrs/flock | memory, native mitosis storage | file locking for the JSONL memory store (session/config use internal/filelock) |
 | @anthropic-ai/claude-agent-sdk 0.3.280 | optional `plugins/claudesessions` Node host | Official native session, permission and cancellation API; installed automatically on first Claude session, outside Go module and release binary |
 | egoist/mygo v0.7.4 | `platforms/desktop` (its own module) | native UI, windows and packaging for the desktop app in pure Go (purego, no cgo); its terminal plugin loads libghostty-vt, pinned and bundled by `mygo build`. Never imported by Orb's module |
 | modernc.org/sqlite v1.59.0 | native CLI / opt-in SDK `platforms/native/sqlite` adapter | CGo-free SQLite 3.53.4; WAL/FULL durability, transactional documents, indexed session journals and FTS5 catalogs, memory, chat spool and bounded foreign previews; CLI explicitly owns the database lifetime |
@@ -983,6 +1007,6 @@ frameworks (D15), langchaingo/fantasy-style unified LLM libs (D10), and cgo bind
 The optional `plugins/questions` module owns the question schema, validation, native tool
 and shared TUI panel. Runtime input carries only bounded opaque presentation data and an optional
 reply validator. Claude maps native questions inside `plugins/claudesessions`; the CLI renders the shared
-panel for remote views, while Bridge remains unaware of Claude and question schemas. Native Claude
+panel for remote views, while Mitosis remains unaware of Claude and question schemas. Native Claude
 tool permissions adapt through the existing extension `BeforeToolCall` hook, keeping policy in the
 Permissions plugin and execution in the native SDK.

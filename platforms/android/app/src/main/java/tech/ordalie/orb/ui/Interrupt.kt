@@ -16,7 +16,7 @@ import tech.ordalie.orb.core.*
 fun Interrupt(a: Ask, answer: (String?) -> Unit) {
     val (word, caption) = when (a.owner) {
         "permissions" -> "APPROVAL" to "approval required"
-        "bridge" -> "PAIR" to "pairing request"
+        "mitosis" -> "PAIR" to "pairing request"
         else -> "QUESTION" to "a question for you"
     }
     var text by remember(a.id) { mutableStateOf("") }
@@ -65,7 +65,7 @@ fun Interrupt(a: Ask, answer: (String?) -> Unit) {
 /** Someone claimed this phone's invitation: its fingerprint, and the owner's yes or no. */
 @Composable
 fun PairRequest(claim: Claim, c: Ctx) =
-    Interrupt(Ask("pair:${claim.claimant}", "bridge", "Pair with ${claim.claimant.substringAfterLast(':').take(8)}?",
+    Interrupt(Ask("pair:${claim.claimant}", "mitosis", "Pair with ${claim.claimant.substringAfterLast(':').take(8)}?",
         "Check the other device shows this fingerprint:\n${claim.claimant}\nAllowing lets it read and drive this phone's conversations, run what they run, and start Orb here.", listOf("allow", "deny"), false)) { v ->
         c.v.send(if (v == "allow") "approve" else "deny")
     }

@@ -4,14 +4,14 @@ import SwiftUI
 import VisionKit
 #endif
 
-/// Settings: the providers and accounts of each machine, Bridge and its devices, and Orb's plugins.
+/// Settings: the providers and accounts of each machine, Mitosis and its devices, and Orb's plugins.
 struct Preferences: View {
     @Environment(Nav.self) private var nav
     var body: some View {
         @Bindable var nav = nav
         TabView(selection: $nav.pane) {
             Providers().page("Providers").tabItem { Label("Providers", systemImage: "key") }.tag("providers")
-            Devices().page("Bridge").tabItem { Label("Bridge", systemImage: "point.3.connected.trianglepath.dotted") }.tag("pair")
+            Devices().page("Mitosis").tabItem { Label("Mitosis", systemImage: "point.3.connected.trianglepath.dotted") }.tag("pair")
             Plugins().page("Plugins").tabItem { Label("Plugins", systemImage: "puzzlepiece.extension") }.tag("plugins")
         }
         .font(.mono())
@@ -203,7 +203,7 @@ private struct SignIn: View {
             switch l.state {
             case "browser":
                 Text("Continue in the browser").font(.mono(Size.body + 4, .semibold))
-                // A machine signing in over Bridge listens on its own localhost: the code or final URL comes back by paste.
+                // A machine signing in over Mitosis listens on its own localhost: the code or final URL comes back by paste.
                 Text(remote ? "Finish on the page that opened, then paste the code it shows or the final redirect URL here." : "Finish on the page that opened; it comes back to Orb by itself.").foregroundStyle(Ink.mute)
                 Button("Open the page again") { open(l.url) }
                 if let p = l.prompt, p.kind == "manual_code" { answer(p) }
@@ -265,7 +265,7 @@ private struct SignIn: View {
     private func open(_ url: String) { if let u = URL(string: url), !url.isEmpty { openURL(u) } }
 }
 
-/// Bridge: this device's devices, pairing one by code either way, and approving by fingerprint.
+/// Mitosis: this device's devices, pairing one by code either way, and approving by fingerprint.
 private struct Devices: View {
     @Environment(Orb.self) private var orb
     @Environment(Nav.self) private var nav
@@ -282,7 +282,7 @@ private struct Devices: View {
             Section("Devices") {
                 let peers = orb.home.machines.filter { !$0.here }
                 if peers.isEmpty {
-                    ContentUnavailableView("No device yet", systemImage: "point.3.connected.trianglepath.dotted", description: Text(local ? "Invite one below, or join one that ran orb bridge pair." : "Join a computer: scan the code its Orb app or orb bridge pair shows."))
+                    ContentUnavailableView("No device yet", systemImage: "point.3.connected.trianglepath.dotted", description: Text(local ? "Invite one below, or join one that ran orb mitosis pair." : "Join a computer: scan the code its Orb app or orb mitosis pair shows."))
                 }
                 ForEach(peers) { m in
                     HStack {
@@ -294,7 +294,7 @@ private struct Devices: View {
                                 .foregroundStyle(m.connected ? Ink.fg : Ink.rule)
                         }
                         Spacer()
-                        // A device behind the latest release updates from here (its Orb swaps itself and restarts Bridge).
+                        // A device behind the latest release updates from here (its Orb swaps itself and restarts Mitosis).
                         if m.connected, orb.state.behind(m.version), updating[m.id] == nil {
                             Button("Update") {
                                 updating[m.id] = "updating to \(orb.state.latest)…"
@@ -317,10 +317,10 @@ private struct Devices: View {
                         HStack(alignment: .top, spacing: 16) {
                             if let qr = qr(inv.code) { Image(decorative: qr, scale: 1).interpolation(.none).resizable().frame(width: 168, height: 168) }
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("orb bridge join " + inv.code).font(.mono(Size.small)).textSelection(.enabled).lineLimit(4)
+                                Text("orb mitosis join " + inv.code).font(.mono(Size.small)).textSelection(.enabled).lineLimit(4)
                                 HStack {
-                                    Button("Copy Command") { copy("orb bridge join " + inv.code) }
-                                    ShareLink(item: "orb bridge join " + inv.code)
+                                    Button("Copy Command") { copy("orb mitosis join " + inv.code) }
+                                    ShareLink(item: "orb mitosis join " + inv.code)
                                 }
                                 Text("You approve it here by fingerprint once it runs the command.").font(.mono(Size.small)).foregroundStyle(Ink.meta)
                             }
@@ -339,7 +339,7 @@ private struct Devices: View {
                             .sheet(isPresented: $scanning) { Scanner { code = $0; scanning = false; pair() }.ignoresSafeArea() }
                     }
                     #endif
-                    TextField("orb-bridge:v1:…", text: $code, axis: .vertical).lineLimit(2...4).font(.mono(Size.small))
+                    TextField("orb-mitosis:v1:…", text: $code, axis: .vertical).lineLimit(2...4).font(.mono(Size.small))
                     HStack {
                         PasteButton(payloadType: String.self) { code = $0.first ?? code }
                         Button("Pair", action: pair).disabled(code.isEmpty)
@@ -420,7 +420,7 @@ private struct Scanner: UIViewControllerRepresentable {
 
         func dataScanner(_ scanner: DataScannerViewController, didAdd items: [RecognizedItem], allItems: [RecognizedItem]) {
             for case .barcode(let code) in items {
-                guard let text = code.payloadStringValue, text.hasPrefix("orb-bridge:") else { continue }
+                guard let text = code.payloadStringValue, text.hasPrefix("orb-mitosis:") else { continue }
                 scanner.stopScanning()
                 return found(text)
             }

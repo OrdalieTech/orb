@@ -104,7 +104,7 @@ func TestControlReservationFencesTransitionsAndQueueCallbacks(t *testing.T) {
 	called := false
 	stop := h.Session().Subscribe(func(any) { _ = control.Target(); called = true })
 	defer stop()
-	if err = control.Execution(target, "steer", "literal /bridge"); err != nil {
+	if err = control.Execution(target, "steer", "literal /mitosis"); err != nil {
 		t.Fatal(err)
 	}
 	if !called {

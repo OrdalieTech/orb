@@ -117,7 +117,7 @@ private fun Strip(t: Tab, word: String, usage: () -> Unit, terminal: () -> Unit)
         Box(Modifier.press(onClick = terminal).padding(horizontal = 6.dp, vertical = 4.dp)) { T(">_", size = 15.sp, weight = Strong) }
     }
 
-/** What the person said sits at right on a soft ground (a peer's says it came by Bridge); Orb
+/** What the person said sits at right on a soft ground (a peer's says it came by Mitosis); Orb
  *  just speaks, full width, its actions inline. */
 @Composable
 private fun Turn(rows: List<Row>, first: Boolean, t: Tab, c: Ctx) {

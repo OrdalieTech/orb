@@ -47,7 +47,7 @@ func herdrResumeArguments(args CLIArgs) []string {
 	for _, option := range []struct{ flag, value string }{
 		{"--tools", strings.Join(args.Tools, ",")},
 		{"--exclude-tools", strings.Join(args.ExcludeTools, ",")},
-		{"--bridge", args.BridgeProfile},
+		{"--mitosis", args.MitosisProfile},
 		{"--instance", args.InstanceAlias},
 	} {
 		if option.value != "" {
@@ -86,12 +86,12 @@ func herdrResumeRoots(agentDir string) ([]string, error) {
 		return nil, err
 	}
 	args := []string{"--agent-dir", agentDir, "--state-home", filepath.Dir(statePath)}
-	if bridgeHome := os.Getenv("ORB_BRIDGE_HOME"); bridgeHome != "" {
-		bridgeHome, err = filepath.Abs(bridgeHome)
+	if mitosisHome := os.Getenv("ORB_MITOSIS_HOME"); mitosisHome != "" {
+		mitosisHome, err = filepath.Abs(mitosisHome)
 		if err != nil {
 			return nil, err
 		}
-		args = append(args, "--bridge-home", bridgeHome)
+		args = append(args, "--mitosis-home", mitosisHome)
 	}
 	return args, nil
 }

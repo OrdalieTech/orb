@@ -29,15 +29,15 @@ import (
 type CatalogOptions struct {
 	UsageCache *usage.Cache
 	// Accounts is host-supplied: provider-usage switches accounts through it.
-	Accounts         usage.Accounts
-	Memory           memorysdk.Store
-	Bridge           extensions.Factory
-	BridgeAgentCalls extensions.Factory
-	StreamFn         engine.StreamFn
-	HTTPClient       *http.Client
-	Settings         *config.SettingsManager
-	Policy           *permissions.Policy
-	AgentDir         string
+	Accounts          usage.Accounts
+	Memory            memorysdk.Store
+	Mitosis           extensions.Factory
+	MitosisAgentCalls extensions.Factory
+	StreamFn          engine.StreamFn
+	HTTPClient        *http.Client
+	Settings          *config.SettingsManager
+	Policy            *permissions.Policy
+	AgentDir          string
 	// ClaudeSessions is host-supplied: it runs processes the SDK layer never owns.
 	ClaudeSessions extensions.Factory
 	// Bash builds the host's bash tool, which background jobs run through.
@@ -47,24 +47,24 @@ type CatalogOptions struct {
 	Wake *wake.Scheduler
 }
 
-var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "provider-usage", "bridge", "bridge-agent-calls", "wake"}
+var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "provider-usage", "mitosis", "mitosis-agent-calls", "wake"}
 
 var descriptions = map[string]string{
-	"activity":           "Compact, expandable statuses for agents and background processes",
-	"questions":          "Ask the user questions with choices and custom answers",
-	"bridge":             "Pair devices and control explicitly shared Orb instances",
-	"bridge-agent-calls": "Let agents list, read and message your other Orb conversations through Bridge",
-	"tasks":              "Live session task list and todo tool",
-	"titles":             "Name each session after its first exchange",
-	"websearch":          "Web search and readable page fetching",
-	"subagents":          "Single or parallel child agents, including configured external CLIs",
-	"jobs":               "Background bash jobs that report when they end, monitored output, stop_job",
-	"permissions":        "Tool-call permissions, explicit approvals and optional audit mode",
-	"wake":               "Wake yourself later, once or on a schedule, and hold approvals until the user answers",
-	"memory":             "Bounded persistent remember, recall, replace, and forget tools",
-	"memtree":            "Experimental: zoomable summary tree of each session for lossless compaction or fresh turns",
-	"claude-sessions":    "Claude models and accounts through Claude Code and the official Agent SDK",
-	"provider-usage":     "The provider in use and its remaining quota in the footer, quotas in Providers",
+	"activity":            "Compact, expandable statuses for agents and background processes",
+	"questions":           "Ask the user questions with choices and custom answers",
+	"mitosis":             "Pair devices and control explicitly shared Orb instances",
+	"mitosis-agent-calls": "Let agents list, read and message your other Orb conversations through Mitosis",
+	"tasks":               "Live session task list and todo tool",
+	"titles":              "Name each session after its first exchange",
+	"websearch":           "Web search and readable page fetching",
+	"subagents":           "Single or parallel child agents, including configured external CLIs",
+	"jobs":                "Background bash jobs that report when they end, monitored output, stop_job",
+	"permissions":         "Tool-call permissions, explicit approvals and optional audit mode",
+	"wake":                "Wake yourself later, once or on a schedule, and hold approvals until the user answers",
+	"memory":              "Bounded persistent remember, recall, replace, and forget tools",
+	"memtree":             "Experimental: zoomable summary tree of each session for lossless compaction or fresh turns",
+	"claude-sessions":     "Claude models and accounts through Claude Code and the official Agent SDK",
+	"provider-usage":      "The provider in use and its remaining quota in the footer, quotas in Providers",
 }
 
 // Choice is a plugin setting that takes one of a few values, its default first: the CLI checks
@@ -85,10 +85,10 @@ func Names() []string { return append([]string(nil), names...) }
 // Description returns the one-line description used by the CLI and TUI.
 func Description(name string) string { return descriptions[name] }
 
-// Paged reports a plugin managed from a page of its own (Bridge's, the providers' quotas) rather
+// Paged reports a plugin managed from a page of its own (Mitosis's, the providers' quotas) rather
 // than from the plugin list.
 func Paged(name string) bool {
-	return name == "bridge" || name == "bridge-agent-calls" || name == "provider-usage"
+	return name == "mitosis" || name == "mitosis-agent-calls" || name == "provider-usage"
 }
 
 // Choices returns the plugin's settings that take one of a few values.
@@ -142,17 +142,17 @@ func Catalog(options CatalogOptions) map[string]extensions.Factory {
 			policy.Defer = options.Wake
 		}
 	}
-	if options.Bridge == nil {
-		options.Bridge = func(extensions.API) error { return fmt.Errorf("bridge requires host assembly") }
+	if options.Mitosis == nil {
+		options.Mitosis = func(extensions.API) error { return fmt.Errorf("mitosis requires host assembly") }
 	}
 	if options.ClaudeSessions == nil {
 		options.ClaudeSessions = func(extensions.API) error { return fmt.Errorf("claude sessions require host assembly") }
 	}
-	if options.BridgeAgentCalls == nil {
-		options.BridgeAgentCalls = func(extensions.API) error { return fmt.Errorf("bridge agent calls require host assembly") }
+	if options.MitosisAgentCalls == nil {
+		options.MitosisAgentCalls = func(extensions.API) error { return fmt.Errorf("mitosis agent calls require host assembly") }
 	}
 	return map[string]extensions.Factory{
-		"bridge": options.Bridge, "bridge-agent-calls": options.BridgeAgentCalls, "claude-sessions": options.ClaudeSessions,
+		"mitosis": options.Mitosis, "mitosis-agent-calls": options.MitosisAgentCalls, "claude-sessions": options.ClaudeSessions,
 		"questions":      questions.Extension(questions.Draw{Panel: panel.Draw, Text: text}),
 		"tasks":          tasks.Extension(tasks.Draw{Widget: newTaskWidget, Text: text}),
 		"titles":         titles.Extension(),

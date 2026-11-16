@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrdalieTech/orb/bridge"
-	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/mitosis"
+	"github.com/OrdalieTech/orb/mitosis/protocol"
 	webtransport "github.com/OrdalieTech/orb/platforms/websocket"
 )
 
@@ -30,7 +30,7 @@ func TestBrowserWasmLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := bridge.Open(&document.Memory{}, true)
+	b, err := mitosis.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,13 +43,13 @@ func TestBrowserWasmLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpoint := bridge.NewLocal(func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
-		return json.RawMessage(`{"wasm_bridge":true}`), nil
+	endpoint := mitosis.NewLocal(func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"wasm_mitosis":true}`), nil
 	})
 	if _, err = b.Attach(instance.ID, token, protocol.NewID(), endpoint); err != nil {
 		t.Fatal(err)
 	}
-	if err = b.AddGrant(bridge.Grant{Principal: bridge.Principal{PeerID: bridge.PeerID(pub), Subject: bridge.Subject{Kind: "controller"}}, GroupID: b.PersonalGroup(), IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect"}}); err != nil {
+	if err = b.AddGrant(mitosis.Grant{Principal: mitosis.Principal{PeerID: mitosis.PeerID(pub), Subject: mitosis.Subject{Kind: "controller"}}, GroupID: b.PersonalGroup(), IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect"}}); err != nil {
 		t.Fatal(err)
 	}
 	handler, err := webtransport.Handler(t.Context(), b, nil)
@@ -58,16 +58,16 @@ func TestBrowserWasmLifecycle(t *testing.T) {
 	}
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	fixture := bridge.JSON(map[string]string{"url": "ws" + strings.TrimPrefix(server.URL, "http"), "peer": b.PeerID(), "seed": base64.RawStdEncoding.EncodeToString(key.Seed()), "agentID": protocol.NewID(), "instance": instance.ID})
+	fixture := mitosis.JSON(map[string]string{"url": "ws" + strings.TrimPrefix(server.URL, "http"), "peer": b.PeerID(), "seed": base64.RawStdEncoding.EncodeToString(key.Seed()), "agentID": protocol.NewID(), "instance": instance.ID})
 	run := exec.CommandContext(t.Context(), "node", "testdata/smoke.cjs", filepath.Join(strings.TrimSpace(string(root)), "lib/wasm/wasm_exec.js"), binary)
-	run.Env = append(os.Environ(), "ORB_TEST_BRIDGE="+string(fixture))
+	run.Env = append(os.Environ(), "ORB_TEST_MITOSIS="+string(fixture))
 	if output, err := run.CombinedOutput(); err != nil {
 		t.Fatalf("Wasm lifecycle: %v\n%s", err, output)
 	}
 }
 
-func TestBrowserBridgeController(t *testing.T) {
-	run := exec.CommandContext(t.Context(), "node", "testdata/bridge-ui.mjs")
+func TestBrowserMitosisController(t *testing.T) {
+	run := exec.CommandContext(t.Context(), "node", "testdata/mitosis-ui.mjs")
 	if output, err := run.CombinedOutput(); err != nil {
 		t.Fatalf("browser controller: %v\n%s", err, output)
 	}

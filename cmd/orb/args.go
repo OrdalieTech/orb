@@ -28,9 +28,9 @@ type CLIArgs struct {
 	usageCache         *usage.Cache
 	accounts           *hostAccounts
 	native             *native.State
-	BridgeProfile      string
+	MitosisProfile     string
 	InstanceAlias      string
-	bridgeLink         *cliBridgeLink
+	mitosisLink        *cliMitosisLink
 	Command            string
 	CommandArgs        []string
 	Provider           *string
@@ -118,14 +118,14 @@ func ParseArgs(argv []string) CLIArgs {
 	for index := 0; index < len(argv); index++ {
 		argument := argv[index]
 		switch {
-		case argument == "--bridge" || argument == "--instance":
+		case argument == "--mitosis" || argument == "--instance":
 			if index+1 >= len(argv) {
 				result.Diagnostics = append(result.Diagnostics, CLIDiagnostic{Type: "error", Message: argument + " requires a value"})
 				continue
 			}
 			index++
-			if argument == "--bridge" {
-				result.BridgeProfile = argv[index]
+			if argument == "--mitosis" {
+				result.MitosisProfile = argv[index]
 			} else {
 				result.InstanceAlias = argv[index]
 			}

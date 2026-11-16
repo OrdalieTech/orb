@@ -180,7 +180,7 @@ func listFullComposition(cwd, agentDir string, settings *config.SettingsManager,
 		CWD: cwd, AgentDir: agentDir, Settings: settings,
 		Compiled: compiledExtensionsForEnvironment(os.Getenv), MCP: true,
 		ClaudeSessions: claudesessions.Management(settings, agentDir, os.Environ()),
-		Bridge:         bridgeExtension(CLIArgs{}, settings), BridgeManagement: true,
+		Mitosis:        mitosisExtension(CLIArgs{}, settings), MitosisManagement: true,
 	})
 	for _, row := range assembly.Resolve(rows, settings, false) {
 		state := "off"

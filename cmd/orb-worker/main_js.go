@@ -56,7 +56,7 @@ func main() {
 //	dispose()       end the object's session once the shim drops the object;
 //	                exit(code) follows and the entry points are released
 //
-// and the Bridge ones (bridgePeer.register).
+// and the Mitosis ones (mitosisPeer.register).
 func open(object js.Value) js.Value {
 	env := object.Get("env")
 	lookup := func(name string) (string, bool) {
@@ -113,17 +113,17 @@ func open(object js.Value) js.Value {
 		}
 		return nil
 	})
-	bridge := &bridgePeer{}
+	mitosis := &mitosisPeer{}
 	if name := object.Get("name"); name.Type() == js.TypeString {
-		bridge.name = name.String()
+		mitosis.name = name.String()
 	}
-	bridge.register(set)
+	mitosis.register(set)
 	return promise(func() (any, error) {
 		ctx := context.Background()
 		instance, err := worker.Open(ctx, worker.Options{
 			KV: worker.NewDurableKV(object.Get("storage")), Env: lookup,
 			Settings: document("ORB_SETTINGS"), Models: document("ORB_MODELS"),
-			Tools: peer.AgentCalls(bridge.open),
+			Tools: peer.AgentCalls(mitosis.open),
 			Extensions: func(settings *config.SettingsManager) map[string]extensions.Factory {
 				// The bundled plugins an object runs, as its settings enable them: those that need no
 				// processes, files of their own or terminal (docs/plugins.md, where plugins run).
@@ -146,15 +146,15 @@ func open(object js.Value) js.Value {
 			}
 			return nil, err
 		}
-		bridge.mu.Lock()
-		bridge.instance = instance
-		bridge.mu.Unlock()
+		mitosis.mu.Lock()
+		mitosis.instance = instance
+		mitosis.mu.Unlock()
 		go func() {
 			code := instance.Serve(ctx, &commandReader{commands: commands}, &frameWriter{emit: object.Get("emit")}, os.Stderr)
 			stopped.Store(true)
-			bridge.mu.Lock()
-			bridge.instance = nil
-			bridge.mu.Unlock()
+			mitosis.mu.Lock()
+			mitosis.instance = nil
+			mitosis.mu.Unlock()
 			// Only a disposed object is past calling its entry points; one that
 			// stopped by itself refuses commands until the shim boots it again.
 			if disposed.Load() {

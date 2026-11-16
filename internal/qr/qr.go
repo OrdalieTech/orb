@@ -1,5 +1,5 @@
 // Package qr encodes bytes as a QR code (ISO/IEC 18004: byte mode, error correction level L)
-// so a phone can pair with a Bridge by photographing a terminal.
+// so a phone can pair with a Mitosis by photographing a terminal.
 package qr
 
 import "errors"

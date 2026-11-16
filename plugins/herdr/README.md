@@ -25,8 +25,8 @@ never impersonates Pi as a fallback.
 
 Herdr restores the pane's working directory. The CLI explicitly preserves `--auto`,
 tool restrictions, offline mode, resource-discovery disable flags, explicit resources
-and the Bridge profile/instance. Absolute `--agent-dir` and `--state-home` prefixes
-travel together; an explicit `ORB_BRIDGE_HOME` travels as `--bridge-home`. These
+and the Mitosis profile/instance. Absolute `--agent-dir` and `--state-home` prefixes
+travel together; an explicit `ORB_MITOSIS_HOME` travels as `--mitosis-home`. These
 global options (and `--pi-files`) must precede runtime options or a subcommand.
 This preserves the store even when the original roots came from inline environment
 assignments rather than the restored shell. No credentials, prompt text, transient

@@ -5,7 +5,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import kotlinx.coroutines.*
 import org.json.*
 
-// What `orb app` (bridge/view) sends, as the app draws it; its Go types name each field.
+// What `orb app` (mitosis/view) sends, as the app draws it; its Go types name each field.
 
 data class Command(val name: String, val hint: String, val now: Boolean = false)
 data class Ask(val id: String, val owner: String, val title: String, val message: String, val choices: List<String>, val free: Boolean)
@@ -118,7 +118,7 @@ class Reply(val result: Any?, val error: String?) {
 }
 
 /**
- * The app's side of `orb app`, the view every Orb app draws (bridge/view): what it shows, kept as
+ * The app's side of `orb app`, the view every Orb app draws (mitosis/view): what it shows, kept as
  * the view sends it, and the intents it sends back. Everything the app does with Orb goes here.
  */
 class View(private val scope: CoroutineScope, orb: Orb, private val budget: Int, private val alert: (tab: String, title: String, text: String) -> Unit) {
@@ -204,6 +204,6 @@ class View(private val scope: CoroutineScope, orb: Orb, private val budget: Int,
     /** The hue a machine's sessions are told apart by: 0 for this phone, 1 to 6 for a peer, as the view assigns them. */
     fun hue(peer: String?) = if (peer == null || peer == state.self) 0 else machine(peer)?.hue?.coerceAtLeast(1) ?: 1
 
-    /** Stops this machine's Bridge: it starts again with the current environment (the Linux). */
+    /** Stops this machine's Mitosis: it starts again with the current environment (the Linux). */
     fun restart() = send("restart")
 }

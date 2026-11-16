@@ -80,7 +80,7 @@ func TestNamesAnUnnamedSessionOnceFromItsFirstExchange(t *testing.T) {
 	if err := Extension()(api); err != nil {
 		t.Fatal(err)
 	}
-	registry := &fakeRegistry{reply: "“Title: Fix the Bridge pairing race.”\nextra"}
+	registry := &fakeRegistry{reply: "“Title: Fix the Mitosis pairing race.”\nextra"}
 	ctx := &fakeContext{sessions: &fakeSessions{}, registry: registry}
 	end := extensions.AgentEndEvent{Messages: []any{
 		&ai.UserMessage{Content: ai.NewUserText("Two phones claimed the same code, why?")},
@@ -104,7 +104,7 @@ func TestNamesAnUnnamedSessionOnceFromItsFirstExchange(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	api.mu.Lock()
 	defer api.mu.Unlock()
-	if len(api.named) != 1 || api.named[0] != "Fix the Bridge pairing race" {
+	if len(api.named) != 1 || api.named[0] != "Fix the Mitosis pairing race" {
 		t.Fatalf("named %q", api.named)
 	}
 	if !strings.Contains(registry.prompt, "Two phones claimed") || !strings.Contains(registry.prompt, "first claimant wins") {
