@@ -1,8 +1,10 @@
 # Proposal — Mitosis profile sync (the "mitosis chain")
 
-**Status:** draft, pending owner sign-off. This is a kernel change (DECISIONS.md P10/P11), so it
-does not land until the owner signs the live-decision text in [§9](#9-decisionsmd-entry-to-adopt-on-sign-off)
-into `docs/DECISIONS.md`, and then it lands fixtures-first (P8).
+**Status:** owner-approved 2026-11-16 ("go, all authorizations, keep it simple"); the
+cryptographic + gossip + orchestration core (§6 stages 1–5) is built fixtures-first and green on
+branch `mitosis`. Stages 6–9 (daemon publish, credential-store wiring + CLI, auto-sync) remain.
+The live-decision text in [§9](#9-decisionsmd-entry-to-adopt-on-sign-off) still needs to be signed
+into `docs/DECISIONS.md` (that edit is the owner's, per the constitution).
 
 **Author:** Claude Opus 4.8, 2026-11-16, on branch `mitosis`.
 
@@ -213,15 +215,44 @@ protocol tests are Orb-owned checks, separate from Pi conformance" rule).
 
 ## 6. Staged rollout (each stage green, P8)
 
-1. X25519 keypair + `x25519` peer-record extension (no behavior yet).
-2. Block schema, canonical/sign/verify, storage, `heads`/`fetch` gossip — fixtures 1 first.
-3. Sealed box + `member` blocks + admission seal on pair/approve — fixtures 2.
-4. `cred` + `config` classes wired to `ai/auth`(+accounts) and the settings/models Store — fold
-   fixtures 3.
-5. `memory` class wired to `plugins/memory`.
-6. Epoch rotation on `block` — fixtures 4.
-7. CLI/UX: `orb mitosis sync` status; per-profile opt-in; low-trust capped-profile guidance.
-8. (Later) delegated spawn vouchers for non-owner `member`/`cred` authorship.
+Implementation note (2026-11-16): v1 took the simplest shape that meets §1 — a single
+owner-published, per-epoch **vault document** riding the peer-record gossip, rather than a block
+DAG. `vault.Build` generates a fresh group key and seals only to the scope's current members on
+every publish, so key rotation and revocation are automatic: a peer removed from the scope simply
+stops receiving the next group key, and no explicit epoch/block machinery is needed. The DAG,
+`memory` class and `heads`/`fetch` methods from §3.3–§3.6 are deferred; they are not needed for
+credential + config sync.
+
+Done (branch `mitosis`, fixtures-first, all green; `bridge/vault` + `bridge`):
+
+1. ✅ **Sealing primitives** (`bridge/vault/vault.go`): `X25519FromSeed`, `Seal`/`Open` sealed box,
+   `NewGroupKey`/`SealGroup`/`OpenGroup`. Stdlib only. Known-answer wire goldens + property tests.
+2. ✅ **Vault document** (`bridge/vault/document.go`): `Build`/`OpenBundle`, per-peer envelopes,
+   bounded membership, revocation-by-reseal, JSON round-trip.
+3. ✅ **Key advertisement + enumeration** (`bridge/discovery.go`): `Bridge.X25519Public`,
+   `x25519` peer-record extension, `Bridge.ScopeMembers`.
+4. ✅ **Gossip** (`bridge/discovery.go`, `bridge/bridge.go`): `Bridge.SetVault`/`ScopeVault`, the
+   vault rides the owner's record, persisted and backward-compatible.
+5. ✅ **Orchestration seam** (`bridge/vault/sync.go`): `vault.Publish`/`Apply`,
+   `Bridge.OpenVault` (decrypts with the identity key, which never leaves the process).
+
+Remaining:
+
+6. **Owner-side publish in the `Peers`/daemon layer.** Must rebuild the bundle from the local
+   credential + settings stores and call a publish that **re-publishes the self contact preserving
+   its network locator** (endpoints) — hence it belongs where `Peers.Locator` lives, not a naive
+   core method. Trigger: an owner admin method `vault.publish {scope, bundle}` (the daemon holds the
+   Bridge identity; the CLI passes the bundle it read) and, for apply, `vault.open {scope}` →
+   `Bridge.OpenVault` → bundle back to the CLI, which writes it. Clean split: daemon = crypto +
+   identity, CLI = store I/O over the same-UID admin socket.
+7. **Bundle ↔ stores mapping + CLI** (`cmd/orb`): read/merge `vault.Bundle.Credentials` against
+   `config.AuthStorage` (`native.State.Auth`) provider-by-provider (never clobbering local-only
+   credentials), and `Config` against the settings document; `orb mitosis sync` (status + one-shot
+   push/pull), per-profile opt-in, low-trust capped-profile guidance. The credential-writing merge
+   is the security-sensitive part — build it test-first in isolation before wiring the command.
+8. **Automatic sync in `Peers.Reconcile`** (owner publishes on credential/membership change; peers
+   apply on receipt), once the manual command is proven.
+9. (Later) `memory` class; delegated spawn vouchers for non-owner authorship.
 
 ## 7. What this unlocks
 
