@@ -31,6 +31,8 @@ import (
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	transport "github.com/OrdalieTech/orb/platforms/native/tailcat"
 	webtransport "github.com/OrdalieTech/orb/platforms/websocket"
+	"github.com/OrdalieTech/orb/plugins/memory"
+	"github.com/OrdalieTech/orb/plugins/memory/filestore"
 )
 
 // Cache is the profile's previews of peers' conversations: in the native
@@ -256,7 +258,15 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 		agentDir = state.AgentDir
 	}
 	if credentials, err := state.Auth(agentDir); err == nil && agentDir != "" {
-		b.SetCredentials(credentials)
+		b.SetClass("credentials", credentials)
+	}
+	// The memory the agent's memory plugin keeps: native storage's, else the agent directory's journal.
+	if memories := state.Memory(); memories != nil {
+		b.SetClass("memory", memory.Shared{Store: memories})
+	} else if agentDir != "" {
+		if journal, err := filestore.NewFileStore(filepath.Join(agentDir, "memory")); err == nil {
+			b.SetClass("memory", memory.Shared{Store: journal})
+		}
 	}
 	defer service.stopLaunched()
 	reexec := ""

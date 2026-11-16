@@ -47,7 +47,7 @@ func runMitosisCommand(ctx context.Context, args []string, streams cliStreams) i
 	}
 	args = filtered
 	if len(args) == 0 || args[0] == "--help" {
-		_, _ = fmt.Fprintln(streams.Stdout, "orb mitosis run|start|stop|status|instances|peers|grants|groups|scopes|prune [--profile personal]\norb mitosis run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 [--web-url wss://host/mitosis]\norb mitosis sync [add|remove <peer-id> | join <owner-peer-id>]   (share credentials across the profile's sync group, sealed per device; a member leaves by removing the owner)\norb mitosis pair   (show a QR code, then approve the device that scans it)\norb mitosis join <code>   (pair with an Orb that ran orb mitosis pair)\norb mitosis service install|remove   (Linux: keep Mitosis running across logouts and reboots)\norb mitosis pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb mitosis grant|revoke|scope|group|assign|takeover|publish < request.json\norb mitosis remote <peer-id> <method> < params.json\norb mitosis view <peer-id> <instance-id>\norb mitosis shell <peer-id> [folder]   (a terminal on a machine that lets this one start Orb there)\norb mitosis pipe   (owner API as JSON lines on stdin/stdout)\norb mitosis trust <peer-id>\norb mitosis connect-ssh <user@host> [--remote-profile personal] [--remote-orb orb]")
+		_, _ = fmt.Fprintln(streams.Stdout, "orb mitosis run|start|stop|status|instances|peers|grants|groups|scopes|prune [--profile personal]\norb mitosis run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 [--web-url wss://host/mitosis]\norb mitosis sync [add|remove <peer-id> | join <owner-peer-id>]   (share credentials and memory across the profile's sync group, sealed per device; a member leaves by removing the owner)\norb mitosis pair   (show a QR code, then approve the device that scans it)\norb mitosis join <code>   (pair with an Orb that ran orb mitosis pair)\norb mitosis service install|remove   (Linux: keep Mitosis running across logouts and reboots)\norb mitosis pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb mitosis grant|revoke|scope|group|assign|takeover|publish < request.json\norb mitosis remote <peer-id> <method> < params.json\norb mitosis view <peer-id> <instance-id>\norb mitosis shell <peer-id> [folder]   (a terminal on a machine that lets this one start Orb there)\norb mitosis pipe   (owner API as JSON lines on stdin/stdout)\norb mitosis trust <peer-id>\norb mitosis connect-ssh <user@host> [--remote-profile personal] [--remote-orb orb]")
 		return 0
 	}
 	if args[0] == "run" {
@@ -253,7 +253,7 @@ func runMitosisCommand(ctx context.Context, args []string, streams cliStreams) i
 		case method == "sync" && mitosis.Code(err) == "unauthorized":
 			err = errors.New("only the sync group's owner adds or removes devices")
 		case method == "sync" && mitosis.Code(err) == "resource_exhausted":
-			err = errors.New("these credentials, sealed to every member, no longer fit in one 16 KiB Mitosis record")
+			err = errors.New("what this profile shares, sealed to every member, exceeds the 64 MiB a sync vault holds")
 		case method == "sync" && mitosis.Code(err) == "not_found" && len(args) > 1 && args[1] == "add":
 			err = errors.New("pair with that device first: orb mitosis pair here, orb mitosis join on it")
 		case method == "sync" && mitosis.Code(err) == "not_found":

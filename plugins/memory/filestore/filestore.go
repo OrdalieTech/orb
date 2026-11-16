@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/internal/uuidv7"
 	"github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/gofrs/flock"
@@ -77,15 +78,17 @@ func appendItem(ctx context.Context, item memory.Item, appendRecord func(context
 
 func prepareItem(item memory.Item) (memory.Item, string, error) {
 	now := time.Now().UTC()
-	id, err := uuidv7.Generate(now)
-	if err != nil {
-		return memory.Item{}, "", err
+	if item.ID == "" {
+		id, err := uuidv7.Generate(now)
+		if err != nil {
+			return memory.Item{}, "", err
+		}
+		item.ID = id
 	}
-	item.ID = id
 	if item.Time.IsZero() {
 		item.Time = now
 	}
-	return item, id, nil
+	return item, item.ID, nil
 }
 
 func (store *FileStore) Get(ctx context.Context, id string) (memory.Item, error) {
@@ -131,10 +134,10 @@ func queryItems(items map[string]storedItem, filter memory.Filter) []memory.Item
 		return result[left].Time.After(result[right].Time)
 	})
 	limit := filter.Limit
-	if limit <= 0 || limit > queryLimit {
+	if limit == 0 || limit > queryLimit {
 		limit = queryLimit
 	}
-	if len(result) > limit {
+	if limit > 0 && len(result) > limit {
 		result = result[:limit]
 	}
 	out := make([]memory.Item, len(result))
@@ -235,11 +238,7 @@ func (store *FileStore) appendRecordsLocked(ctx context.Context, records []fileR
 	if len(records) == 0 {
 		return nil
 	}
-	record := records[0]
-	if len(records) > 1 {
-		record = fileRecord{Batch: records}
-	}
-	line, err := json.Marshal(record)
+	line, err := journalLine(records)
 	if err != nil {
 		return err
 	}
@@ -247,13 +246,23 @@ func (store *FileStore) appendRecordsLocked(ctx context.Context, records []fileR
 	if err != nil {
 		return err
 	}
-	if _, err = file.Write(append(line, '\n')); err == nil {
+	if _, err = file.Write(line); err == nil {
 		err = file.Sync()
 	}
 	if closeErr := file.Close(); err == nil {
 		err = closeErr
 	}
 	return err
+}
+
+// journalLine is records as one journal line, a batch when there are several.
+func journalLine(records []fileRecord) ([]byte, error) {
+	record := records[0]
+	if len(records) > 1 {
+		record = fileRecord{Batch: records}
+	}
+	line, err := json.Marshal(record)
+	return append(line, '\n'), err
 }
 
 func (store *FileStore) read(ctx context.Context) (items map[string]storedItem, err error) {
@@ -276,7 +285,11 @@ func (store *FileStore) readLocked(ctx context.Context) (map[string]storedItem, 
 		return nil, err
 	}
 	defer func() { _ = file.Close() }()
+	return readJournal(file)
+}
 
+// readJournal replays a journal into its items.
+func readJournal(file io.Reader) (map[string]storedItem, error) {
 	// ponytail: linear scan + tombstones; index/compaction when >10k items.
 	items := make(map[string]storedItem)
 	reader := bufio.NewReader(file)
@@ -367,4 +380,67 @@ func ParseJournal(content []byte) ([]memory.Item, error) {
 		result = append(result, item.Item)
 	}
 	return result, nil
+}
+
+// Journal is the same journal kept in one document, for hosts whose storage is documents (a
+// Worker object, a browser); the document's update is the transaction.
+type Journal struct{ Document document.Document }
+
+var _ memory.TransactionalStore = Journal{}
+
+func (j Journal) items(ctx context.Context) (map[string]storedItem, error) {
+	raw, err := j.Document.Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return readJournal(bytes.NewReader(raw))
+}
+
+func (j Journal) Append(ctx context.Context, item memory.Item) (id string, err error) {
+	err = j.Transact(ctx, func(store memory.Store) error {
+		id, err = store.Append(ctx, item)
+		return err
+	})
+	return id, err
+}
+
+func (j Journal) Get(ctx context.Context, id string) (memory.Item, error) {
+	items, err := j.items(ctx)
+	if err != nil {
+		return memory.Item{}, err
+	}
+	return getItem(items, id)
+}
+
+func (j Journal) Query(ctx context.Context, filter memory.Filter) ([]memory.Item, error) {
+	items, err := j.items(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return queryItems(items, filter), nil
+}
+
+func (j Journal) Delete(ctx context.Context, id string) error {
+	return j.Transact(ctx, func(store memory.Store) error { return store.Delete(ctx, id) })
+}
+
+func (j Journal) Transact(ctx context.Context, fn func(memory.Store) error) error {
+	if fn == nil {
+		return errors.New("memory: transaction callback is required")
+	}
+	return j.Document.Update(ctx, func(raw []byte) ([]byte, error) {
+		items, err := readJournal(bytes.NewReader(raw))
+		if err != nil {
+			return nil, err
+		}
+		transaction := &fileTransaction{items: items, order: len(items)}
+		for _, item := range items {
+			transaction.order = max(transaction.order, item.order+1)
+		}
+		if err = fn(transaction); err != nil || len(transaction.records) == 0 {
+			return raw, err
+		}
+		line, err := journalLine(transaction.records)
+		return append(raw, line...), err
+	})
 }

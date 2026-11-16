@@ -11,40 +11,59 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"maps"
 	"math/big"
 	"slices"
+	"time"
 
 	"github.com/OrdalieTech/orb/mitosis/protocol"
 )
 
 // A profile's sync group is a scope whose first member is its owner. Only the owner admits and
 // removes devices, and only the owner's vault reaches every member; a member's vault is sealed to
-// the owner alone. Each device's vault rides its own signed record in the group scope.
-const vaultSchema = "orb.mitosis-vault/1"
+// the owner alone. A device's signed record in the group scope carries only its vault's digest and
+// size; the vault is fetched by digest (vault.get) from its publisher or any member holding it.
+const (
+	vaultSchema = "orb.mitosis-vault/2"
+	// maxVault bounds a sealed vault, which every member holds whole in memory, a browser tab
+	// included, and the owner sends to each: megabytes of memory fit, files do not.
+	maxVault = 64 << 20
+	// vaultChunk is one vault.get answer, well under the 1 MiB frame once base64-encoded.
+	vaultChunk = 512 << 10
+	// envelope: the recipient's Ed25519 key, an ephemeral X25519 key, and the sealed bundle key.
+	envelopeSize = 32 + 32 + 12 + 32 + 16
+)
 
-type vault struct {
-	Schema    string            `json:"schema"`
-	Bundle    string            `json:"bundle"`
-	Envelopes map[string]string `json:"envelopes"`
+// pointer is what a record says of its publisher's vault.
+type pointer struct {
+	Schema string `json:"schema"`
+	Digest string `json:"digest"` // base64url SHA-256 of the vault
+	Size   int    `json:"size"`
 }
 
-// bundle is what a group shares, one JSON object per data class, merged by entry name.
-type bundle struct {
-	Credentials map[string]json.RawMessage `json:"credentials"`
-}
+// bundle is what a group shares: per data class, entries by name.
+type bundle map[string]map[string]json.RawMessage
 
-// Credentials is the class a sync group shares, as its host keeps it (ai/auth's Store over
-// auth.json): what this device may share, and the merge of what the group shared.
-type Credentials interface {
+// A Class is one kind of profile data a sync group shares, as its host keeps it, by entry name:
+// Shareable is what this device may share; MergeShared folds in what the group shared and returns
+// the entries it changed. keepOwn (the owner) takes only entries it lacks, or a fresher form of
+// one by the class's own rule; a member takes the owner's entries over its own and drops removed,
+// those the owner stopped sharing.
+type Class interface {
 	Shareable(ctx context.Context) (map[string]json.RawMessage, error)
 	MergeShared(ctx context.Context, incoming []map[string]json.RawMessage, keepOwn bool, removed []string) ([]string, error)
 }
 
-func (b *Mitosis) SetCredentials(c Credentials) {
+// SetClass shares a data class with the sync group under name; nil stops sharing it.
+func (b *Mitosis) SetClass(name string, c Class) {
 	b.mu.Lock()
-	b.credentials = c
+	if c == nil {
+		delete(b.classes, name)
+	} else {
+		b.classes[name] = c
+	}
 	b.mu.Unlock()
 }
 
@@ -94,7 +113,7 @@ func (b *Mitosis) setGroup(join, add, remove string) error {
 			return Fail("unauthorized")
 		}
 		if add != "" && !slices.Contains(members, add) {
-			if b.state.Peers[add] == "" {
+			if b.state.Peers[add] == "" && !slices.ContainsFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == add }) {
 				return Fail("not_found") // a device this one never paired with is never reached
 			}
 			if len(members) >= 128 {
@@ -110,8 +129,7 @@ func (b *Mitosis) setGroup(join, add, remove string) error {
 }
 
 // SyncAdmin is the sync admin method: one membership change, then a round. endpoints, when set,
-// are where this device is reached; nil keeps the ones it published before. An added device
-// whose envelope no longer fits the owner's record is taken out again.
+// are where this device is reached; nil keeps the ones it published before.
 func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoints []Locator) (json.RawMessage, error) {
 	var p struct {
 		Join   string `json:"join,omitempty"`
@@ -132,17 +150,13 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 	if left && p.Remove != "" {
 		return JSON(struct{}{}), nil
 	}
-	result, err := b.sync(ctx, endpoints)
-	if p.Add != "" && Code(err) == "resource_exhausted" {
-		_ = b.setGroup("", "", p.Add)
-	}
-	return result, err
+	return b.sync(ctx, endpoints)
 }
 
 // Sync runs one round of the group: the owner folds in what members handed it, keeping its own,
 // then seals the whole set to every current, unblocked member; a member takes the owner's set
 // over its own, drops what the owner stopped sharing, and hands the owner only what its set lacks
-// or holds otherwise. It returns the group and the entries the round changed here.
+// or holds otherwise. It returns the group and, per class, the entries the round changed here.
 func (b *Mitosis) Sync(ctx context.Context, endpoints []Locator) (json.RawMessage, error) {
 	b.round.Lock()
 	defer b.round.Unlock()
@@ -151,196 +165,335 @@ func (b *Mitosis) Sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 
 func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessage, error) {
 	b.mu.Lock()
-	group, credentials, self := b.state.Group, b.credentials, b.PeerID()
-	members := b.state.Scopes[group]
-	if group == "" || len(members) == 0 || credentials == nil {
+	group, classes, self := b.state.Group, maps.Clone(b.classes), b.PeerID()
+	members := slices.Clone(b.state.Scopes[group])
+	if group == "" || len(members) == 0 || len(classes) == 0 {
 		b.mu.Unlock()
 		return nil, Fail("not_found")
 	}
 	owner := members[0]
-	var incoming []map[string]json.RawMessage
-	var ownerSet map[string]json.RawMessage
-	var removed []string
-	// The owner merges each member's hand-in once: an entry it deleted since comes back only
-	// when the member hands it in again.
-	merged := map[string]string{}
+	// The owner opens each member's hand-in once: an entry it deleted since comes back only when
+	// the member hands it in again. A member opens the owner's vault.
+	senders := []string{owner}
 	if owner == self {
-		for _, peer := range members[1:] {
-			if in, revision, ok := b.received(group, peer); ok && b.state.Merged[peer] != revision {
-				incoming = append(incoming, in.Credentials)
-				merged[peer] = revision
-			}
-		}
-	} else if in, _, ok := b.received(group, owner); ok {
-		ownerSet = in.Credentials
-		if ownerSet == nil {
-			ownerSet = map[string]json.RawMessage{}
-		}
-		incoming = append(incoming, ownerSet)
-		for _, name := range b.state.Shared {
-			if _, kept := ownerSet[name]; !kept {
-				removed = append(removed, name)
-			}
+		senders = members[1:]
+	}
+	type sent struct {
+		peer, revision string
+		vault          pointer
+	}
+	var pending []sent
+	for _, peer := range senders {
+		if v, revision, ok := b.pointer(group, peer); ok && !b.state.Blocked[peer] && (owner != self || b.state.Merged[peer] != revision) {
+			pending = append(pending, sent{peer, revision, v})
 		}
 	}
+	shared := maps.Clone(b.state.Shared)
 	b.mu.Unlock()
 
-	changed, err := credentials.MergeShared(ctx, incoming, owner == self, removed)
-	if err != nil {
-		return nil, err
-	}
-	shared, err := credentials.Shareable(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for name, entry := range shared {
-		if ownerSet != nil && bytes.Equal(ownerSet[name], entry) {
-			delete(shared, name)
+	var handins []bundle
+	var ownerSet bundle
+	var ownerVault []byte
+	var ownerRecipients []string
+	merged := map[string]string{}
+	for _, s := range pending {
+		blob, err := b.fetch(ctx, s.vault, s.peer)
+		var in bundle
+		var recipients []string
+		if err == nil {
+			in, recipients, err = b.open(blob)
+		}
+		switch {
+		case s.peer != owner && err == nil:
+			handins = append(handins, in)
+			merged[s.peer] = s.revision
+		case s.peer == owner && err != nil:
+			// Until it opens the owner's vault, a member hands in nothing: it cannot tell what the
+			// owner removed from what it lacks.
+			return nil, Fail("unavailable")
+		case s.peer == owner:
+			ownerSet, ownerVault, ownerRecipients = in, blob, recipients
+			if ownerSet == nil {
+				ownerSet = bundle{}
+			}
 		}
 	}
+
+	out := bundle{}
+	received := map[string][]string{}
+	for name, class := range classes {
+		var incoming []map[string]json.RawMessage
+		var removed []string
+		for _, in := range handins {
+			incoming = append(incoming, in[name])
+		}
+		if ownerSet != nil {
+			set := ownerSet[name]
+			incoming = append(incoming, set)
+			for _, entry := range shared[name] {
+				if _, kept := set[entry]; !kept {
+					removed = append(removed, entry)
+				}
+			}
+		}
+		changed, err := class.MergeShared(ctx, incoming, owner == self, removed)
+		if err != nil {
+			return nil, err
+		}
+		own, err := class.Shareable(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for entry, value := range own {
+			if ownerSet != nil && bytes.Equal(ownerSet[name][entry], value) {
+				delete(own, entry)
+			}
+		}
+		out[name] = own
+		if len(changed) > 0 {
+			received[name] = slices.Sorted(slices.Values(changed))
+		}
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.state.Group != group || len(b.state.Scopes[group]) == 0 || b.state.Scopes[group][0] != owner {
 		return nil, Fail("not_found")
+	}
+	save := len(merged) > 0
+	if b.state.Merged == nil {
+		b.state.Merged = map[string]string{}
+	}
+	maps.Copy(b.state.Merged, merged)
+	if ownerSet != nil {
+		// A member gossips with the owner's recipients, so it catches up while the owner is away.
+		slices.Sort(ownerRecipients)
+		b.state.Scopes[group] = append([]string{owner}, slices.DeleteFunc(ownerRecipients, func(p string) bool { return p == owner })...)
+		if b.state.Shared == nil {
+			b.state.Shared = map[string][]string{}
+		}
+		for name := range classes {
+			if names := slices.Sorted(maps.Keys(ownerSet[name])); !slices.Equal(names, b.state.Shared[name]) {
+				b.state.Shared[name], save = names, true
+			}
+		}
+	}
+	if save {
+		if err := b.save(); err != nil {
+			return nil, err
+		}
 	}
 	recipients := []string{owner}
 	if owner == self {
 		recipients = slices.Clone(b.state.Scopes[group][1:])
 	}
 	recipients = slices.DeleteFunc(recipients, func(p string) bool { return b.state.Blocked[p] })
-	if len(merged) > 0 {
-		if b.state.Merged == nil {
-			b.state.Merged = map[string]string{}
-		}
-		maps.Copy(b.state.Merged, merged)
-		if err = b.save(); err != nil {
-			return nil, err
-		}
-	}
-	if ownerSet != nil {
-		names := slices.Sorted(maps.Keys(ownerSet))
-		if !slices.Equal(names, b.state.Shared) {
-			b.state.Shared = names
-			if err = b.save(); err != nil {
-				return nil, err
-			}
-		}
-	}
 	r, published := b.state.Records[group+"/"+self]
 	if published && endpoints == nil {
 		c, _ := r.Verify()
 		endpoints = c.Endpoints
 	}
-	if digest := string(JSON([]any{recipients, shared, endpoints, b.name})); !published || digest != b.synced {
+	sum := sha256.Sum256(JSON([]any{recipients, out, endpoints, b.name}))
+	if digest := string(sum[:]); !published || digest != b.synced {
 		var ext map[string]json.RawMessage
 		if len(recipients) > 0 {
-			v, err := seal(recipients, bundle{Credentials: shared})
+			blob, err := seal(recipients, out)
 			if err != nil {
 				return nil, err
 			}
-			ext = map[string]json.RawMessage{"vault": JSON(v)}
+			ext = map[string]json.RawMessage{"vault": JSON(pointer{vaultSchema, vaultDigest(blob), len(blob)})}
+			b.vaults[vaultDigest(blob)] = blob
 		}
-		if _, err = b.publishContact(group, b.name, endpoints, false, ext); err != nil {
+		if _, err := b.publishContact(group, b.name, endpoints, false, ext); err != nil {
 			return nil, err
 		}
 		b.synced = digest
 	}
-	if changed == nil {
-		changed = []string{}
+	// This device serves its own vault and, as a member, the owner's it opened; nothing else.
+	keep := map[string]bool{}
+	for _, peer := range []string{self, owner} {
+		if v, _, ok := b.pointer(group, peer); ok {
+			keep[v.Digest] = true
+		}
 	}
-	slices.Sort(changed)
-	return JSON(map[string]any{"group_id": group, "owner": owner, "members": b.state.Scopes[group], "received": changed}), nil
+	if ownerVault != nil && keep[vaultDigest(ownerVault)] {
+		b.vaults[vaultDigest(ownerVault)] = ownerVault
+	}
+	maps.DeleteFunc(b.vaults, func(digest string, _ []byte) bool { return !keep[digest] })
+	return JSON(map[string]any{"group_id": group, "owner": owner, "members": b.state.Scopes[group], "received": received}), nil
 }
 
-// received opens the vault peer published to the group, if it is sealed to this device. A member
-// also takes the owner's recipients as the group, so it gossips with them while the owner is away.
-func (b *Mitosis) received(group, peer string) (bundle, string, bool) {
+// pointer reads the vault peer's record in the group points at.
+func (b *Mitosis) pointer(group, peer string) (pointer, string, bool) {
+	var v pointer
 	r, ok := b.state.Records[group+"/"+peer]
-	if !ok || b.state.Blocked[peer] {
-		return bundle{}, "", false
+	if !ok {
+		return v, "", false
 	}
 	c, err := r.Verify()
-	var v vault
-	if err != nil || c.Withdrawn || json.Unmarshal(c.Extensions["vault"], &v) != nil || v.Schema != vaultSchema {
-		return bundle{}, "", false
+	if err != nil || c.Withdrawn || json.Unmarshal(c.Extensions["vault"], &v) != nil || v.Schema != vaultSchema || len(v.Digest) != 43 || v.Size < 2 || v.Size > maxVault {
+		return v, "", false
 	}
-	in, err := b.open(v)
-	if err != nil {
-		return bundle{}, "", false
+	return v, c.Revision, true
+}
+
+func vaultDigest(blob []byte) string {
+	sum := sha256.Sum256(blob)
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+// fetch returns the vault v points at, from this device or over a channel already open, in either
+// direction, to its publisher first, then to any other peer: a Worker object or a browser cannot
+// dial, so it fetches over the stream it holds, and a device just added knows no member but the
+// owner yet. Holders serve only the vault's recipients, and it is checked against the digest its
+// publisher signed before anything opens it.
+func (b *Mitosis) fetch(ctx context.Context, v pointer, publisher string) ([]byte, error) {
+	b.mu.Lock()
+	blob := b.vaults[v.Digest]
+	holders := slices.Sorted(maps.Keys(b.channels))
+	b.mu.Unlock()
+	if blob != nil {
+		return blob, nil
 	}
-	if members := b.state.Scopes[group]; members[0] == peer {
-		next := []string{peer}
-		for id := range v.Envelopes {
-			next = append(next, id)
+	if i := slices.Index(holders, publisher); i > 0 {
+		holders[0], holders[i] = holders[i], holders[0]
+	}
+	for _, holder := range holders {
+		c := b.Connection(holder)
+		if c == nil {
+			continue
 		}
-		slices.Sort(next[1:])
-		b.state.Scopes[group] = next
+		blob = nil
+		for len(blob) < v.Size {
+			var chunk struct {
+				Size int    `json:"size"`
+				Data []byte `json:"data"`
+			}
+			call, cancel := context.WithTimeout(ctx, 30*time.Second)
+			err := c.Call(call, "vault.get", map[string]any{"digest": v.Digest, "offset": len(blob)}, &chunk)
+			cancel()
+			if err != nil || chunk.Size != v.Size || len(chunk.Data) == 0 || len(blob)+len(chunk.Data) > v.Size {
+				break
+			}
+			blob = append(blob, chunk.Data...)
+		}
+		if len(blob) == v.Size && vaultDigest(blob) == v.Digest {
+			return blob, nil
+		}
 	}
-	return in, c.Revision, true
+	return nil, Fail("unavailable")
+}
+
+// serveVault answers vault.get: a vault this device holds, only to a current, unblocked member of
+// its group that the vault is sealed to.
+func (b *Mitosis) serveVault(peer string, params json.RawMessage) (json.RawMessage, error) {
+	var p struct {
+		Digest string `json:"digest"`
+		Offset int    `json:"offset"`
+	}
+	if err := protocol.Decode(params, &p); err != nil {
+		return nil, err
+	}
+	b.mu.Lock()
+	blob := b.vaults[p.Digest]
+	member := b.state.Group != "" && !b.state.Blocked[peer] && slices.Contains(b.state.Scopes[b.state.Group], peer)
+	b.mu.Unlock()
+	envelopes, _, err := split(blob)
+	if !member || err != nil || envelopes[peer] == nil || p.Offset < 0 || p.Offset >= len(blob) {
+		return nil, Fail("not_found")
+	}
+	return JSON(map[string]any{"size": len(blob), "data": blob[p.Offset:min(len(blob), p.Offset+vaultChunk)]}), nil
 }
 
 // seal encrypts the bundle once under a fresh key, and that key to each recipient's X25519 key.
-func seal(recipients []string, in bundle) (vault, error) {
+// A vault is the recipient count (two bytes, big-endian), one envelope per recipient, then the
+// sealed bundle.
+func seal(recipients []string, in bundle) ([]byte, error) {
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
-	sealed, err := aead(key, JSON(in), nil, true)
-	if err != nil {
-		return vault{}, err
-	}
-	v := vault{Schema: vaultSchema, Bundle: base64.RawURLEncoding.EncodeToString(sealed), Envelopes: map[string]string{}}
+	out := binary.BigEndian.AppendUint16(nil, uint16(len(recipients)))
 	for _, peer := range recipients {
+		id, err := ParsePeerID(peer)
+		if err != nil {
+			return nil, err
+		}
 		to, err := sealingKey(peer)
 		if err != nil {
-			return vault{}, err
+			return nil, err
 		}
 		ephemeral, _ := ecdh.X25519().GenerateKey(rand.Reader)
 		shared, err := ephemeral.ECDH(to)
 		if err != nil {
-			return vault{}, err
+			return nil, err
 		}
 		pub := ephemeral.PublicKey().Bytes()
 		envelope, err := aead(envelopeKey(shared, pub, to.Bytes()), key, pub, true)
 		if err != nil {
-			return vault{}, err
+			return nil, err
 		}
-		v.Envelopes[peer] = base64.RawURLEncoding.EncodeToString(append(pub, envelope...))
+		out = slices.Concat(out, id, pub, envelope)
 	}
-	return v, nil
+	sealed, err := aead(key, JSON(in), nil, true)
+	if err != nil {
+		return nil, err
+	}
+	if out = append(out, sealed...); len(out) > maxVault {
+		return nil, Fail("resource_exhausted")
+	}
+	return out, nil
 }
 
-func (b *Mitosis) open(v vault) (bundle, error) {
-	envelope, err := base64.RawURLEncoding.DecodeString(v.Envelopes[b.PeerID()])
-	if err != nil || len(envelope) < 32 {
-		return bundle{}, Fail("unauthorized")
+// split reads a vault's envelopes, by recipient, and its sealed bundle.
+func split(blob []byte) (map[string][]byte, []byte, error) {
+	if len(blob) < 2 {
+		return nil, nil, Fail("unauthorized")
+	}
+	n := int(binary.BigEndian.Uint16(blob))
+	if len(blob) < 2+n*envelopeSize {
+		return nil, nil, Fail("unauthorized")
+	}
+	envelopes := make(map[string][]byte, n)
+	for i := range n {
+		e := blob[2+i*envelopeSize:][:envelopeSize]
+		envelopes[PeerID(ed25519.PublicKey(e[:32]))] = e[32:]
+	}
+	return envelopes, blob[2+n*envelopeSize:], nil
+}
+
+// open decrypts a vault sealed to this device and returns its bundle and recipients.
+func (b *Mitosis) open(blob []byte) (bundle, []string, error) {
+	envelopes, sealed, err := split(blob)
+	if err != nil {
+		return nil, nil, err
+	}
+	envelope := envelopes[b.PeerID()]
+	if envelope == nil {
+		return nil, nil, Fail("unauthorized")
 	}
 	sum := sha512.Sum512(b.state.Key[:ed25519.SeedSize])
 	self, err := ecdh.X25519().NewPrivateKey(sum[:32])
 	if err != nil {
-		return bundle{}, err
+		return nil, nil, err
 	}
 	pub := envelope[:32]
 	ephemeral, err := ecdh.X25519().NewPublicKey(pub)
 	if err != nil {
-		return bundle{}, err
+		return nil, nil, err
 	}
 	shared, err := self.ECDH(ephemeral)
 	if err != nil {
-		return bundle{}, err
+		return nil, nil, err
 	}
 	key, err := aead(envelopeKey(shared, pub, self.PublicKey().Bytes()), envelope[32:], pub, false)
 	if err != nil {
-		return bundle{}, err
-	}
-	sealed, err := base64.RawURLEncoding.DecodeString(v.Bundle)
-	if err != nil {
-		return bundle{}, err
+		return nil, nil, err
 	}
 	plain, err := aead(key, sealed, nil, false)
 	var out bundle
 	if err == nil {
 		err = json.Unmarshal(plain, &out)
 	}
-	return out, err
+	return out, slices.Collect(maps.Keys(envelopes)), err
 }
 
 // sealingKey is the Montgomery form of a peer's Ed25519 identity (RFC 7748 §4.1), the X25519 key

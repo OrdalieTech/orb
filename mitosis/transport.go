@@ -438,6 +438,8 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 		descriptor["methods"] = JSON(allowed)
 		return JSON(descriptor), nil
 
+	case "vault.get":
+		return b.serveVault(peer, params)
 	case "peers.list":
 		var p pageRequest
 		if err := protocol.Decode(params, &p); err != nil {

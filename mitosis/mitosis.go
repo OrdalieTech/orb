@@ -70,7 +70,7 @@ type state struct {
 	Records     map[string]Record          `json:"records"`
 	Peers       map[string]string          `json:"peers"`
 	Group       string                     `json:"sync_group,omitempty"`
-	Shared      []string                   `json:"sync_shared,omitempty"` // providers in the owner's set a member last applied
+	Shared      map[string][]string        `json:"sync_shared,omitempty"` // class -> entries in the owner's set a member last applied
 	Merged      map[string]string          `json:"sync_merged,omitempty"` // member -> revision of the hand-in the owner merged
 	Transport   json.RawMessage            `json:"transport,omitempty"`
 }
@@ -91,8 +91,9 @@ type Mitosis struct {
 	changes        chan struct{}
 	host           Host
 	name           string
-	credentials    Credentials
-	synced         string // what Sync last published, so an unchanged round publishes nothing
+	classes        map[string]Class
+	synced         string            // digest of what Sync last published, so an unchanged round publishes nothing
+	vaults         map[string][]byte // digest -> sealed vault this device serves (vault.get)
 }
 
 // Host serves a peer's machine-level calls — the threads stored on this machine, and starting
@@ -153,7 +154,7 @@ func Open(store document.Document, create bool) (*Mitosis, error) {
 	if store == nil {
 		return nil, errors.New("mitosis requires explicit storage")
 	}
-	b := &Mitosis{changes: make(chan struct{}, 1), store: store, active: map[string]registration{}, channels: map[string]map[*protocol.Conn]uint64{}, boot: protocol.NewID()}
+	b := &Mitosis{changes: make(chan struct{}, 1), classes: map[string]Class{}, vaults: map[string][]byte{}, store: store, active: map[string]registration{}, channels: map[string]map[*protocol.Conn]uint64{}, boot: protocol.NewID()}
 	raw, err := store.Read(context.Background())
 	if err != nil {
 		return nil, err

@@ -26,6 +26,7 @@ import (
 	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
 	"github.com/OrdalieTech/orb/platforms/worker"
+	"github.com/OrdalieTech/orb/plugins/memory"
 )
 
 // Documents in the object's Store, beside settings.json and out of the file
@@ -60,7 +61,15 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 	if err != nil {
 		return nil, err
 	}
-	b.SetCredentials(aiauth.NewDocumentStore(store.Document(path.Join(worker.AgentDir, "auth.json"))))
+	b.SetClass("credentials", aiauth.NewDocumentStore(store.Document(path.Join(worker.AgentDir, "auth.json"))))
+	b.SetClass("memory", memory.Shared{Store: worker.Memory(store)})
+	// A round runs each time the records change (a peer published here), so the object keeps up
+	// with its sync group over the streams its peers opened, with no command.
+	go func() {
+		for range b.Changes() {
+			_, _ = b.Sync(context.Background(), nil)
+		}
+	}()
 	enrolled := store.Document(instanceDocument)
 	raw, err := enrolled.Read(context.Background())
 	if err != nil {
