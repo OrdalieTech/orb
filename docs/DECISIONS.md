@@ -43,14 +43,14 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
   mutable state and read no environment or home directory implicitly; N instances with N
   configurations must coexist in one process. The core is never widened ad hoc: if the extension
   API cannot express a capability, the API is extended by recorded decision. Seams are cut when a
-  second implementation is real, never speculatively. Bridge is not a capability module: under
+  second implementation is real, never speculatively. Mitosis is not a capability module: under
   P10/P11 it is core.
 - **P4 — Minimal by default.** New capabilities default off. Stock `orb` stays lean; power is
   opt-in per user (settings, `/plugins`) or per assembly (embedder wiring). Configuration pages may
-  be available before activation, as Bridge management is in Settings and Ctrl+P, with service
-  activation inside that page. Bridge defaults are inert rather than off: every Orb has an identity
+  be available before activation, as Mitosis management is in Settings and Ctrl+P, with service
+  activation inside that page. Mitosis defaults are inert rather than off: every Orb has an identity
   but no listener, no advertised address and no grants. An agent reaches its owner's other
-  conversations only once the owner turns on agent access (`bridge-agent-calls`), and then with the
+  conversations only once the owner turns on agent access (`mitosis-agent-calls`), and then with the
   owner's reach: the switch is the grant (2026-10-10, the owner's call, for simplicity over
   per-agent grants). A Worker's agent, not its owner, still calls under its own grant.
 - **P5 — Pi compatibility is interop, not identity.** Orb reads what released pi writes on the
@@ -79,7 +79,7 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
 - **P9 — Never weaken a criterion or a golden to pass it.** A failing fixture means the code is
   wrong. A genuinely impossible criterion stops the work and surfaces to the owner.
 - **Layers, enforced.** Every package has a layer, and an import points to its own layer or
-  below: libraries (`internal`, `tui`) → `ai` → `engine` → core (`agent`, `bridge`, `host`) →
+  below: libraries (`internal`, `tui`) → `ai` → `engine` → core (`agent`, `mitosis`, `host`) →
   capabilities (`plugins`) → drivers (TUI mode, RPC, ACP, `chat`) → hosts (`platforms`) →
   assemblies (`cmd`, catalogs such as `agent/assembly` and `chat/platforms`, examples, the agent
   harness). Only hosts and assemblies read or change the process environment or register at
@@ -89,10 +89,10 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
   closed. It is the agent semantics that are identical on every target: the `ai` message/stream
   model and provider wire codecs, the `engine` loop, tool pipeline, events and compaction,
   session/settings/resource formats and their merge rules, the extension API and registry, the
-  Bridge peer protocol, identity, grants, instance registration and operation ledger, and one
+  Mitosis peer protocol, identity, grants, instance registration and operation ledger, and one
   assembly that composes them. Core packages compile on every P2 target and reach the platform only
   through **ports** supplied by a host: `FS` (files), `Exec` (processes, optional), `Store`
-  (documents, append-only logs, locks), `Net` (outbound HTTP and Bridge streams: dial, optional
+  (documents, append-only logs, locks), `Net` (outbound HTTP and Mitosis streams: dial, optional
   listen) and `Env` (variables, directories, clock, randomness). A core package imports no
   `os/exec`, `os/signal` or `syscall`, never dials, listens or resolves through `net` (its portable
   types stay usable), uses no `http.DefaultClient`, and reads no environment, home, working
@@ -105,12 +105,12 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
 - **P11 — Deployable anywhere, connected as peers.** Orb is a runtime to deploy, not a remote
   client: every P2 target runs the full core with its own model calls, tools, sessions and state,
   and hosted targets (Cloudflare Durable Objects, self-hosted workerd) are in scope. Deployments
-  reach each other as Bridge peers: people control conversations on any Orb that granted them, and
+  reach each other as Mitosis peers: people control conversations on any Orb that granted them, and
   an Orb's agent calls another Orb only under its own grants. A target is supported only with
   evidence: its ports pass the conformance suites, the cross-host scenario matches native, a target
   end-to-end test runs in CI, one documented command deploys and removes it, and it states its
-  capability profile and Bridge role. `docs/deployments.md` is the catalogue; a target's status
-  there changes only with that evidence. Bridge is core: every Orb, on every host, has a peer
+  capability profile and Mitosis role. `docs/deployments.md` is the catalogue; a target's status
+  there changes only with that evidence. Mitosis is core: every Orb, on every host, has a peer
   identity, registers its sessions as instances, and dials peers through the transports its host
   supplies. Listening, advertised addresses and every grant stay explicit and owner-approved;
   controller and agent-subject authority never merge.
@@ -196,7 +196,7 @@ Each holds until changed by owner-signed decision.
   system prompts are never published.
 - **Native session executors.** A capability may replace Orb's model/tool loop for its own provider
   only through generic seams: `SessionLoop` and `ContextUsage` on session options/config,
-  `SessionRuntime.RequestInput`, `NewSessionOptions.Prepare` and Bridge `attach.Options.Status`.
+  `SessionRuntime.RequestInput`, `NewSessionOptions.Prepare` and Mitosis `attach.Options.Status`.
   Core names no executor; the TUI routes typed `/compact` to an executor as its own `/compact`
   prompt and renders tools case-insensitively. Claude Sessions is the one implementation: a
   default-off `claude-sessions` catalog row wired in `cmd/orb`. No executor-registration extension
@@ -277,7 +277,7 @@ Each holds until changed by owner-signed decision.
   container per agent), and makes each conversation a full session of the agent, built as its ACP
   sessions are. The local provider is single-process; clusters supply fenced conversation
   ownership. Chat tests are plain `go test` goldens under `chat/`, never `conformance/`.
-- **D28 — Chat platforms.** Telegram, WhatsApp, Slack, Teams, Discord (its gateway over `coder/websocket`, in the build for Bridge),
+- **D28 — Chat platforms.** Telegram, WhatsApp, Slack, Teams, Discord (its gateway over `coder/websocket`, in the build for Mitosis),
   Messenger and Google Chat; official platform APIs only, stdlib-only clients, shared helpers in
   `chat/internal/`, zero new go.mod dependencies. Bridge-based platforms and E2EE Matrix stay
   excluded.
@@ -436,10 +436,10 @@ Each holds until changed by owner-signed decision.
   source archives that must rebuild with `CGO_ENABLED=0 -buildvcs=false`.
 - **Windows CI blocks every commit.** Windows artifacts join releases once the release workflow
   packages and verifies them.
-- **Apps render `orb app`; their logic lives once, in Go.** `bridge/view` follows every
-  conversation on Bridge and serves apps state and rows ready to draw; an app renders them and
+- **Apps render `orb app`; their logic lives once, in Go.** `mitosis/view` follows every
+  conversation on Mitosis and serves apps state and rows ready to draw; an app renders them and
   sends intents back, so Android, iOS, the desktop and the platforms that follow behave the same
-  and a fix lands everywhere. Each app bundles its `orb` and talks to the machine's Bridge, the
+  and a fix lands everywhere. Each app bundles its `orb` and talks to the machine's Mitosis, the
   CLI's own.
 - **The desktop app is Go, drawn by MyGo, on macOS, Linux and Windows.** `platforms/desktop` renders
   `orb app` with MyGo's native UI (pure Go, the system's libraries reached through purego, no cgo),
@@ -452,9 +452,9 @@ Each holds until changed by owner-signed decision.
   It replaced the SwiftUI Mac app: `platforms/apple` is iOS's alone. Owner, 2026-11-03.
 - **The Android app runs the orb binary, not a gomobile library.** It executes the unmodified
   `CGO_ENABLED=0` CLI (`liborb.so`) as `orb app`, its own conversations included: the phone is a
-  Bridge peer of itself (the owner reaches its own machine's instances and `host.*` with the
+  Mitosis peer of itself (the owner reaches its own machine's instances and `host.*` with the
   calls it makes on any peer), so one client follows every Orb, with long polls. Each phone
-  conversation is an Orb its Bridge launches, as on a server; the phone runs exactly what
+  conversation is an Orb its Mitosis launches, as on a server; the phone runs exactly what
   desktops run. P2's library embedding remains the path for iOS, which cannot spawn processes.
 - **The Android app's agent works in a Linux the app carries.** Android 10+ refuses to execute
   files from app data, so the app ships proot and its loader as `lib*.so` (GPL-2.0, from Termux's
@@ -462,6 +462,28 @@ Each holds until changed by owner-signed decision.
   against GitHub's published sha256. proot maps the app's copy onto `/data/data/com.termux`, so
   `pkg`/`apt` work unmodified without the Termux app. The bash tool's `shellPath` and the in-app
   terminal start `liblinux.so`; the core stays the plain binary outside proot.
+- **Mitosis profile sync.** A profile has at most one sync group: a Mitosis discovery scope owned
+  by one device. Only the owner admits (`orb mitosis sync add`, paired devices only) and removes
+  (`sync remove`) devices; a device follows a group with `sync join <owner>`, and nothing derives
+  membership from pairing. v1 shares credentials only: auth.json's API keys and OAuth logins, never
+  a key that is a command (`!…`). The bundle is one JSON object per data class, so configuration or
+  memory can later be added as fields, but none is built. Each device publishes one vault in its
+  signed peer record of the group scope, on the existing reconciliation (`orb-mitosis/1`). The
+  bundle is sealed with AES-256-GCM under a fresh 256-bit key on every publish, and that key is
+  sealed to each recipient's X25519 key (the Montgomery form of its Ed25519 identity), stdlib only.
+  Only the owner publishes the group's set: it merges in the entries members hand it, keeping its
+  own, and seals the result to every current, unblocked member. A member applies the owner's set
+  and hands the owner alone what that set lacks or holds otherwise. Between two OAuth logins the
+  one that expires later wins, so a token refreshed on any device replaces the stale copies; an
+  entry removed on the owner is removed everywhere. Any member relays the owner's signed record, so
+  a device keeps catching up while the owner is off. Removing or blocking a device on the owner
+  leaves it out of every later set, though it keeps what it already received, so revoking a key
+  means rotating it; a member leaves by removing the owner, which is how a profile recovers from
+  losing it. Native devices run a round on every reconciliation, so a group converges with no
+  command; `orb mitosis sync` runs one at once (a Worker object syncs that way). Sync is inert
+  until a group exists. A device that boots unattended can decrypt its own vault, which is accepted
+  as the cost of autonomy; a low-trust host belongs in a group of its own, with capped credentials.
+  Owner, 2026-11-16.
 
 ## Divergence ledger
 
@@ -542,7 +564,7 @@ Each holds until changed by owner-signed decision.
 | No `/bug`; `/share` is a GitHub gist | omission | pi's `/bug` reports to pi's developers and its `/share` can upload to pi's Radius service. F8's and F12's built-in command lists drop `bug` and keep the gist description (`orbCommands`) |
 | `samplingParamsByThinkingLevel` is ignored | gap | pi 1.0.2 reads it from `models.json`; Orb accepts the key without applying it, since no agent configures per-level sampling |
 | `durationMs` goldens use a frozen clock | harness adaptation | pi records `durationMs` on assistant messages (from `Registry.StreamSimple`; faux streams time themselves), tool results and `tool_execution_end`. The extractor freezes `performance.now`, and `runner.ByteDiff` compares measured durations as zero, so presence, position and type stay checked |
-| No cache warming | not yet adopted | pi keeps eligible prompt caches warm between requests (`cacheWarming`, idle by default since 1.5.1); Orb sends no request a turn did not ask for, since several Orbs idle under one Bridge and every warm is billed. The pi-ai cache-warming exports are SDK stubs, and Anthropic message threads need no `disableContinuation` |
+| No cache warming | not yet adopted | pi keeps eligible prompt caches warm between requests (`cacheWarming`, idle by default since 1.5.1); Orb sends no request a turn did not ask for, since several Orbs idle under one Mitosis and every warm is billed. The pi-ai cache-warming exports are SDK stubs, and Anthropic message threads need no `disableContinuation` |
 | Disposal waits five seconds for aborted tools | behavior | pi waits without bound for aborted tools to settle before extensions shut down; Orb waits five seconds, so a tool that ignores its abort cannot hold the exit |
 | Extension overlays closed by a reload settle their call | Go API adaptation | pi leaves the `ctx.ui.custom()` promise of an overlay removed by `/reload` or a session switch pending; in Orb the call returns without a result, since a pending call is a goroutine and an open host request |
 | MCP stdio servers keep their tree on Windows | platform adaptation | pi 1.5.1 ends a stdio server's process group on disconnect (POSIX); Windows has no group and reuses a waited PID at once, so Orb ends the tree only where a group exists |
