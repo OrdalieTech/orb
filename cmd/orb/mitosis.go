@@ -141,7 +141,7 @@ func runMitosisCommand(ctx context.Context, args []string, streams cliStreams) i
 		if err = client.Call(ctx, "status", struct{}{}, &status); err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
-		peer, err := connectMitosisSSH(ctx, client, status.PeerID, target, remoteProfile, remoteOrb)
+		peer, err := connectMitosisSSH(ctx, client, profile, status.PeerID, target, remoteProfile, remoteOrb)
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
@@ -213,7 +213,7 @@ func runMitosisCommand(ctx context.Context, args []string, streams cliStreams) i
 		if len(args) != 2 {
 			err = errors.New("trust requires PeerID")
 		} else {
-			err = trustMitosisPeer(ctx, client, args[1], true)
+			err = trustMitosisPeer(ctx, client, profile, args[1], true)
 			if err == nil {
 				return 0
 			}
@@ -357,7 +357,7 @@ func mitosisOwner(ctx context.Context, profile string) (call func(ctx context.Co
 	}
 }
 
-func connectMitosisSSH(ctx context.Context, client *protocol.Conn, localPeer, target, remoteProfile, remoteOrb string) (string, error) {
+func connectMitosisSSH(ctx context.Context, client *protocol.Conn, profile, localPeer, target, remoteProfile, remoteOrb string) (string, error) {
 	var err error
 	remoteOrb, err = daemon.EnsureSSH(ctx, target, remoteOrb, selfupdate.New(version, false))
 	if err != nil {
@@ -384,13 +384,13 @@ func connectMitosisSSH(ctx context.Context, client *protocol.Conn, localPeer, ta
 	if _, err = daemon.RunSSH(ctx, target, remoteOrb, remoteProfile, "pair", "approve", inv.ID, localPeer); err != nil {
 		return "", err
 	}
-	return inv.PeerID, trustMitosisPeer(ctx, client, inv.PeerID, false)
+	return inv.PeerID, trustMitosisPeer(ctx, client, profile, inv.PeerID, false)
 }
 
 // trustMitosisPeer grants peer control of this Orb's conversations, and of the machine too when
 // machine is set (`orb mitosis trust`, the owner's explicit choice).
-func trustMitosisPeer(ctx context.Context, client *protocol.Conn, peer string, machine bool) error {
-	shareOrbsOnMitosis(ctx)
+func trustMitosisPeer(ctx context.Context, client *protocol.Conn, profile, peer string, machine bool) error {
+	shareOrbsOnMitosis(ctx, profile)
 	g := mitosis.ConversationGrant(peer)
 	if machine {
 		g = mitosis.FullGrant(peer)

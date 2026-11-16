@@ -562,7 +562,7 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 		if e != nil {
 			return e
 		}
-		if e = trustMitosisPeer(ctx, client, inv.PeerID, false); e != nil {
+		if e = trustMitosisPeer(ctx, client, profile, inv.PeerID, false); e != nil {
 			return e
 		}
 		ui.Notify("Device connected. Choose a shared conversation.", extensions.NotifyInfo)
@@ -577,7 +577,7 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 			return e
 		}
 		ui.Notify("Setting up Orb on "+target+"…", extensions.NotifyInfo)
-		peer, e := connectMitosisSSH(ctx, client, status.PeerID, target, "personal", "orb")
+		peer, e := connectMitosisSSH(ctx, client, profile, status.PeerID, target, "personal", "orb")
 		if e != nil {
 			return e
 		}

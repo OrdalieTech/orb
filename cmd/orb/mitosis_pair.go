@@ -63,7 +63,7 @@ func runMitosisPair(ctx context.Context, profile string, streams cliStreams) int
 		return reportCLIError(streams.Stderr, err)
 	}
 	_, _ = fmt.Fprintln(streams.Stdout, "Paired. The device reconnects on its own from now on; orb mitosis block <fingerprint> revokes it.")
-	shareOrbsOnMitosis(ctx)
+	shareOrbsOnMitosis(ctx, profile)
 	// On a server, pairing is only half the job: the Mitosis has to outlive this SSH session.
 	if runtime.GOOS == "linux" && !daemon.Installed(profile) {
 		if _, err := exec.LookPath("systemctl"); err == nil {
@@ -142,7 +142,7 @@ func runMitosisJoin(ctx context.Context, profile string, args []string, streams 
 		return i, i.Status == "approved", err
 	})
 	if err == nil {
-		err = trustMitosisPeer(ctx, client, inv.PeerID, false)
+		err = trustMitosisPeer(ctx, client, profile, inv.PeerID, false)
 	}
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
@@ -153,8 +153,12 @@ func runMitosisJoin(ctx context.Context, profile string, args []string, streams 
 
 // shareOrbsOnMitosis turns the mitosis plugin on once this machine pairs, unless its owner set it
 // either way: a paired machine is one whose Orbs its owner means to reach from the others, the
-// Orbs opened in a terminal there included.
-func shareOrbsOnMitosis(ctx context.Context) {
+// Orbs opened in a terminal there included. Only for the profile the plugin attaches to: pairing
+// another profile must not start a second, unpaired Mitosis behind every later Orb.
+func shareOrbsOnMitosis(ctx context.Context, profile string) {
+	if profile != "personal" {
+		return
+	}
 	cwd, agentDir, err := packageCommandDirs()
 	if err != nil {
 		return
