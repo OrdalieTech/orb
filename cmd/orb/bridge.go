@@ -47,7 +47,7 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 	}
 	args = filtered
 	if len(args) == 0 || args[0] == "--help" {
-		_, _ = fmt.Fprintln(streams.Stdout, "orb mitosis run|start|stop|status|instances|peers|grants|groups|scopes|prune [--profile personal]   (alias: orb bridge)\norb mitosis run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 [--web-url wss://host/bridge]\norb mitosis pair   (show a QR code, then approve the device that scans it)\norb mitosis join <code>   (pair with an Orb that ran orb mitosis pair)\norb mitosis service install|remove   (Linux: keep Mitosis running across logouts and reboots)\norb mitosis pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb mitosis grant|revoke|scope|group|assign|takeover|publish < request.json\norb mitosis remote <peer-id> <method> < params.json\norb mitosis view <peer-id> <instance-id>\norb mitosis shell <peer-id> [folder]   (a terminal on a machine that lets this one start Orb there)\norb mitosis pipe   (owner API as JSON lines on stdin/stdout)\norb mitosis trust <peer-id>\norb mitosis connect-ssh <user@host> [--remote-profile personal] [--remote-orb orb]")
+		_, _ = fmt.Fprintln(streams.Stdout, "orb mitosis run|start|stop|status|instances|peers|grants|groups|scopes|prune [--profile personal]   (alias: orb bridge)\norb mitosis run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 [--web-url wss://host/bridge]\norb mitosis sync [--push|--pull]   (share credentials with this profile's peers, sealed per device)\norb mitosis pair   (show a QR code, then approve the device that scans it)\norb mitosis join <code>   (pair with an Orb that ran orb mitosis pair)\norb mitosis service install|remove   (Linux: keep Mitosis running across logouts and reboots)\norb mitosis pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb mitosis grant|revoke|scope|group|assign|takeover|publish < request.json\norb mitosis remote <peer-id> <method> < params.json\norb mitosis view <peer-id> <instance-id>\norb mitosis shell <peer-id> [folder]   (a terminal on a machine that lets this one start Orb there)\norb mitosis pipe   (owner API as JSON lines on stdin/stdout)\norb mitosis trust <peer-id>\norb mitosis connect-ssh <user@host> [--remote-profile personal] [--remote-orb orb]")
 		return 0
 	}
 	if args[0] == "run" {
@@ -153,6 +153,9 @@ func runBridgeCommand(ctx context.Context, args []string, streams cliStreams) in
 	}
 	if args[0] == "shell" && (len(args) == 2 || len(args) == 3) {
 		return runBridgeShell(ctx, profile, args[1], strings.Join(args[2:], ""), streams)
+	}
+	if args[0] == "sync" {
+		return runMitosisSync(ctx, profile, args[1:], streams)
 	}
 	if args[0] == "pair" && len(args) == 1 {
 		return runBridgePair(ctx, profile, streams)

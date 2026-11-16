@@ -269,6 +269,26 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 			time.AfterFunc(100*time.Millisecond, stop)
 			return bridge.JSON(struct{}{}), nil
 		}
+		if method == "mitosis.sync" {
+			var p struct {
+				Scope       string `json:"scope"`
+				Credentials []byte `json:"credentials"`
+			}
+			if err := protocol.Decode(params, &p); err != nil {
+				return nil, err
+			}
+			if p.Scope == "" {
+				p.Scope = MitosisScope(profile)
+			}
+			bundle, found, err := service.mitosisSync(ctx, p.Scope, p.Credentials)
+			if err != nil {
+				return nil, err
+			}
+			return bridge.JSON(struct {
+				Found       bool   `json:"found"`
+				Credentials []byte `json:"credentials,omitempty"`
+			}{found, bundle.Credentials}), nil
+		}
 		return service.Admin(ctx, method, params)
 	}
 	closeAdmin, err := nativebridge.Listen(serviceCtx, filepath.Join(dir, "admin.sock"), b, string(token), admin)
