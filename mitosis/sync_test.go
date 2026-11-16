@@ -3,6 +3,7 @@ package mitosis
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/internal/document"
@@ -50,6 +51,12 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		_, ok := v.Envelopes[x.PeerID()]
 		return ok
 	}
+	if _, err := owner.Admin(ctx, "sync", json.RawMessage(`{"add":"`+b.PeerID()+`"}`)); Code(err) != "not_found" {
+		t.Fatal("admitted a device it never paired with", err)
+	}
+	for _, x := range []*Mitosis{b, c} {
+		_ = owner.SavePeer(x.PeerID(), "paired")
+	}
 	admin(owner, `{"add":"`+b.PeerID()+`"}`)
 	admin(owner, `{"add":"`+c.PeerID()+`"}`)
 	admin(b, `{"join":"`+owner.PeerID()+`"}`)
@@ -65,8 +72,20 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		}
 	}
 
+	// A token refreshed on a member replaces the stale copies, the owner's included.
+	_ = document.Replace(ctx, stores[b], []byte(`{"anthropic":{"type":"oauth","refresh":"r2","access":"a2","expires":2000},"openai":{"type":"api_key","key":"o1"}}`))
+	_ = document.Replace(ctx, stores[owner], []byte(`{"anthropic":{"type":"oauth","refresh":"r1","access":"a1","expires":1000},"openai":{"type":"api_key","key":"o1"}}`))
+	round()
+	for _, x := range []*Mitosis{owner, b, c} {
+		if raw, _ := stores[x].Read(ctx); !strings.Contains(string(raw), `"r2"`) {
+			t.Fatalf("stale token kept: %s", raw)
+		}
+	}
+
 	// A device added last catches up from another member, with the owner away.
 	d := newMitosis(t)
+	_ = owner.SavePeer(d.PeerID(), "paired")
+	_ = c.SavePeer(d.PeerID(), "paired")
 	stores[d] = &document.Memory{}
 	d.SetCredentials(stores[d])
 	admin(owner, `{"add":"`+d.PeerID()+`"}`)
@@ -75,7 +94,7 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin(d, `{}`)
-	if key(d, "openai") != "o1" || key(d, "anthropic") != "a1" {
+	if raw, _ := stores[d].Read(ctx); key(d, "openai") != "o1" || !strings.Contains(string(raw), `"r2"`) {
 		t.Fatal("the new device did not catch up through a member")
 	}
 
@@ -84,6 +103,13 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 	round()
 	if key(b, "openai") != "o2" || key(c, "openai") != "o1" || sealedTo(c) {
 		t.Fatal("removal did not cut the removed device", key(b, "openai"), key(c, "openai"))
+	}
+
+	// The removed device leaves the owner's group and starts its own.
+	admin(c, `{"remove":"`+owner.PeerID()+`"}`)
+	admin(c, `{"add":"`+d.PeerID()+`"}`)
+	if c.state.Scopes[c.state.Group][0] != c.PeerID() {
+		t.Fatal("a device that left cannot own a group")
 	}
 
 	_ = document.Replace(ctx, stores[owner], []byte(`{"openai":{"type":"api_key","key":"o3"}}`))

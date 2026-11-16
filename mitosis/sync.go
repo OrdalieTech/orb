@@ -12,7 +12,6 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"math/big"
 	"slices"
 
@@ -49,14 +48,15 @@ func groupID(owner string) string {
 }
 
 // setGroup applies one membership change: join makes owner's group this profile's own, add and
-// remove are the owner's, and the first add creates the group.
+// remove are the owner's, and the first add creates the group. A member leaves by removing the
+// owner, so it can follow or start another group when the owner is gone for good.
 func (b *Mitosis) setGroup(join, add, remove string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	self := b.PeerID()
 	for _, p := range []string{join, add, remove} {
 		if p == self {
-			return errors.New("mitosis: that is this device")
+			return Fail("not_found")
 		}
 		if _, err := ParsePeerID(p); p != "" && err != nil {
 			return err
@@ -67,6 +67,9 @@ func (b *Mitosis) setGroup(join, add, remove string) error {
 		delete(b.state.Scopes, b.state.Group)
 		b.state.Group = groupID(join)
 		b.state.Scopes[b.state.Group] = []string{join, self}
+	case remove != "" && b.state.Group != "" && b.state.Scopes[b.state.Group][0] == remove:
+		delete(b.state.Scopes, b.state.Group)
+		b.state.Group = ""
 	case add != "" || remove != "":
 		if b.state.Group == "" {
 			b.state.Group = groupID(self)
@@ -74,9 +77,12 @@ func (b *Mitosis) setGroup(join, add, remove string) error {
 		}
 		members := b.state.Scopes[b.state.Group]
 		if members[0] != self {
-			return errors.New("mitosis: only the group's owner " + members[0] + " adds or removes devices")
+			return Fail("unauthorized")
 		}
 		if add != "" && !slices.Contains(members, add) {
+			if b.state.Peers[add] == "" {
+				return Fail("not_found") // a device this one never paired with is never reached
+			}
 			if len(members) >= 128 {
 				return Fail("resource_exhausted")
 			}
@@ -103,19 +109,27 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 	if err := b.setGroup(p.Join, p.Add, p.Remove); err != nil {
 		return nil, err
 	}
+	b.mu.Lock()
+	left := b.state.Group == ""
+	b.mu.Unlock()
+	if left && p.Remove != "" {
+		return JSON(struct{}{}), nil
+	}
 	return b.Sync(ctx, endpoints)
 }
 
 // Sync runs one round of the group: the owner folds in the entries members handed it, keeping its
 // own, then seals the whole set to every current, unblocked member; a member takes the owner's set
-// over its own, then hands the result to the owner. It returns the group and what it received.
+// over its own, then hands the result to the owner. Either way an OAuth entry that expires later
+// wins, so a token refreshed on any device replaces the copies its refresh made stale. It returns
+// the group and what it received.
 func (b *Mitosis) Sync(ctx context.Context, endpoints []Locator) (json.RawMessage, error) {
 	b.mu.Lock()
 	group, credentials, self := b.state.Group, b.credentials, b.PeerID()
 	members := slices.Clone(b.state.Scopes[group])
 	if group == "" || len(members) == 0 || credentials == nil {
 		b.mu.Unlock()
-		return nil, errors.New("mitosis: no sync group here; add a device to this one, or join another's")
+		return nil, Fail("not_found")
 	}
 	owner := members[0]
 	from := []string{owner}
@@ -144,7 +158,7 @@ func (b *Mitosis) Sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		for _, in := range incoming {
 			for name, entry := range in {
 				have, ok := local[name]
-				if ok && (owner == self || bytes.Equal(compact(have), entry)) {
+				if ok && (bytes.Equal(compact(have), entry) || expires(have) > expires(entry) || owner == self && expires(have) == expires(entry)) {
 					continue
 				}
 				local[name] = entry
@@ -315,6 +329,14 @@ func aead(key, data, ad []byte, encrypt bool) ([]byte, error) {
 		return gcm.Seal(nil, nil, data, ad), nil
 	}
 	return gcm.Open(nil, nil, data, ad)
+}
+
+func expires(entry json.RawMessage) float64 {
+	var e struct {
+		Expires float64 `json:"expires"`
+	}
+	_ = json.Unmarshal(entry, &e)
+	return e.Expires
 }
 
 func compact(raw json.RawMessage) json.RawMessage {

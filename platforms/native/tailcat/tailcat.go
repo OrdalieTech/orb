@@ -27,14 +27,16 @@ type saved struct {
 	Clients map[string]key.NodePrivate `json:"clients"`
 }
 type Node struct {
-	mu      sync.Mutex
-	state   saved
-	save    func(json.RawMessage) error
-	mapURL  string
-	server  *tc.Server
-	clients map[string]*tc.Client
-	closed  bool
-	failed  bool
+	mu     sync.Mutex
+	state  saved
+	save   func(json.RawMessage) error
+	mapURL string
+	server *tc.Server
+	// listening: server's address exists only once Listen has returned.
+	listening bool
+	clients   map[string]*tc.Client
+	closed    bool
+	failed    bool
 }
 
 func Open(raw json.RawMessage, save func(json.RawMessage) error, mapURL string) (*Node, error) {
@@ -80,7 +82,7 @@ func (n *Node) Listen(ctx context.Context) (net.Listener, error) {
 		return nil, mitosis.Fail("unavailable")
 	}
 	n.mu.Lock()
-	n.state.Region = selected
+	n.state.Region, n.listening = selected, true
 	err = n.save(mitosis.JSON(n.state))
 	n.mu.Unlock()
 	if err != nil {
@@ -92,7 +94,7 @@ func (n *Node) Listen(ctx context.Context) (net.Listener, error) {
 func (n *Node) Locator() (string, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if n.server == nil || n.state.Region <= 0 {
+	if !n.listening || n.state.Region <= 0 {
 		return "", mitosis.Fail("unavailable")
 	}
 	ci, err := tc.ParseAddr(n.server.TailcatAddr())

@@ -792,8 +792,9 @@ Mitosis protocol tests are Orb-owned checks, separate from Pi conformance famili
 
 A profile has at most one sync group (`mitosis/sync.go`): a discovery scope whose ID derives from
 its owner's PeerID and whose first member is the owner. Membership is explicit and the owner's:
-`sync add|remove` changes it on the owner, `sync join <owner>` follows one; nothing rebuilds it
-from paired peers, so a removed device stays out. Each device publishes one vault in its own
+`sync add|remove` changes it on the owner, `sync join <owner>` follows one, and a member leaves
+by removing the owner (to follow or start another group if the owner is gone); nothing rebuilds
+it from paired peers, so a removed device stays out. Each device publishes one vault in its own
 signed record of the group scope (`extensions.vault`, `orb.mitosis-vault/1`), so vaults travel on
 the existing reconciliation and any member relays the owner's while the owner is off. A vault is
 the bundle sealed once with AES-256-GCM under a fresh 256-bit key, and that key sealed to each
@@ -805,8 +806,9 @@ opened only from current, unblocked members.
 
 A round (`orb mitosis sync`, the `sync` admin method on every host with a Mitosis) reads before it
 publishes: the owner merges into auth.json the entries members handed it, keeping its own; a
-member takes the owner's entries over its own, then hands the result to the owner. Entries merge
-by name and are never deleted. The bundle is one JSON object per data class; v1 carries
+member takes the owner's entries over its own, then hands the result to the owner. Either way an
+OAuth entry that expires later wins, so a token refreshed on any device replaces the copies its
+refresh made stale. Entries merge by name and are never deleted. The bundle is one JSON object per data class; v1 carries
 credentials only, and a class added later is one more field. Sync runs on demand. A removed or
 blocked device keeps what it already received and gets nothing sealed after; a device that boots
 unattended holds the key to its own vault, so a low-trust host belongs in a profile of its own
