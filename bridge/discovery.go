@@ -13,6 +13,9 @@ import (
 	"github.com/OrdalieTech/orb/bridge/vault"
 )
 
+// A Bridge is the Store the vault sync orchestration drives.
+var _ vault.Store = (*Bridge)(nil)
+
 // X25519Public is this peer's Mitosis sealing key, derived from its Ed25519
 // identity (vault.X25519FromSeed), so profile secrets can be sealed to it.
 func (b *Bridge) X25519Public() ([]byte, error) {
