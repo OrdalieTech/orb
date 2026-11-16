@@ -80,6 +80,7 @@ type registration struct {
 }
 type Mitosis struct {
 	mu             sync.Mutex
+	round          sync.Mutex // held through a sync round and each membership change, so no round outlives its group
 	store          document.Document
 	state          state
 	active         map[string]registration

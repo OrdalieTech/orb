@@ -121,6 +121,8 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 	if err := protocol.Decode(params, &p); err != nil {
 		return nil, err
 	}
+	b.round.Lock()
+	defer b.round.Unlock()
 	if err := b.setGroup(p.Join, p.Add, p.Remove); err != nil {
 		return nil, err
 	}
@@ -130,7 +132,7 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 	if left && p.Remove != "" {
 		return JSON(struct{}{}), nil
 	}
-	result, err := b.Sync(ctx, endpoints)
+	result, err := b.sync(ctx, endpoints)
 	if p.Add != "" && Code(err) == "resource_exhausted" {
 		_ = b.setGroup("", "", p.Add)
 	}
@@ -142,6 +144,12 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 // over its own, drops what the owner stopped sharing, and hands the owner only what its set lacks
 // or holds otherwise. It returns the group and the entries the round changed here.
 func (b *Mitosis) Sync(ctx context.Context, endpoints []Locator) (json.RawMessage, error) {
+	b.round.Lock()
+	defer b.round.Unlock()
+	return b.sync(ctx, endpoints)
+}
+
+func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessage, error) {
 	b.mu.Lock()
 	group, credentials, self := b.state.Group, b.credentials, b.PeerID()
 	members := b.state.Scopes[group]
