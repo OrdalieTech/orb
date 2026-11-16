@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"path"
 	"slices"
 	"strings"
 
@@ -58,6 +59,7 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 	if err != nil {
 		return nil, err
 	}
+	b.SetCredentials(store.Document(path.Join(worker.AgentDir, "auth.json")))
 	enrolled := store.Document(instanceDocument)
 	raw, err := enrolled.Read(context.Background())
 	if err != nil {

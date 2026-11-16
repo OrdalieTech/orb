@@ -69,7 +69,7 @@ type state struct {
 	Scopes      map[string][]string        `json:"scopes"`
 	Records     map[string]Record          `json:"records"`
 	Peers       map[string]string          `json:"peers"`
-	Vaults      map[string]json.RawMessage `json:"vaults,omitempty"`
+	Group       string                     `json:"sync_group,omitempty"`
 	Transport   json.RawMessage            `json:"transport,omitempty"`
 }
 type registration struct {
@@ -88,6 +88,7 @@ type Bridge struct {
 	changes        chan struct{}
 	host           Host
 	name           string
+	credentials    document.Document
 }
 
 // Host serves a peer's machine-level calls — the threads stored on this machine, and starting
@@ -162,7 +163,7 @@ func Open(store document.Document, create bool) (*Bridge, error) {
 			return nil, err
 		}
 		group := protocol.NewID()
-		b.state = state{Version: 1, Key: key, Personal: group, Groups: map[string]string{group: "personal"}, Instances: map[string]Instance{}, Blocked: map[string]bool{}, Invitations: map[string]invitationState{}, Scopes: map[string][]string{}, Records: map[string]Record{}, Peers: map[string]string{}, Vaults: map[string]json.RawMessage{}}
+		b.state = state{Version: 1, Key: key, Personal: group, Groups: map[string]string{group: "personal"}, Instances: map[string]Instance{}, Blocked: map[string]bool{}, Invitations: map[string]invitationState{}, Scopes: map[string][]string{}, Records: map[string]Record{}, Peers: map[string]string{}}
 		if err = b.save(); err != nil {
 			return nil, err
 		}
@@ -176,10 +177,6 @@ func Open(store document.Document, create bool) (*Bridge, error) {
 		}
 		if len(s.Key) != ed25519.PrivateKeySize || s.Groups == nil || s.Instances == nil || s.Blocked == nil || s.Invitations == nil || s.Scopes == nil || s.Records == nil || s.Peers == nil || s.Groups[s.Personal] == "" {
 			return nil, errors.New("corrupt bridge profile")
-		}
-		// Vaults is a later addition; a profile written before it loads with none.
-		if s.Vaults == nil {
-			s.Vaults = map[string]json.RawMessage{}
 		}
 		key := ed25519.NewKeyFromSeed(s.Key[:ed25519.SeedSize])
 		if subtle.ConstantTimeCompare(key, s.Key) != 1 {

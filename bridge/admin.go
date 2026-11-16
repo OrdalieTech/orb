@@ -11,7 +11,7 @@ import (
 
 // Admin is deliberately absent from the remote routing table. Hosts expose it
 // only after local-owner authentication.
-func (b *Bridge) Admin(_ context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+func (b *Bridge) Admin(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	switch method {
 	case "status", "peers", "grants", "groups", "scopes", "instances":
 		var p struct{}
@@ -181,6 +181,19 @@ func (b *Bridge) Admin(_ context.Context, method string, params json.RawMessage)
 		r.Group = p.Group
 		b.state.Instances[p.Instance] = r
 		return JSON(struct{}{}), b.save()
+	case "sync":
+		var p struct {
+			Join   string `json:"join,omitempty"`
+			Add    string `json:"add,omitempty"`
+			Remove string `json:"remove,omitempty"`
+		}
+		if err := protocol.Decode(params, &p); err != nil {
+			return nil, err
+		}
+		if err := b.setGroup(p.Join, p.Add, p.Remove); err != nil {
+			return nil, err
+		}
+		return b.Sync(ctx)
 	case "takeover":
 		var p struct {
 			Instance string `json:"instance_id"`

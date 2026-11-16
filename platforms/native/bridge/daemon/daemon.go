@@ -250,6 +250,7 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 	service := New(serviceCtx, state, profile, version, b, node, web.URL)
 	b.SetHost(service.host)
 	b.SetName(machineName())
+	b.SetCredentials(state.Credentials(state.AgentDir))
 	defer service.stopLaunched()
 	reexec := ""
 	service.restart = func(path string) { reexec = path; time.AfterFunc(300*time.Millisecond, stop) }
@@ -268,26 +269,6 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 			}
 			time.AfterFunc(100*time.Millisecond, stop)
 			return bridge.JSON(struct{}{}), nil
-		}
-		if method == "mitosis.sync" {
-			var p struct {
-				Scope       string `json:"scope"`
-				Credentials []byte `json:"credentials"`
-			}
-			if err := protocol.Decode(params, &p); err != nil {
-				return nil, err
-			}
-			if p.Scope == "" {
-				p.Scope = MitosisScope(profile)
-			}
-			bundle, found, err := service.mitosisSync(ctx, p.Scope, p.Credentials)
-			if err != nil {
-				return nil, err
-			}
-			return bridge.JSON(struct {
-				Found       bool   `json:"found"`
-				Credentials []byte `json:"credentials,omitempty"`
-			}{found, bundle.Credentials}), nil
 		}
 		return service.Admin(ctx, method, params)
 	}

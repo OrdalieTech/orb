@@ -10,124 +10,7 @@ import (
 	"strings"
 
 	"github.com/OrdalieTech/orb/bridge/protocol"
-	"github.com/OrdalieTech/orb/bridge/vault"
 )
-
-// A Bridge is the Store the vault sync orchestration drives.
-var _ vault.Store = (*Bridge)(nil)
-
-// OpenVault reads the scope's current vault and decrypts it with this peer's
-// identity-derived key. ok is false (no error) when nothing is sealed to this
-// peer — never admitted, or revoked — so callers leave local secrets untouched.
-// Decryption uses the private key, which never leaves this process.
-func (b *Bridge) OpenVault(scope string) (vault.Bundle, bool, error) {
-	priv, err := vault.X25519FromSeed(b.state.Key[:ed25519.SeedSize])
-	if err != nil {
-		return vault.Bundle{}, false, err
-	}
-	return vault.Apply(b, scope, b.PeerID(), priv)
-}
-
-// X25519Public is this peer's Mitosis sealing key, derived from its Ed25519
-// identity (vault.X25519FromSeed), so profile secrets can be sealed to it.
-func (b *Bridge) X25519Public() ([]byte, error) {
-	k, err := vault.X25519FromSeed(b.state.Key[:ed25519.SeedSize])
-	if err != nil {
-		return nil, err
-	}
-	return k.PublicKey().Bytes(), nil
-}
-
-// SetVault records the profile vault this peer publishes to a scope; the next
-// PublishContact carries it. Passing a nil document clears it.
-func (b *Bridge) SetVault(scope string, doc *vault.Document) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.state.Scopes[scope] == nil {
-		return Fail("unauthorized")
-	}
-	if doc == nil {
-		delete(b.state.Vaults, scope)
-		return b.save()
-	}
-	raw := JSON(doc)
-	if len(raw) > protocol.MaxRecord {
-		return Fail("resource_exhausted")
-	}
-	b.state.Vaults[scope] = raw
-	return b.save()
-}
-
-// ScopeVault returns the newest vault published to a scope by any member, with the
-// PeerID that published it, or a nil document when none has been.
-func (b *Bridge) ScopeVault(scope string) (*vault.Document, string, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.closed || b.failed {
-		return nil, "", Fail("unavailable")
-	}
-	prefix := scope + "/"
-	var best *vault.Document
-	var from string
-	for k, r := range b.state.Records {
-		if !strings.HasPrefix(k, prefix) {
-			continue
-		}
-		c, err := r.Verify()
-		if err != nil || c.Withdrawn {
-			continue
-		}
-		raw, ok := c.Extensions["vault"]
-		if !ok {
-			continue
-		}
-		var doc vault.Document
-		if json.Unmarshal(raw, &doc) != nil || doc.Schema != vault.Schema {
-			continue
-		}
-		if best == nil || doc.Revision > best.Revision {
-			d := doc
-			best, from = &d, c.Peer
-		}
-	}
-	return best, from, nil
-}
-
-// ScopeMembers lists the peers in a scope that advertise a sealing key, newest
-// records only, sorted by PeerID. It is what the owner seals a vault to.
-func (b *Bridge) ScopeMembers(scope string) ([]vault.Member, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.closed || b.failed {
-		return nil, Fail("unavailable")
-	}
-	prefix := scope + "/"
-	var out []vault.Member
-	for k, r := range b.state.Records {
-		if !strings.HasPrefix(k, prefix) {
-			continue
-		}
-		c, err := r.Verify()
-		if err != nil || c.Withdrawn {
-			continue
-		}
-		raw, ok := c.Extensions["x25519"]
-		if !ok {
-			continue
-		}
-		var enc string
-		if json.Unmarshal(raw, &enc) != nil {
-			continue
-		}
-		pub, err := base64.RawURLEncoding.Strict().DecodeString(enc)
-		if err != nil || len(pub) != 32 {
-			continue
-		}
-		out = append(out, vault.Member{PeerID: c.Peer, Public: pub})
-	}
-	slices.SortFunc(out, func(a, z vault.Member) int { return strings.Compare(a.PeerID, z.PeerID) })
-	return out, nil
-}
 
 type Locator struct {
 	Transport string `json:"transport"`
@@ -198,6 +81,9 @@ func (b *Bridge) SetScope(id string, peers []string) error {
 func (b *Bridge) PublishContact(scope, name string, endpoints []Locator, withdraw bool) (Record, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.publishContact(scope, name, endpoints, withdraw, nil)
+}
+func (b *Bridge) publishContact(scope, name string, endpoints []Locator, withdraw bool, extensions map[string]json.RawMessage) (Record, error) {
 	if b.state.Scopes[scope] == nil {
 		return Record{}, Fail("unauthorized")
 	}
@@ -213,21 +99,7 @@ func (b *Bridge) PublishContact(scope, name string, endpoints []Locator, withdra
 	if rev == ^uint64(0) {
 		return Record{}, Fail("resource_exhausted")
 	}
-	var ext map[string]json.RawMessage
-	if xpub, err := b.X25519Public(); err == nil {
-		if enc, err := json.Marshal(base64.RawURLEncoding.EncodeToString(xpub)); err == nil {
-			ext = map[string]json.RawMessage{"x25519": enc}
-		}
-	}
-	// A peer that has set a profile vault carries it in its own record, so it
-	// gossips to the scope on the existing reconcile loop with no extra plumbing.
-	if doc := b.state.Vaults[scope]; len(doc) > 0 && !withdraw {
-		if ext == nil {
-			ext = map[string]json.RawMessage{}
-		}
-		ext["vault"] = doc
-	}
-	c := Contact{Schema: "orb.peer-record/1", Scope: scope, Peer: b.PeerID(), Revision: strconv.FormatUint(rev+1, 10), Name: name, Protocols: []string{protocol.Version}, Endpoints: endpoints, Withdrawn: withdraw, Extensions: ext}
+	c := Contact{Schema: "orb.peer-record/1", Scope: scope, Peer: b.PeerID(), Revision: strconv.FormatUint(rev+1, 10), Name: name, Protocols: []string{protocol.Version}, Endpoints: endpoints, Withdrawn: withdraw, Extensions: extensions}
 	data, err := protocol.Canonical(JSON(c))
 	if err != nil || len(data) > protocol.MaxRecord {
 		return Record{}, Fail("resource_exhausted")
