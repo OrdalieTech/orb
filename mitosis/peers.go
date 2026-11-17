@@ -377,15 +377,16 @@ func (ps *Peers) Greet() {
 }
 
 // Reconcile exchanges scope records with members on every change and every 15 s. A link whose
-// records and channel are as they were after its last exchange is skipped until five minutes
-// have passed, so an idle scope costs no traffic.
+// records and channel are as they were after its last exchange waits five minutes, so an idle
+// scope costs no traffic, and one that failed waits a minute, so an offline member is not dialled
+// (a whole Tailcat client started and stopped) every sweep.
 func (ps *Peers) Reconcile() {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	type mark struct {
 		versions string
 		c        *protocol.Conn
-		at       time.Time
+		until    time.Time
 	}
 	var mu sync.Mutex
 	last := map[string]mark{}
@@ -419,7 +420,7 @@ func (ps *Peers) Reconcile() {
 				mu.Lock()
 				m, ok := last[k]
 				mu.Unlock()
-				if ok && m.versions == string(JSON(versions)) && m.c == ps.Mitosis.Connection(peer) && time.Since(m.at) < 5*time.Minute {
+				if ok && m.versions == string(JSON(versions)) && m.c == ps.Mitosis.Connection(peer) && time.Now().Before(m.until) {
 					continue
 				}
 				wg.Add(1)
@@ -429,14 +430,16 @@ func (ps *Peers) Reconcile() {
 					ctx, cancel := context.WithTimeout(ps.ctx, 10*time.Second)
 					defer cancel()
 					c, err := ps.Peer(ctx, peer, "")
-					if err != nil || ps.exchange(ctx, c, scope, peer, versions) != nil {
-						return
+					if err == nil {
+						err = ps.exchange(ctx, c, scope, peer, versions)
 					}
-					if after, err := ps.Mitosis.Versions(peer, scope); err == nil {
-						mu.Lock()
-						last[k] = mark{string(JSON(after)), c, time.Now()}
-						mu.Unlock()
+					m := mark{string(JSON(versions)), ps.Mitosis.Connection(peer), time.Now().Add(time.Minute)}
+					if after, e := ps.Mitosis.Versions(peer, scope); err == nil && e == nil {
+						m = mark{string(JSON(after)), c, time.Now().Add(5 * time.Minute)}
 					}
+					mu.Lock()
+					last[k] = m
+					mu.Unlock()
 				}()
 			}
 		}
