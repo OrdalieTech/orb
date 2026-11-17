@@ -35,6 +35,8 @@ jobs:
             p {print}
           ' CHANGELOG.md > /tmp/notes.md
           test -s /tmp/notes.md
+      - name: Build the browser page
+        run: make browser-dist VERSION="${GITHUB_REF_NAME#v}"
       - name: Build release artifacts without publishing
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
@@ -71,6 +73,7 @@ jobs:
           source_archive="dist/orb_${version}_source.tar.gz"
           test -f "${source_archive}"
           grep -F "orb_${version}_source.tar.gz" dist/checksums.txt
+          cp .tools/orb_"${version}"_browser.tar.gz dist/
           (cd dist && sha256sum -c checksums.txt)
           build_root="$(mktemp -d)"
           trap 'rm -rf "${build_root}"' EXIT
