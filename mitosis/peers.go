@@ -350,11 +350,15 @@ func (ps *Peers) Greet() {
 	})
 	// A peer that restarted behind a NAT cannot always dial back (a phone after an app update):
 	// every known peer without a channel is dialled again until one opens. The members of this
-	// device's own sync group dial it, so a group's owner holds no client for each of them.
+	// device's own sync group reached over Tailcat dial it, so a group's owner holds no client for
+	// each of them; one reached over WebSocket (a Worker, which cannot dial) is still greeted.
 	for {
 		own := status.Scopes[groupID(ps.Mitosis.PeerID())]
 		for _, peer := range status.Peers {
-			if status.States[peer] == "blocked" || peer == ps.Mitosis.PeerID() || ps.Mitosis.Connection(peer) != nil || slices.Contains(own, peer) {
+			if status.States[peer] == "blocked" || peer == ps.Mitosis.PeerID() || ps.Mitosis.Connection(peer) != nil {
+				continue
+			}
+			if locator, _ := ps.Mitosis.PeerLocator(peer); slices.Contains(own, peer) && strings.HasPrefix(locator, "tc") {
 				continue
 			}
 			go func() {

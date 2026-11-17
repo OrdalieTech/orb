@@ -914,7 +914,7 @@ members a power of two ahead of it on the ring of members by PeerID, and any mem
 channel to, so a change crosses n members in about log2(n) hops over about log2(n) dialled
 channels a device. `peers.list` carries the caller's revisions and returns only what it lacks;
 a link whose records and channel are unchanged since its last exchange waits five minutes, and
-one that failed a minute. A sync group's owner leaves its members to dial it, a device hangs up
+one that failed a minute. A sync group's owner leaves the members it reaches over Tailcat to dial it, a device hangs up
 the channels it dialled to scope members it neither links to nor paired with, and a paired
 peer whose channel from here died after a minute or more is dialled again at once.
 Signed recovery locators must authenticate the already-pinned PeerID. Native direct and
