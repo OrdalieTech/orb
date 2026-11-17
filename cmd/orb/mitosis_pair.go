@@ -37,7 +37,7 @@ func runMitosisPair(ctx context.Context, profile string, auto bool, streams cliS
 		return reportCLIError(streams.Stderr, err)
 	}
 	// Interrupted, the invitation is withdrawn: its full code, printed below, must not stay usable.
-	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	defer func() {
 		done, stop := context.WithTimeout(context.Background(), 5*time.Second)
@@ -75,7 +75,10 @@ func runMitosisPair(ctx context.Context, profile string, auto bool, streams cliS
 		}
 		return mitosis.Invitation{}, false, errors.New("invitation expired; run orb mitosis again")
 	})
-	if err != nil {
+	if err != nil && ctx.Err() != nil {
+		_, _ = fmt.Fprintln(streams.Stderr, "Cancelled; the invitation is withdrawn.")
+		return 130
+	} else if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
 	if auto {
@@ -131,6 +134,9 @@ func yes(in *bufio.Reader) bool {
 // this Orb is in no sync group yet, follows the inviter's. Typing the code is the yes here: the
 // inviter is the one that checks a fingerprint.
 func runMitosisJoin(ctx context.Context, profile string, args []string, streams cliStreams) int {
+	if slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, "-") }) {
+		return reportCLIError(streams.Stderr, errors.New("join takes the code alone: orb mitosis join <code>"))
+	}
 	text := strings.Join(args, "")
 	if text == "" {
 		raw, err := io.ReadAll(io.LimitReader(streams.Stdin, protocol.MaxFrame+1))
