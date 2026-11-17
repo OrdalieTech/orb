@@ -707,21 +707,25 @@ separate, pending slices of the active plan.
 ## Orb Mitosis v1 — implementation contract
 
 The owner-approved native delivery is one `orb` executable: `orb mitosis` administers an
-explicit profile, while `orb --mitosis <profile> --instance <alias>` attaches a runtime.
+explicit profile, while `orb --mitosis <profile> --instance <alias>` attaches a runtime. The unit
+peers see is the agent: an agent directory with its identity, memory and tools, one Mitosis
+identity. A conversation is an address under its agent, `(peer, session_id)`; the runtimes (one per
+running Orb, each holding one conversation at a time) register as instances, an internal detail
+that never crosses the wire.
 Mitosis management is built into Settings, Ctrl+P, and `/mitosis`; opening it starts no service.
 Its home page contains the service switch, Add device, pending approvals, and a live device list.
 Add device offers SSH setup or invitation exchange; selecting a device opens its live conversations
-directly. Advanced contains only agent access and the local fingerprint. Groups, grants,
-scopes, and receipts remain CLI administration. Mitosis has no duplicate toggles in Plugins.
+directly. Advanced contains only agent access and the local fingerprint. Grants, scopes, and
+receipts remain CLI administration. Mitosis has no duplicate toggles in Plugins.
 Pairing explicitly activates the service when needed. Invitations are bounded,
 versioned copy/paste codes; each owner confirms trust in the other identity. New TUI/SSH pairings
-grant full controller access to all current and future conversations in both directions, including
-new groups; existing restricted grants are unchanged. The reserved grant selector `group_id: "*"` means all groups, with `include_future`
-retaining its existing snapshot-versus-future meaning. Trust does not grant remote administration,
+grant full controller access to the agent, every conversation it runs now or later, in both
+directions: a grant names a principal, its permissions and, for an agent principal, a destination,
+and always covers the whole agent. Trust does not grant remote administration,
 discovery scopes, or agent-subject authority. Saved pairings survive service restarts; connection badges derive from
 live streams, and stopping waits for the admin connection to close. Open panels refresh bounded
 reads once per second, preserve selection by identity, and cancel work on close. The conversation
-picker reads bounded catalog pages, excludes disconnected instances, and reconnects after daemon
+picker reads bounded pages of the agent's open conversations and reconnects after daemon
 restarts without replaying any commands. A previously deliberate Stop remains effective until
 explicit activation.
 Networking remains explicitly enabled, and its focused remote conversation view requires no local model credentials.
@@ -752,18 +756,22 @@ Neither `ai`, `engine`, nor the `agent` root package imports Mitosis, Tailcat, o
 dependencies; `agent/mitosis` adapts runtimes to Mitosis. Closing an
 attachment, view, or Mitosis service never disposes a runtime. Stores, credentials, transports,
 and lifetimes are explicit; imports create no files or network activity. Multiple independent
-Mitosis instances and runtimes can coexist in one process. Only interchangeable attachment and persistence
+Mitosis identities and runtimes can coexist in one process. Only interchangeable attachment and persistence
 boundaries need interfaces. Native storage stays outside Pi-managed files and keeps mitosis
 metadata, instance attachment credentials, and operation ledgers separately owned.
 
 Native IPC separates local-owner administration from scoped instance attachment, checks OS peer
 credentials, fences registrations with persistent generations, and refuses simultaneous writers.
-Mitosis loss marks instances unavailable while their local work continues. Pairing pins Ed25519
+Mitosis loss marks runtimes unavailable while their local work continues. Pairing pins Ed25519
 PeerIDs and requires a recoverable one-use invitation claim plus local-owner approval of exact
-grants. Group membership is administrative; fixed selectors snapshot InstanceIDs, while future
-membership requires explicit selection. Discovery scopes grant no execution authority. Agent
-calls require source and destination grants, derive subjects from attachment credentials, and
-never transparently forward execution through a third peer.
+grants. Discovery scopes grant no execution authority. Agent calls require source and
+destination grants, derive the agent subject from attachment credentials, and never
+transparently forward execution through a third peer. A call addressed to a conversation goes
+to the runtime holding it; one no runtime holds is launched where the host launches Orbs
+(`host.launch`, native), and a call with no conversation goes to the agent's default one: native,
+its stored conversation written in last, resumed, or a new one in `~` when it has none; a Worker
+object or browser tab, its one running runtime. A session change answers with the conversation
+the runtime holds after it, the address that follows.
 
 The transport is pinned TLS 1.3 with ALPN `orb-mitosis/1` over Tailcat streams, without TLS
 resumption or Tailcat shell/file/proxy/exit-node services. Persist transport keys and PSKs.
@@ -874,20 +882,20 @@ Every request is one JSON-RPC 2.0 object with a string ID; batches and notificat
 unsupported. `mitosis.hello` exchanges `peer_id`, `mitosis_boot_id`, `protocol`, `max_frame`,
 and `max_page` before application methods. Frame limits are the smaller advertised limit
 (minimum 1 KiB); oversized results fail explicitly, and pages respect the smaller item limit.
-Counters use canonical unsigned decimal strings; operation, instance, group, scope, and boot
+Counters use canonical unsigned decimal strings; operation, instance, scope, and boot
 IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain Orb session IDs.
 
 | Method | Parameters and result |
 |---|---|
-| `mitosis.ping` | `{}` → optional `name`, what the machine is called, for a peer granted anything there |
+| `mitosis.ping` | `{}` → optional `name`, what the agent is called, for a peer granted anything there |
 | `pair.claim` | `invitation_id`, secret `token`, optional claimant `locator` → recoverable invitation status |
 | `pair.status` | `invitation_id` → status for its authenticated claimant |
-| `instances.list` | optional `cursor` → authorized `items`, optional continuation `cursor` |
-| `instances.describe` | `instance_id`, optional `catalog` → current generation, session/revision/execution target, optional name/workspace/input request and provider plan limits (`usage`), permitted methods, and models and commands with their `catalog` digest, left out when the request's matches |
-| `instances.call` | `instance_id`, `service`, `method`, `args`; mutations additionally require `session_id`, `expected`, `operation_id` → inspection/list result or durable receipt |
-| `operations.get` | `instance_id`, `operation_id` → caller-scoped receipt |
-| `events.subscribe` | optional `instance_id` (absent means catalog); either replay `cursor`, or optional `snapshot_id` and page `offset` → replay events or frozen transcript page plus cursor and partial message |
-| `events.unsubscribe` | `instance_id`, `snapshot_id` → release retained snapshot |
+| `agent.describe` | optional `cursor` → optional `name` and the open conversations under `agent.list` as `items` of `{session_id, title, cwd, state}` (`idle`, `running`, `asking`), optional continuation `cursor` |
+| `conversation.describe` | `session_id`, optional `catalog` → the holding runtime's generation, session/revision/execution target, optional name/workspace/input request and provider plan limits (`usage`), permitted methods, and models and commands with their `catalog` digest, left out when the request's matches |
+| `agent.call` | optional `session_id` (absent: the default conversation), `method`, `args`, optional `expected` and `operation_id` (filled from the holding runtime when absent) → inspection/list result or durable receipt, with the `session_id` the runtime holds after the call |
+| `operations.get` | `session_id`, `operation_id` → caller-scoped receipt |
+| `events.subscribe` | optional `session_id` (absent means catalog); either replay `cursor`, or optional `snapshot_id` and page `offset` → replay events or frozen transcript page plus cursor and partial message |
+| `events.unsubscribe` | `session_id`, `snapshot_id` → release retained snapshot |
 | `peers.list` | `scope_id`, `have` (the caller's revision by record peer), optional `cursor` → the scoped signed records newer than `have`, and `behind`, the record peers the caller holds newer or alone |
 | `peers.publish` | bounded `records` array → validated, durably merged revisions |
 
@@ -900,7 +908,7 @@ is `{}`, switch is `{session_id}`, fork is `{entry_id}`, and model selection is
 session's skills then the files fd finds, under `agent.prompt`; an image is `{ref, size}` →
 `{data, mime_type}`, fitted within `size` pixels and half a frame, under `agent.inspect`.
 Read-only inspection needs no operation ID. An optional `subject` on remote calls
-is restricted to an instance subject and comes from the source mitosis's credential-bound
+is restricted to the agent subject and comes from the source mitosis's credential-bound
 outbound route; administrative methods never appear in this routing table.
 
 The CLI caches visited remote session summaries and visible message excerpts through

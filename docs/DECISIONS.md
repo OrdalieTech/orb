@@ -105,50 +105,19 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
 - **P11 — Deployable anywhere, connected as peers.** Orb is a runtime to deploy, not a remote
   client: every P2 target runs the full core with its own model calls, tools, sessions and state,
   and hosted targets (Cloudflare Durable Objects, self-hosted workerd) are in scope. Deployments
-  reach each other as Mitosis peers: people control conversations on any Orb that granted them, and
-  an Orb's agent calls another Orb only under its own grants. A target is supported only with
-  evidence: its ports pass the conformance suites, the cross-host scenario matches native, a target
-  end-to-end test runs in CI, one documented command deploys and removes it, and it states its
-  capability profile and Mitosis role. `docs/deployments.md` is the catalogue; a target's status
-  there changes only with that evidence. Mitosis is core: every Orb, on every host, has a peer
-  identity, registers its sessions as instances, and dials peers through the transports its host
-  supplies. Listening, advertised addresses and every grant stay explicit and owner-approved;
-  controller and agent-subject authority never merge.
-
-Older numbers still cited in code and docs map as follows: D1/D3 → P1, D7/D8 → P2, D16 and
-D32–D34 → P3/P4, D2/D4/D5/D6/D13 → P5, D30/D35 → P6, D31 → P7, G4 (self-update) → "Releases".
-D10, D12, D14, D15, D18, D24 and D27–D29 are live decisions below.
-
-## The compat kernel
-
-The kernel is every surface an external artifact can observe: files on disk, bytes on the wire,
-and the extension and RPC protocols. Internal Go APIs, package layout, feature set and UI are not
-kernel. Kernel surfaces:
-
-- Configuration file formats and relative layout under the explicitly chosen agent directory
-  (Orb defaults to `~/.orb/agent/`, not Pi’s directory): `settings.json` (global + project merge semantics),
-  `models.json`, `auth.json` (0600), `trust.json`, `keybindings.json`.
-- Product session JSONL v3 (+ v1/v2 migration).
-- Agent event JSON taxonomy and payloads (load-bearing for trace conformance).
-- RPC-mode frames and print/JSON output shapes.
-- Provider request/stream wire shapes, including `pi-messages`.
-- The JS extension surface: host protocol, `orb-extension-sdk` (`@earendil-works/pi-*` API),
-  pi package manifests, skills and prompt-template formats.
-- HTML-export theme variables (F6).
-
-CLI-flag parity is pursued but not contractual. Only released upstream versions are pinned, and
-only kernel paths carry port obligation. The kernel is operationally defined by the conformance
-suite: a coverage gap is closed by a fixture, never by a mapping table. Families F1–F13 gate it;
-the render families are Orb-owned (P6). Growing or shrinking the kernel is an owner decision
-recorded here. Fixture strategy: language-neutral goldens extracted from upstream and consumed by
-both sides, plus upstream's RPC/CLI tests run as-is against the orb binary.
-
-## Live decisions
-
-Each holds until changed by owner-signed decision.
-
-### Providers and models
-
+  reach each other as Mitosis peers, and the unit of Mitosis is the agent: an agent directory with
+  its identity, memory and tools, which is one peer. Addressing, discovery, grants and the name
+  shown are per agent; a conversation is only an address under its agent, and a message to an
+  agent with none named goes to its default conversation. People control an agent's conversations
+  on any Orb that granted them, and an agent calls another only under its own grants. A target is
+  supported only with evidence: its ports pass the conformance suites, the cross-host scenario
+  matches native, a target end-to-end test runs in CI, one documented command deploys and removes
+  it, and it states its capability profile and Mitosis role. `docs/deployments.md` is the
+  catalogue; a target's status there changes only with that evidence. Mitosis is core: every Orb,
+  on every host, has a peer identity for its agent, routes a conversation's calls to the runtime
+  holding it, and dials peers through the transports its host supplies. Listening, advertised
+  addresses and every grant stay explicit and owner-approved; controller and agent authority never
+  merge.
 - **D10 — Lean provider layer.** Wire codecs are Orb's own, and an official Go SDK stays only
   where it carries protocol work: `aws-sdk-go-v2/config` (the AWS shared config and credential
   chain, on native hosts). The `openai-go/v3` and Anthropic clients only posted bodies Orb had

@@ -481,7 +481,8 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 	case "sync.group": // a paired device joining this one's group, which a first add creates
 		b.mu.Lock()
 		defer b.mu.Unlock()
-		if b.state.Peers[peer] == "" || b.state.Blocked[peer] {
+		// Paired: a saved peer, or one holding a grant, as a browser tab with no address is.
+		if b.state.Peers[peer] == "" && !slices.ContainsFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == peer }) || b.state.Blocked[peer] {
 			return nil, Fail("unauthorized")
 		}
 		if self := b.PeerID(); b.state.Group == "" {
