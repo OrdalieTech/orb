@@ -28,12 +28,19 @@ func UnitName(profile string) string {
 	return "orb-mitosis-" + profile + ".service"
 }
 
+// unitEnv is the environment a unit keeps: PATH, and the directories this Orb runs on.
+var unitEnv = []string{"PATH", "ORB_MITOSIS_HOME", "ORB_STATE_HOME", "ORB_AGENT_DIR"}
+
 // unit restarts a crashed Mitosis but not a deliberately stopped one (`orb mitosis stop`
 // exits cleanly). It carries PATH so the Orbs it starts for peers find the owner's tools.
-func unit(exe, profile string, env map[string]string) string {
+func unit(exe, profile string, args []string, env map[string]string) string {
+	command := systemdQuote(exe, true)
+	for _, arg := range args {
+		command += " " + systemdQuote(arg, true)
+	}
 	lines := []string{"[Unit]", "Description=Orb Mitosis (" + profile + ")", "Wants=network-online.target", "After=network-online.target", "",
-		"[Service]", fmt.Sprintf("ExecStart=%s mitosis run --profile %s", systemdQuote(exe, true), systemdQuote(profile, true)), "Restart=on-failure", "RestartSec=2"}
-	for _, k := range []string{"PATH", "ORB_MITOSIS_HOME", "ORB_STATE_HOME"} {
+		"[Service]", "ExecStart=" + command, "Restart=on-failure", "RestartSec=2"}
+	for _, k := range unitEnv {
 		if v := env[k]; v != "" {
 			lines = append(lines, "Environment="+systemdQuote(k+"="+v, false))
 		}
@@ -101,10 +108,10 @@ func Install(ctx context.Context, state *native.State, profile string) (string, 
 		return "", err
 	}
 	env := map[string]string{}
-	for _, k := range []string{"PATH", "ORB_MITOSIS_HOME", "ORB_STATE_HOME"} {
+	for _, k := range unitEnv {
 		env[k] = os.Getenv(k)
 	}
-	if err = os.WriteFile(path, []byte(unit(exe, profile, env)), 0o644); err != nil {
+	if err = os.WriteFile(path, []byte(unit(exe, profile, runArgs(state, profile), env)), 0o644); err != nil {
 		return "", err
 	}
 	// A Mitosis started by hand holds the socket; it hands over to the service.

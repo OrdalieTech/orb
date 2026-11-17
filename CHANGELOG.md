@@ -15,6 +15,8 @@ Bridge becomes Mitosis, with no alias, and replicates a profile: its devices, a 
 
 - Mitosis networking scales: a sync group reconciles over about log2(n) links per device instead of with every member, exchanges only what the other side lacks, keeps one channel per pair, closes the Tailcat engines it no longer uses, and pings a channel only when it is quiet. Measured with 32 real devices on one machine: idle traffic per device 13 MB → 231 KB a minute, idle CPU 12 % → 0.4 %, a change reaching every member 8.7 → 0.2 s. A device can now pair with more than eight others at once, and members find their owner again within about a second after it restarts.
 
+- `orb --pi-files mitosis start` and `service install` now run the service on Pi files too, with the agent directory it was started with, instead of a native store of its own, so its devices share the auth.json and memory that Orb uses.
+
 - Pairing or trusting a device on a profile other than `personal` no longer turns the `mitosis` plugin on, so later Orbs on that machine stop starting a second, unpaired `personal` Mitosis.
 
 ## [0.22.0] - 2026-11-15

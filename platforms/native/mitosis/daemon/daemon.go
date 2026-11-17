@@ -79,6 +79,15 @@ func WaitStopped(ctx context.Context, client *protocol.Conn) error {
 	}
 }
 
+// runArgs runs the service on this process's storage: Pi files when it has no native state.
+func runArgs(state *native.State, profile string) []string {
+	args := []string{"mitosis", "run", "--profile", profile}
+	if state == nil {
+		return append([]string{"--pi-files"}, args...)
+	}
+	return args
+}
+
 func Start(ctx context.Context, state *native.State, profile string, explicit bool) error {
 	dir, err := nativemitosis.Dir(profile)
 	if err != nil {
@@ -109,7 +118,7 @@ func Start(ctx context.Context, state *native.State, profile string, explicit bo
 		return err
 	}
 	defer func() { _ = log.Close() }()
-	cmd := exec.Command(exe, "mitosis", "run", "--profile", profile)
+	cmd := exec.Command(exe, runArgs(state, profile)...)
 	cmd.SysProcAttr = native.DetachedProcAttr()
 	cmd.Stdout = log
 	cmd.Stderr = log
