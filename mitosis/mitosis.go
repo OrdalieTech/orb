@@ -58,21 +58,24 @@ type invitationState struct {
 	Contested bool `json:"contested,omitempty"`
 }
 type state struct {
-	Version     int                        `json:"version"`
-	Key         []byte                     `json:"key"`
-	Personal    string                     `json:"personal_group"`
-	Groups      map[string]string          `json:"groups"`
-	Instances   map[string]Instance        `json:"instances"`
-	Grants      []Grant                    `json:"grants"`
-	Blocked     map[string]bool            `json:"blocked"`
-	Invitations map[string]invitationState `json:"invitations"`
-	Scopes      map[string][]string        `json:"scopes"`
-	Records     map[string]Record          `json:"records"`
-	Peers       map[string]string          `json:"peers"`
-	Group       string                     `json:"sync_group,omitempty"`
-	Shared      map[string][]string        `json:"sync_shared,omitempty"` // class -> entries in the owner's set a member last applied
-	Merged      map[string]string          `json:"sync_merged,omitempty"` // "<member> <class>" -> digest of the hand-in the owner merged
-	Transport   json.RawMessage            `json:"transport,omitempty"`
+	Version      int                        `json:"version"`
+	Key          []byte                     `json:"key"`
+	Personal     string                     `json:"personal_group"`
+	Groups       map[string]string          `json:"groups"`
+	Instances    map[string]Instance        `json:"instances"`
+	Grants       []Grant                    `json:"grants"`
+	Blocked      map[string]bool            `json:"blocked"`
+	Invitations  map[string]invitationState `json:"invitations"`
+	Scopes       map[string][]string        `json:"scopes"`
+	Records      map[string]Record          `json:"records"`
+	Peers        map[string]string          `json:"peers"`
+	Group        string                     `json:"sync_group,omitempty"`
+	Owners       []string                   `json:"sync_owners,omitempty"`
+	Prior        []string                   `json:"sync_prior,omitempty"` // the owners of the membership version this one replaced
+	GroupVersion uint64                     `json:"sync_version,omitempty"`
+	Shared       map[string][]string        `json:"sync_shared,omitempty"` // class -> entries in the group's set last applied
+	Merged       map[string]string          `json:"sync_merged,omitempty"` // "<member> <class>" or "* <class>" -> digest of the hand-in or group's set merged
+	Transport    json.RawMessage            `json:"transport,omitempty"`
 }
 type registration struct {
 	generation string
@@ -96,7 +99,8 @@ type Mitosis struct {
 	synced         string            // digest of what Sync last published, so an unchanged round publishes nothing
 	sealed         map[string]sealed // class -> what Sync last sealed, so an unchanged class is not sealed again
 	vaults         map[string][]byte // digest -> sealed vault this device serves (vault.get)
-	handing        bool              // a member's last round handed the owner something its set lacks
+	handing        bool              // a member's last round handed the owners something the group's set lacks
+	op             [2]string         // this owner's last membership change (change)
 }
 
 // Host serves a peer's machine-level calls — the threads stored on this machine, and starting
@@ -618,12 +622,15 @@ func (b *Mitosis) Block(peer string) error {
 	b.round.Lock()
 	defer b.round.Unlock()
 	b.mu.Lock()
-	group, members := b.state.Group, b.state.Scopes[b.state.Group]
+	group, owner := b.state.Group, slices.Contains(b.state.Owners, b.PeerID()) && slices.Contains(b.state.Scopes[b.state.Group], peer)
+	if owner && (b.change("remove", peer) != nil || b.save() != nil) {
+		owner = false
+	}
 	b.mu.Unlock()
-	if len(members) > 0 && members[0] == b.PeerID() && slices.Contains(members, peer) && b.setGroup("", "", peer) == nil {
-		// Out of the owner's group first, while its channel still carries the news.
+	if owner {
+		// Out of the group first, while its channel still carries the news.
 		_, _ = b.sync(context.Background(), nil)
-		b.tellRemoved(b.Connection(peer), group)
+		b.tellRemoved(peer, group)
 	}
 	b.mu.Lock()
 	b.state.Blocked[peer] = true

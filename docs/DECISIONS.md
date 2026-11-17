@@ -462,10 +462,13 @@ Each holds until changed by owner-signed decision.
   against GitHub's published sha256. proot maps the app's copy onto `/data/data/com.termux`, so
   `pkg`/`apt` work unmodified without the Termux app. The bash tool's `shellPath` and the in-app
   terminal start `liblinux.so`; the core stays the plain binary outside proot.
-- **Mitosis profile sync.** A profile has at most one sync group: a Mitosis discovery scope owned
-  by one device. Only the owner admits (`orb mitosis sync add`, paired devices only) and removes
-  (`sync remove`) devices; a device follows a group with `sync join <owner>`, and nothing derives
-  membership from pairing. v1 shares two data classes: credentials (auth.json's API keys and OAuth
+- **Mitosis profile sync.** A profile has at most one sync group: a Mitosis discovery scope with a
+  set of owners among its members. Any owner admits (`orb mitosis sync add`, paired devices only),
+  removes, promotes and demotes devices; a plain member cannot. Each change is a new version of the
+  membership, signed into that owner's record; a version counts when its publisher owns the version
+  it replaces, the highest wins, and of two of one version the smaller digest, so two owners
+  removing each other at once leave one; a group never has no owner. A device follows a group with
+  `sync join <peer>` through any member, and nothing derives membership from pairing. v1 shares two data classes: credentials (auth.json's API keys and OAuth
   logins, never a key that is a command, `!…`) and memory (the memory plugin's items, merged by ID
   with the same rules); a class is a registered Shareable/MergeShared pair, so configuration can be
   added later the same way, but none is built. Each class travels in a vault of its own: a device's
@@ -474,19 +477,21 @@ Each holds until changed by owner-signed decision.
   unblocked recipients; a vault is capped at 64 MiB, since every member, a browser tab included,
   holds it in memory. A vault is sealed with AES-256-GCM under a fresh 256-bit key on every publish, and that key is
   sealed to each recipient's X25519 key (the Montgomery form of its Ed25519 identity), stdlib only.
-  Only the owner publishes the group's set: it merges in the entries members hand it, keeping its
-  own, and seals the result to every current, unblocked member. A member applies the owner's set
-  and hands the owner alone what that set lacks or holds otherwise. Between two OAuth logins the
-  one that expires later wins, so a token refreshed on any device replaces the stale copies; an
-  entry removed on the owner is removed everywhere. Any member relays the owner's signed record, so
-  a device keeps catching up while the owner is off. Removing or blocking a device on the owner
+  Every owner publishes: per class, the group's set is the owners' vault of highest sequence. An
+  owner takes each new one over its own, merges in the entries members hand it, keeping its own,
+  and seals the result to every current, unblocked member at the next sequence unless the group's
+  set already says it. A member applies the group's set and hands the owners alone what that set
+  lacks or holds otherwise. Between two OAuth logins the one that expires later wins, so a token
+  refreshed on any device replaces the stale copies; an entry removed on an owner is removed
+  everywhere. Any member relays the owners' signed records, so the group lives on while some
+  owners are off, and with one owner left nothing stops. Removing or blocking a device on an owner
   leaves it out of every later set, though it keeps what it already received, so revoking a key
-  means rotating it; a member leaves by removing the owner, which is how a profile recovers from
-  losing it. Native devices run a round on every reconciliation, so a group converges with no
+  means rotating it; a device leaves its group by removing itself. Native devices run a round on every reconciliation, so a group converges with no
   command; `orb mitosis sync` runs one at once (a Worker object syncs that way). Sync is inert
   until a group exists. A device that boots unattended can decrypt its own vault, which is accepted
   as the cost of autonomy; a low-trust host belongs in a group of its own, with capped credentials.
-  Owner, 2026-11-16; memory and vaults by digest added at the owner's request, 2026-11-17.
+  Owner, 2026-11-16; memory and vaults by digest added at the owner's request, 2026-11-17; several
+  owners, 2026-11-17.
 
 ## Divergence ledger
 

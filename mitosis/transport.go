@@ -464,20 +464,16 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 		descriptor["methods"] = JSON(allowed)
 		return JSON(descriptor), nil
 
-	case "sync.removed": // the owner left this device out of its group
-		var p struct {
-			Group string `json:"group_id"`
-		}
-		if err := protocol.Decode(params, &p); err != nil {
-			return nil, err
-		}
+	case "sync.group": // a paired device joining this one's group, which a first add creates
 		b.mu.Lock()
-		owner := len(b.state.Scopes[p.Group]) > 0 && b.state.Scopes[p.Group][0] == peer
-		b.mu.Unlock()
-		if owner {
-			b.Refused(p.Group)
+		defer b.mu.Unlock()
+		if b.state.Peers[peer] == "" || b.state.Blocked[peer] {
+			return nil, Fail("unauthorized")
 		}
-		return JSON(struct{}{}), nil
+		if self := b.PeerID(); b.state.Group == "" {
+			return JSON(map[string]any{"group_id": groupID(self), "owners": []string{self}}), nil
+		}
+		return JSON(map[string]any{"group_id": b.state.Group, "owners": b.state.Owners}), nil
 	case "vault.get":
 		return b.serveVault(peer, params)
 	case "peers.list":

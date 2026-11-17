@@ -177,15 +177,16 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		}
 	}
 
-	// A device added last catches up from another member, with the owner away.
+	// A device added last joins through a member and catches up from it, with the owner away.
 	d := newMitosis(t)
-	_ = owner.SavePeer(d.PeerID(), "paired")
-	_ = c.SavePeer(d.PeerID(), "paired")
+	for _, x := range []*Mitosis{owner, b, c} {
+		_ = x.SavePeer(d.PeerID(), "paired")
+	}
 	share(d, ``)
 	admin(owner, `{"add":"`+d.PeerID()+`"}`)
 	round(owner, b)
-	admin(d, `{"join":"`+owner.PeerID()+`"}`)
 	link(d, b)
+	admin(d, `{"join":"`+b.PeerID()+`"}`)
 	if _, err := d.MergeContact(b.PeerID(), owner.state.Records[group+"/"+owner.PeerID()]); err != nil {
 		t.Fatal(err)
 	}
@@ -225,11 +226,10 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		t.Fatal("a removed device fetched a later vault")
 	}
 
-	// The removed device leaves the owner's group and starts its own.
-	admin(c, `{"remove":"`+owner.PeerID()+`"}`)
+	// The removed device has left the group, and can start its own.
 	admin(c, `{"add":"`+d.PeerID()+`"}`)
-	if c.state.Scopes[c.state.Group][0] != c.PeerID() {
-		t.Fatal("a device that left cannot own a group")
+	if c.state.Group != groupID(c.PeerID()) || !slices.Equal(c.state.Owners, []string{c.PeerID()}) {
+		t.Fatal("a removed device kept the group, or cannot own one", c.state.Group, c.state.Owners)
 	}
 
 	_ = document.Replace(ctx, stores[owner], []byte(`{"openai":{"type":"api_key","key":"o3"}}`))
@@ -239,5 +239,88 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 	round()
 	if key(b, "openai") != "o2" || sealedTo(b) {
 		t.Fatal("a blocked device received", key(b, "openai"))
+	}
+}
+
+func TestSyncOwnersLiveWithoutEachOther(t *testing.T) {
+	ctx := context.Background()
+	a, b, c := newMitosis(t), newMitosis(t), newMitosis(t)
+	stores := map[*Mitosis]*document.Memory{}
+	all := []*Mitosis{a, b, c}
+	for _, x := range all {
+		stores[x] = &document.Memory{}
+		x.SetClass("credentials", aiauth.NewDocumentStore(stores[x]))
+		for _, y := range all {
+			if x != y {
+				_ = x.SavePeer(y.PeerID(), "paired")
+			}
+		}
+	}
+	for i, x := range all {
+		for _, y := range all[i+1:] {
+			near, far := net.Pipe()
+			served := make(chan error, 1)
+			go func() { _, _, err := y.Connect(ctx, far, "", true); served <- err }()
+			if _, _, err := x.Connect(ctx, near, y.PeerID(), false); err != nil || <-served != nil {
+				t.Fatal("link", err)
+			}
+		}
+	}
+	group := groupID(a.PeerID())
+	admin := func(x *Mitosis, params string) error {
+		_, err := x.Admin(ctx, "sync", json.RawMessage(params))
+		return err
+	}
+	// round runs the devices given, each after taking the others' records.
+	round := func(devices ...*Mitosis) {
+		for range 3 {
+			for _, to := range devices {
+				for _, from := range devices {
+					records, _ := from.Contacts(to.PeerID(), group)
+					for _, r := range records {
+						_, _ = to.MergeContact(from.PeerID(), r)
+					}
+				}
+				_ = admin(to, `{}`)
+			}
+		}
+	}
+	key := func(x *Mitosis) string {
+		raw, _ := stores[x].Read(ctx)
+		var auth map[string]struct{ Key string }
+		_ = json.Unmarshal(raw, &auth)
+		return auth["openai"].Key
+	}
+	_ = admin(a, `{"add":"`+b.PeerID()+`"}`)
+	_ = admin(a, `{"add":"`+c.PeerID()+`"}`)
+	_ = admin(b, `{"join":"`+a.PeerID()+`"}`)
+	_ = admin(c, `{"join":"`+a.PeerID()+`"}`)
+	if err := admin(b, `{"promote":"`+c.PeerID()+`"}`); Code(err) != "unauthorized" {
+		t.Fatal("a member promoted a device", err)
+	}
+	_ = admin(a, `{"promote":"`+b.PeerID()+`"}`)
+	round(all...)
+
+	// With a away, b changes the data and cuts c; a, back, follows both.
+	_ = document.Replace(ctx, stores[b], []byte(`{"openai":{"type":"api_key","key":"k1"}}`))
+	round(b, c)
+	if key(c) != "k1" {
+		t.Fatal("the second owner's change did not reach a member", key(c))
+	}
+	_ = admin(b, `{"remove":"`+c.PeerID()+`"}`)
+	_ = document.Replace(ctx, stores[b], []byte(`{"openai":{"type":"api_key","key":"k2"}}`))
+	round(b, c)
+	round(a, b)
+	if key(a) != "k2" || key(c) != "k1" || c.state.Group != "" || slices.Contains(a.state.Scopes[group], c.PeerID()) {
+		t.Fatal("an owner's change did not hold", key(a), key(c), c.state.Group)
+	}
+
+	// Two owners removing each other at once leave one owner, whom both follow.
+	_ = admin(a, `{"remove":"`+b.PeerID()+`"}`)
+	_ = admin(b, `{"remove":"`+a.PeerID()+`"}`)
+	round(a, b)
+	in := slices.DeleteFunc([]*Mitosis{a, b}, func(x *Mitosis) bool { return x.state.Group == "" })
+	if len(in) != 1 || !slices.Equal(in[0].state.Owners, []string{in[0].PeerID()}) {
+		t.Fatal("concurrent removals did not leave exactly one owner", len(in))
 	}
 }

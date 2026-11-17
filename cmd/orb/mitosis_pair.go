@@ -101,14 +101,13 @@ func runMitosisPair(ctx context.Context, profile string, auto bool, streams cliS
 // in one line. added is how adding peer to the group went, nil from the device that joins.
 func reportInSync(ctx context.Context, client *protocol.Conn, streams cliStreams, peer string, added error) int {
 	if mitosis.Code(added) == "unauthorized" {
-		_, _ = fmt.Fprintln(streams.Stdout, "Paired. This Orb follows another's sync group: run orb mitosis on that one to share logins and memory too.")
+		_, _ = fmt.Fprintln(streams.Stdout, "Paired. This Orb is a member of a sync group: run orb mitosis on one of its owners to share logins and memory too.")
 		return 0
 	} else if added != nil {
 		return reportCLIError(streams.Stderr, added)
 	}
 	var group struct {
 		Self    string            `json:"self"`
-		Owner   string            `json:"owner"`
 		Members []string          `json:"members"`
 		Names   map[string]string `json:"names"`
 		InSync  bool              `json:"in_sync"`
@@ -178,16 +177,16 @@ func runMitosisJoin(ctx context.Context, profile string, args []string, streams 
 		return reportCLIError(streams.Stderr, err)
 	}
 	var group struct {
-		Owner string `json:"owner"`
+		Members []string `json:"members"`
 	}
 	if err = client.Call(ctx, "sync", struct{}{}, &group); mitosis.Code(err) == "not_found" {
 		err = client.Call(ctx, "sync", map[string]string{"join": inv.PeerID}, nil)
-	} else if group.Owner != "" && group.Owner != inv.PeerID {
-		_, _ = fmt.Fprintln(streams.Stdout, "Paired. This Orb keeps the sync group it follows: orb mitosis sync remove <owner> leaves it.")
+	} else if len(group.Members) > 0 && !slices.Contains(group.Members, inv.PeerID) {
+		_, _ = fmt.Fprintln(streams.Stdout, "Paired. This Orb keeps its sync group: orb mitosis sync remove <its own peer-id> leaves it.")
 		return 0
 	}
 	if mitosis.Code(err) == "unavailable" {
-		err = nil // the owner's vault is on its way
+		err = nil // the group's vault is on its way
 	}
 	return reportInSync(ctx, client, streams, inv.PeerID, err)
 }

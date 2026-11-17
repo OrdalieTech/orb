@@ -55,8 +55,9 @@ type Scored struct {
 	Score float64
 }
 
-// Shared is a Store as a Mitosis sync class (mitosis.Class): its items by ID. The owner takes only
-// items it lacks; a member takes the owner's over its own and deletes those the owner deleted.
+// Shared is a Store as a Mitosis sync class (mitosis.Class): its items by ID. An owner folding
+// hand-ins takes only items it lacks; otherwise it takes the group's over its own and deletes those
+// the group deleted.
 type Shared struct{ Store Store }
 
 func (s Shared) Shareable(ctx context.Context) (map[string]json.RawMessage, error) {

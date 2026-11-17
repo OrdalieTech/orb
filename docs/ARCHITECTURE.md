@@ -799,28 +799,34 @@ Mitosis protocol tests are Orb-owned checks, separate from Pi conformance famili
 ### Profile sync
 
 A profile has at most one sync group (`mitosis/sync.go`): a discovery scope whose ID derives from
-its owner's PeerID and whose first member is the owner. Membership is explicit and the owner's:
-`sync add|remove` changes it on the owner (paired devices only: a saved peer or one holding a
-grant), `sync join <owner>` follows one, and a member leaves by removing the owner (to follow or
-start another group if the owner is gone); nothing rebuilds it from paired peers, so a removed
-device stays out. Each device's signed record in the group scope carries only pointers to its
-vaults, one per data class (`extensions.vaults`, class to `orb.mitosis-vault/2`: SHA-256 digest
-and size). A vault is fetched by digest with the `vault.get` peer method, in 512 KiB chunks, over
+its founder's PeerID, with a set of owners among its members. Membership is explicit and the
+owners': `sync add|remove|promote|demote` changes it on any owner (add takes paired devices only:
+a saved peer or one holding a grant), `sync join <peer>` follows the group of a paired member
+(the `sync.group` peer method gives its ID and owners), and a device leaves by removing itself;
+nothing rebuilds it from paired peers, so a removed device stays out. A change is a new version
+`{version, owners, members}` in the owner's record (`extensions.group`). A device takes, every
+round, the newest valid version its owners published: one is valid when its publisher owns the
+version it replaces, the highest wins, and of two of one version the smaller SHA-256 digest; an
+owner whose change lost makes it once more on top. A device the version leaves out leaves the
+group, and one with no owner is refused. Members take owners' records, and those of the owners
+before, from anyone. Each device's signed record in the group scope carries pointers to its
+vaults, one per data class (`extensions.vaults`, class to `orb.mitosis-vault/3`: SHA-256 digest,
+size and, for an owner's, a sequence). A vault is fetched by digest with the `vault.get` peer method, in 512 KiB chunks, over
 any channel already open in either direction, its publisher first, then any other peer: a holder
 serves it only to a recipient that is a current, unblocked member of its group, and the fetcher
 checks it against the signed digest before opening it. A device holds in memory its own vaults
-and, as a member, the owner's it opened, so any member relays the owner's while the owner is off;
+and the group's sets it opened, so any member relays them while the owners are off;
 a restart reseals. A vault is the recipient count, one envelope per recipient (its Ed25519 key,
 an ephemeral X25519 key, the vault key sealed under ephemeral X25519, SHA-256 key derivation and
 AES-256-GCM), then the class's entries sealed once with AES-256-GCM under a fresh 256-bit key, all
 stdlib. A class is resealed only when its entries or recipients change, so a refreshed token
-resends no memory, and the owner fetches a member's hand-in of a class only when its digest
-changes. A device's vaults together hold at most 64 MiB: every member holds them whole, a browser
+resends no memory, and an owner fetches a member's hand-in, or another owner's set, of a class
+only when its digest changes. A device's vaults together hold at most 64 MiB: every member holds them whole, a browser
 tab included. A peer's X25519 key is the Montgomery form
 of its Ed25519 identity (RFC 7748 §4.1), so sealing needs only a PeerID. Recipients are checked
-at seal time: the owner seals to every current, unblocked member; a member seals to the owner
-alone. Only the owner's vault reaches the group, and vaults are opened only from current,
-unblocked members.
+at seal time: an owner seals to every current, unblocked member; a member seals to the owners
+alone. Only owners' vaults reach the group, and vaults are opened only from current, unblocked
+members.
 
 A round runs on every reconciliation of a native device or browser tab (every 15 s and on each
 change), on every record change of a Worker object, and on `orb mitosis sync` (the `sync` admin
@@ -829,14 +835,16 @@ with `SetClass(name, Class)`, a
 `Shareable`/`MergeShared` pair over its own store. `credentials` is `ai/auth`'s Store over
 auth.json; `memory` is `plugins/memory`'s `Shared` over the memory plugin's `Store`, merged by
 item ID (native storage's, else the agent directory's journal; a Worker object's or tab's
-`filestore.Journal` document). A round reads before it publishes: the owner merges in what
-members handed it, keeping its own; a member takes the owner's set over its own, drops what the
-owner stopped sharing, and hands the owner only what that set lacks or holds otherwise, and
-leaves a class as it was while it cannot open the owner's current vault of it, so a large memory
+`filestore.Journal` document). A round reads before it publishes. Per class, the group's set is
+the owners' vault of highest sequence, then smallest digest. A member takes it over its own,
+drops what it stopped sharing, and hands the owners only what it lacks or holds otherwise; an
+owner takes each new one the same way, merges in what members handed it, keeping its own, and
+seals what it holds at the next sequence unless the group's set already says it to everyone. A
+device leaves a class as it was while it cannot open the group's set of it, so a large memory
 vault still on its way holds back no credential. Between two OAuth logins the one that
 expires later wins, so a token refreshed on any device replaces the copies its refresh made
-stale. An entry removed on the owner is removed everywhere; one removed on a member comes back
-from the owner's set. Only API keys and OAuth logins are shared, never one whose key is a command
+stale. An entry removed on an owner is removed everywhere; one removed on a member comes back
+from the group's set. Only API keys and OAuth logins are shared, never one whose key is a command
 (`!…`, which would run on every device), invalid entries are ignored, auth.json keeps pi's format
 and is written only when an entry changes, and a vault is republished only when what it seals
 does. A running session offers a provider as soon as its credential arrives. memtree's
@@ -923,9 +931,9 @@ every 4 s by whichever end heard nothing in that time. A pairing device holds on
 stranger places only until it is approved. Every change triggers reconciliation, with a
 15-second sweep. A device reconciles a scope with the members a power of two ahead of it on the
 ring of members by PeerID and any member it has a channel to, so a change crosses n members in
-about log2(n) hops over about log2(n) dialled channels a device, the owner included. A member
-dials its group's owner only while it has something to hand it, since a vault is fetched over a
-channel that exists. `peers.list` carries the caller's revisions and returns only what it lacks;
+about log2(n) hops over about log2(n) dialled channels a device, owners included. A member
+dials its group's owners only while it has something to hand them, since a vault is fetched over
+a channel that exists. `peers.list` carries the caller's revisions and returns only what it lacks;
 a link whose records and channel are unchanged since its last exchange waits five minutes, and
 one that failed a minute. A device hangs up, after a minute without a call, the channels it
 dialled to group members off its ring and to scope members it never paired with, and a paired

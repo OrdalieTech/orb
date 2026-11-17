@@ -56,7 +56,7 @@ orb mitosis ssh <user@host> [--remote-profile personal] [--remote-orb orb]   (th
 orb mitosis status|stop|start|block <peer-id>|service install|remove   [--profile personal]
 
 Advanced:
-orb mitosis sync [add|remove <peer-id> | join <owner-peer-id>]   (the sync group; a peer-id may be an unambiguous prefix)
+orb mitosis sync [add|remove|promote|demote <peer-id> | join <peer-id>]   (the sync group, which any of its owners changes; remove yourself to leave; a peer-id may be an unambiguous prefix)
 orb mitosis run [--web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 --web-url wss://host/mitosis]
 orb mitosis pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>
 orb mitosis trust <peer-id> | grant|revoke|scope|group|assign|takeover|publish < request.json
@@ -231,12 +231,12 @@ orb mitosis instances|peers|grants|groups|scopes|prune|pipe`)
 		}
 	case "sync":
 		switch {
-		case len(args) == 3 && slices.Contains([]string{"join", "add", "remove"}, args[1]):
+		case len(args) == 3 && slices.Contains([]string{"join", "add", "remove", "promote", "demote"}, args[1]):
 			if args[2], err = peerArg(ctx, client, args[2]); err == nil {
 				params = mitosis.JSON(map[string]string{args[1]: args[2]})
 			}
 		case len(args) != 1:
-			err = errors.New("sync takes join <owner-peer-id>, add <peer-id> or remove <peer-id>")
+			err = errors.New("sync takes join, add, remove, promote or demote <peer-id>")
 		}
 	case "remote":
 		if len(args) != 3 {
@@ -258,13 +258,15 @@ orb mitosis instances|peers|grants|groups|scopes|prune|pipe`)
 	if err = client.Call(ctx, method, params, &result); err != nil {
 		switch {
 		case method == "sync" && mitosis.Code(err) == "unauthorized":
-			err = errors.New("only the sync group's owner adds or removes devices")
+			err = errors.New("only the sync group's owners change it")
+		case method == "sync" && mitosis.Code(err) == "operation_conflict":
+			err = errors.New("a sync group keeps an owner: promote another first")
 		case method == "sync" && mitosis.Code(err) == "resource_exhausted":
 			err = errors.New("what this profile shares, sealed to every member, exceeds the 64 MiB a sync vault holds")
 		case method == "sync" && mitosis.Code(err) == "not_found" && len(args) > 1 && args[1] == "add":
 			err = errors.New("pair with that device first: orb mitosis here, orb mitosis join on it")
 		case method == "sync" && mitosis.Code(err) == "not_found":
-			err = errors.New("no sync group here: add a device to this one, or join another's with orb mitosis sync join <owner-peer-id>")
+			err = errors.New("no sync group here: add a device to this one, or join another's with orb mitosis sync join <peer-id>")
 		}
 		return reportCLIError(streams.Stderr, err)
 	}
@@ -445,7 +447,7 @@ func connectMitosisSSH(ctx context.Context, client *protocol.Conn, profile, loca
 		return inv.PeerID, nil
 	}
 	if err = client.Call(ctx, "sync", map[string]string{"add": inv.PeerID}, nil); err != nil {
-		return inv.PeerID, err // unauthorized: this Orb follows another's group, whose owner adds devices
+		return inv.PeerID, err // unauthorized: this Orb is a member of a group, whose owners add devices
 	}
 	_, err = daemon.RunSSH(ctx, target, remoteOrb, remoteProfile, "sync", "join", localPeer)
 	return inv.PeerID, err
