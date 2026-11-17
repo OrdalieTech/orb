@@ -12,9 +12,9 @@ self.onmessage = ({ data }) => {
 
 async function boot() {
   const go = new Go();
-  const response = await fetch("orb.wasm");
+  const response = await fetch("orb.wasm.gz");
   if (!response.ok) throw new Error(`Wasm download failed: ${response.status}`);
-  const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), go.importObject);
+  const { instance } = await WebAssembly.instantiate(await new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(), go.importObject);
   await go.run(instance);
   throw new Error("Orb's Wasm runtime exited");
 }
