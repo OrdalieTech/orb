@@ -43,7 +43,7 @@ is tested but is not released or is limited. **In progress** is under active dev
 | Team agent container | Preview: Buzz (native) live against a Buzz relay and a fake one in the Go suite; Telegram end-to-end in Docker, not in CI | all | SQLite on the agent's volume | full peer | `docker build platforms/agent` |
 | Go SDK embedding | Stable | host-defined | host-defined (`host.Host`) | library | `go get` |
 | Windows | Preview: full suite green in CI, not released yet | all | SQLite | full peer | build from source |
-| Browser (Wasm worker) | Preview: as a Mitosis peer, end-to-end under Node, not in a browser yet | FS tools | tab memory; IndexedDB as a peer | outbound client, or full peer (dials) | static files |
+| Browser (Wasm worker) | Preview: as a Mitosis peer, end-to-end under Node (and once by hand in headless Firefox) | FS tools | tab memory; IndexedDB as a peer | outbound client, or full peer (dials) | static files |
 | Cloudflare Durable Objects | Preview: end-to-end in workerd (CI) and on Cloudflare | FS tools | Durable Object storage | full peer (accepts streams) | `make worker-deploy` |
 | Android (Termux) | Preview: builds, not validated on device | all | SQLite | full peer | build from source |
 | iOS via iSH | Preview: builds, not validated on device | all (slow) | SQLite | full peer | build from source |

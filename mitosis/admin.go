@@ -235,8 +235,11 @@ func (b *Mitosis) PeerLocator(peer string) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	locator := b.state.Peers[peer]
+	// A Tailcat locator moves, so the peer's latest signed record wins over it; a WebSocket URL
+	// it was paired at stays where it is, and may be the only way this device reaches it.
+	webSocket := strings.HasPrefix(locator, "ws://") || strings.HasPrefix(locator, "wss://")
 	for k, record := range b.state.Records {
-		if !strings.HasSuffix(k, "/"+peer) {
+		if webSocket || !strings.HasSuffix(k, "/"+peer) {
 			continue
 		}
 		contact, err := record.Verify()

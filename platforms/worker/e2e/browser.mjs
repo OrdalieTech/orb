@@ -143,6 +143,7 @@ try {
 
   // A reopened tab is the same peer, with what it received, and reconnects to the owner by itself.
   peer.dispose();
+  await until("the closed tab's channel to end", async () => (await orb(["status"])).peer_states[self.peer_id] === "disconnected");
   peer = await tab();
   const again = await peer.admin("self");
   check(again.peer_id === self.peer_id, "the reopened tab has another identity", again);

@@ -136,6 +136,9 @@ func (p *Peer) Serve(ctx context.Context, stream net.Conn) error {
 	return nil
 }
 
+// Close ends the peer: its channels and its attachment.
+func (p *Peer) Close() error { return p.mitosis.Close() }
+
 // Follow runs a sync round each time the records change (a peer published here), so a peer that
 // only accepts streams keeps up with its group over the ones its peers opened.
 func (p *Peer) Follow(ctx context.Context) {

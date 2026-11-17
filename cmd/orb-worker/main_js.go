@@ -156,9 +156,7 @@ func open(object js.Value) js.Value {
 		go func() {
 			code := instance.Serve(ctx, &commandReader{commands: commands}, &frameWriter{emit: object.Get("emit")}, os.Stderr)
 			stopped.Store(true)
-			mitosis.mu.Lock()
-			mitosis.instance = nil
-			mitosis.mu.Unlock()
+			mitosis.close()
 			// Only a disposed object is past calling its entry points; one that
 			// stopped by itself refuses commands until the shim boots it again.
 			if disposed.Load() {

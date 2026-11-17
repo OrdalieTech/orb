@@ -24,6 +24,7 @@ type mitosisPeer struct {
 	mu       sync.Mutex
 	instance *worker.Instance
 	self     *peer.Peer
+	stop     context.CancelFunc
 }
 
 func (b *mitosisPeer) open(context.Context) (*peer.Peer, error) {
@@ -39,18 +40,31 @@ func (b *mitosisPeer) open(context.Context) (*peer.Peer, error) {
 	if err != nil {
 		return nil, err
 	}
-	b.self = self
+	ctx, stop := context.WithCancel(context.Background())
+	b.self, b.stop = self, stop
 	if !b.dial {
-		go self.Follow(context.Background())
+		go self.Follow(ctx)
 		return self, nil
 	}
-	self.Dial(context.Background(), func(ctx context.Context, _, locator string) (net.Conn, error) {
+	self.Dial(ctx, func(ctx context.Context, _, locator string) (net.Conn, error) {
 		if !strings.HasPrefix(locator, "ws://") && !strings.HasPrefix(locator, "wss://") {
 			return nil, errors.New("orb-worker: a browser reaches a peer only at a ws:// or wss:// locator")
 		}
 		return websocket.Dial(ctx, locator)
 	})
 	return self, nil
+}
+
+// close ends the peer with the object's Orb: its channels close and it dials no more.
+func (b *mitosisPeer) close() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.instance = nil
+	if b.self != nil {
+		b.stop()
+		_ = b.self.Close()
+		b.self = nil
+	}
 }
 
 // register adds the shim's Mitosis entry points through set:
