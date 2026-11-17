@@ -28,6 +28,12 @@ type Conversation struct {
 	State     string `json:"state"` // "idle", "running" during a turn, or "asking" while a question waits for an answer
 }
 
+// resolution is an agent.call operation as asked, and the call it first resolved to.
+type resolution struct {
+	asked AgentCall
+	call  Call
+}
+
 // held is an available runtime of this agent and what it last described of itself.
 type held struct {
 	id, generation string
@@ -212,12 +218,15 @@ func (b *Mitosis) agentCall(ctx context.Context, p Principal, call AgentCall) (j
 	if !b.permits(p, permission(call.Method)) {
 		return nil, Fail("not_found")
 	}
-	// A retried operation goes again to the runtime and target it first resolved to, so its
-	// receipt answers it, even after a session change moved the runtime on.
+	// A retried operation (the same request again) goes to the runtime and target it first
+	// resolved to, so its receipt answers it, even after a session change moved the runtime on;
+	// another request under its ID resolves anew, and the ledger refuses it.
 	key := ledgerKey(p, "", call.OperationID)
 	b.mu.Lock()
-	first, retried := b.resolved[key]
+	cached, retried := b.resolved[key]
 	b.mu.Unlock()
+	first := cached.call
+	retried = retried && string(JSON(cached.asked)) == string(JSON(call))
 	h, err := held{}, error(nil)
 	if retried && call.OperationID != "" {
 		var ok bool
@@ -250,7 +259,9 @@ func (b *Mitosis) agentCall(ctx context.Context, p Principal, call AgentCall) (j
 		if len(b.resolved) >= 1024 {
 			clear(b.resolved)
 		}
-		b.resolved[key] = c
+		if _, seen := b.resolved[key]; !seen { // a conflicting request leaves the first one's
+			b.resolved[key] = resolution{call, c}
+		}
 		b.mu.Unlock()
 	}
 	raw, err := b.Call(ctx, p, c)

@@ -119,6 +119,13 @@ func TestAnAgentCallReachesTheConversationsRuntime(t *testing.T) {
 	if err := handle("agent.call", map[string]any{"session_id": "b", "method": "session.new", "operation_id": op}, nil); err != nil || second.last().SessionID != asked.SessionID || second.last().Expected != asked.Expected {
 		t.Fatalf("a retried session.new went elsewhere: %+v, %v", second.last(), err)
 	}
+	// Another request under that ID is not taken for its retry: it goes where it asks.
+	second.mu.Lock()
+	calls := len(second.calls)
+	second.mu.Unlock()
+	if err := handle("agent.call", map[string]any{"session_id": "a", "method": "session.new", "operation_id": op}, nil); err != nil || len(second.calls) != calls {
+		t.Fatalf("a different request under a used ID went to the first one's runtime: %v", err)
+	}
 	if err := handle("conversation.describe", map[string]string{"session_id": "b"}, nil); Code(err) != "not_found" {
 		t.Fatalf("a conversation its runtime left: %v", err)
 	}
