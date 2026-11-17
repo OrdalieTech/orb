@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-17
+
+Mitosis's unit is the agent, and a sync group lives on without any one device: several owners each admit devices and merge and seal the group's logins and memory, entry by entry, so turning one off stops nothing. Agents reach each other by name, and a message to an agent with no conversation named goes to its default one. The protocol changed: devices paired before must be paired again.
+
 - Mitosis's unit is the agent: an agent directory with its identity, memory and tools, which peers address, discover, grant and name; a conversation is an address under it. A grant covers the whole agent (instance groups and selectors are gone), the `agents` tool lists conversations by agent and sends to an agent's default conversation when none is named, and `mitosis_call` targets an agent, then optionally a conversation. Peers talk `agent.describe`, `conversation.describe` and `agent.call`; with the protocol changed, devices must be paired again.
 
 - A Mitosis sync group can have several owners, so it lives on when one goes: `orb mitosis sync promote <peer-id>` makes a member an owner (`demote` undoes it), and any owner adds, removes and blocks devices and merges and seals the group's logins and memory, with no owner treated apart. A device joins through any member (`sync join <peer-id>`) and leaves by removing itself. Groups made before must be made again: pair and join as at first.
