@@ -84,7 +84,8 @@ type vaultBody struct {
 	Entries map[string]json.RawMessage `json:"entries"`
 	Changed []string                   `json:"changed,omitempty"`
 	Removed []string                   `json:"removed,omitempty"`
-	Base    uint64                     `json:"base,omitempty"` // the Seq of the group's set it built on
+	Base    uint64                     `json:"base,omitempty"`    // the Seq of the group's set it built on
+	Handins map[string]string          `json:"handins,omitempty"` // member -> the hand-in digest it folds in
 }
 
 // bundle is what a group shares: per data class, entries by name; each class is its own vault.
@@ -426,9 +427,17 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 				return nil, err
 			}
 			changed, merged["* "+name] = c, best[name].vault.Digest
+			if owner {
+				for member, digest := range set.Handins { // consumed already: none undoes a later change
+					merged[member+" "+name] = digest
+				}
+			}
 		}
 		var incoming []map[string]json.RawMessage
 		for _, s := range handins[name] {
+			if merged[s.peer+" "+name] == s.vault.Digest {
+				continue
+			}
 			blob, err := b.fetch(ctx, s.vault, s.peer, false)
 			var in vaultBody
 			if err == nil {
@@ -507,6 +516,12 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		if !ok || last.sum != sum || b.vaults[last.vault.Digest] == nil || owner && best[name].peer != self && last.vault.Seq <= best[name].vault.Seq {
 			body, seq := vaultBody{Entries: entries, Base: best[name].vault.Seq}, uint64(0)
 			if owner {
+				body.Handins = map[string]string{}
+				for _, m := range members {
+					if d := b.state.Merged[m+" "+name]; d != "" {
+						body.Handins[m] = d
+					}
+				}
 				// Against the group's set it built on, what this owner changed and removed; a
 				// reseal that changes nothing (after a restart) keeps its place, so it never
 				// outranks a set made since.

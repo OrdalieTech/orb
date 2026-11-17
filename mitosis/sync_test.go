@@ -318,6 +318,28 @@ func TestSyncOwnersLiveWithoutEachOther(t *testing.T) {
 	}
 	_ = admin(b, `{"promote":"`+a.PeerID()+`"}`)
 	round(all...)
+	// With b away, a folds in c's hand-in, then deletes it; b, back, does not fold it in again
+	// (c has run no round since, so its hand-in still holds it).
+	take := func(to *Mitosis) { // to takes every device's records, then runs a round
+		for _, from := range all {
+			records, _ := from.Contacts(to.PeerID(), group)
+			for _, r := range records {
+				_, _ = to.MergeContact(from.PeerID(), r)
+			}
+		}
+		_ = admin(to, `{}`)
+	}
+	_ = document.Replace(ctx, stores[c], []byte(`{"groq":{"type":"api_key","key":"h1"}}`))
+	take(c)
+	take(a)
+	_ = document.Replace(ctx, stores[a], []byte(`{}`))
+	take(a)
+	take(b)
+	take(b)
+	if raw, _ := stores[b].Read(ctx); strings.Contains(string(raw), "h1") {
+		t.Fatalf("an owner back folded in a hand-in another owner had consumed: %s", raw)
+	}
+	round(all...)
 
 	// With a away, b changes the data and cuts c; a, back, follows both.
 	_ = document.Replace(ctx, stores[b], []byte(`{"openai":{"type":"api_key","key":"k1"}}`))
