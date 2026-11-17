@@ -127,9 +127,10 @@ A tab can also be a full Mitosis peer (`platforms/browser/web/peer.js`, which `m
 browser-build` ships with `peer.wasm`): it runs the Worker runtime over IndexedDB, joins an
 invitation, and follows its owner's sync group, so its Orb has the owner's providers and memory
 ("Profile sync" in ARCHITECTURE.md). `make worker-e2e-mitosis-browser` checks it end to end under
-Node against a native `orb`. The debug page does this from its Mitosis panel: paste an invitation,
-run the two commands it shows on your device, and the tab's agent uses your providers and memory
-with no key typed, across reloads.
+Node against a native `orb`. The debug page does this from its Mitosis panel: run `orb mitosis` on
+your device, paste the full code it prints for apps and tabs (`orb-mitosis:v1:…`; the short code
+needs Tailcat, which a tab cannot run), and confirm the tab's fingerprint there. The tab is then in
+your sync group, and its agent uses your providers and memory with no key typed, across reloads.
 
 ### Cloudflare Durable Objects
 
@@ -149,8 +150,11 @@ make worker-deploy        # your Cloudflare account (wrangler login first)
 ```
 
 Each object is also a Mitosis peer at `/agents/<name>/mitosis`: its identity and grants persist in
-object storage, a native Orb pairs with it through `orb mitosis pair join`, and the owner
-administers it through `/agents/<name>/mitosis/admin` (behind `ORB_TOKEN`; the stream route itself
+object storage, and since the object approves through its admin route rather than a terminal, a
+native Orb pairs with it through the low-level `orb mitosis pair join` (see
+`platforms/worker/README.md`); `orb mitosis sync add <object peer ID>` there and a `sync` admin call
+with `{"join": "<owner peer ID>"}` on the object put it in the group. The owner administers it
+through `/agents/<name>/mitosis/admin` (behind `ORB_TOKEN`; the stream route itself
 is authenticated by Mitosis's pinned TLS). Verified on Cloudflare and in workerd: a laptop
 Orb lists, prompts and reads the object's conversation, and the object's agent calls the laptop
 through `mitosis_call` under its own grant. The object cannot dial out, so it reaches a peer only
