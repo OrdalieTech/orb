@@ -114,8 +114,9 @@ func reportInSync(ctx context.Context, client *protocol.Conn, streams cliStreams
 		InSync  bool              `json:"in_sync"`
 	}
 	for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(time.Second) {
-		if client.Call(ctx, "sync", struct{}{}, &group) == nil && group.InSync && slices.Contains(group.Members, peer) && group.Names[peer] != "" {
-			name := func(p string) string { return cmp.Or(group.Names[p], p) }
+		err := client.Call(ctx, "sync", struct{}{}, &group)
+		if _, published := group.Names[peer]; err == nil && group.InSync && slices.Contains(group.Members, peer) && published {
+			name := func(p string) string { return cmp.Or(group.Names[p], "a device") }
 			_, _ = fmt.Fprintf(streams.Stdout, "%s and %s (%s) in sync, %d devices.\n", name(group.Self), name(peer), peer, len(group.Members))
 			return 0
 		}

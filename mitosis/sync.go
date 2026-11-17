@@ -417,8 +417,8 @@ func (b *Mitosis) groupResult(group, owner string, inSync bool, received map[str
 	names := map[string]string{}
 	for _, p := range b.state.Scopes[group] {
 		if r, ok := b.state.Records[group+"/"+p]; ok {
-			if c, err := r.Verify(); err == nil && c.Name != "" {
-				names[p] = c.Name
+			if c, err := r.Verify(); err == nil {
+				names[p] = c.Name // a browser tab has none: present still means it published here
 			}
 		}
 	}
