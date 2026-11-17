@@ -153,7 +153,11 @@ WASI without mounts.
 The opt-in `make browser-serve` target builds and serves a static debug screen at
 `http://127.0.0.1:8787` (`BROWSER_PORT` overrides the port; Python 3 serves static assets only).
 `make browser-build` writes the deployable assets into `.tools/browser`, including the matching
-Go toolchain's `wasm_exec.js`. No agent process or model proxy runs on the server.
+Go toolchain's `wasm_exec.js`, with the wasm gzipped (the page inflates it, and `peer.wasm` alone
+is over Cloudflare Pages' 25 MiB file cap). No agent process or model proxy runs on the server. Each
+release attaches `make browser-dist`'s `orb_<version>_browser.tar.gz`, listed in the signed
+`checksums.txt`: an `index.html` whose `<base>` points at a directory named by version and digest,
+so a cache never mixes two releases' files. netapy.com/orb serves the latest release's.
 
 The dependency direction is `platforms/browser/web` → `cmd/orb-wasm` → the `platforms/browser` Go assembly
 → `engine`, `ai`, and the existing `agent/tools` operations. The Wasm assembly owns one engine

@@ -7,6 +7,12 @@ shown by `/changelog`.
 
 - A Mitosis sync group can have several owners, so it lives on when one goes: `orb mitosis sync promote <peer-id>` makes a member an owner (`demote` undoes it), and any owner adds, removes and blocks devices and merges and seals the group's logins and memory, with no owner treated apart. A device joins through any member (`sync join <peer-id>`) and leaves by removing itself. Groups made before must be made again: pair and join as at first.
 
+## [0.23.1] - 2026-11-17
+
+Orb runs in a browser tab at netapy.com/orb: each release now ships its browser page, signed with the release key, and the tab joins your devices with the code `orb mitosis` prints.
+
+- The browser page ships with each release (`orb_<version>_browser.tar.gz`, in the signed checksums), its wasm gzipped and its files under a directory named by version and digest, and netapy.com/orb serves the latest release's.
+
 ## [0.23.0] - 2026-11-17
 
 Bridge becomes Mitosis, with no alias, and replicates a profile: `orb mitosis` on one machine, `orb mitosis join <code>` on another and one yes, and the new machine holds the profile's logins and memory, sealed to each device, and keeps them when the others are off. A browser tab or a Worker object can join too, over a serverless network measured up to 256 devices. Peers paired before must be paired again.
