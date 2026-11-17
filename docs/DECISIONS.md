@@ -465,11 +465,14 @@ Each holds until changed by owner-signed decision.
 - **Mitosis profile sync.** A profile has at most one sync group: a Mitosis discovery scope owned
   by one device. Only the owner admits (`orb mitosis sync add`, paired devices only) and removes
   (`sync remove`) devices; a device follows a group with `sync join <owner>`, and nothing derives
-  membership from pairing. v1 shares credentials only: auth.json's API keys and OAuth logins, never
-  a key that is a command (`!…`). The bundle is one JSON object per data class, so configuration or
-  memory can later be added as fields, but none is built. Each device publishes one vault in its
-  signed peer record of the group scope, on the existing reconciliation (`orb-mitosis/1`). The
-  bundle is sealed with AES-256-GCM under a fresh 256-bit key on every publish, and that key is
+  membership from pairing. v1 shares two data classes: credentials (auth.json's API keys and OAuth
+  logins, never a key that is a command, `!…`) and memory (the memory plugin's items, merged by ID
+  with the same rules); a class is a registered Shareable/MergeShared pair, so configuration can be
+  added later the same way, but none is built. Each class travels in a vault of its own: a device's
+  signed peer record of the group scope (`orb-mitosis/1`) carries only each vault's digest and
+  size, and any member holding a vault serves it by digest, in bounded chunks, only to its current,
+  unblocked recipients; a vault is capped at 64 MiB, since every member, a browser tab included,
+  holds it in memory. A vault is sealed with AES-256-GCM under a fresh 256-bit key on every publish, and that key is
   sealed to each recipient's X25519 key (the Montgomery form of its Ed25519 identity), stdlib only.
   Only the owner publishes the group's set: it merges in the entries members hand it, keeping its
   own, and seals the result to every current, unblocked member. A member applies the owner's set
@@ -483,7 +486,7 @@ Each holds until changed by owner-signed decision.
   command; `orb mitosis sync` runs one at once (a Worker object syncs that way). Sync is inert
   until a group exists. A device that boots unattended can decrypt its own vault, which is accepted
   as the cost of autonomy; a low-trust host belongs in a group of its own, with capped credentials.
-  Owner, 2026-11-16.
+  Owner, 2026-11-16; memory and vaults by digest added at the owner's request, 2026-11-17.
 
 ## Divergence ledger
 
