@@ -53,7 +53,7 @@ jobs:
           xcrun simctl ui $udid appearance light
           export HOME=$RUNNER_TEMP/home ORB_MITOSIS_HOME=$RUNNER_TEMP/b
           mkdir -p $HOME
-          printf 'y\n' | $orb mitosis pair >$out/pair.txt 2>&1 &
+          $orb mitosis --yes >$out/pair.txt 2>&1 &
           pair=$!
           for i in $(seq 60); do
             code=$(grep -o 'orb-mitosis:v1:[A-Za-z0-9_-]*' $out/pair.txt | head -1) && [ -n "$code" ] && break
@@ -64,7 +64,7 @@ jobs:
           xcrun simctl spawn $udid uiopen "$code" || xcrun simctl openurl $udid "$code"
           sleep 8
           xcrun simctl io $udid screenshot $out/2-pairing.png
-          grep -q "claimed the code" $out/pair.txt || ORB_MITOSIS_HOME=$phone $orb mitosis join --profile p --yes "$code"
+          grep -q "claimed the code" $out/pair.txt || ORB_MITOSIS_HOME=$phone $orb mitosis join --profile p "$code"
           wait $pair
           for i in $(seq 30); do
             ORB_MITOSIS_HOME=$phone $orb mitosis status --profile p >$out/phone.json && jq -e '[.peer_states[]] | index("connected")' $out/phone.json && break

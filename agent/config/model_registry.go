@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -541,14 +542,13 @@ func (registry *ModelRegistry) Available(env map[string]string) []ai.Model {
 }
 
 func (registry *ModelRegistry) AvailableWithError(env map[string]string) ([]ai.Model, error) {
-	// A provider another process logged into (a Mitosis sync, a login elsewhere) becomes
-	// available without a restart.
+	// A provider another process logged into or changed (a Mitosis sync, a login elsewhere)
+	// becomes available without a restart.
 	if stored, err := registry.readCredentials(); err == nil {
 		registry.mu.RLock()
 		same := len(stored) == len(registry.authProviders)
-		for provider := range stored {
-			_, known := registry.authProviders[provider]
-			same = same && known
+		for provider, credential := range stored {
+			same = same && reflect.DeepEqual(credential, registry.authProviders[provider])
 		}
 		registry.mu.RUnlock()
 		if !same {
