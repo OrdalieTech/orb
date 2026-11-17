@@ -37,6 +37,7 @@ type Peers struct {
 	// joining: inviters this Mitosis claimed an invitation from, kept as known peers only once
 	// trusted, so one that never approves is not dialled at every start.
 	joining map[string]string
+	used    sync.Map // peer -> when a call last went to it, so the ring keeps a channel in use
 }
 
 // NewPeers serves b's peers until ctx ends.
@@ -102,13 +103,23 @@ func (ps *Peers) dial(ctx context.Context, id, locator string) error {
 		// A paired peer whose channel from here died after a while (it restarted, say) is dialled
 		// again at once, where the next sweep could take 30 s; one that drops the channel at once
 		// waits for the sweep, and a channel kept the other way stops it.
-		if ps.ctx.Err() == nil && time.Since(opened) > time.Minute && ps.paired(id) {
+		if ps.ctx.Err() == nil && time.Since(opened) > time.Minute && ps.paired(id) && !ps.ringed(id) {
 			ctx, cancel := context.WithTimeout(ps.ctx, 20*time.Second)
 			_, _ = ps.Peer(ctx, id, "")
 			cancel()
 		}
 	}()
 	return nil
+}
+
+// ringed reports whether the ring links this device to peer: a member of its sync group reached
+// over Tailcat (a Worker, reached over WebSocket, cannot dial, so its peers greet it).
+func (ps *Peers) ringed(peer string) bool {
+	ps.Mitosis.mu.Lock()
+	member := slices.Contains(ps.Mitosis.state.Scopes[ps.Mitosis.state.Group], peer)
+	ps.Mitosis.mu.Unlock()
+	locator, _ := ps.Mitosis.PeerLocator(peer)
+	return member && strings.HasPrefix(locator, "tc")
 }
 
 func (ps *Peers) paired(id string) bool {
@@ -137,6 +148,7 @@ func (ps *Peers) Remote(ctx context.Context, id, method string, p any) (json.Raw
 	if method == "host.launch" || method == "host.terminal.open" || method == "host.terminal.write" {
 		retries = 0
 	}
+	ps.used.Store(id, time.Now())
 	for attempt := 0; ; attempt++ {
 		c, err := ps.Peer(ctx, id, "")
 		if err != nil {
@@ -348,16 +360,11 @@ func (ps *Peers) Greet() {
 		}
 	})
 	// A peer that restarted behind a NAT cannot always dial back (a phone after an app update):
-	// every known peer without a channel is dialled again until one opens. The members of this
-	// device's own sync group reached over Tailcat dial it, so a group's owner holds no client for
-	// each of them; one reached over WebSocket (a Worker, which cannot dial) is still greeted.
+	// every known peer without a channel is dialled again until one opens, but the ring, not a
+	// greeting, links the members of this device's sync group.
 	for {
-		own := status.Scopes[groupID(ps.Mitosis.PeerID())]
 		for _, peer := range status.Peers {
-			if status.States[peer] == "blocked" || peer == ps.Mitosis.PeerID() || ps.Mitosis.Connection(peer) != nil {
-				continue
-			}
-			if locator, _ := ps.Mitosis.PeerLocator(peer); slices.Contains(own, peer) && strings.HasPrefix(locator, "tc") {
+			if status.States[peer] == "blocked" || peer == ps.Mitosis.PeerID() || ps.Mitosis.Connection(peer) != nil || ps.ringed(peer) {
 				continue
 			}
 			go func() {
@@ -447,8 +454,9 @@ func (ps *Peers) Reconcile() {
 			}
 		}
 		wg.Wait()
-		// A channel this device dialled to a member it no longer links to and never paired with
-		// (the ring moved as the scope grew) holds a Tailcat client for nothing.
+		// A channel this device dialled to a member it no longer links to (the ring moved as the
+		// scope grew, a hand-in arrived) is hung up, unless a peer outside the ring is paired or
+		// a call went to it within a minute.
 		dials := map[string]bool{}
 		for _, members := range status.Scopes {
 			for _, p := range ps.dials(members) {
@@ -457,7 +465,8 @@ func (ps *Peers) Reconcile() {
 		}
 		for _, members := range status.Scopes {
 			for _, p := range members {
-				if !dials[p] && !slices.Contains(status.Peers, p) {
+				used, _ := ps.used.Load(p)
+				if !dials[p] && (ps.ringed(p) || !slices.Contains(status.Peers, p)) && (used == nil || time.Since(used.(time.Time)) > time.Minute) {
 					ps.Mitosis.Hangup(p)
 				}
 			}
@@ -465,10 +474,11 @@ func (ps *Peers) Reconcile() {
 	}
 }
 
-// dials is who this device dials to reconcile a scope: its first member (a sync group's owner)
-// and the members a power of two ahead of it on the ring of members by PeerID. A change then
-// crosses n members in about log2(n) hops with about log2(n) dialled channels a device, where
-// dialling every member would take n-1.
+// dials is who this device dials to reconcile a scope: the members a power of two ahead of it on
+// the ring of members by PeerID, and a sync group's owner only while this member has something to
+// hand it (the owner fetches a hand-in from its publisher, and no one dials a browser tab). A
+// change then crosses n members in about log2(n) hops with about log2(n) dialled channels a
+// device, the owner included, where dialling every member would take n-1.
 func (ps *Peers) dials(members []string) []string {
 	self := ps.Mitosis.PeerID()
 	ring := slices.Compact(slices.Sorted(slices.Values(members)))
@@ -482,9 +492,11 @@ func (ps *Peers) dials(members []string) []string {
 			out = append(out, p)
 		}
 	}
-	if len(members) > 0 {
+	ps.Mitosis.mu.Lock()
+	if group := ps.Mitosis.state.Scopes[ps.Mitosis.state.Group]; ps.Mitosis.handing && len(group) > 0 && len(members) > 0 && members[0] == group[0] {
 		add(members[0])
 	}
+	ps.Mitosis.mu.Unlock()
 	for d := 1; d < len(ring); d *= 2 {
 		add(ring[(i+d)%len(ring)])
 	}

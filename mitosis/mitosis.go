@@ -96,6 +96,7 @@ type Mitosis struct {
 	synced         string            // digest of what Sync last published, so an unchanged round publishes nothing
 	sealed         map[string]sealed // class -> what Sync last sealed, so an unchanged class is not sealed again
 	vaults         map[string][]byte // digest -> sealed vault this device serves (vault.get)
+	handing        bool              // a member's last round handed the owner something its set lacks
 }
 
 // Host serves a peer's machine-level calls — the threads stored on this machine, and starting

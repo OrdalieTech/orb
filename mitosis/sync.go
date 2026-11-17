@@ -325,7 +325,9 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	// is not a reason to send every member the whole memory.
 	vaults := map[string]pointer{}
 	total := 0
+	b.handing = false
 	for name, entries := range out {
+		b.handing = b.handing || owner != self && len(entries) > 0
 		if len(recipients) == 0 {
 			break
 		}

@@ -921,14 +921,15 @@ A Tailcat client is a whole WireGuard engine, so one lives only while it carries
 peers that dial each other keep the channel the lower PeerID dialled. A quiet channel is pinged
 every 4 s by whichever end heard nothing in that time. A pairing device holds one of eight
 stranger places only until it is approved. Every change triggers reconciliation, with a
-15-second sweep. A device reconciles a scope with its first member (a sync group's owner), the
-members a power of two ahead of it on the ring of members by PeerID, and any member it has a
-channel to, so a change crosses n members in about log2(n) hops over about log2(n) dialled
-channels a device. `peers.list` carries the caller's revisions and returns only what it lacks;
+15-second sweep. A device reconciles a scope with the members a power of two ahead of it on the
+ring of members by PeerID and any member it has a channel to, so a change crosses n members in
+about log2(n) hops over about log2(n) dialled channels a device, the owner included. A member
+dials its group's owner only while it has something to hand it, since a vault is fetched over a
+channel that exists. `peers.list` carries the caller's revisions and returns only what it lacks;
 a link whose records and channel are unchanged since its last exchange waits five minutes, and
-one that failed a minute. A sync group's owner leaves the members it reaches over Tailcat to dial it, a device hangs up
-the channels it dialled to scope members it neither links to nor paired with, and a paired
-peer whose channel from here died after a minute or more is dialled again at once.
+one that failed a minute. A device hangs up, after a minute without a call, the channels it
+dialled to group members off its ring and to scope members it never paired with, and a paired
+peer outside its ring whose channel from here died after a minute or more is dialled again at once.
 Signed recovery locators must authenticate the already-pinned PeerID. Native direct and
 forced-relay tests are separate from the hermetic gate.
 
