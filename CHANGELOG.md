@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- The browser page ships with each release (`orb_<version>_browser.tar.gz`, in the signed checksums), its wasm gzipped and its files under a directory named by version and digest, and netapy.com/orb serves the latest release's.
+
 ## [0.23.0] - 2026-11-17
 
 Bridge becomes Mitosis, with no alias, and replicates a profile: `orb mitosis` on one machine, `orb mitosis join <code>` on another and one yes, and the new machine holds the profile's logins and memory, sealed to each device, and keeps them when the others are off. A browser tab or a Worker object can join too, over a serverless network measured up to 256 devices. Peers paired before must be paired again.
@@ -20,7 +22,6 @@ Bridge becomes Mitosis, with no alias, and replicates a profile: `orb mitosis` o
 - `orb --pi-files mitosis start` and `service install` now run the service on Pi files too, with the agent directory it was started with, instead of a native store of its own, so its devices share the auth.json and memory that Orb uses.
 
 - Pairing or trusting a device on a profile other than `personal` no longer turns the `mitosis` plugin on, so later Orbs on that machine stop starting a second, unpaired `personal` Mitosis.
-- The browser page ships with each release (`orb_<version>_browser.tar.gz`, in the signed checksums), its wasm gzipped and its files under a directory named by version and digest, and netapy.com/orb serves the latest release's.
 
 ## [0.22.0] - 2026-11-15
 
