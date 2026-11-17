@@ -148,6 +148,17 @@ func (ps *Peers) Remote(ctx context.Context, id, method string, p any) (json.Raw
 	if method == "host.launch" || method == "host.terminal.open" || method == "host.terminal.write" {
 		retries = 0
 	}
+	if method == "agent.call" { // its operation id is fixed here, so the retry is the same operation
+		raw, err := json.Marshal(p)
+		var call map[string]json.RawMessage
+		if err != nil || json.Unmarshal(raw, &call) != nil {
+			return nil, Fail("invalid_params")
+		}
+		if len(call["operation_id"]) == 0 || string(call["operation_id"]) == `""` {
+			call["operation_id"] = JSON(protocol.NewID())
+		}
+		p = call
+	}
 	ps.used.Store(id, time.Now())
 	for attempt := 0; ; attempt++ {
 		c, err := ps.Peer(ctx, id, "")

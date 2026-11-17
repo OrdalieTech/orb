@@ -331,9 +331,12 @@ func TestSyncOwnersLiveWithoutEachOther(t *testing.T) {
 	if key(b) != "k3" || published != [2]Record{a.state.Records[group+"/"+a.PeerID()], b.state.Records[group+"/"+b.PeerID()]} {
 		t.Fatal("an owner's own change was lost, or the owners keep resealing", key(a), key(b))
 	}
-	// b adds an entry while a is off; a comes back restarted, holding no vault, and runs a round
-	// before it sees b's record: it deletes nothing, and takes the entry.
+	// b adds an entry, then changes another, while a is off; a comes back restarted, holding no
+	// vault, and runs a round before it sees b's record: it deletes nothing, and takes the entry
+	// it missed a version of.
 	_ = document.Replace(ctx, stores[b], []byte(`{"openai":{"type":"api_key","key":"k3"},"groq":{"type":"api_key","key":"g1"}}`))
+	round(b)
+	_ = document.Replace(ctx, stores[b], []byte(`{"openai":{"type":"api_key","key":"k4"},"groq":{"type":"api_key","key":"g1"}}`))
 	round(b)
 	a.mu.Lock()
 	clear(a.sealed)

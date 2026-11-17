@@ -70,6 +70,7 @@ type state struct {
 	Prior        []string                     `json:"sync_prior,omitempty"` // the owners of the membership version this one replaced
 	GroupVersion uint64                       `json:"sync_version,omitempty"`
 	Shared       map[string]map[string]string `json:"sync_shared,omitempty"` // class -> entry -> digest, in the group's set last applied
+	Bases        map[string]uint64            `json:"sync_bases,omitempty"`  // class -> the Seq of that set
 	Merged       map[string]string            `json:"sync_merged,omitempty"` // "<member> <class>" or "* <class>" -> digest of the hand-in or group's set merged
 	Transport    json.RawMessage              `json:"transport,omitempty"`
 }

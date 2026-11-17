@@ -84,6 +84,7 @@ type vaultBody struct {
 	Entries map[string]json.RawMessage `json:"entries"`
 	Changed []string                   `json:"changed,omitempty"`
 	Removed []string                   `json:"removed,omitempty"`
+	Base    uint64                     `json:"base,omitempty"` // the Seq of the group's set it built on
 }
 
 // bundle is what a group shares: per data class, entries by name; each class is its own vault.
@@ -121,7 +122,7 @@ func (b *Mitosis) current() doc {
 
 func (b *Mitosis) leave() {
 	delete(b.state.Scopes, b.state.Group)
-	b.state.Group, b.state.Owners, b.state.Prior, b.state.GroupVersion, b.state.Shared, b.state.Merged = "", nil, nil, 0, nil, nil
+	b.state.Group, b.state.Owners, b.state.Prior, b.state.GroupVersion, b.state.Shared, b.state.Bases, b.state.Merged = "", nil, nil, 0, nil, nil, nil
 	clear(b.vaults)
 	clear(b.sealed)
 }
@@ -359,7 +360,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			}
 		}
 	}
-	shared, adopted := maps.Clone(b.state.Shared), maps.Clone(b.state.Merged)
+	shared, bases, adopted := maps.Clone(b.state.Shared), maps.Clone(b.state.Bases), maps.Clone(b.state.Merged)
 	b.mu.Unlock()
 
 	sets := map[string]vaultBody{}   // class -> the group's set, opened
@@ -396,18 +397,22 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		}
 		var changed []string
 		if set, ok := sets[name]; ok && (!owner || adopted["* "+name] != best[name].vault.Digest) {
-			// An owner takes only what the set's publisher changed or removed, so its own changes
-			// still unpublished stand and what the publisher never saw is not deleted; a member
-			// takes the whole set and drops what it stopped sharing.
+			// A member takes the whole set and drops what it stopped sharing. An owner takes what
+			// differs from the set it last saw, so its own changes still unpublished stand, and
+			// drops what that set had and this one lacks; but from a set built on an older one
+			// than its own (an owner back from being off), only what its publisher changed and
+			// removed, so what the publisher never saw is not deleted.
+			stale := owner && set.Base < bases[name]
 			incoming, removed := set.Entries, set.Removed
 			if owner {
 				incoming = map[string]json.RawMessage{}
-				for _, entry := range set.Changed {
-					if v, ok := set.Entries[entry]; ok {
+				for entry, v := range set.Entries {
+					if shared[name][entry] != digests(v) && (!stale || slices.Contains(set.Changed, entry)) {
 						incoming[entry] = v
 					}
 				}
-			} else {
+			}
+			if !stale {
 				removed = nil
 				for entry := range shared[name] {
 					if _, kept := set.Entries[entry]; !kept {
@@ -459,13 +464,16 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	if b.state.Group != group || !slices.Equal(b.state.Owners, owners) || !slices.Equal(b.state.Scopes[group], members) {
 		return nil, Fail("not_found")
 	}
-	before := string(JSON([]any{b.state.Merged, b.state.Shared}))
+	before := string(JSON([]any{b.state.Merged, b.state.Shared, b.state.Bases}))
 	if b.state.Merged == nil {
 		b.state.Merged = map[string]string{}
 	}
 	maps.Copy(b.state.Merged, merged)
 	if b.state.Shared == nil {
 		b.state.Shared = map[string]map[string]string{}
+	}
+	if b.state.Bases == nil {
+		b.state.Bases = map[string]uint64{}
 	}
 	recipients := owners
 	if owner {
@@ -485,9 +493,9 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	for name, entries := range out {
 		b.handing = b.handing || !owner && len(entries) > 0
 		if set, ok := sets[name]; ok {
-			b.state.Shared[name] = entryDigests(set.Entries)
+			b.state.Shared[name], b.state.Bases[name] = entryDigests(set.Entries), best[name].vault.Seq
 		} else if l, ok := b.sealed[name]; ok && best[name].peer == self {
-			b.state.Shared[name] = l.entries
+			b.state.Shared[name], b.state.Bases[name] = l.entries, l.vault.Seq
 		}
 		set, ok := sets[name]
 		if len(recipients) == 0 || owner && ok && maps.EqualFunc(entries, set.Entries, func(x, y json.RawMessage) bool { return bytes.Equal(x, y) }) && !slices.ContainsFunc(recipients, func(p string) bool { return p != best[name].peer && !slices.Contains(readers[name], p) }) {
@@ -496,7 +504,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		sum := sha256.Sum256(JSON([]any{recipients, entries}))
 		last, ok := b.sealed[name]
 		if !ok || last.sum != sum || b.vaults[last.vault.Digest] == nil || owner && best[name].peer != self && last.vault.Seq <= best[name].vault.Seq {
-			body, seq := vaultBody{Entries: entries}, uint64(0)
+			body, seq := vaultBody{Entries: entries, Base: best[name].vault.Seq}, uint64(0)
 			if owner {
 				// Against the group's set it built on, what this owner changed and removed; a
 				// reseal that changes nothing (after a restart) keeps its place, so it never
@@ -548,7 +556,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		}
 		b.synced = digest
 	}
-	if string(JSON([]any{b.state.Merged, b.state.Shared})) != before {
+	if string(JSON([]any{b.state.Merged, b.state.Shared, b.state.Bases})) != before {
 		if err := b.save(); err != nil {
 			return nil, err
 		}
@@ -596,7 +604,7 @@ type sealed struct {
 
 func digests(v json.RawMessage) string {
 	sum := sha256.Sum256(v)
-	return string(sum[:])
+	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
 func entryDigests(entries map[string]json.RawMessage) map[string]string {
