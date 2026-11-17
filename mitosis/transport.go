@@ -95,7 +95,7 @@ func (b *Mitosis) Connect(ctx context.Context, stream net.Conn, expected string,
 	}
 
 	b.mu.Lock()
-	if b.closed || b.failed || b.state.Blocked[id] || len(b.channels) >= 128 {
+	if b.closed || b.failed || b.state.Blocked[id] || len(b.channels) >= maxPeers {
 		b.mu.Unlock()
 		_ = c.Close()
 		return nil, "", Fail("resource_exhausted")

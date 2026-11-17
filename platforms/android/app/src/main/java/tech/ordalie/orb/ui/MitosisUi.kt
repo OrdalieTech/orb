@@ -39,7 +39,7 @@ fun ColumnScope.MitosisScreen(c: Ctx) {
                 .border(1.dp, p.fg, Pane).padding(16.dp)) {
                 T("Pair a computer", size = Size.Title, weight = Strong)
                 T("On the computer, run", Modifier.padding(top = 10.dp), color = p.mute)
-                Box(Modifier.padding(vertical = 8.dp).border(1.dp, p.rule, Soft).padding(horizontal = 12.dp, vertical = 8.dp)) { T("orb mitosis pair", weight = Strong) }
+                Box(Modifier.padding(vertical = 8.dp).border(1.dp, p.rule, Soft).padding(horizontal = 12.dp, vertical = 8.dp)) { T("orb mitosis", weight = Strong) }
                 T("then photograph its QR code. It asks you to approve this phone there.", size = 13.sp, color = p.meta)
                 Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Btn("scan", inverted = true) { context.scan { c.nav.go(Screen.Join(it)) } }
@@ -146,7 +146,7 @@ fun ColumnScope.JoinScreen(c: Ctx, text: String) {
                     }
                     T("Pairing lets this device read and drive the phone's conversations. Once it approves the phone, the phone gets its conversations and can start Orb in its folders. Pair only with a device you know.", size = Size.Label, color = p.meta)
                 } else {
-                    T("Paste the code from  orb mitosis pair,  or scan its QR code.", color = p.mute)
+                    T("Paste the code from  orb mitosis,  or scan its QR code.", color = p.mute)
                     Box(Modifier.fillMaxWidth().heightIn(min = 120.dp).border(1.dp, p.fg, Pane).padding(16.dp)) {
                         BasicTextField(value, { value = it; error = "" }, Modifier.fillMaxWidth(), textStyle = type(12.sp, p.fg), cursorBrush = SolidColor(p.fg))
                         if (value.isEmpty()) T("orb-mitosis:v1:…", color = p.meta, size = 12.sp)

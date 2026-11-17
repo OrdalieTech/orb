@@ -2,25 +2,29 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
-	"runtime"
+	"os"
 	"slices"
 	"strings"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/OrdalieTech/orb/internal/qr"
 	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
-	"github.com/OrdalieTech/orb/platforms/native/mitosis/daemon"
+	transport "github.com/OrdalieTech/orb/platforms/native/tailcat"
 )
 
-// runMitosisPair is pairing in one command: a QR code a phone photographs, then an explicit
-// yes on this terminal for the exact fingerprint that claimed it. Nothing is trusted before.
-func runMitosisPair(ctx context.Context, profile string, streams cliStreams) int {
+// runMitosisPair is `orb mitosis`: a code (and, on a terminal, a QR code a phone photographs),
+// then one yes for the exact fingerprint that claimed it, and the device joins this Orb's sync
+// group, which this Orb owns if it is in none. Nothing is trusted before the yes; with auto (an
+// agent running it, say) the first device to claim the code gets it.
+func runMitosisPair(ctx context.Context, profile string, auto bool, streams cliStreams) int {
 	client, err := startedMitosisAdmin(ctx, profile)
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
@@ -31,10 +35,22 @@ func runMitosisPair(ctx context.Context, profile string, streams cliStreams) int
 		return reportCLIError(streams.Stderr, err)
 	}
 	code := mitosis.InvitationCode(inv)
+	// The code, fingerprint and expiry below must stay on screen: the QR shows only on a terminal
+	// it fits.
 	if q, err := qr.Encode([]byte(code)); err == nil {
-		_, _ = fmt.Fprint(streams.Stdout, q.Terminal())
+		f, _ := streams.Stdout.(*os.File)
+		if cols, rows, err := term.GetSize(int(f.Fd())); err == nil && cols >= len(q)+2 && rows >= (len(q)+3)/2+8 {
+			_, _ = fmt.Fprint(streams.Stdout, q.Terminal())
+		}
 	}
-	_, _ = fmt.Fprintf(streams.Stdout, "\nScan with the Orb app, or on another machine run:\n  orb mitosis join %s\n\nThis Orb   %s\nExpires in 10 minutes · Ctrl-C cancels\n", code, inv.PeerID)
+	// A short code for a terminal, when the relay can carry it; apps take the full one.
+	join := code
+	if short, stop, err := offerShortCode(ctx, code); err == nil {
+		defer stop()
+		join = short
+		_, _ = fmt.Fprintf(streams.Stdout, "\nIn an app or a browser tab, scan the QR code or paste:\n%s\n", code)
+	}
+	_, _ = fmt.Fprintf(streams.Stdout, "\nOn the other machine run:\n  orb mitosis join %s\n\nThis Orb   %s\nExpires in 10 minutes · Ctrl-C cancels\n", join, inv.PeerID)
 	claimed, err := pollMitosisPairing(ctx, inv.Expires, func(ctx context.Context) (mitosis.Invitation, bool, error) {
 		var status mitosisSettingsStatus
 		if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
@@ -45,63 +61,65 @@ func runMitosisPair(ctx context.Context, profile string, streams cliStreams) int
 				return i, i.Claimant != "", nil
 			}
 		}
-		return mitosis.Invitation{}, false, errors.New("invitation expired; run orb mitosis pair again")
+		return mitosis.Invitation{}, false, errors.New("invitation expired; run orb mitosis again")
 	})
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	in := bufio.NewReader(io.LimitReader(streams.Stdin, 256))
-	_, _ = fmt.Fprintf(streams.Stdout, "\nA device claimed the code:\n  %s\nCheck the device shows the same fingerprint.\nGive it full control of this Orb's conversations, and starting Orb in any folder here? [y/N] ", claimed.Claimant)
-	if !yes(in, false) {
+	if auto {
+		_, _ = fmt.Fprintf(streams.Stdout, "\nClaimed by %s\n", claimed.Claimant)
+	} else if _, _ = fmt.Fprintf(streams.Stdout, "\n%s\nis the fingerprint the other machine shows? It gets this Orb's conversations, logins and memory. [y/N] ", claimed.Claimant); !yes(bufio.NewReader(io.LimitReader(streams.Stdin, 256))) {
 		_, _ = fmt.Fprintln(streams.Stdout, "Not paired.")
 		return 1
 	}
 	if err = client.Call(ctx, "approve", map[string]string{"invitation_id": claimed.ID, "claimant": claimed.Claimant}, nil); err != nil {
 		if mitosis.Code(err) == "identity_conflict" {
-			err = errors.New("two devices used this code, so someone else saw it: not paired.\nRun orb mitosis pair again where only you can see the code")
+			err = errors.New("two devices used this code, so someone else saw it: not paired.\nRun orb mitosis again where only you can see the code")
 		}
 		return reportCLIError(streams.Stderr, err)
 	}
-	_, _ = fmt.Fprintln(streams.Stdout, "Paired. The device reconnects on its own from now on; orb mitosis block <fingerprint> revokes it.")
 	shareOrbsOnMitosis(ctx, profile)
-	// On a server, pairing is only half the job: the Mitosis has to outlive this SSH session.
-	if runtime.GOOS == "linux" && !daemon.Installed(profile) {
-		if _, err := exec.LookPath("systemctl"); err == nil {
-			_, _ = fmt.Fprint(streams.Stdout, "Keep Mitosis running after you log out and across reboots (systemd user service)? [Y/n] ")
-			if yes(in, true) {
-				note, err := daemon.Install(ctx, stateFromContext(ctx), profile)
-				if err != nil {
-					return reportCLIError(streams.Stderr, err)
-				}
-				_, _ = fmt.Fprintln(streams.Stdout, strings.TrimSpace("Mitosis runs as a service now.\n"+note))
-			}
+	return reportInSync(ctx, client, streams, claimed.Claimant, client.Call(ctx, "sync", map[string]string{"add": claimed.Claimant}, nil))
+}
+
+// reportInSync waits up to a minute for this Orb and peer to share the sync group, then says so
+// in one line. added is how adding peer to the group went, nil from the device that joins.
+func reportInSync(ctx context.Context, client *protocol.Conn, streams cliStreams, peer string, added error) int {
+	if mitosis.Code(added) == "unauthorized" {
+		_, _ = fmt.Fprintln(streams.Stdout, "Paired. This Orb follows another's sync group: run orb mitosis on that one to share logins and memory too.")
+		return 0
+	} else if added != nil {
+		return reportCLIError(streams.Stderr, added)
+	}
+	var group struct {
+		Self    string            `json:"self"`
+		Owner   string            `json:"owner"`
+		Members []string          `json:"members"`
+		Names   map[string]string `json:"names"`
+		InSync  bool              `json:"in_sync"`
+	}
+	for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(time.Second) {
+		if client.Call(ctx, "sync", struct{}{}, &group) == nil && group.InSync && slices.Contains(group.Members, peer) && group.Names[peer] != "" {
+			name := func(p string) string { return cmp.Or(group.Names[p], p) }
+			_, _ = fmt.Fprintf(streams.Stdout, "%s and %s in sync, %d devices.\n", name(group.Self), name(peer), len(group.Members))
+			return 0
 		}
 	}
+	_, _ = fmt.Fprintln(streams.Stdout, "Paired. Logins and memory follow once both devices are online.")
 	return 0
 }
 
-// yes reads one answer line; an empty line (or none) is the default.
-func yes(in *bufio.Reader, def bool) bool {
+// yes reads one answer line; anything but y or yes is no.
+func yes(in *bufio.Reader) bool {
 	line, _ := in.ReadString('\n')
-	switch strings.ToLower(strings.TrimSpace(line)) {
-	case "y", "yes":
-		return true
-	case "":
-		return def && line != ""
-	}
-	return false
+	return slices.Contains([]string{"y", "yes"}, strings.ToLower(strings.TrimSpace(line)))
 }
 
-// runMitosisJoin claims an invitation, waits for the inviter's yes, then trusts it back. Joining
-// hands the inviter this Orb's conversations, so it is never done without the owner's yes here:
-// an invitation is only someone else's claim of who they are.
+// runMitosisJoin claims an invitation, waits for the inviter's yes, then trusts it back and, if
+// this Orb is in no sync group yet, follows the inviter's. Typing the code is the yes here: the
+// inviter is the one that checks a fingerprint.
 func runMitosisJoin(ctx context.Context, profile string, args []string, streams cliStreams) int {
-	agreed := slices.Contains(args, "--yes")
-	args = slices.DeleteFunc(slices.Clone(args), func(a string) bool { return a == "--yes" })
 	text := strings.Join(args, "")
-	if text == "" && !agreed {
-		return reportCLIError(streams.Stderr, errors.New("pass the code as an argument to confirm the pairing here, or --yes to join without asking"))
-	}
 	if text == "" {
 		raw, err := io.ReadAll(io.LimitReader(streams.Stdin, protocol.MaxFrame+1))
 		if err != nil {
@@ -109,7 +127,7 @@ func runMitosisJoin(ctx context.Context, profile string, args []string, streams 
 		}
 		text = string(raw)
 	}
-	inv, err := mitosis.ParseInvitation(text)
+	inv, err := parseMitosisCode(ctx, text)
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
@@ -122,20 +140,13 @@ func runMitosisJoin(ctx context.Context, profile string, args []string, streams 
 	if err = client.Call(ctx, "status", struct{}{}, &status); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	if !agreed {
-		_, _ = fmt.Fprintf(streams.Stdout, "Pair with %s?\nIt will read and drive this Orb's conversations, current and future (not start or update Orb here).\nOnce it approves this Orb, you get the same over its conversations. [y/N] ", inv.PeerID)
-		if !yes(bufio.NewReader(io.LimitReader(streams.Stdin, 256)), false) {
-			_, _ = fmt.Fprintln(streams.Stdout, "Not joined.")
-			return 1
-		}
-	}
 	if err = client.Call(ctx, "join", inv, nil); err != nil {
 		if mitosis.Code(err) == "identity_conflict" {
 			err = errors.New("another device already used this code: ask for a new one")
 		}
 		return reportCLIError(streams.Stderr, err)
 	}
-	_, _ = fmt.Fprintf(streams.Stdout, "Waiting for approval on %s\nThis Orb   %s\n", inv.PeerID, status.PeerID)
+	_, _ = fmt.Fprintf(streams.Stdout, "This Orb   %s\nConfirm this fingerprint on the other machine.\n", status.PeerID)
 	_, err = pollMitosisPairing(ctx, inv.Expires, func(ctx context.Context) (mitosis.Invitation, bool, error) {
 		var i mitosis.Invitation
 		err := client.Call(ctx, "remote", map[string]any{"peer_id": inv.PeerID, "method": "pair.status", "params": map[string]string{"invitation_id": inv.ID}}, &i)
@@ -147,8 +158,32 @@ func runMitosisJoin(ctx context.Context, profile string, args []string, streams 
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	_, _ = fmt.Fprintf(streams.Stdout, "Paired with %s\n", inv.PeerID)
-	return 0
+	var group struct {
+		Owner string `json:"owner"`
+	}
+	if err = client.Call(ctx, "sync", struct{}{}, &group); mitosis.Code(err) == "not_found" {
+		err = client.Call(ctx, "sync", map[string]string{"join": inv.PeerID}, nil)
+	} else if group.Owner != "" && group.Owner != inv.PeerID {
+		_, _ = fmt.Fprintln(streams.Stdout, "Paired. This Orb keeps the sync group it follows: orb mitosis sync remove <owner> leaves it.")
+		return 0
+	}
+	if mitosis.Code(err) == "unavailable" {
+		err = nil // the owner's vault is on its way
+	}
+	return reportInSync(ctx, client, streams, inv.PeerID, err)
+}
+
+// offerShortCode is transport.Offer, which tests replace to stay off the network.
+var offerShortCode = transport.Offer
+
+// parseMitosisCode reads a short code, fetching the invitation it offers, or a full invitation.
+func parseMitosisCode(ctx context.Context, text string) (mitosis.Invitation, error) {
+	if full, short, err := transport.Fetch(ctx, text); short && err != nil {
+		return mitosis.Invitation{}, err
+	} else if short {
+		text = full
+	}
+	return mitosis.ParseInvitation(text)
 }
 
 // shareOrbsOnMitosis turns the mitosis plugin on once this machine pairs, unless its owner set it
@@ -191,7 +226,7 @@ func pollMitosisPairing(ctx context.Context, expires int64, poll func(context.Co
 		}
 		select {
 		case <-ctx.Done():
-			return mitosis.Invitation{}, errors.New("invitation expired; run orb mitosis pair again")
+			return mitosis.Invitation{}, errors.New("invitation expired; run orb mitosis again")
 		case <-time.After(time.Second):
 		}
 	}

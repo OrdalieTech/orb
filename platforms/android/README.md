@@ -41,7 +41,7 @@ cd platforms/android
 ./gradlew installDebug          # builds the core, the app, and installs over adb
 ```
 
-Pair a computer from the app's Mitosis screen: run `orb mitosis pair` there and scan its QR code;
+Pair a computer from the app's Mitosis screen: run `orb mitosis` there and scan its QR code;
 the computer asks you to approve the phone's fingerprint. On a Linux server, accept the Mitosis
 service it offers so Mitosis outlives the SSH session and the machine's reboots.
 

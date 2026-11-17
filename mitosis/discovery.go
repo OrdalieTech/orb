@@ -63,7 +63,7 @@ func (r Record) Verify() (Contact, error) {
 	return c, nil
 }
 func (b *Mitosis) SetScope(id string, peers []string) error {
-	if !protocol.ValidID(id) || len(peers) > 128 {
+	if !protocol.ValidID(id) || len(peers) > maxPeers {
 		return Fail("resource_exhausted")
 	}
 	for _, p := range peers {

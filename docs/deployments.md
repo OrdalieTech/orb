@@ -71,7 +71,7 @@ through Tailcat.
 
 The same binary runs headless. Use `orb -p "…"` for one-shot tasks and `orb --mode rpc` to drive
 Orb over stdio. `orb mitosis run` makes the server reachable by your other devices, and
-`orb mitosis connect-ssh user@host` installs or updates Orb on a server over SSH and pairs it.
+`orb mitosis ssh user@host` installs or updates Orb on a server over SSH, pairs it and syncs it.
 Minimal images are supported: without a CA bundle Orb falls back to built-in Mozilla roots, and
 without `ps` it inspects `/proc`. The CGo-free static build needs no libc.
 
@@ -189,10 +189,10 @@ drive its conversations, and it drives theirs. A foreground service keeps it ali
 screen is off. Tools run in the app sandbox with
 Android's `/system/bin/sh`; provider keys stay in the app and reach Orb as environment variables.
 Build and install with `./gradlew installDebug` in `platforms/android` (Go, JDK 17, Android SDK 37).
-To pair it with a computer, run `orb mitosis pair` there and scan the QR code from the app's Mitosis
+To pair it with a computer, run `orb mitosis` there and scan the QR code from the app's Mitosis
 screen; the computer asks you to approve the phone's fingerprint, and the pair persists. On a Linux
-server, answer yes when `orb mitosis pair` offers the Mitosis service (or run
-`orb mitosis service install`): Mitosis then starts with the machine and outlives the SSH session.
+server, `orb mitosis service install` makes Mitosis start with the machine and outlive the SSH
+session.
 
 ### iOS app
 
@@ -213,7 +213,7 @@ the build.
 ## Connecting deployments with Mitosis
 
 Every Orb has a peer identity (an Ed25519 key). Two Orbs become peers by exchanging a one-use
-invitation that each owner approves, or through `orb mitosis connect-ssh`. Access is granted
+invitation that each owner approves, or through `orb mitosis ssh`. Access is granted
 explicitly and in two separate kinds:
 
 - **Controllers** are people. A controller grant lets you list, watch and drive another Orb's

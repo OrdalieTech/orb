@@ -35,6 +35,9 @@ const (
 	vaultChunk = 512 << 10
 	// envelope: the recipient's Ed25519 key, an ephemeral X25519 key, and the sealed bundle key.
 	envelopeSize = 32 + 32 + 12 + 32 + 16
+	// maxPeers bounds the devices one Mitosis pairs with, holds channels to, or counts in a scope:
+	// their locators and records stay well within the 1 MiB profile state.
+	maxPeers = 256
 )
 
 // pointer is what a record says of one of its publisher's vaults.
@@ -121,7 +124,7 @@ func (b *Mitosis) setGroup(join, add, remove string) error {
 			if b.state.Peers[add] == "" && !slices.ContainsFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == add }) {
 				return Fail("not_found") // a device this one never paired with is never reached
 			}
-			if len(members) >= 128 {
+			if len(members) >= maxPeers {
 				return Fail("resource_exhausted")
 			}
 			members = append(members, add)
@@ -207,6 +210,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 
 	var handins []bundle
 	var ownerSet bundle
+	var excluded []string // the owner's recipients, when its vaults seal to others only
 	var ownerRecipients []string
 	opened := map[string][]byte{}
 	merged := map[string]string{}
@@ -227,6 +231,9 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			// cannot tell what the owner removed from what it lacks. A large memory vault still on
 			// its way holds back no credential.
 			stale[s.class] = true
+			if Code(err) == "unauthorized" && recipients != nil {
+				excluded = recipients
+			}
 		case s.peer == owner:
 			if ownerSet == nil {
 				ownerSet = bundle{}
@@ -235,8 +242,21 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			opened[s.vault.Digest] = blob
 		}
 	}
-	if ownerSet == nil && len(stale) > 0 {
+	if ownerSet == nil && len(stale) > 0 && excluded == nil {
 		return nil, Fail("unavailable")
+	}
+	if ownerSet == nil && excluded != nil {
+		// The owner removed this device, or has not added it yet: its group is who the owner seals to.
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if b.state.Group == group {
+			slices.Sort(excluded)
+			b.state.Scopes[group] = append([]string{owner}, slices.DeleteFunc(excluded, func(p string) bool { return p == owner })...)
+			if err := b.save(); err != nil {
+				return nil, err
+			}
+		}
+		return b.groupResult(group, owner, false, nil), nil
 	}
 	if owner != self && len(ownerVaults) > 0 && ownerSet == nil {
 		ownerSet = bundle{} // the owner shares none of this device's classes
@@ -376,7 +396,24 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	}
 	maps.DeleteFunc(b.vaults, func(digest string, _ []byte) bool { return !keep[digest] })
 	maps.DeleteFunc(b.sealed, func(_ string, s sealed) bool { return !keep[s.vault.Digest] })
-	return JSON(map[string]any{"group_id": group, "owner": owner, "members": b.state.Scopes[group], "received": received}), nil
+	return b.groupResult(group, owner, owner == self || ownerSet != nil, received), nil
+}
+
+// groupResult is what a round reports: the group, its members and their names, whether this
+// device holds the owner's set (in_sync), and per class the entries the round changed here.
+func (b *Mitosis) groupResult(group, owner string, inSync bool, received map[string][]string) json.RawMessage {
+	if received == nil {
+		received = map[string][]string{}
+	}
+	names := map[string]string{}
+	for _, p := range b.state.Scopes[group] {
+		if r, ok := b.state.Records[group+"/"+p]; ok {
+			if c, err := r.Verify(); err == nil && c.Name != "" {
+				names[p] = c.Name
+			}
+		}
+	}
+	return JSON(map[string]any{"group_id": group, "self": b.PeerID(), "owner": owner, "members": b.state.Scopes[group], "names": names, "in_sync": inSync, "received": received})
 }
 
 // sealed is a class this device last sealed: a digest of what it sealed, and its vault.
@@ -537,7 +574,7 @@ func (b *Mitosis) open(blob []byte) (map[string]json.RawMessage, []string, error
 	}
 	envelope := envelopes[b.PeerID()]
 	if envelope == nil {
-		return nil, nil, Fail("unauthorized")
+		return nil, slices.Collect(maps.Keys(envelopes)), Fail("unauthorized")
 	}
 	sum := sha512.Sum512(b.state.Key[:ed25519.SeedSize])
 	self, err := ecdh.X25519().NewPrivateKey(sum[:32])

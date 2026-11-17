@@ -3,10 +3,18 @@
 package tailcat
 
 import (
+	"bufio"
 	"cmp"
 	"context"
+	"crypto/hkdf"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base32"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -228,4 +236,91 @@ func (m *relayMap) Put(_ string, data []byte, etag string) error {
 	defer m.mu.Unlock()
 	m.data, m.etag, m.at = data, etag, time.Now()
 	return nil
+}
+
+// MapURL is the relay map every native Orb uses.
+const MapURL = "https://tailcat.dev/derpmap.json"
+
+// A short pairing code reaches a full invitation with no server of ours: its secret derives a
+// one-time Tailcat node (its key and pre-shared key) on the relay region the code also names, and
+// that node hands the invitation, once, to whoever dials it knowing the code. A wrong guess reaches
+// nothing; whoever does reach it still needs the inviter's yes for its fingerprint.
+const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+func shortNode(secret []byte, region tailcfg.DERPRegionID) (key.NodePrivate, tc.ConnInfo, error) {
+	raw, err := hkdf.Key(sha256.New, secret, nil, "orb mitosis short code v1", 64)
+	var k key.NodePrivate
+	var psk tc.PresharedKey
+	if err == nil {
+		err = k.UnmarshalText([]byte("privkey:" + hex.EncodeToString(raw[:32])))
+	}
+	if err == nil {
+		err = psk.UnmarshalBinary(raw[32:])
+	}
+	return k, tc.ConnInfo{ServerPublic: tc.NodePublic{NodePublic: k.Public()}, ServerDiscoPublic: tc.DiscoPublicForNode(k), PresharedKey: psk, RegionID: region}, err
+}
+
+// Offer serves invitation under a short code until it is fetched once, ctx ends or stop is called.
+func Offer(ctx context.Context, invitation string) (code string, stop func(), err error) {
+	start, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	region := &tc.ConnInfo{RegionID: -1}
+	if err = region.Expand(start, tc.ExpandForServer, tc.DERPMapURL(MapURL), &relayMap{}); err != nil {
+		return "", nil, err
+	}
+	b := make([]byte, 8) // 2 bytes of region, 6 of secret
+	binary.BigEndian.PutUint16(b, uint16(region.Region[0].RegionID))
+	_, _ = rand.Read(b[2:])
+	k, ci, err := shortNode(b[2:], region.Region[0].RegionID)
+	if err != nil {
+		return "", nil, err
+	}
+	s := &tc.Server{Region: region.Region[0], Key: k, PresharedKey: ci.PresharedKey, Logf: func(string, ...any) {}}
+	ln, err := s.Listen(start, "tcp", ":443")
+	if err != nil {
+		return "", nil, err
+	}
+	stop = sync.OnceFunc(func() { _ = s.Close() })
+	go func() {
+		defer stop()
+		if c, err := ln.Accept(); err == nil {
+			// One line, then wait for the reader to hang up: closing the node first would lose it.
+			_ = c.SetDeadline(time.Now().Add(30 * time.Second))
+			if _, err = io.WriteString(c, invitation+"\n"); err == nil {
+				_, _ = io.Copy(io.Discard, c)
+			}
+			_ = c.Close()
+		}
+	}()
+	context.AfterFunc(ctx, stop)
+	code = base32.NewEncoding(crockford).WithPadding(base32.NoPadding).EncodeToString(b)
+	return code[:4] + "-" + code[4:8] + "-" + code[8:], stop, nil
+}
+
+// Fetch reads the invitation a short code offers; ok is false when text is not a short code.
+func Fetch(ctx context.Context, text string) (invitation string, ok bool, err error) {
+	text = strings.NewReplacer("-", "", " ", "", "I", "1", "L", "1", "O", "0").Replace(strings.ToUpper(strings.TrimSpace(text)))
+	b, err := base32.NewEncoding(crockford).WithPadding(base32.NoPadding).DecodeString(text)
+	if err != nil || len(b) != 8 {
+		return "", false, nil
+	}
+	_, ci, err := shortNode(b[2:], tailcfg.DERPRegionID(binary.BigEndian.Uint16(b)))
+	if err != nil {
+		return "", true, err
+	}
+	c := &tc.Client{Server: ci.Addr(), Key: key.NewNode(), DERPMapURL: MapURL, Logf: func(string, ...any) {}}
+	defer func() { _ = c.Close() }()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if _, err = c.Ping(ctx); err != nil {
+		return "", true, errors.New("no Orb offers this code: check it, or run orb mitosis again")
+	}
+	stream, err := c.DialTCPPort(ctx, 443)
+	if err != nil {
+		return "", true, errors.New("no Orb offers this code: check it, or run orb mitosis again")
+	}
+	defer func() { _ = stream.Close() }()
+	_ = stream.SetDeadline(time.Now().Add(30 * time.Second))
+	line, err := bufio.NewReader(io.LimitReader(stream, protocol.MaxFrame)).ReadString('\n')
+	return strings.TrimSpace(line), true, err
 }

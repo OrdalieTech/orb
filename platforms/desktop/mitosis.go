@@ -69,7 +69,7 @@ func (a *app) mitosisScreen(c *ui.Context) {
 			ui.Text(c, "Pair a device").FontSize(title).FontWeight(strong)
 			ui.Text(c, "On the other computer, run").TextColor(pal.mute)
 			ui.Row(c).Padding(7, 12).Radius(soft).Border(1, pal.rule).Children(func() {
-				ui.Text(c, "orb mitosis pair").FontWeight(strong).Selectable()
+				ui.Text(c, "orb mitosis").FontWeight(strong).Selectable()
 			})
 			ui.Text(c, "then paste the code it shows. It asks you to approve this computer there; or invite it from here.").FontSize(small).TextColor(pal.meta)
 			ui.Row(c).Gap(8).PaddingY(6).Children(func() {
@@ -321,7 +321,7 @@ func (a *app) joinScreen(c *ui.Context, code string) {
 				ui.Text(c, "Pairing lets that device read and drive this computer's conversations. Once it approves this computer, you get its conversations and can start Orb in its folders. Pair only with a device you know.").
 					FontSize(labelSize + 1).TextColor(pal.meta)
 			} else {
-				ui.Text(c, "Paste the code from  orb mitosis pair.").TextColor(pal.mute)
+				ui.Text(c, "Paste the code from  orb mitosis.").TextColor(pal.mute)
 				ui.TextAreaBase(c, &pairing.code).Placeholder("orb-mitosis:v1:…").PlaceholderColor(pal.meta).FontSize(12).
 					FillWidth().MinHeight(120).Padding(16).Radius(pane).Border(1, pal.fg).AutoFocus()
 				if pairing.inviter != "" {

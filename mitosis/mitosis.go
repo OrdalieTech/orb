@@ -500,7 +500,15 @@ func (b *Mitosis) Invite(grants []Grant) (Invitation, error) {
 			delete(b.state.Invitations, id)
 		}
 	}
-	if len(b.state.Invitations) >= 128 {
+	// An approved invitation stays until it expires, so its claimant can read the approval; only
+	// those still open count against the cap.
+	open := 0
+	for _, i := range b.state.Invitations {
+		if i.Status != "approved" {
+			open++
+		}
+	}
+	if open >= 128 {
 		return Invitation{}, Fail("resource_exhausted")
 	}
 	// Proposed selectors are committed at approval, so fixed selectors snapshot
@@ -595,7 +603,7 @@ func (b *Mitosis) Approve(id, claimant string) error {
 		approved = append(approved, g)
 	}
 	if i.ClaimantLocator != "" {
-		if len(b.state.Peers) >= 128 && b.state.Peers[claimant] == "" {
+		if len(b.state.Peers) >= maxPeers && b.state.Peers[claimant] == "" {
 			return Fail("resource_exhausted")
 		}
 		b.state.Peers[claimant] = i.ClaimantLocator
@@ -608,6 +616,7 @@ func (b *Mitosis) Approve(id, claimant string) error {
 func (b *Mitosis) Block(peer string) error {
 	b.mu.Lock()
 	b.state.Blocked[peer] = true
+	b.state.Grants = slices.DeleteFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == peer })
 	for id, i := range b.state.Invitations {
 		if i.Claimant == peer {
 			delete(b.state.Invitations, id)

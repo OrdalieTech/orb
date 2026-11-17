@@ -371,7 +371,9 @@ async function refreshTab() {
 $("mitosis-join").onclick = async () => {
   remoteBusy = true; controls();
   try {
-    const invitation = JSON.parse($("mitosis-invitation").value || "{}");
+    // The code orb mitosis shows (orb-mitosis:v1:<base64url JSON>), or the invitation JSON itself.
+    const text = $("mitosis-invitation").value.trim(), code = text.split("orb-mitosis:v1:")[1]?.split(/\s/)[0];
+    const invitation = JSON.parse(code ? atob(code.replace(/-/g, "+").replace(/_/g, "/")) : text || "{}");
     if (!invitation.peer_id || !invitation.token) throw new Error("Paste an invitation first.");
     if (!tab) await openTab();
     const { peer_id: self } = await tab.admin("self");
@@ -381,7 +383,7 @@ $("mitosis-join").onclick = async () => {
     await tab.admin("sync", { join: invitation.peer_id }).catch(() => {});
     localStorage.setItem("orb.tab.owner", invitation.peer_id);
     $("mitosis-invitation").value = "";
-    $("mitosis-notice").textContent = `Joined. To finish, run on your device:\norb mitosis pair approve ${invitation.invitation_id} ${self}\norb mitosis sync add ${self}`;
+    $("mitosis-notice").textContent = `Joined. Confirm this fingerprint on your device:\n${self}`;
   } catch (error) { $("mitosis-notice").textContent = error.message; }
   finally { remoteBusy = false; controls(); }
 };

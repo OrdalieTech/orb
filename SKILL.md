@@ -35,7 +35,7 @@ orb list --help
 orb config --help
 ```
 
-These print and change nothing. Bare `orb` and `orb config` open a TUI, and bare `orb update` replaces the running binary. `orb chat <platform>`, `orb app` (which also starts Mitosis) and the RPC and ACP modes run until stopped. Do not probe a nested command by omitting its arguments: `orb storage migrate`, `orb mitosis start` and `orb mitosis pair` act at once.
+These print and change nothing. Bare `orb` and `orb config` open a TUI, and bare `orb update` replaces the running binary. `orb chat <platform>`, `orb app` (which also starts Mitosis) and the RPC and ACP modes run until stopped. Do not probe a nested command by omitting its arguments: `orb storage migrate`, `orb mitosis start` and bare `orb mitosis` act at once.
 
 ## Core and hosts
 

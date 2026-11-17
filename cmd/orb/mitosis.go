@@ -46,8 +46,22 @@ func runMitosisCommand(ctx context.Context, args []string, streams cliStreams) i
 		}
 	}
 	args = filtered
-	if len(args) == 0 || args[0] == "--help" {
-		_, _ = fmt.Fprintln(streams.Stdout, "orb mitosis run|start|stop|status|instances|peers|grants|groups|scopes|prune [--profile personal]\norb mitosis run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 [--web-url wss://host/mitosis]\norb mitosis sync [add|remove <peer-id> | join <owner-peer-id>]   (share credentials and memory across the profile's sync group, sealed per device; a member leaves by removing the owner)\norb mitosis block <peer-id>   (cut a device off: no channel, grant or vault after)\norb mitosis pair   (show a QR code, then approve the device that scans it)\norb mitosis join <code>   (pair with an Orb that ran orb mitosis pair)\norb mitosis service install|remove   (Linux: keep Mitosis running across logouts and reboots)\norb mitosis pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>\norb mitosis grant|revoke|scope|group|assign|takeover|publish < request.json\norb mitosis remote <peer-id> <method> < params.json\norb mitosis view <peer-id> <instance-id>\norb mitosis shell <peer-id> [folder]   (a terminal on a machine that lets this one start Orb there)\norb mitosis pipe   (owner API as JSON lines on stdin/stdout)\norb mitosis trust <peer-id>\norb mitosis connect-ssh <user@host> [--remote-profile personal] [--remote-orb orb]")
+	if len(args) == 0 || len(args) == 1 && args[0] == "--yes" {
+		return runMitosisPair(ctx, profile, len(args) == 1, streams)
+	}
+	if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
+		_, _ = fmt.Fprintln(streams.Stdout, `orb mitosis [--yes]   (show a code; the machine that joins with it, once you confirm its fingerprint, gets this Orb's conversations, logins and memory; --yes takes the first that claims it, for agents)
+orb mitosis join <code>   (join the Orb that showed the code)
+orb mitosis ssh <user@host> [--remote-profile personal] [--remote-orb orb]   (the same for a server, over SSH; installs Orb there)
+orb mitosis status|stop|start|block <peer-id>|service install|remove   [--profile personal]
+
+Advanced:
+orb mitosis sync [add|remove <peer-id> | join <owner-peer-id>]   (the sync group; a peer-id may be an unambiguous prefix)
+orb mitosis run [--web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 --web-url wss://host/mitosis]
+orb mitosis pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>
+orb mitosis trust <peer-id> | grant|revoke|scope|group|assign|takeover|publish < request.json
+orb mitosis remote <peer-id> <method> < params.json | view <peer-id> <instance-id> | shell <peer-id> [folder]
+orb mitosis instances|peers|grants|groups|scopes|prune|pipe`)
 		return 0
 	}
 	if args[0] == "run" {
@@ -96,21 +110,19 @@ func runMitosisCommand(ctx context.Context, args []string, streams cliStreams) i
 			if err := daemon.Systemctl(ctx, "start", daemon.UnitName(profile)); err != nil {
 				return reportCLIError(streams.Stderr, err)
 			}
-			return 0
-		}
-		if err := startMitosis(ctx, profile, true); err != nil {
+		} else if err := startMitosis(ctx, profile, true); err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
+		_, _ = fmt.Fprintf(streams.Stdout, "Mitosis runs (profile %s).\n", profile)
 		return 0
 	}
-	if args[0] == "connect-ssh" {
+	if args[0] == "ssh" {
 		if len(args) < 2 {
-			return reportCLIError(streams.Stderr, fmt.Errorf("connect-ssh requires user@host or an SSH alias"))
+			return reportCLIError(streams.Stderr, fmt.Errorf("ssh requires user@host or an SSH alias"))
 		}
 		target, remoteProfile, remoteOrb := args[1], "personal", "orb"
 		for i := 2; i < len(args); i++ {
 			switch args[i] {
-			case "--include-future":
 			case "--remote-profile", "--remote-orb":
 				flag := args[i]
 				i++
@@ -123,7 +135,7 @@ func runMitosisCommand(ctx context.Context, args []string, streams cliStreams) i
 					remoteOrb = args[i]
 				}
 			default:
-				return reportCLIError(streams.Stderr, fmt.Errorf("unknown connect-ssh option"))
+				return reportCLIError(streams.Stderr, fmt.Errorf("unknown ssh option"))
 			}
 		}
 		if _, err := daemon.SSHCommand(target, remoteOrb, remoteProfile); err != nil {
@@ -142,20 +154,13 @@ func runMitosisCommand(ctx context.Context, args []string, streams cliStreams) i
 			return reportCLIError(streams.Stderr, err)
 		}
 		peer, err := connectMitosisSSH(ctx, client, profile, status.PeerID, target, remoteProfile, remoteOrb)
-		if err != nil {
-			return reportCLIError(streams.Stderr, err)
-		}
-		_, _ = fmt.Fprintln(streams.Stdout, peer)
-		return 0
+		return reportInSync(ctx, client, streams, peer, err)
 	}
 	if args[0] == "view" && len(args) == 3 {
 		return runMitosisView(ctx, remoteLink{profile: profile, peer: args[1], instance: args[2]}, streams)
 	}
 	if args[0] == "shell" && (len(args) == 2 || len(args) == 3) {
 		return runMitosisShell(ctx, profile, args[1], strings.Join(args[2:], ""), streams)
-	}
-	if args[0] == "pair" && len(args) == 1 {
-		return runMitosisPair(ctx, profile, streams)
 	}
 	if args[0] == "join" {
 		return runMitosisJoin(ctx, profile, args[1:], streams)
@@ -221,13 +226,15 @@ func runMitosisCommand(ctx context.Context, args []string, streams cliStreams) i
 	case "block":
 		if len(args) != 2 {
 			err = errors.New("block requires PeerID")
-		} else {
+		} else if args[1], err = peerArg(ctx, client, args[1]); err == nil {
 			params = mitosis.JSON(map[string]string{"peer_id": args[1]})
 		}
 	case "sync":
 		switch {
 		case len(args) == 3 && slices.Contains([]string{"join", "add", "remove"}, args[1]):
-			params = mitosis.JSON(map[string]string{args[1]: args[2]})
+			if args[2], err = peerArg(ctx, client, args[2]); err == nil {
+				params = mitosis.JSON(map[string]string{args[1]: args[2]})
+			}
 		case len(args) != 1:
 			err = errors.New("sync takes join <owner-peer-id>, add <peer-id> or remove <peer-id>")
 		}
@@ -255,19 +262,62 @@ func runMitosisCommand(ctx context.Context, args []string, streams cliStreams) i
 		case method == "sync" && mitosis.Code(err) == "resource_exhausted":
 			err = errors.New("what this profile shares, sealed to every member, exceeds the 64 MiB a sync vault holds")
 		case method == "sync" && mitosis.Code(err) == "not_found" && len(args) > 1 && args[1] == "add":
-			err = errors.New("pair with that device first: orb mitosis pair here, orb mitosis join on it")
+			err = errors.New("pair with that device first: orb mitosis here, orb mitosis join on it")
 		case method == "sync" && mitosis.Code(err) == "not_found":
 			err = errors.New("no sync group here: add a device to this one, or join another's with orb mitosis sync join <owner-peer-id>")
 		}
 		return reportCLIError(streams.Stderr, err)
 	}
-	if method == "stop" {
+	switch {
+	case method == "stop":
 		if err = daemon.WaitStopped(ctx, client); err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
+		_, _ = fmt.Fprintf(streams.Stdout, "Mitosis stopped (profile %s).\n", profile)
+	case method == "block":
+		_, _ = fmt.Fprintf(streams.Stdout, "Blocked %s: no channel, grant or vault from now on.\n", args[1])
+	case method == "status" && streams.StdoutTTY:
+		var status struct {
+			mitosisSettingsStatus
+			Scopes map[string][]string `json:"scopes"`
+		}
+		_ = json.Unmarshal(result, &status)
+		_, _ = fmt.Fprintf(streams.Stdout, "This Orb  %s (profile %s)\n", status.PeerID, profile)
+		for _, peer := range status.Peers {
+			member := ""
+			for _, members := range status.Scopes {
+				if slices.Contains(members, peer) && slices.Contains(members, status.PeerID) {
+					member = ", sync group"
+				}
+			}
+			_, _ = fmt.Fprintf(streams.Stdout, "  %s  %s%s\n", peer, status.PeerStates[peer], member)
+		}
+	default:
+		_, _ = fmt.Fprintln(streams.Stdout, string(result))
 	}
-	_, _ = fmt.Fprintln(streams.Stdout, string(result))
 	return 0
+}
+
+// peerArg is a PeerID typed whole or as an unambiguous prefix, with or without "orb:ed25519:", of
+// a device this Mitosis knows; anything else goes through as typed.
+func peerArg(ctx context.Context, client *protocol.Conn, arg string) (string, error) {
+	var status mitosisSettingsStatus
+	if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
+		return "", err
+	}
+	var match []string
+	for _, p := range status.Peers {
+		if p == arg {
+			return p, nil
+		}
+		if strings.HasPrefix(p, arg) || strings.HasPrefix(strings.TrimPrefix(p, "orb:ed25519:"), arg) {
+			match = append(match, p)
+		}
+	}
+	if len(match) > 1 {
+		return "", fmt.Errorf("%s matches %d devices; type more of it", arg, len(match))
+	}
+	return append(match, arg)[0], nil
 }
 
 // runMitosisPipe serves the owner admin API as JSON lines for GUI shells, over
@@ -384,7 +434,18 @@ func connectMitosisSSH(ctx context.Context, client *protocol.Conn, profile, loca
 	if _, err = daemon.RunSSH(ctx, target, remoteOrb, remoteProfile, "pair", "approve", inv.ID, localPeer); err != nil {
 		return "", err
 	}
-	return inv.PeerID, trustMitosisPeer(ctx, client, profile, inv.PeerID, false)
+	if err = trustMitosisPeer(ctx, client, profile, inv.PeerID, false); err != nil {
+		return "", err
+	}
+	// The server joins this Orb's sync group (this Orb owns it if it is in none) unless it follows one.
+	if _, err = daemon.RunSSH(ctx, target, remoteOrb, remoteProfile, "sync"); err == nil {
+		return inv.PeerID, nil
+	}
+	if err = client.Call(ctx, "sync", map[string]string{"add": inv.PeerID}, nil); err != nil {
+		return inv.PeerID, err // unauthorized: this Orb follows another's group, whose owner adds devices
+	}
+	_, err = daemon.RunSSH(ctx, target, remoteOrb, remoteProfile, "sync", "join", localPeer)
+	return inv.PeerID, err
 }
 
 // trustMitosisPeer grants peer control of this Orb's conversations, and of the machine too when

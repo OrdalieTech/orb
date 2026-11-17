@@ -239,7 +239,7 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 	if len(token) != 43 {
 		return errors.New("corrupt mitosis admin credential")
 	}
-	node, err := transport.Open(b.TransportState(), b.SaveTransportState, "https://tailcat.dev/derpmap.json")
+	node, err := transport.Open(b.TransportState(), b.SaveTransportState, transport.MapURL)
 	if err != nil {
 		return err
 	}
@@ -260,6 +260,9 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 		go func() { _ = server.Serve(listener); stop() }()
 	}
 	service := New(serviceCtx, state, profile, version, b, node, web.URL)
+	// service.log (or the journal) says what runs; nothing about peers or what they share.
+	_, _ = fmt.Fprintf(os.Stderr, "%s mitosis %s, profile %s, running as %s\n", time.Now().Format(time.RFC3339), version, profile, b.PeerID())
+	defer func() { _, _ = fmt.Fprintf(os.Stderr, "%s mitosis stopped\n", time.Now().Format(time.RFC3339)) }()
 	b.SetHost(service.host)
 	b.SetName(machineName())
 	agentDir, _ := config.GetAgentDir()

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -32,6 +33,7 @@ import (
 	nativemitosis "github.com/OrdalieTech/orb/platforms/native/mitosis"
 	"github.com/OrdalieTech/orb/platforms/native/mitosis/daemon"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
+	transport "github.com/OrdalieTech/orb/platforms/native/tailcat"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -677,6 +679,8 @@ func TestAStopMarkerNeverKeepsOrbFromARunningMitosis(t *testing.T) {
 }
 
 func TestMitosisPairApprovesOnlyAfterAnExplicitYes(t *testing.T) {
+	offerShortCode = func(context.Context, string) (string, func(), error) { return "", nil, errors.New("offline") }
+	t.Cleanup(func() { offerShortCode = transport.Offer })
 	inv := mitosis.Invitation{ID: protocol.NewID(), PeerID: "orb:ed25519:me", Token: "secret", Locator: "here", Expires: time.Now().Add(time.Minute).Unix()}
 	for _, answer := range []string{"y\n", "\n"} {
 		approved := ""
@@ -691,21 +695,23 @@ func TestMitosisPairApprovesOnlyAfterAnExplicitYes(t *testing.T) {
 			case "approve":
 				approved = string(params)
 				return mitosis.JSON(struct{}{}), nil
+			case "sync": // the approved device joins this Orb's group
+				return mitosis.JSON(map[string]any{"self": inv.PeerID, "members": []string{inv.PeerID, "orb:ed25519:phone"}, "names": map[string]string{inv.PeerID: "laptop", "orb:ed25519:phone": "phone"}, "in_sync": true}), nil
 			}
 			return nil, mitosis.Fail("not_found")
 		})
 		var out, errs bytes.Buffer
-		code := runMitosisCommand(t.Context(), []string{"pair"}, cliStreams{Stdin: strings.NewReader(answer), Stdout: &out, Stderr: &errs})
-		if !strings.Contains(out.String(), "▀") || !strings.Contains(out.String(), mitosis.InvitationCode(inv)) || !strings.Contains(out.String(), "orb:ed25519:phone") {
-			t.Fatalf("output lacks the QR, code or claimant: %s %s", out.String(), errs.String())
+		code := runMitosisCommand(t.Context(), nil, cliStreams{Stdin: strings.NewReader(answer), Stdout: &out, Stderr: &errs})
+		if strings.Contains(out.String(), "▀") || !strings.Contains(out.String(), mitosis.InvitationCode(inv)) || !strings.Contains(out.String(), "orb:ed25519:phone") {
+			t.Fatalf("output has a QR off a terminal, or lacks the code or claimant: %s %s", out.String(), errs.String())
 		}
-		if yes := answer == "y\n"; (code == 0) != yes || (approved != "") != yes || yes && !strings.Contains(approved, `"claimant":"orb:ed25519:phone"`) {
-			t.Fatalf("answer %q: code %d approved %q", answer, code, approved)
+		if yes := answer == "y\n"; (code == 0) != yes || (approved != "") != yes || yes && (!strings.Contains(approved, `"claimant":"orb:ed25519:phone"`) || !strings.Contains(out.String(), "laptop and phone in sync, 2 devices.")) {
+			t.Fatalf("answer %q: code %d approved %q output %s", answer, code, approved, out.String())
 		}
 	}
 }
 
-func TestMitosisJoinTrustsTheInviterOnceItApproves(t *testing.T) {
+func TestMitosisJoinTrustsAndFollowsTheInviterOnceItApproves(t *testing.T) {
 	b, err := mitosis.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
@@ -716,9 +722,17 @@ func TestMitosisJoinTrustsTheInviterOnceItApproves(t *testing.T) {
 		t.Fatal(err)
 	}
 	inv.Locator = "there"
-	polls, granted := 0, ""
+	polls, granted, joined := 0, "", ""
 	fakeMitosisOwner(t, func(method string, params json.RawMessage) (json.RawMessage, error) {
 		switch method {
+		case "sync":
+			if strings.Contains(string(params), "join") {
+				joined = string(params)
+			}
+			if joined == "" {
+				return nil, mitosis.Fail("not_found")
+			}
+			return mitosis.JSON(map[string]any{"self": "orb:ed25519:me", "owner": inv.PeerID, "members": []string{inv.PeerID, "orb:ed25519:me"}, "names": map[string]string{inv.PeerID: "laptop", "orb:ed25519:me": "box"}, "in_sync": true}), nil
 		case "status":
 			return mitosis.JSON(map[string]any{"peer_id": "orb:ed25519:me"}), nil
 		case "join":
@@ -737,16 +751,13 @@ func TestMitosisJoinTrustsTheInviterOnceItApproves(t *testing.T) {
 		return nil, mitosis.Fail("not_found")
 	})
 	var out, errs bytes.Buffer
-	if code := runMitosisCommand(t.Context(), []string{"join", mitosis.InvitationCode(inv)}, cliStreams{Stdin: strings.NewReader("\n"), Stdout: &out, Stderr: &errs}); code == 0 || polls != 0 {
-		t.Fatalf("joined without a yes: %s", out.String())
-	}
-	out.Reset()
-	if code := runMitosisCommand(t.Context(), []string{"join", mitosis.InvitationCode(inv)}, cliStreams{Stdin: strings.NewReader("y\n"), Stdout: &out, Stderr: &errs}); code != 0 {
+	if code := runMitosisCommand(t.Context(), []string{"join", mitosis.InvitationCode(inv)}, cliStreams{Stdout: &out, Stderr: &errs}); code != 0 {
 		t.Fatalf("join: %s", errs.String())
 	}
 	// The inviter gets the conversations back, never the machine: that is the owner's own call.
-	if polls != 2 || !strings.Contains(granted, inv.PeerID) || strings.Contains(granted, "host.launch") || !strings.Contains(out.String(), "Paired with "+inv.PeerID) {
-		t.Fatalf("polls %d granted %q output %s", polls, granted, out.String())
+	// This Orb, in no group yet, follows the inviter's.
+	if polls != 2 || !strings.Contains(granted, inv.PeerID) || strings.Contains(granted, "host.launch") || !strings.Contains(joined, inv.PeerID) || !strings.Contains(out.String(), "box and laptop in sync, 2 devices.") {
+		t.Fatalf("polls %d granted %q joined %q output %s", polls, granted, joined, out.String())
 	}
 	// A paired machine shares its Orbs, terminal ones included, unless its owner said otherwise.
 	out.Reset()

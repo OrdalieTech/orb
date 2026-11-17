@@ -541,7 +541,7 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 		if e != nil {
 			return e
 		}
-		inv, e := mitosis.ParseInvitation(text)
+		inv, e := parseMitosisCode(ctx, text)
 		if e != nil {
 			return e
 		}
@@ -578,7 +578,7 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 		}
 		ui.Notify("Setting up Orb on "+target+"…", extensions.NotifyInfo)
 		peer, e := connectMitosisSSH(ctx, client, profile, status.PeerID, target, "personal", "orb")
-		if e != nil {
+		if e != nil && mitosis.Code(e) != "unauthorized" {
 			return e
 		}
 		ui.Notify("Server paired through SSH.", extensions.NotifyInfo)

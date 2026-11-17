@@ -28,7 +28,9 @@ func (b *Mitosis) Admin(ctx context.Context, method string, params json.RawMessa
 		}
 		pending := []Invitation{}
 		for _, i := range b.state.Invitations {
-			pending = append(pending, i.Invitation)
+			if i.Status != "approved" { // kept only so the claimant can read its approval
+				pending = append(pending, i.Invitation)
+			}
 		}
 		peers := []string{}
 		for id := range b.state.Peers {
@@ -225,7 +227,7 @@ func (b *Mitosis) SavePeer(peer, locator string) error {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if len(b.state.Peers) >= 128 {
+	if len(b.state.Peers) >= maxPeers {
 		return Fail("resource_exhausted")
 	}
 	b.state.Peers[peer] = locator

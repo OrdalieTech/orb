@@ -281,7 +281,7 @@ func (p *Peer) Admin(ctx context.Context, method string, params json.RawMessage,
 			return nil, fmt.Errorf("peer: join is not available on a Worker object; create the invitation here and join it from the other Orb")
 		}
 		return p.mitosis.Admin(ctx, method, params)
-	case "publish", "stop", "start", "connect-ssh":
+	case "publish", "stop", "start", "ssh":
 		return nil, fmt.Errorf("peer: %s is not available here; create the invitation here and join it from the other Orb", method)
 	default:
 		return p.mitosis.Admin(ctx, method, params)

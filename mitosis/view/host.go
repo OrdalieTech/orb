@@ -463,7 +463,7 @@ func (a *App) join(code string) error {
 		select {
 		case <-ctx.Done():
 			set("")
-			return errors.New("not approved in time · run orb mitosis pair again")
+			return errors.New("not approved in time · run orb mitosis again")
 		case <-time.After(time.Second):
 		}
 	}

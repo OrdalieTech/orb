@@ -553,7 +553,7 @@ connection state. Open device panels retry after interruptions and show newly at
 without reopening the picker. Closed conversations disappear automatically.
 
 For a server you already access through SSH, choose **Add device → Connect a server** or run
-`orb mitosis connect-ssh user@host`. Your system SSH client must already connect without a
+`orb mitosis ssh user@host`, which also adds it to your sync group. Your system SSH client must already connect without a
 password or host-key prompt; SSH aliases and configuration are supported. Setup finds Orb on
 PATH or in `~/.local/bin` and installs or updates it there if needed, using a checksum-verified
 release for the server's platform. No sudo or remote shell edits are needed. The candidate must
@@ -563,6 +563,9 @@ grants mutual full conversation access using your SSH login, then traffic uses M
 `--remote-profile` and `--remote-orb` select a different remote profile or an existing executable;
 `--profile` selects the local profile. Enable Mitosis in a remote Orb conversation to attach it;
 pairing can happen before any conversations exist.
+
+From the shell, `orb mitosis` shows a code and `orb mitosis join <code>` on the other machine
+pairs it and joins the sync group after one fingerprint check on the first.
 
 Scripted administration uses `orb mitosis status|instances|peers|grants|groups|scopes`,
 `orb mitosis pair invite`, `orb mitosis pair join` (invitation JSON on stdin),

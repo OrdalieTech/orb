@@ -282,7 +282,7 @@ private struct Devices: View {
             Section("Devices") {
                 let peers = orb.home.machines.filter { !$0.here }
                 if peers.isEmpty {
-                    ContentUnavailableView("No device yet", systemImage: "point.3.connected.trianglepath.dotted", description: Text(local ? "Invite one below, or join one that ran orb mitosis pair." : "Join a computer: scan the code its Orb app or orb mitosis pair shows."))
+                    ContentUnavailableView("No device yet", systemImage: "point.3.connected.trianglepath.dotted", description: Text(local ? "Invite one below, or join one that ran orb mitosis." : "Join a computer: scan the code its Orb app or orb mitosis shows."))
                 }
                 ForEach(peers) { m in
                     HStack {

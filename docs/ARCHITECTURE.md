@@ -189,9 +189,9 @@ Disconnect releases observation without cancelling remote execution. Reload reta
 requires explicit reconnection. A Worker's `mitosis_call` is separately opt-in and uses an instance
 subject with its own remote grants, never the human controller's authority.
 
-The same panel can instead add the tab to the user's devices: an invitation from `orb mitosis pair
-invite` opens `peer.js` over IndexedDB, which joins, trusts the inviting device and follows its sync
-group, and the page shows the two commands that device runs to finish (`pair approve`, `sync add`).
+The same panel can instead add the tab to the user's devices: the code `orb mitosis` shows opens
+`peer.js` over IndexedDB, which joins, trusts the inviting device and follows its sync group, and
+the page shows the fingerprint to confirm there, which approves the tab and adds it to the group.
 From then on the local conversation runs on the peer's Orb through its RPC `command` entry point,
 not `orb.wasm`, with the providers and memory the profile shares; the Model summary shows
 membership, connection and provider names, never a value. A reload reopens the peer with its

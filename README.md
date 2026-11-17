@@ -46,11 +46,14 @@ through the explicit Pi-file entry point.
 
 ## Connect devices with Mitosis
 
-Open **Mitosis** from Settings or **Ctrl+P**, enable it, and choose **Add device**. Pair with an
-invitation or existing SSH access; SSH setup installs or updates remote Orb when needed, then
-conversation traffic uses Mitosis over Tailcat. From the shell: `orb mitosis connect-ssh user@host`.
-Pairing grants mutual conversation access. Mitosis runs in the background until explicitly stopped;
-turning it off retains saved pairings. Recent foreign previews are read-only offline.
+Run `orb mitosis` on a machine you already use: it shows a code. On the new machine, run
+`orb mitosis join <code>`, then confirm its fingerprint on the first one. The new machine is then
+paired and in your sync group, with your logins and memory: `fedora and box in sync, 2 devices`.
+`orb mitosis ssh user@host` does the same for a server in one command, installing Orb there.
+The first machine owns the group; `orb mitosis sync` and `block` cover the rest. In the app, open
+**Mitosis** from Settings or **Ctrl+P** and choose **Add device**. Mitosis runs in the background
+until explicitly stopped; turning it off retains saved pairings. Recent foreign previews are
+read-only offline.
 
 The current release controls attached conversations; a unified multi-Mitosis Sessions page remains
 planned.
