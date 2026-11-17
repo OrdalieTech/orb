@@ -186,13 +186,18 @@ func (b *Mitosis) adopt() {
 	cur, op := b.current(), b.op
 	if b.state.Group != "" && !slices.Contains(cur.Members, self) {
 		b.leave()
+	}
+	if adopted {
+		_ = b.save()
+	}
+	if b.state.Group == "" {
 		return
 	}
 	shown := map[string]bool{"add": slices.Contains(cur.Members, op[1]), "promote": slices.Contains(cur.Owners, op[1]),
 		"remove": !slices.Contains(cur.Members, op[1]), "demote": !slices.Contains(cur.Owners, op[1])}
 	if adopted && op[0] != "" {
-		if !shown[op[0]] {
-			_ = b.change(op[0], op[1])
+		if !shown[op[0]] && b.change(op[0], op[1]) == nil {
+			_ = b.save()
 		}
 		b.op = [2]string{}
 	}
@@ -439,6 +444,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	if b.state.Group != group || !slices.Equal(b.state.Owners, owners) || !slices.Equal(b.state.Scopes[group], members) {
 		return nil, Fail("not_found")
 	}
+	before := string(JSON([]any{b.state.Merged, b.state.Shared}))
 	if b.state.Merged == nil {
 		b.state.Merged = map[string]string{}
 	}
@@ -500,9 +506,9 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	if len(vaults) > 0 {
 		ext["vaults"] = JSON(vaults)
 	}
-	if owner {
-		ext["group"] = JSON(b.current())
-	}
+	// Every device carries the membership it holds: one that was an owner still hands its last
+	// change to a member that knows it alone as an owner.
+	ext["group"] = JSON(b.current())
 	sum := sha256.Sum256(JSON([]any{ext, endpoints, b.name}))
 	if digest := string(sum[:]); !published || digest != b.synced {
 		if _, err := b.publishContact(group, b.name, endpoints, false, ext); err != nil {
@@ -510,8 +516,10 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		}
 		b.synced = digest
 	}
-	if err := b.save(); err != nil {
-		return nil, err
+	if string(JSON([]any{b.state.Merged, b.state.Shared})) != before {
+		if err := b.save(); err != nil {
+			return nil, err
+		}
 	}
 	// This device serves its own vaults and the group's sets it opened; nothing else.
 	keep := map[string]bool{}

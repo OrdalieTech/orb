@@ -298,7 +298,16 @@ func TestSyncOwnersLiveWithoutEachOther(t *testing.T) {
 	if err := admin(b, `{"promote":"`+c.PeerID()+`"}`); Code(err) != "unauthorized" {
 		t.Fatal("a member promoted a device", err)
 	}
+	// With c away, a hands ownership to b; c, back, learns it from a alone.
 	_ = admin(a, `{"promote":"`+b.PeerID()+`"}`)
+	round(a, b)
+	_ = admin(b, `{"demote":"`+a.PeerID()+`"}`)
+	round(a, b)
+	round(a, c)
+	if !slices.Equal(c.state.Owners, []string{b.PeerID()}) {
+		t.Fatal("a member away through a handoff did not follow it", c.state.Owners)
+	}
+	_ = admin(b, `{"promote":"`+a.PeerID()+`"}`)
 	round(all...)
 
 	// With a away, b changes the data and cuts c; a, back, follows both.
