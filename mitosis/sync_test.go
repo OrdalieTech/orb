@@ -350,6 +350,21 @@ func TestSyncOwnersLiveWithoutEachOther(t *testing.T) {
 			t.Fatalf("an owner back from a restart deleted what it never saw: %s", raw)
 		}
 	}
+	// a's set is the group's; b restarts while a is off (nothing serves a's vault) and still
+	// publishes its own change, from the set it already applied.
+	_ = document.Replace(ctx, stores[a], []byte(`{"openai":{"type":"api_key","key":"k5"},"groq":{"type":"api_key","key":"g1"}}`))
+	round(a, b)
+	for _, x := range []*Mitosis{a, b} {
+		x.mu.Lock()
+		clear(x.sealed)
+		clear(x.vaults)
+		x.mu.Unlock()
+	}
+	_ = document.Replace(ctx, stores[b], []byte(`{"openai":{"type":"api_key","key":"k5"},"groq":{"type":"api_key","key":"g2"}}`))
+	_ = admin(b, `{}`)
+	if b.pointers(group, b.PeerID())["credentials"].Seq <= a.pointers(group, a.PeerID())["credentials"].Seq {
+		t.Fatal("an owner restarted while the other is off stopped publishing")
+	}
 
 	// Two owners removing each other at once leave one owner, whom both follow.
 	_ = admin(a, `{"remove":"`+b.PeerID()+`"}`)

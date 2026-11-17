@@ -379,8 +379,9 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		}
 		if err != nil {
 			// Until it opens the group's set of a class, a device leaves that class as it was:
-			// its way holds back no credential.
-			stale[class] = true
+			// its way holds back no credential. An owner that already applied this very set (a
+			// restart emptied its memory, and its publisher is off) goes on from it.
+			stale[class] = !owner || adopted["* "+class] != s.vault.Digest
 			continue
 		}
 		sets[class], opened[s.vault.Digest] = in, blob

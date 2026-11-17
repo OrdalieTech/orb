@@ -99,6 +99,7 @@ type Mitosis struct {
 	vaults         map[string][]byte // digest -> sealed vault this device serves (vault.get)
 	handing        bool              // a member's last round handed the owners something the group's set lacks
 	op             [2]string         // this owner's last membership change (change)
+	resolved       map[string]Call   // agent.call operations by ledger key, as first resolved
 }
 
 // Host serves a peer's machine-level calls — the threads stored on this machine, and starting
@@ -159,7 +160,7 @@ func Open(store document.Document, create bool) (*Mitosis, error) {
 	if store == nil {
 		return nil, errors.New("mitosis requires explicit storage")
 	}
-	b := &Mitosis{changes: make(chan struct{}, 1), classes: map[string]Class{}, sealed: map[string]sealed{}, vaults: map[string][]byte{}, store: store, active: map[string]registration{}, channels: map[string]map[*protocol.Conn]uint64{}, dialled: map[*protocol.Conn]bool{}, boot: protocol.NewID()}
+	b := &Mitosis{changes: make(chan struct{}, 1), classes: map[string]Class{}, sealed: map[string]sealed{}, resolved: map[string]Call{}, vaults: map[string][]byte{}, store: store, active: map[string]registration{}, channels: map[string]map[*protocol.Conn]uint64{}, dialled: map[*protocol.Conn]bool{}, boot: protocol.NewID()}
 	raw, err := store.Read(context.Background())
 	if err != nil {
 		return nil, err

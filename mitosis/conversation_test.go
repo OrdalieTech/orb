@@ -110,8 +110,14 @@ func TestAnAgentCallReachesTheConversationsRuntime(t *testing.T) {
 	if err := b.AddGrant(Grant{Principal: peer.Principal(), Permissions: []string{"agent.session.manage"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := handle("agent.call", map[string]any{"session_id": "b", "method": "session.new"}, &answer); err != nil || string(answer["session_id"]) != `"new-b"` {
+	op := protocol.NewID()
+	if err := handle("agent.call", map[string]any{"session_id": "b", "method": "session.new", "operation_id": op}, &answer); err != nil || string(answer["session_id"]) != `"new-b"` {
 		t.Fatalf("session.new answered %s, %v", JSON(answer), err)
+	}
+	// Its retry, once the runtime moved on, is the same call to the same target.
+	asked := second.last()
+	if err := handle("agent.call", map[string]any{"session_id": "b", "method": "session.new", "operation_id": op}, nil); err != nil || second.last().SessionID != asked.SessionID || second.last().Expected != asked.Expected {
+		t.Fatalf("a retried session.new went elsewhere: %+v, %v", second.last(), err)
 	}
 	if err := handle("conversation.describe", map[string]string{"session_id": "b"}, nil); Code(err) != "not_found" {
 		t.Fatalf("a conversation its runtime left: %v", err)

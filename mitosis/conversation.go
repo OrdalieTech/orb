@@ -211,11 +211,28 @@ func (b *Mitosis) agentCall(ctx context.Context, p Principal, call AgentCall) (j
 	if !b.permits(p, permission(call.Method)) {
 		return nil, Fail("not_found")
 	}
-	h, err := b.resolve(ctx, call.SessionID)
+	// A retried operation goes again to the runtime and target it first resolved to, so its
+	// receipt answers it, even after a session change moved the runtime on.
+	key := ledgerKey(p, "", call.OperationID)
+	b.mu.Lock()
+	first, retried := b.resolved[key]
+	b.mu.Unlock()
+	h, err := held{}, error(nil)
+	if retried && call.OperationID != "" {
+		var ok bool
+		if h, ok = b.describe(ctx, first.InstanceID, nil); !ok {
+			err = Fail("unavailable")
+		}
+	} else {
+		h, err = b.resolve(ctx, call.SessionID)
+	}
 	if err != nil {
 		return nil, err
 	}
 	c := Call{InstanceID: h.id, Service: protocol.Service, Method: call.Method, SessionID: h.target.Session, Expected: call.Expected, OperationID: call.OperationID, Args: call.Args}
+	if retried && call.OperationID != "" {
+		c.SessionID, c.Expected = first.SessionID, first.Expected
+	}
 	if len(c.Args) == 0 {
 		c.Args = JSON(struct{}{})
 	}
@@ -227,6 +244,13 @@ func (b *Mitosis) agentCall(ctx context.Context, p Principal, call AgentCall) (j
 	}
 	if c.OperationID == "" {
 		c.OperationID = protocol.NewID()
+	} else if !retried {
+		b.mu.Lock()
+		if len(b.resolved) >= 1024 {
+			clear(b.resolved)
+		}
+		b.resolved[key] = c
+		b.mu.Unlock()
 	}
 	raw, err := b.Call(ctx, p, c)
 	if err != nil {
