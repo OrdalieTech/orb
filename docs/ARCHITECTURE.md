@@ -189,6 +189,14 @@ Disconnect releases observation without cancelling remote execution. Reload reta
 requires explicit reconnection. A Worker's `mitosis_call` is separately opt-in and uses an instance
 subject with its own remote grants, never the human controller's authority.
 
+The same panel can instead add the tab to the user's devices: an invitation from `orb mitosis pair
+invite` opens `peer.js` over IndexedDB, which joins, trusts the inviting device and follows its sync
+group, and the page shows the two commands that device runs to finish (`pair approve`, `sync add`).
+From then on the local conversation runs on the peer's Orb through its RPC `command` entry point,
+not `orb.wasm`, with the providers and memory the profile shares; the Model summary shows
+membership, connection and provider names, never a value. A reload reopens the peer with its
+identity, data and conversation, and it dials its devices again.
+
 `agent/mitosis/tool.NewTool` is headless. Transport stays in `platforms/websocket`,
 worker ownership in `cmd/orb-wasm`, and browser controller state in `platforms/browser/web/mitosis.js`. Tests execute the built Wasm
 without a host filesystem and cover event forwarding, tool execution, concurrent-prompt rejection,
@@ -842,7 +850,8 @@ A browser tab is a full peer (`platforms/browser/web/peer.js`): it runs the Work
 in the same Store a Worker object keeps, and dials its peers' `ws://` or `wss://` locators itself
 (`platforms/worker/peer` `Dial`, which runs `mitosis.Peers` with a WebSocket dialer). It joins an
 invitation, trusts the device it joined, follows its sync group and reconnects on reload like a
-native device, though no one dials it; a Worker object only accepts streams.
+native device, though no one dials it; a Worker object only accepts streams. The browser debug
+page uses it to make a tab one of the user's devices ("Wasm host and browser debug screen").
 
 ### Native v1 method schemas
 

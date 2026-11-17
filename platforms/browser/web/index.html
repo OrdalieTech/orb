@@ -28,11 +28,12 @@
       <details id="mitosis-panel" name="inspector">
         <summary>Mitosis <span id="mitosis-status">Disconnected</span></summary>
         <div class="panel">
-          <label>Invitation JSON<textarea id="mitosis-invitation" rows="3" placeholder="Paste an invitation from your remote Mitosis" spellcheck="false"></textarea></label>
+          <label>Invitation JSON<textarea id="mitosis-invitation" rows="3" placeholder="Paste an invitation from orb mitosis pair invite" spellcheck="false"></textarea></label>
+          <button id="mitosis-join" type="button">Add this tab to my devices</button>
           <button id="mitosis-connect" type="button" disabled>Connect</button>
           <button id="mitosis-disconnect" type="button" disabled>Disconnect</button>
           <button id="mitosis-refresh" type="button">Refresh</button>
-          <p id="mitosis-notice" role="status">Connects directly; no local Mitosis service starts. This browser keeps its pairing identity across reloads.</p>
+          <p id="mitosis-notice" role="status">Add this tab to use your providers and memory here. Connect controls a remote Orb instead. This browser keeps its identity across reloads.</p>
           <pre id="mitosis-identity"></pre>
           <label><input id="mitosis-agent" type="checkbox"> Allow the local model to call this Mitosis</label>
           <details><summary>Agent authorization</summary><p>Agent calls need their own grant on the remote Mitosis. Controller pairing does not grant model access. Save this JSON and pass it to <code>orb mitosis grant</code> on the remote host, adjusting its scope as needed.</p><pre id="mitosis-grant"></pre></details>

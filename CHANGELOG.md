@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- The browser debug page can add the tab to your devices: paste an invitation from `orb mitosis pair invite`, run the two commands it shows on your device, and the tab's agent uses your profile's providers and memory with no key typed, and keeps them across reloads.
+
 ## [0.23.0] - 2026-11-17
 
 Bridge becomes Mitosis, with no alias, and replicates a profile: its devices, a browser tab or a Worker object included, hold each other's logins and memory, sealed to each device, and keep them when the others are off, over a serverless network that stays light at 64 devices. Peers paired before must be paired again.

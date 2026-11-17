@@ -119,7 +119,7 @@ its conversations, whose tools and models then run on that remote machine.
 make browser-serve        # http://127.0.0.1:8787
 ```
 
-This is a debug screen today: keys and files live in tab memory. A remote Orb accepts the
+This is a debug screen today: typed keys and files live in tab memory. A remote Orb accepts the
 browser with `orb mitosis run --web-listen … --web-origin …`
 (see [ARCHITECTURE.md](ARCHITECTURE.md#wasm-host-and-browser-debug-screen)).
 
@@ -127,7 +127,9 @@ A tab can also be a full Mitosis peer (`platforms/browser/web/peer.js`, which `m
 browser-build` ships with `peer.wasm`): it runs the Worker runtime over IndexedDB, joins an
 invitation, and follows its owner's sync group, so its Orb has the owner's providers and memory
 ("Profile sync" in ARCHITECTURE.md). `make worker-e2e-mitosis-browser` checks it end to end under
-Node against a native `orb`.
+Node against a native `orb`. The debug page does this from its Mitosis panel: paste an invitation,
+run the two commands it shows on your device, and the tab's agent uses your providers and memory
+with no key typed, across reloads.
 
 ### Cloudflare Durable Objects
 
