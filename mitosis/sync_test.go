@@ -194,7 +194,26 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		t.Fatal("the new device did not catch up through a member")
 	}
 
+	// An owner vault that does not arrive holds back only its own class.
 	_ = document.Replace(ctx, stores[owner], []byte(`{"openai":{"type":"api_key","key":"o2"}}`))
+	_, _ = memories[owner].Append(ctx, memory.Item{ID: "m3", Content: "late"})
+	admin(owner, `{}`)
+	v = owner.pointers(group, owner.PeerID())["memory"]
+	owner.mu.Lock()
+	genuine = owner.vaults[v.Digest]
+	owner.vaults[v.Digest] = append(slices.Clone(genuine[:len(genuine)-1]), genuine[len(genuine)-1]^1)
+	owner.mu.Unlock()
+	round(owner, b)
+	if key(b, "openai") != "o2" || slices.Contains(memorized(b), "m3") {
+		t.Fatal("a missing memory vault held back the credentials", key(b, "openai"))
+	}
+	owner.mu.Lock()
+	owner.vaults[v.Digest] = genuine
+	owner.mu.Unlock()
+	round(b)
+	if !slices.Contains(memorized(b), "m3") {
+		t.Fatal("the memory did not follow once its vault arrived")
+	}
 	admin(owner, `{"remove":"`+c.PeerID()+`"}`)
 	round()
 	if key(b, "openai") != "o2" || key(c, "openai") != "o1" || sealedTo(c) {

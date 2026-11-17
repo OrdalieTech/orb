@@ -210,6 +210,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	var ownerRecipients []string
 	opened := map[string][]byte{}
 	merged := map[string]string{}
+	stale := map[string]bool{}
 	for _, s := range pending {
 		blob, err := b.fetch(ctx, s.vault, s.peer)
 		var in map[string]json.RawMessage
@@ -222,9 +223,10 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			handins = append(handins, bundle{s.class: in})
 			merged[s.peer+" "+s.class] = s.vault.Digest
 		case s.peer == owner && err != nil:
-			// Until it opens the owner's vaults, a member hands in nothing: it cannot tell what the
-			// owner removed from what it lacks.
-			return nil, Fail("unavailable")
+			// Until it opens the owner's vault of a class, a member leaves that class as it was: it
+			// cannot tell what the owner removed from what it lacks. A large memory vault still on
+			// its way holds back no credential.
+			stale[s.class] = true
 		case s.peer == owner:
 			if ownerSet == nil {
 				ownerSet = bundle{}
@@ -233,6 +235,9 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			opened[s.vault.Digest] = blob
 		}
 	}
+	if ownerSet == nil && len(stale) > 0 {
+		return nil, Fail("unavailable")
+	}
 	if owner != self && len(ownerVaults) > 0 && ownerSet == nil {
 		ownerSet = bundle{} // the owner shares none of this device's classes
 	}
@@ -240,6 +245,9 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	out := bundle{}
 	received := map[string][]string{}
 	for name, class := range classes {
+		if stale[name] {
+			continue
+		}
 		var incoming []map[string]json.RawMessage
 		var removed []string
 		for _, in := range handins {
@@ -293,7 +301,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			b.state.Shared = map[string][]string{}
 		}
 		for name := range classes {
-			if names := slices.Sorted(maps.Keys(ownerSet[name])); !slices.Equal(names, b.state.Shared[name]) {
+			if names := slices.Sorted(maps.Keys(ownerSet[name])); !stale[name] && !slices.Equal(names, b.state.Shared[name]) {
 				b.state.Shared[name], save = names, true
 			}
 		}
@@ -334,6 +342,11 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		vaults[name] = last.vault
 		if total += last.vault.Size; total > maxVault {
 			return nil, Fail("resource_exhausted")
+		}
+	}
+	for name := range stale {
+		if last, ok := b.sealed[name]; ok {
+			vaults[name] = last.vault // the hand-in stands until the owner's vault opens
 		}
 	}
 	sum := sha256.Sum256(JSON([]any{vaults, endpoints, b.name}))
@@ -404,7 +417,7 @@ func vaultDigest(blob []byte) string {
 func (b *Mitosis) fetch(ctx context.Context, v pointer, publisher string) ([]byte, error) {
 	b.mu.Lock()
 	blob := b.vaults[v.Digest]
-	holders := slices.Sorted(maps.Keys(b.channels))
+	holders := slices.Collect(maps.Keys(b.channels)) // map order spreads a new device's fetches
 	b.mu.Unlock()
 	if blob != nil {
 		return blob, nil

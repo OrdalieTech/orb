@@ -832,7 +832,8 @@ item ID (native storage's, else the agent directory's journal; a Worker object's
 `filestore.Journal` document). A round reads before it publishes: the owner merges in what
 members handed it, keeping its own; a member takes the owner's set over its own, drops what the
 owner stopped sharing, and hands the owner only what that set lacks or holds otherwise, and
-nothing while it cannot open the owner's current vaults. Between two OAuth logins the one that
+leaves a class as it was while it cannot open the owner's current vault of it, so a large memory
+vault still on its way holds back no credential. Between two OAuth logins the one that
 expires later wins, so a token refreshed on any device replaces the copies its refresh made
 stale. An entry removed on the owner is removed everywhere; one removed on a member comes back
 from the owner's set. Only API keys and OAuth logins are shared, never one whose key is a command
@@ -840,7 +841,9 @@ from the owner's set. Only API keys and OAuth logins are shared, never one whose
 and is written only when an entry changes, and a vault is republished only when what it seals
 does. A running session offers a provider as soon as its credential arrives. memtree's
 summaries live in each session and are not shared: Mitosis keeps no transcript replica. A
-removed or blocked device keeps what it already received and can fetch nothing sealed after. A
+removed or blocked device keeps what it already received, its OAuth refresh tokens included
+(rotate those upstream), and can fetch nothing sealed after; removal only stops sharing, so a
+device that must also lose its channels and grants is blocked. A
 device that boots unattended holds the key to its own vault, and every Mitosis profile of a
 machine shares its agent directory's auth.json and memory, so a low-trust host belongs in a group
 of its own, with an agent directory of its own holding capped credentials.
