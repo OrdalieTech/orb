@@ -1,6 +1,7 @@
 package mitosis
 
 import (
+	"net"
 	"testing"
 
 	"github.com/OrdalieTech/orb/mitosis/protocol"
@@ -88,5 +89,48 @@ func TestWithdrawalFloorSurvivesRestartAndRejectsEquivocation(t *testing.T) {
 	contact, err := records[0].Verify()
 	if err != nil || !contact.Withdrawn {
 		t.Fatal(contact, err)
+	}
+}
+
+func TestAnExchangeCarriesOnlyWhatEachSideLacks(t *testing.T) {
+	a, b, c := newMitosis(t), newMitosis(t), newMitosis(t)
+	scope := protocol.NewID()
+	for _, x := range []*Mitosis{a, b} {
+		if err := x.SetScope(scope, []string{a.PeerID(), b.PeerID(), c.PeerID()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.SetScope(scope, []string{c.PeerID()}); err != nil {
+		t.Fatal(err)
+	}
+	old, _ := c.PublishContact(scope, "C", nil, false)
+	fresh, _ := c.PublishContact(scope, "C", nil, false)
+	own, _ := b.PublishContact(scope, "B", nil, false)
+	for _, m := range []struct {
+		to *Mitosis
+		r  Record
+	}{{a, fresh}, {b, old}} {
+		if _, err := m.to.MergeContact(c.PeerID(), m.r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	x, y := net.Pipe()
+	go func() { _, _, _ = b.Connect(t.Context(), y, "", true) }()
+	conn, _, err := a.Connect(t.Context(), x, b.PeerID(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	have, _ := a.Versions(b.PeerID(), scope)
+	if err = NewPeers(t.Context(), a).exchange(t.Context(), conn, scope, b.PeerID(), have); err != nil {
+		t.Fatal(err)
+	}
+	held, _ := b.contacts(a.PeerID(), scope)
+	got, _ := a.contacts(b.PeerID(), scope)
+	if held[c.PeerID()] != fresh || got[b.PeerID()] != own {
+		t.Fatal("an exchange left a side behind")
+	}
+	have, _ = a.Versions(b.PeerID(), scope)
+	if newer, behind, err := b.Newer(a.PeerID(), scope, have); err != nil || len(newer)+len(behind) != 0 {
+		t.Fatal("converged sides still differ", newer, behind, err)
 	}
 }

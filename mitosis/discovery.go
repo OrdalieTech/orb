@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -154,22 +155,89 @@ func (b *Mitosis) MergeContact(sender string, r Record) (bool, error) {
 	return true, nil
 }
 func (b *Mitosis) Contacts(peer, scope string) ([]Record, error) {
+	records, err := b.contacts(peer, scope)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Record, 0, len(records))
+	for _, k := range slices.Sorted(maps.Keys(records)) {
+		out = append(out, records[k])
+	}
+	return out, nil
+}
+
+// contacts is what peer may read of scope, by record peer.
+func (b *Mitosis) contacts(peer, scope string) (map[string]Record, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.closed || b.failed || b.state.Blocked[peer] || !slices.Contains(b.state.Scopes[scope], peer) {
 		return nil, Fail("unauthorized")
 	}
-	// Records are verified when loaded or stored, under their scope/peer key.
-	keys := []string{}
-	for k := range b.state.Records {
-		if strings.HasPrefix(k, scope+"/") {
-			keys = append(keys, k)
+	out := map[string]Record{}
+	for k, r := range b.state.Records {
+		if id, ok := strings.CutPrefix(k, scope+"/"); ok {
+			out[id] = r
 		}
 	}
-	slices.Sort(keys)
-	out := make([]Record, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, b.state.Records[k])
+	return out, nil
+}
+
+// revision reads a stored record's revision; records are verified when loaded or stored.
+func revision(r Record) uint64 {
+	data, _ := base64.RawURLEncoding.DecodeString(r.Payload)
+	var c struct {
+		Revision string `json:"revision"`
+	}
+	_ = json.Unmarshal(data, &c)
+	n, _ := protocol.Counter(c.Revision)
+	return n
+}
+
+// Versions is the revision of each record peer may read of scope, by record peer: what this
+// Mitosis sends in place of the records to learn what a member holds that it lacks.
+func (b *Mitosis) Versions(peer, scope string) (map[string]string, error) {
+	records, err := b.contacts(peer, scope)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(records))
+	for id, r := range records {
+		out[id] = strconv.FormatUint(revision(r), 10)
 	}
 	return out, nil
+}
+
+// Newer splits scope against what peer holds (have, from Versions): the records peer lacks or
+// holds older, and the record peers whose records peer holds newer or this Mitosis lacks.
+func (b *Mitosis) Newer(peer, scope string, have map[string]string) ([]Record, []string, error) {
+	if len(have) > 1024 {
+		return nil, nil, Fail("resource_exhausted")
+	}
+	theirs := make(map[string]uint64, len(have))
+	for id, rev := range have {
+		n, err := protocol.Counter(rev)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, err = ParsePeerID(id); err != nil {
+			return nil, nil, err
+		}
+		theirs[id] = n
+	}
+	records, err := b.contacts(peer, scope)
+	if err != nil {
+		return nil, nil, err
+	}
+	newer, behind := []Record{}, []string{}
+	for _, id := range slices.Sorted(maps.Keys(records)) {
+		if n, ok := theirs[id]; !ok || n < revision(records[id]) {
+			newer = append(newer, records[id])
+		}
+	}
+	for _, id := range slices.Sorted(maps.Keys(theirs)) {
+		if r, ok := records[id]; !ok || revision(r) < theirs[id] {
+			behind = append(behind, id)
+		}
+	}
+	return newer, behind, nil
 }

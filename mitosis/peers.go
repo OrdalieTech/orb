@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -363,9 +364,19 @@ func (ps *Peers) Greet() {
 	}
 }
 
+// Reconcile exchanges scope records with members on every change and every 15 s. A link whose
+// records and channel are as they were after its last exchange is skipped until five minutes
+// have passed, so an idle scope costs no traffic.
 func (ps *Peers) Reconcile() {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
+	type mark struct {
+		versions string
+		c        *protocol.Conn
+		at       time.Time
+	}
+	var mu sync.Mutex
+	last := map[string]mark{}
 	for {
 		select {
 		case <-ps.ctx.Done():
@@ -383,47 +394,117 @@ func (ps *Peers) Reconcile() {
 			Scopes map[string][]string `json:"scopes"`
 		}
 		_ = json.Unmarshal(raw, &status)
-		for scope, peers := range status.Scopes {
-			for _, peer := range peers {
-				if peer == ps.Mitosis.PeerID() {
+		var wg sync.WaitGroup
+		slots := make(chan struct{}, 8)
+		for scope, members := range status.Scopes {
+			for _, peer := range ps.links(members) {
+				k := scope + "/" + peer
+				versions, err := ps.Mitosis.Versions(peer, scope)
+				if err != nil {
 					continue
 				}
-				ctx, cancel := context.WithTimeout(ps.ctx, 10*time.Second)
-				c, err := ps.Peer(ctx, peer, "")
-				if err == nil {
-					cursor := ""
-					for pages := 0; pages < 16; pages++ {
-						var page struct {
-							Items  []Record `json:"items"`
-							Cursor string   `json:"cursor"`
-						}
-						err = c.Call(ctx, "peers.list", map[string]string{"scope_id": scope, "cursor": cursor}, &page)
-						if err != nil {
-							break
-						}
-						for _, r := range page.Items {
-							_, _ = ps.Mitosis.MergeContact(peer, r)
-						}
-						cursor = page.Cursor
-						if cursor == "" {
-							break
-						}
-					}
-					records, e := ps.Mitosis.Contacts(peer, scope)
-					if e == nil {
-						for len(records) > 0 {
-							n := min(len(records), 16)
-							if c.Call(ctx, "peers.publish", map[string]any{"records": records[:n]}, nil) != nil {
-								break
-							}
-							records = records[n:]
-						}
-					}
+				mu.Lock()
+				m, ok := last[k]
+				mu.Unlock()
+				if ok && m.versions == string(JSON(versions)) && m.c == ps.Mitosis.Connection(peer) && time.Since(m.at) < 5*time.Minute {
+					continue
 				}
-				cancel()
+				wg.Add(1)
+				slots <- struct{}{}
+				go func() {
+					defer func() { <-slots; wg.Done() }()
+					ctx, cancel := context.WithTimeout(ps.ctx, 10*time.Second)
+					defer cancel()
+					c, err := ps.Peer(ctx, peer, "")
+					if err != nil || ps.exchange(ctx, c, scope, peer, versions) != nil {
+						return
+					}
+					if after, err := ps.Mitosis.Versions(peer, scope); err == nil {
+						mu.Lock()
+						last[k] = mark{string(JSON(after)), c, time.Now()}
+						mu.Unlock()
+					}
+				}()
 			}
 		}
+		wg.Wait()
 	}
+}
+
+// links is who this device reconciles a scope with: its first member (a sync group's owner),
+// every member it has a channel to, and the members a power of two ahead of it on the ring of
+// members by PeerID. A change then crosses n members in about log2(n) hops with about log2(n)
+// dialled channels a device, where dialling every member would take n-1.
+func (ps *Peers) links(members []string) []string {
+	self := ps.Mitosis.PeerID()
+	ring := slices.Compact(slices.Sorted(slices.Values(members)))
+	i, found := slices.BinarySearch(ring, self)
+	if !found {
+		ring = slices.Insert(ring, i, self)
+	}
+	out := []string{}
+	add := func(p string) {
+		if p != self && !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	if len(members) > 0 {
+		add(members[0])
+	}
+	for d := 1; d < len(ring); d *= 2 {
+		add(ring[(i+d)%len(ring)])
+	}
+	for _, p := range members {
+		if ps.Mitosis.Connection(p) != nil {
+			add(p)
+		}
+	}
+	return out
+}
+
+// exchange sends peer the revisions this device holds of scope (have), merges the records peer
+// holds newer, and publishes the ones peer holds older or lacks.
+func (ps *Peers) exchange(ctx context.Context, c *protocol.Conn, scope, peer string, have map[string]string) error {
+	var behind []string
+	cursor := ""
+	for pages := 0; pages < 16; pages++ {
+		var page struct {
+			Items  []Record `json:"items"`
+			Cursor string   `json:"cursor"`
+			Behind []string `json:"behind"`
+		}
+		if err := c.Call(ctx, "peers.list", map[string]any{"scope_id": scope, "cursor": cursor, "have": have}, &page); err != nil {
+			return err
+		}
+		for _, r := range page.Items {
+			_, _ = ps.Mitosis.MergeContact(peer, r)
+		}
+		behind = page.Behind
+		if cursor = page.Cursor; cursor == "" {
+			break
+		}
+	}
+	if len(behind) == 0 {
+		return nil
+	}
+	held, err := ps.Mitosis.contacts(peer, scope)
+	if err != nil {
+		return err
+	}
+	records := []Record{}
+	for _, id := range behind {
+		if r, ok := held[id]; ok {
+			records = append(records, r)
+		}
+	}
+	for len(records) > 0 {
+		n := min(len(records), 16)
+		if err = c.Call(ctx, "peers.publish", map[string]any{"records": records[:n]}, nil); err != nil {
+			return err
+		}
+		records = records[n:]
+	}
+	return nil
 }
 
 // endpoints is where this device is reached, once its transport is up.

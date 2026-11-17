@@ -441,16 +441,22 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 	case "vault.get":
 		return b.serveVault(peer, params)
 	case "peers.list":
-		var p pageRequest
+		var p struct {
+			pageRequest
+			Have map[string]string `json:"have"`
+		}
 		if err := protocol.Decode(params, &p); err != nil {
 			return nil, err
 		}
-		records, err := b.Contacts(peer, p.Scope)
+		records, behind, err := b.Newer(peer, p.Scope, p.Have)
 		if err != nil {
 			return nil, err
 		}
 		r, err := page(records, p.Cursor, protocol.PageLimit(ctx))
-		return JSON(r), err
+		return JSON(struct {
+			pageResult[Record]
+			Behind []string `json:"behind"`
+		}{r, behind}), err
 	case "peers.publish":
 		var p struct {
 			Records []Record `json:"records"`
