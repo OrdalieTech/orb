@@ -34,16 +34,17 @@ type Node struct {
 	server *tc.Server
 	// listening: server's address exists only once Listen has returned.
 	listening bool
-	clients   map[string]*tc.Client
+	clients   map[string]*client
 	closed    bool
 	failed    bool
+	relays    relayMap
 }
 
 func Open(raw json.RawMessage, save func(json.RawMessage) error, mapURL string) (*Node, error) {
 	if save == nil || !strings.HasPrefix(mapURL, "https://") {
 		return nil, errors.New("explicit storage and HTTPS relay map required")
 	}
-	n := &Node{save: save, mapURL: mapURL, clients: map[string]*tc.Client{}}
+	n := &Node{save: save, mapURL: mapURL, clients: map[string]*client{}}
 	if len(raw) == 0 {
 		n.state = saved{Version: 1, Key: key.NewNode(), PSK: tc.NewPresharedKey(), Clients: map[string]key.NodePrivate{}}
 		if err := save(mitosis.JSON(n.state)); err != nil {
@@ -66,12 +67,12 @@ func (n *Node) Listen(ctx context.Context) (net.Listener, error) {
 		return nil, mitosis.Fail("unavailable")
 	}
 	region := &tc.ConnInfo{RegionID: cmp.Or(n.state.Region, tailcfg.DERPRegionID(-1))}
-	if err := region.Expand(ctx, tc.ExpandForServer, tc.DERPMapURL(n.mapURL), uncachedMap{}); err != nil {
+	if err := region.Expand(ctx, tc.ExpandForServer, tc.DERPMapURL(n.mapURL), &n.relays); err != nil {
 		n.mu.Unlock()
 		return nil, mitosis.Fail("unavailable")
 	}
 	selected := region.Region[0].RegionID
-	s := &tc.Server{Region: region.Region[0], DERPMapCache: uncachedMap{}, Key: n.state.Key, PresharedKey: n.state.PSK, RegionID: n.state.Region, DERPMapURL: n.mapURL, Logf: func(string, ...any) {}}
+	s := &tc.Server{Region: region.Region[0], DERPMapCache: &n.relays, Key: n.state.Key, PresharedKey: n.state.PSK, RegionID: n.state.Region, DERPMapURL: n.mapURL, Logf: func(string, ...any) {}}
 	n.server = s
 	n.mu.Unlock()
 	listener, err := s.Listen(ctx, "tcp", ":443")
@@ -125,13 +126,13 @@ func (n *Node) Dial(ctx context.Context, peer, locator string) (net.Conn, error)
 		n.mu.Unlock()
 		return nil, mitosis.Fail("unavailable")
 	}
-	client := n.clients[peer]
-	if client != nil && client.Server != addr {
-		_ = client.Close()
+	c := n.clients[peer]
+	if c != nil && c.Server != addr {
+		_ = c.Close()
 		delete(n.clients, peer)
-		client = nil
+		c = nil
 	}
-	if client == nil {
+	if c == nil {
 		if len(n.clients) >= 128 {
 			n.mu.Unlock()
 			return nil, mitosis.Fail("resource_exhausted")
@@ -146,19 +147,50 @@ func (n *Node) Dial(ctx context.Context, peer, locator string) (net.Conn, error)
 				return nil, err
 			}
 		}
-		client = &tc.Client{DERPMapCache: uncachedMap{}, Server: addr, Key: k, DERPMapURL: n.mapURL, Logf: func(string, ...any) {}}
-		n.clients[peer] = client
+		c = &client{Client: &tc.Client{DERPMapCache: &n.relays, Server: addr, Key: k, DERPMapURL: n.mapURL, Logf: func(string, ...any) {}}}
+		n.clients[peer] = c
 	}
+	c.users++
 	n.mu.Unlock()
 	// Re-register after a remote restart even when the local client is already up.
-	if _, err := client.Ping(ctx); err != nil {
-		return nil, mitosis.Fail("unavailable")
+	var stream net.Conn
+	if _, err = c.Ping(ctx); err == nil {
+		stream, err = c.DialTCPPort(ctx, 443)
 	}
-	c, err := client.DialTCPPort(ctx, 443)
 	if err != nil {
+		n.release(peer, c)
 		return nil, mitosis.Fail("unavailable")
 	}
-	return c, nil
+	return &clientStream{Conn: stream, release: sync.OnceFunc(func() { n.release(peer, c) })}, nil
+}
+
+// A client is a whole WireGuard engine (its own relay connection, sockets and goroutines), so
+// it lives only while it carries a stream or a dial.
+type client struct {
+	*tc.Client
+	users int
+}
+type clientStream struct {
+	net.Conn
+	release func()
+}
+
+func (s *clientStream) Close() error {
+	err := s.Conn.Close()
+	s.release()
+	return err
+}
+func (n *Node) release(peer string, c *client) {
+	n.mu.Lock()
+	c.users--
+	idle := c.users == 0
+	if idle && n.clients[peer] == c {
+		delete(n.clients, peer)
+	}
+	n.mu.Unlock()
+	if idle {
+		_ = c.Close()
+	}
 }
 func (n *Node) Close() error {
 	n.mu.Lock()
@@ -176,8 +208,24 @@ func (n *Node) Close() error {
 	return nil
 }
 
-// Relay maps are fetched explicitly rather than sharing Tailcat's process cache.
-type uncachedMap struct{}
+// relayMap keeps a Node's relay map rather than Tailcat's process cache: Tailcat uses it for an
+// hour, then revalidates it, and falls back on it while the map server is unreachable, so a dial
+// waits on no map fetch and works while the relays do.
+type relayMap struct {
+	mu   sync.Mutex
+	data []byte
+	etag string
+	at   time.Time
+}
 
-func (uncachedMap) Get(string) ([]byte, string, time.Time, bool) { return nil, "", time.Time{}, false }
-func (uncachedMap) Put(string, []byte, string) error             { return nil }
+func (m *relayMap) Get(string) ([]byte, string, time.Time, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.data, m.etag, m.at, m.data != nil
+}
+func (m *relayMap) Put(_ string, data []byte, etag string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data, m.etag, m.at = data, etag, time.Now()
+	return nil
+}
