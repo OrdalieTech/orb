@@ -60,8 +60,8 @@ type Options struct {
 	// Tools adds tools to every session the object starts.
 	Tools ToolsFunc
 	// Extensions picks the extensions every session the object starts loads, by name, from its
-	// settings; the assembly supplies them, so the host links no capability.
-	Extensions func(*config.SettingsManager) map[string]extensions.Factory
+	// settings, over its Store; the assembly supplies them, so the host links no capability.
+	Extensions func(*config.SettingsManager, host.Store) map[string]extensions.Factory
 }
 
 // Instance is one Durable Object's Orb: a Host over the object's storage and
@@ -79,7 +79,7 @@ type Instance struct {
 	model    *ai.Model
 	streamFn engine.StreamFn
 	tools    ToolsFunc
-	extend   func(*config.SettingsManager) map[string]extensions.Factory
+	extend   func(*config.SettingsManager, host.Store) map[string]extensions.Factory
 
 	mu           sync.Mutex
 	session      *agent.AgentSession
@@ -174,7 +174,7 @@ func (instance *Instance) start(ctx context.Context, journal *harness.Session) (
 		options.Settings, options.CustomTools = settings, instance.tools(settings)
 	}
 	if instance.extend != nil {
-		if chosen := instance.extend(settings); len(chosen) > 0 {
+		if chosen := instance.extend(settings, instance.Host.Store); len(chosen) > 0 {
 			options.ExtensionRegistry = extensions.NewRegistry(Workspace)
 			for _, name := range slices.Sorted(maps.Keys(chosen)) {
 				if err := options.ExtensionRegistry.Register(name, chosen[name]); err != nil {

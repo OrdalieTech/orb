@@ -8,6 +8,7 @@
 #   worker-e2e-workerd   end-to-end in workerd, including a dev-server restart
 #   worker-e2e-mitosis-workerd         Mitosis pairing both ways with a throwaway native `orb` (isolated under .tools)
 #   worker-e2e-mitosis-deployed        the same against ORB_WORKER_URL, redeploying WORKER_E2E_DIR to restart it
+#   worker-e2e-mitosis-browser         the runtime as a browser tab runs it joins a native `orb`'s sync group
 #   worker-e2e-deployed  one phase (WORKER_E2E_PHASE=write|verify) against a deployed Worker (ORB_WORKER_URL, ORB_TOKEN)
 
 WORKER_DIR ?= $(CURDIR)/.tools/worker
@@ -18,14 +19,14 @@ WORKER_WASM_EXEC = $$($(WORKER_GO_ENV) go env GOROOT)/lib/wasm
 WORKER_MITOSIS_DIR ?= $(CURDIR)/.tools/worker-mitosis-e2e
 WORKER_MITOSIS_ARGS = --orb $(WORKER_MITOSIS_DIR)/orb --laptop $(WORKER_MITOSIS_DIR)/laptop
 
-.PHONY: worker-mitosis-orb worker-e2e-mitosis-workerd worker-e2e-mitosis-deployed
+.PHONY: worker-mitosis-orb worker-e2e-mitosis-workerd worker-e2e-mitosis-deployed worker-e2e-mitosis-browser
 .PHONY: worker-build worker-dev worker-deploy worker-test worker-e2e-workerd worker-e2e-deployed worker-e2e-build
 
 # $(1): output directory; $(2): extra scripts prepended after wasm_exec.js.
 define worker_assemble
 	mkdir -p $(1)/dist
 	$(WORKER_GO_ENV) CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -trimpath -ldflags=-s -o $(1)/dist/orb.wasm ./cmd/orb-worker
-	cat $(WORKER_WASM_EXEC)/wasm_exec.js $(2) platforms/worker/deploy/worker.mjs > $(1)/dist/worker.mjs
+	cat $(WORKER_WASM_EXEC)/wasm_exec.js platforms/worker/deploy/helpers.js $(2) platforms/worker/deploy/worker.mjs > $(1)/dist/worker.mjs
 	cp platforms/worker/deploy/wrangler.jsonc platforms/worker/deploy/package.json $(1)/
 	cd $(1) && npm install --no-audit --no-fund --loglevel=error
 endef
@@ -65,6 +66,11 @@ worker-mitosis-orb:
 
 worker-e2e-mitosis-workerd: worker-build worker-mitosis-orb
 	node platforms/worker/e2e/mitosis.mjs --runtime workerd --dir $(WORKER_DIR) $(WORKER_MITOSIS_ARGS)
+
+# Runs under Node, which stands in for the browser tab (platforms/browser/web/peer.js).
+worker-e2e-mitosis-browser: worker-mitosis-orb
+	$(WORKER_GO_ENV) CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -trimpath -ldflags=-s -o $(WORKER_MITOSIS_DIR)/peer.wasm ./cmd/orb-worker
+	node platforms/worker/e2e/browser.mjs --wasm $(WORKER_MITOSIS_DIR)/peer.wasm --wasm-exec $(WORKER_WASM_EXEC)/wasm_exec.js $(WORKER_MITOSIS_ARGS)
 
 # Needs the deployed worker-e2e-build bundle in WORKER_E2E_DIR (its .orb-token
 # and Wrangler login); the check redeploys it once to restart the object.

@@ -1,8 +1,8 @@
 // Orb on Cloudflare Durable Objects and self-hosted workerd: one Durable Object
 // per agent name, each with its own Orb over the object's storage, all of an
 // isolate's objects in one Go runtime (orb.wasm, cmd/orb-worker). `make
-// worker-build` prepends Go's wasm_exec.js
-// (which defines globalThis.Go) to this module, so the bundle is one
+// worker-build` prepends Go's wasm_exec.js (which defines globalThis.Go) and
+// helpers.js (globalThis.orbHelpers) to this module, so the bundle is one
 // JavaScript module plus orb.wasm and needs no bundler.
 import orbModule from "./orb.wasm";
 
@@ -49,41 +49,6 @@ function problem(status, error, headers = {}) {
   return Response.json({ error }, { status, headers });
 }
 
-// Go waits on JavaScript through these helpers (platforms/worker): each takes
-// the wait's id and the runtime's one settle callback, and calls it once with
-// the id and the results. The http transport (fetch_js.go) crosses as little
-// as it can: headers travel as "name\nvalue" lines, a response settles once,
-// and each read brings one chunk, null at the end or an error message.
-const message = error => (error instanceof Error ? String(error.message) : String(error));
-const helpers = {
-  // await settles with the promise's value, or undefined and the reason.
-  await(promise, id, settle) {
-    promise.then(value => settle(id, value), error => settle(id, undefined, message(error)));
-  },
-  fetch(url, method, headers, body, id, settle) {
-    const controller = new AbortController();
-    const lines = headers === "" ? [] : headers.split("\n");
-    const pairs = [];
-    for (let index = 0; index + 1 < lines.length; index += 2) pairs.push([lines[index], lines[index + 1]]);
-    fetch(url, { method, headers: pairs, body, signal: controller.signal }).then(
-      response => settle(id, response.status, [...response.headers].flat().join("\n"), response.redirected ? response.url : "", response.body?.getReader() ?? null),
-      error => settle(id, 0, `net/http: fetch() failed: ${error}${error?.cause === undefined ? "" : `: ${error.cause}`}`),
-    );
-    return controller;
-  },
-  read(reader, id, settle) {
-    reader.read().then(
-      ({ value }) => settle(id, value ?? null),
-      error => settle(id, String(error?.message ?? error)),
-    );
-  },
-  // A body Go stopped reading: one that has ended needs nothing, and
-  // cancelling it would abort a finished request.
-  release(reader) {
-    reader.read().then(({ done }) => done || reader.cancel(), () => {});
-  },
-};
-
 // The isolate's Go runtime, which its objects share, and the exit callbacks
 // of the objects open in it.
 let runtime;
@@ -101,7 +66,7 @@ function orbRuntime() {
       warn(code);
     };
     const ready = new Promise((resolve, reject) => {
-      globalThis.__orbWorkerBoot = { helpers, resolve, reject: message => reject(new Error(message)) };
+      globalThis.__orbWorkerBoot = { helpers: orbHelpers, resolve, reject: message => reject(new Error(message)) };
     });
     go.argv = ["orb-worker", "__orbWorkerBoot"];
     go.env = {};

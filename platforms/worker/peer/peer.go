@@ -51,6 +51,7 @@ type Peer struct {
 	mitosis    *mitosis.Mitosis
 	instanceID string
 	attachment *attach.Attachment
+	peers      *mitosis.Peers // set by Dial
 }
 
 // Open loads or creates the object's Mitosis identity, enrolls the object's
@@ -63,13 +64,6 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 	}
 	b.SetClass("credentials", aiauth.NewDocumentStore(store.Document(path.Join(worker.AgentDir, "auth.json"))))
 	b.SetClass("memory", memory.Shared{Store: worker.Memory(store)})
-	// A round runs each time the records change (a peer published here), so the object keeps up
-	// with its sync group over the streams its peers opened, with no command.
-	go func() {
-		for range b.Changes() {
-			_, _ = b.Sync(context.Background(), nil)
-		}
-	}()
 	enrolled := store.Document(instanceDocument)
 	raw, err := enrolled.Read(context.Background())
 	if err != nil {
@@ -142,6 +136,30 @@ func (p *Peer) Serve(ctx context.Context, stream net.Conn) error {
 	return nil
 }
 
+// Follow runs a sync round each time the records change (a peer published here), so a peer that
+// only accepts streams keeps up with its group over the ones its peers opened.
+func (p *Peer) Follow(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-p.mitosis.Changes():
+		}
+		_, _ = p.mitosis.Sync(ctx, nil)
+	}
+}
+
+// Dial makes the peer reach others itself, as a browser tab does over WebSocket: dial opens a
+// stream to a peer's locator, and the peer keeps channels to the peers it knows, exchanges records
+// with its scopes and runs its sync group's rounds, as a native Mitosis does. It can join an
+// invitation, though no one can dial it. Call it once, before any Admin call, instead of Follow.
+func (p *Peer) Dial(ctx context.Context, dial func(ctx context.Context, peer, locator string) (net.Conn, error)) {
+	p.peers = mitosis.NewPeers(ctx, p.mitosis)
+	p.peers.Dial = dial
+	go p.peers.Reconcile()
+	go p.peers.Greet()
+}
+
 // Call is the object's agent-initiated call: it needs this object's own
 // instance grant for the destination, and a channel the destination opened.
 func (p *Peer) Call(ctx context.Context, peer string, call mitosis.Call) (json.RawMessage, error) {
@@ -158,6 +176,13 @@ func (p *Peer) Call(ctx context.Context, peer string, call mitosis.Call) (json.R
 }
 
 func (p *Peer) remote(ctx context.Context, peer, method string, params, result any) error {
+	if p.peers != nil {
+		raw, err := p.peers.Remote(ctx, peer, method, params)
+		if err == nil && result != nil {
+			err = json.Unmarshal(raw, result)
+		}
+		return err
+	}
 	channel := p.mitosis.Connection(peer)
 	if channel == nil {
 		return fmt.Errorf("peer %s has no open connection to this object: %w", peer, mitosis.Fail("unavailable"))
@@ -172,8 +197,9 @@ func FullGrant(peer string) mitosis.Grant {
 }
 
 // Admin mirrors the owner methods of `orb mitosis`. invite advertises locator,
-// the object's public stream URL. The object cannot dial, so join, publish and
-// the service lifecycle are not offered; self reports the object's identity.
+// the object's public stream URL. An object that cannot dial offers no join;
+// publish and the service lifecycle are never offered; self reports the
+// object's identity.
 func (p *Peer) Admin(ctx context.Context, method string, params json.RawMessage, locator string) (json.RawMessage, error) {
 	empty := len(params) == 0 || string(params) == "{}" || string(params) == "null"
 	switch method {
@@ -219,6 +245,11 @@ func (p *Peer) Admin(ctx context.Context, method string, params json.RawMessage,
 				return mitosis.JSON(struct{}{}), nil
 			}
 		}
+		if p.peers != nil {
+			// Trusting the device it joined keeps its locator, so the peer dials it again.
+			_, err = p.peers.Admin(ctx, "grant", mitosis.JSON(grant))
+			return mitosis.JSON(struct{}{}), err
+		}
 		return mitosis.JSON(struct{}{}), p.mitosis.AddGrant(grant)
 	case "remote":
 		var request struct {
@@ -231,8 +262,16 @@ func (p *Peer) Admin(ctx context.Context, method string, params json.RawMessage,
 		}
 		var result json.RawMessage
 		return result, p.remote(ctx, request.PeerID, request.Method, request.Params, &result)
-	case "join", "publish", "stop", "start", "connect-ssh":
-		return nil, fmt.Errorf("peer: %s is not available on a Worker object; create the invitation here and join it from the other Orb", method)
+	case "join", "sync", "block":
+		if p.peers != nil {
+			return p.peers.Admin(ctx, method, params)
+		}
+		if method == "join" {
+			return nil, fmt.Errorf("peer: join is not available on a Worker object; create the invitation here and join it from the other Orb")
+		}
+		return p.mitosis.Admin(ctx, method, params)
+	case "publish", "stop", "start", "connect-ssh":
+		return nil, fmt.Errorf("peer: %s is not available here; create the invitation here and join it from the other Orb", method)
 	default:
 		return p.mitosis.Admin(ctx, method, params)
 	}

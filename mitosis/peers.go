@@ -240,9 +240,11 @@ func (ps *Peers) Admin(ctx context.Context, method string, params json.RawMessag
 			return nil, err
 		}
 		var result Invitation
-		locator, err := ps.Locator()
-		if err != nil {
-			return nil, err
+		locator := "" // a device no one can dial, a browser tab, claims without one
+		if ps.Locator != nil {
+			if locator, err = ps.Locator(); err != nil {
+				return nil, err
+			}
 		}
 		err = c.Call(ctx, "pair.claim", map[string]string{"invitation_id": inv.ID, "token": inv.Token, "locator": locator}, &result)
 		if err != nil {

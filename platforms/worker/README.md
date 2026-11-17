@@ -22,7 +22,7 @@ client ──HTTPS/WSS──▶ Worker (dist/worker.mjs default export)
 
 - **Bundle.** `make -f platforms/worker/worker.mk worker-build` writes
   `.tools/worker/dist/worker.mjs` and `.tools/worker/dist/orb.wasm`. `worker.mjs` is
-  Go's `wasm_exec.js` followed by `deploy/worker.mjs`, so the bundle is one
+  Go's `wasm_exec.js`, `deploy/helpers.js` and `deploy/worker.mjs`, so the bundle is one
   JavaScript module plus a Wasm module. `no_bundle: true` means Wrangler runs no
   bundler.
 - **Objects.** Each agent name gets its own Durable Object, with its own storage,
@@ -77,7 +77,8 @@ once, under an alias derived from the object name, and is attached as its
   needs the object's own instance grant for the destination, and a grant on
   the destination for the object's instance subject.
 - **Plugins.** The object's settings turn on `titles`, `tasks`, `questions` (answered by the app
-  or peer driving the object) and `memtree` (experimental, `docs/plugins.md`): with memtree, every prompt starts from a fixed-size view of the whole
+  or peer driving the object), `memory` (its journal is the document `/agent/memory/memory.jsonl`,
+  shared with the object's Mitosis sync group) and `memtree` (experimental, `docs/plugins.md`): with memtree, every prompt starts from a fixed-size view of the whole
   conversation, and its summaries live in the session journal in object storage.
 - **Admin.** `POST /agents/<name>/mitosis/admin` with `{"method", "params"}`,
   behind `ORB_TOKEN`, runs the owner methods of `orb mitosis`: `status`,

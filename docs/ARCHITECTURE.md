@@ -792,37 +792,54 @@ Mitosis protocol tests are Orb-owned checks, separate from Pi conformance famili
 
 A profile has at most one sync group (`mitosis/sync.go`): a discovery scope whose ID derives from
 its owner's PeerID and whose first member is the owner. Membership is explicit and the owner's:
-`sync add|remove` changes it on the owner, `sync join <owner>` follows one, and a member leaves
-by removing the owner (to follow or start another group if the owner is gone); nothing rebuilds
-it from paired peers, so a removed device stays out. Each device publishes one vault in its own
-signed record of the group scope (`extensions.vault`, `orb.mitosis-vault/1`), so vaults travel on
-the existing reconciliation and any member relays the owner's while the owner is off. A vault is
-the bundle sealed once with AES-256-GCM under a fresh 256-bit key, and that key sealed to each
-recipient (ephemeral X25519, SHA-256 key derivation, AES-256-GCM), all stdlib. A peer's X25519
-key is the Montgomery form of its Ed25519 identity (RFC 7748 §4.1), so sealing needs only a
-PeerID. Recipients are checked at seal time: the owner seals to every current, unblocked member;
-a member seals to the owner alone. Only the owner's vault reaches the group, and vaults are
-opened only from current, unblocked members.
+`sync add|remove` changes it on the owner (paired devices only: a saved peer or one holding a
+grant), `sync join <owner>` follows one, and a member leaves by removing the owner (to follow or
+start another group if the owner is gone); nothing rebuilds it from paired peers, so a removed
+device stays out. Each device's signed record in the group scope carries only a pointer to its
+vault (`extensions.vault`, `orb.mitosis-vault/2`: SHA-256 digest and size). The vault is fetched
+by digest with the `vault.get` peer method, in 512 KiB chunks, over any channel already open in
+either direction, its publisher first, then any other peer: a holder serves it only to a
+recipient that is a current, unblocked member of its group, and the fetcher checks it against the
+signed digest before opening it. A device holds in memory its own vault and, as a member, the
+owner's it opened, so any member relays the owner's while the owner is off; a restart reseals.
+A vault is the recipient count, one envelope per recipient (its Ed25519 key, an ephemeral X25519
+key, the bundle key sealed under ephemeral X25519, SHA-256 key derivation and AES-256-GCM), then
+the bundle sealed once with AES-256-GCM under a fresh 256-bit key, all stdlib, at most 64 MiB:
+every member holds it whole, a browser tab included. A peer's X25519 key is the Montgomery form
+of its Ed25519 identity (RFC 7748 §4.1), so sealing needs only a PeerID. Recipients are checked
+at seal time: the owner seals to every current, unblocked member; a member seals to the owner
+alone. Only the owner's vault reaches the group, and vaults are opened only from current,
+unblocked members.
 
-A native device runs a round on every reconciliation (every 15 s and on each change), so a group
-converges with no command; `orb mitosis sync` (the `sync` admin method on every host with a
-Mitosis) runs one at once, which is how a Worker object, which cannot dial, syncs. The core is format-blind:
-what a class means lives with it (credentials: `ai/auth`'s `Store.Shareable` and `MergeShared`).
-A round reads before it publishes: the owner merges in what members handed it, keeping its own; a
-member takes the owner's set over its own, drops what the owner stopped sharing, and hands the
-owner only what that set lacks or holds otherwise. Between two OAuth logins the one that expires
-later wins, so a token refreshed on any device replaces the copies its refresh made stale. An entry
-removed on the owner is removed everywhere; one removed on a member comes back from the owner's
-set. Only API keys and OAuth logins are shared, never one whose key is a command (`!…`, which would
-run on every device), invalid entries are ignored, auth.json keeps pi's format and is written only
-when an entry changes, and a vault is republished only when what it seals does. A running session
-offers a provider as soon as its credential arrives. The bundle is one JSON object per data class;
-v1 carries credentials only, and a class added later is one more field. A removed or blocked device
-keeps what it already received and gets nothing sealed after. A device that boots unattended holds
-the key to its own vault, and every Mitosis profile of a machine shares its agent directory's
-auth.json, so a low-trust host belongs in a group of its own, with an agent directory of its own
-holding capped credentials. A record stays under 16 KiB, which bounds the bundle and the group: an
-added device that no longer fits is taken out again.
+A round runs on every reconciliation of a native device (every 15 s and on each change), on
+every record change of a Worker object or browser tab, and on `orb mitosis sync` (the `sync`
+admin method on every host with a Mitosis). The core is format-blind: the bundle is one JSON
+object per data class, and a host registers each class with `SetClass(name, Class)`, a
+`Shareable`/`MergeShared` pair over its own store. `credentials` is `ai/auth`'s Store over
+auth.json; `memory` is `plugins/memory`'s `Shared` over the memory plugin's `Store`, merged by
+item ID (native storage's, else the agent directory's journal; a Worker object's or tab's
+`filestore.Journal` document). A round reads before it publishes: the owner merges in what
+members handed it, keeping its own; a member takes the owner's set over its own, drops what the
+owner stopped sharing, and hands the owner only what that set lacks or holds otherwise, and
+nothing while it cannot open the owner's current vault. Between two OAuth logins the one that
+expires later wins, so a token refreshed on any device replaces the copies its refresh made
+stale. An entry removed on the owner is removed everywhere; one removed on a member comes back
+from the owner's set. Only API keys and OAuth logins are shared, never one whose key is a command
+(`!…`, which would run on every device), invalid entries are ignored, auth.json keeps pi's format
+and is written only when an entry changes, and a vault is republished only when what it seals
+does. A running session offers a provider as soon as its credential arrives. memtree's
+summaries live in each session and are not shared: Mitosis keeps no transcript replica. A
+removed or blocked device keeps what it already received and can fetch nothing sealed after. A
+device that boots unattended holds the key to its own vault, and every Mitosis profile of a
+machine shares its agent directory's auth.json and memory, so a low-trust host belongs in a group
+of its own, with an agent directory of its own holding capped credentials.
+
+A browser tab is a full peer (`platforms/browser/web/peer.js`): it runs the Worker runtime
+(`cmd/orb-worker`, built as `peer.wasm`) over IndexedDB, with its identity, credentials and memory
+in the same Store a Worker object keeps, and dials its peers' `ws://` or `wss://` locators itself
+(`platforms/worker/peer` `Dial`, which runs `mitosis.Peers` with a WebSocket dialer). It joins an
+invitation, trusts the device it joined, follows its sync group and reconnects on reload like a
+native device, though no one dials it; a Worker object only accepts streams.
 
 ### Native v1 method schemas
 

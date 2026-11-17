@@ -5,7 +5,9 @@ package main
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
+	"strings"
 	"sync"
 	"syscall/js"
 
@@ -18,6 +20,7 @@ import (
 // paired Orb opens, the first admin action, or the agent's first mitosis_call.
 type mitosisPeer struct {
 	name     string
+	dial     bool
 	mu       sync.Mutex
 	instance *worker.Instance
 	self     *peer.Peer
@@ -33,10 +36,21 @@ func (b *mitosisPeer) open(context.Context) (*peer.Peer, error) {
 		return nil, errors.New("orb-worker: the object's Orb has stopped")
 	}
 	self, err := peer.Open(b.instance, b.name)
-	if err == nil {
-		b.self = self
+	if err != nil {
+		return nil, err
 	}
-	return self, err
+	b.self = self
+	if !b.dial {
+		go self.Follow(context.Background())
+		return self, nil
+	}
+	self.Dial(context.Background(), func(ctx context.Context, _, locator string) (net.Conn, error) {
+		if !strings.HasPrefix(locator, "ws://") && !strings.HasPrefix(locator, "wss://") {
+			return nil, errors.New("orb-worker: a browser reaches a peer only at a ws:// or wss:// locator")
+		}
+		return websocket.Dial(ctx, locator)
+	})
+	return self, nil
 }
 
 // register adds the shim's Mitosis entry points through set:

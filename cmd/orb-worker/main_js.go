@@ -21,8 +21,10 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/platforms/worker"
 	"github.com/OrdalieTech/orb/platforms/worker/peer"
+	memoryextension "github.com/OrdalieTech/orb/plugins/memory/extension"
 	"github.com/OrdalieTech/orb/plugins/memtree"
 	"github.com/OrdalieTech/orb/plugins/questions"
 	"github.com/OrdalieTech/orb/plugins/tasks"
@@ -48,7 +50,7 @@ func main() {
 	select {}
 }
 
-// open starts one object's Orb from {storage, env, name, emit, exit} and
+// open starts one object's Orb from {storage, env, name, emit, exit, dial} and
 // returns a promise of the object's entry points:
 //
 //	command(frame)  queue one command frame; a string reports a refusal
@@ -113,7 +115,8 @@ func open(object js.Value) js.Value {
 		}
 		return nil
 	})
-	mitosis := &mitosisPeer{}
+	// dial: a browser tab, which reaches its peers itself, where a Durable Object only accepts.
+	mitosis := &mitosisPeer{dial: object.Get("dial").Truthy()}
 	if name := object.Get("name"); name.Type() == js.TypeString {
 		mitosis.name = name.String()
 	}
@@ -124,12 +127,13 @@ func open(object js.Value) js.Value {
 			KV: worker.NewDurableKV(object.Get("storage")), Env: lookup,
 			Settings: document("ORB_SETTINGS"), Models: document("ORB_MODELS"),
 			Tools: peer.AgentCalls(mitosis.open),
-			Extensions: func(settings *config.SettingsManager) map[string]extensions.Factory {
+			Extensions: func(settings *config.SettingsManager, store host.Store) map[string]extensions.Factory {
 				// The bundled plugins an object runs, as its settings enable them: those that need no
 				// processes, files of their own or terminal (docs/plugins.md, where plugins run).
 				portable := map[string]extensions.Factory{
 					"titles": titles.Extension(), "tasks": tasks.Extension(tasks.Draw{}), "questions": questions.Extension(questions.Draw{}),
 					"memtree": memtree.Extension(memtree.OptionsFrom(settings.GetPluginSettings("memtree"))),
+					"memory":  memoryextension.Extension(worker.Memory(store)),
 				}
 				chosen := map[string]extensions.Factory{}
 				for name, on := range settings.GetPlugins() {

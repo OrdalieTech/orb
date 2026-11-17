@@ -19,7 +19,9 @@ BROWSER_PORT ?= 8787
 browser-build:
 	mkdir -p .tools/browser
 	$(GO_ENV) CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -o .tools/browser/orb.wasm ./cmd/orb-wasm
-	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" .tools/browser/
+	# The tab as a full Mitosis peer (peer.js) runs the Worker runtime.
+	$(GO_ENV) CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -trimpath -ldflags=-s -o .tools/browser/peer.wasm ./cmd/orb-worker
+	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" platforms/worker/deploy/helpers.js .tools/browser/
 	cp platforms/browser/web/* .tools/browser/
 
 browser-serve: browser-build

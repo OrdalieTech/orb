@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// TestDurableObjectBundle runs the deployable bundle — wasm_exec.js, the
-// scripted model and platforms/worker/deploy/worker.mjs over this program —
+// TestDurableObjectBundle runs the deployable bundle — wasm_exec.js, helpers.js,
+// the scripted model and platforms/worker/deploy/worker.mjs over this program —
 // in Node against Map-backed Durable Object storage, across an object restart.
 func TestDurableObjectBundle(t *testing.T) {
 	node, err := exec.LookPath("node")
@@ -30,6 +30,7 @@ func TestDurableObjectBundle(t *testing.T) {
 	var bundle []byte
 	for _, part := range []string{
 		filepath.Join(strings.TrimSpace(string(root)), "lib/wasm/wasm_exec.js"),
+		"../../platforms/worker/deploy/helpers.js",
 		"../../platforms/worker/e2e/fake-model.js",
 		"../../platforms/worker/deploy/worker.mjs",
 	} {

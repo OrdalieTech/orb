@@ -1,4 +1,4 @@
-// Runs the real Worker bundle (wasm_exec.js + fake-model.js + worker.mjs) and
+// Runs the real Worker bundle (wasm_exec.js + helpers.js + fake-model.js + worker.mjs) and
 // orb.wasm under Node with Map-backed Durable Object storage: a scripted
 // write/read turn over HTTP NDJSON, then a fresh object over the same storage
 // must resume the session and the file.
