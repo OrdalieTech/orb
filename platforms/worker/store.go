@@ -4,13 +4,10 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"path"
 	"slices"
 	"sync"
 
 	"github.com/OrdalieTech/orb/host"
-	"github.com/OrdalieTech/orb/plugins/memory"
-	"github.com/OrdalieTech/orb/plugins/memory/filestore"
 )
 
 // Store is the Store port over a persisted tree of its own, out of reach of
@@ -22,12 +19,6 @@ type Store struct {
 	// of its own; the first update starts from it.
 	defaults map[string][]byte
 	mu       sync.Mutex
-}
-
-// Memory is the memory plugin's journal in the object's Store, as the native agent directory keeps
-// it, shared with the object's sync group.
-func Memory(store host.Store) memory.Store {
-	return filestore.Journal{Document: store.Document(path.Join(AgentDir, "memory", "memory.jsonl"))}
 }
 
 func NewStore(files *FileSystem, defaults map[string][]byte) *Store {

@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"net"
 	"path"
 	"slices"
@@ -21,12 +20,15 @@ import (
 	"github.com/OrdalieTech/orb/agent/extensions"
 	attach "github.com/OrdalieTech/orb/agent/mitosis"
 	mitosistool "github.com/OrdalieTech/orb/agent/mitosis/tool"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/engine"
+	orbhost "github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
 	"github.com/OrdalieTech/orb/platforms/worker"
 	"github.com/OrdalieTech/orb/plugins/memory"
+	"github.com/OrdalieTech/orb/plugins/memory/filestore"
 )
 
 // Documents in the object's Store, beside settings.json and out of the file
@@ -54,6 +56,12 @@ type Peer struct {
 	peers      *mitosis.Peers // set by Dial
 }
 
+// Memory is the memory plugin's journal in the object's Store, as the native agent directory keeps
+// it, shared with the object's sync group.
+func Memory(store orbhost.Store) memory.Store {
+	return filestore.Journal{Document: store.Document(path.Join(worker.AgentDir, "memory", "memory.jsonl"))}
+}
+
 // Open loads or creates the object's Mitosis identity, enrolls the object's
 // Orb once under alias, and attaches it for this runtime's lifetime.
 func Open(instance *worker.Instance, alias string) (*Peer, error) {
@@ -63,7 +71,7 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 		return nil, err
 	}
 	b.SetClass("credentials", aiauth.NewDocumentStore(store.Document(path.Join(worker.AgentDir, "auth.json"))))
-	b.SetClass("memory", memory.Shared{Store: worker.Memory(store)})
+	b.SetClass("memory", memory.Shared{Store: Memory(store)})
 	enrolled := store.Document(instanceDocument)
 	raw, err := enrolled.Read(context.Background())
 	if err != nil {

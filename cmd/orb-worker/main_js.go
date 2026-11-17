@@ -133,7 +133,7 @@ func open(object js.Value) js.Value {
 				portable := map[string]extensions.Factory{
 					"titles": titles.Extension(), "tasks": tasks.Extension(tasks.Draw{}), "questions": questions.Extension(questions.Draw{}),
 					"memtree": memtree.Extension(memtree.OptionsFrom(settings.GetPluginSettings("memtree"))),
-					"memory":  memoryextension.Extension(worker.Memory(store)),
+					"memory":  memoryextension.Extension(peer.Memory(store)),
 				}
 				chosen := map[string]extensions.Factory{}
 				for name, on := range settings.GetPlugins() {
