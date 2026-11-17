@@ -300,9 +300,29 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 	}
 	defer closeAttach()
 	// Anyone holding an old invitation can reach this listener, so peers it does not know yet
-	// (a device pairing) get a small pool of their own, and only for an invitation's lifetime:
-	// throwaway identities can fill that pool, never the slots of paired peers.
-	slots, strangers := make(chan struct{}, 64), make(chan struct{}, 8)
+	// (a device pairing) also hold a place in a small pool of their own while they are unknown,
+	// and only for an invitation's lifetime: throwaway identities can fill that pool, never the
+	// slots of paired peers, and a device once paired gives its place back to the next one.
+	slots, strangers := make(chan struct{}, 128), make(chan struct{}, 8)
+	paired := func(peer *protocol.Conn, id string) bool {
+		select {
+		case strangers <- struct{}{}:
+		default:
+			return false
+		}
+		defer func() { <-strangers }()
+		expired := time.After(10 * time.Minute)
+		for !b.Known(id) {
+			select {
+			case <-peer.Done():
+				return false
+			case <-expired:
+				return false
+			case <-time.After(time.Second):
+			}
+		}
+		return true
+	}
 	// The relay comes up behind the local sockets: this machine's apps and Orbs wait on no network
 	// to start (its map and region take a round trip or more), and keep working while it is
 	// unreachable, offline say, as it is tried again every 30 s.
@@ -331,29 +351,17 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 			select {
 			case slots <- struct{}{}:
 				go func(c net.Conn) {
-					slot := slots
-					defer func() { <-slot }()
+					defer func() { <-slots }()
 					peer, id, err := b.Connect(serviceCtx, c, "", true)
 					if err != nil {
 						return
 					}
 					if !b.Known(id) {
-						select {
-						case strangers <- struct{}{}:
-							<-slots
-							slot = strangers
-						default:
-							_ = peer.Close()
-							return
-						}
-						// Still unknown when its invitation would have expired, it is dropped;
-						// paired by then, it stays like any known peer.
-						drop := time.AfterFunc(10*time.Minute, func() {
-							if !b.Known(id) {
+						go func() {
+							if !paired(peer, id) {
 								_ = peer.Close()
 							}
-						})
-						defer drop.Stop()
+						}()
 					}
 					// A peer that dialled here can vanish without a word (its network changed):
 					// pinging finds out in seconds, where a call would wait out its timeout.
