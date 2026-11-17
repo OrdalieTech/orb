@@ -393,8 +393,27 @@ func TestSyncOwnersLiveWithoutEachOther(t *testing.T) {
 	}
 	_ = document.Replace(ctx, stores[b], []byte(`{"openai":{"type":"api_key","key":"k5"},"groq":{"type":"api_key","key":"g2"}}`))
 	_ = admin(b, `{}`)
-	if b.pointers(group, b.PeerID())["credentials"].Seq <= a.pointers(group, a.PeerID())["credentials"].Seq {
+	b.mu.Lock()
+	versions := b.state.Versions["credentials"]
+	b.mu.Unlock()
+	if b.pointers(group, b.PeerID())["credentials"].Digest == "" || versions["groq"].By != b.PeerID() {
 		t.Fatal("an owner restarted while the other is off stopped publishing")
+	}
+
+	// a deletes x while b, unaware, adds y and edits it twice: once they meet, x stays deleted.
+	_ = document.Replace(ctx, stores[a], []byte(`{"openai":{"type":"api_key","key":"x"}}`))
+	round(a, b)
+	_ = document.Replace(ctx, stores[a], []byte(`{}`))
+	_ = admin(a, `{}`)
+	for _, y := range []string{"y1", "y2"} {
+		_ = document.Replace(ctx, stores[b], []byte(`{"openai":{"type":"api_key","key":"x"},"groq":{"type":"api_key","key":"`+y+`"}}`))
+		_ = admin(b, `{}`)
+	}
+	round(a, b)
+	for _, d := range []*Mitosis{a, b} {
+		if raw, _ := stores[d].Read(ctx); strings.Contains(string(raw), `"x"`) || !strings.Contains(string(raw), "y2") {
+			t.Fatalf("concurrent owners lost a deletion or a change: %s", raw)
+		}
 	}
 
 	// Two owners removing each other at once leave one owner, whom both follow.

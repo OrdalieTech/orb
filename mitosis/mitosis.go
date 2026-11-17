@@ -56,23 +56,22 @@ type invitationState struct {
 	Contested bool `json:"contested,omitempty"`
 }
 type state struct {
-	Version      int                          `json:"version"`
-	Key          []byte                       `json:"key"`
-	Instances    map[string]Instance          `json:"instances"`
-	Grants       []Grant                      `json:"grants"`
-	Blocked      map[string]bool              `json:"blocked"`
-	Invitations  map[string]invitationState   `json:"invitations"`
-	Scopes       map[string][]string          `json:"scopes"`
-	Records      map[string]Record            `json:"records"`
-	Peers        map[string]string            `json:"peers"`
-	Group        string                       `json:"sync_group,omitempty"`
-	Owners       []string                     `json:"sync_owners,omitempty"`
-	Prior        []string                     `json:"sync_prior,omitempty"` // the owners of the membership version this one replaced
-	GroupVersion uint64                       `json:"sync_version,omitempty"`
-	Shared       map[string]map[string]string `json:"sync_shared,omitempty"` // class -> entry -> digest, in the group's set last applied
-	Bases        map[string]uint64            `json:"sync_bases,omitempty"`  // class -> the Seq of that set
-	Merged       map[string]string            `json:"sync_merged,omitempty"` // "<member> <class>" or "* <class>" -> digest of the hand-in or group's set merged
-	Transport    json.RawMessage              `json:"transport,omitempty"`
+	Version      int                           `json:"version"`
+	Key          []byte                        `json:"key"`
+	Instances    map[string]Instance           `json:"instances"`
+	Grants       []Grant                       `json:"grants"`
+	Blocked      map[string]bool               `json:"blocked"`
+	Invitations  map[string]invitationState    `json:"invitations"`
+	Scopes       map[string][]string           `json:"scopes"`
+	Records      map[string]Record             `json:"records"`
+	Peers        map[string]string             `json:"peers"`
+	Group        string                        `json:"sync_group,omitempty"`
+	Owners       []string                      `json:"sync_owners,omitempty"`
+	Prior        []string                      `json:"sync_prior,omitempty"` // the owners of the membership version this one replaced
+	GroupVersion uint64                        `json:"sync_version,omitempty"`
+	Versions     map[string]map[string]version `json:"sync_versions,omitempty"` // class -> entry -> where it stands
+	Merged       map[string]string             `json:"sync_merged,omitempty"`   // "<member> <class>" -> digest of the hand-in an owner folded in
+	Transport    json.RawMessage               `json:"transport,omitempty"`
 }
 type registration struct {
 	generation string

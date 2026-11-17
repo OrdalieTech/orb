@@ -446,11 +446,13 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
   unblocked recipients; a vault is capped at 64 MiB, since every member, a browser tab included,
   holds it in memory. A vault is sealed with AES-256-GCM under a fresh 256-bit key on every publish, and that key is
   sealed to each recipient's X25519 key (the Montgomery form of its Ed25519 identity), stdlib only.
-  Every owner publishes: per class, the group's set is the owners' vault of highest sequence. An
-  owner takes each new one over its own, merges in the entries members hand it, keeping its own,
-  and seals the result to every current, unblocked member at the next sequence unless the group's
-  set already says it. A member applies the group's set and hands the owners alone what that set
-  lacks or holds otherwise. Between two OAuth logins the one that expires later wins, so a token
+  Every owner publishes what it holds, each entry with its version (a Lamport counter and the
+  owner that set it), deletions included, and every device merges the owners' vaults entry by
+  entry, the later version winning, so all converge on one set whatever order the vaults come in
+  and an absence never deletes anything. An owner merges in the entries members hand it, keeping
+  its own, versions what it changed, and seals the result to every current, unblocked member. A
+  member applies the group's set and hands the owners alone what that set lacks or holds
+  otherwise. Between two OAuth logins the one that expires later wins, so a token
   refreshed on any device replaces the stale copies; an entry removed on an owner is removed
   everywhere. Any member relays the owners' signed records, so the group lives on while some
   owners are off, and with one owner left nothing stops. Removing or blocking a device on an owner

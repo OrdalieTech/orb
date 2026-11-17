@@ -823,11 +823,11 @@ owner whose change lost makes it once more on top. A device the version leaves o
 group, and one with no owner is refused. Members take owners' records, and those of the owners
 before, from anyone. Each device's signed record in the group scope carries pointers to its
 vaults, one per data class (`extensions.vaults`, class to `orb.mitosis-vault/3`: SHA-256 digest,
-size and, for an owner's, a sequence). A vault is fetched by digest with the `vault.get` peer method, in 512 KiB chunks, over
+and size). A vault is fetched by digest with the `vault.get` peer method, in 512 KiB chunks, over
 any channel already open in either direction, its publisher first, then any other peer: a holder
 serves it only to a recipient that is a current, unblocked member of its group, and the fetcher
 checks it against the signed digest before opening it. A device holds in memory its own vaults
-and the group's sets it opened, so any member relays them while the owners are off;
+and the owners' it opened, so any member relays them while the owners are off;
 a restart reseals. A vault is the recipient count, one envelope per recipient (its Ed25519 key,
 an ephemeral X25519 key, the vault key sealed under ephemeral X25519, SHA-256 key derivation and
 AES-256-GCM), then the class's entries sealed once with AES-256-GCM under a fresh 256-bit key, all
@@ -847,13 +847,17 @@ with `SetClass(name, Class)`, a
 `Shareable`/`MergeShared` pair over its own store. `credentials` is `ai/auth`'s Store over
 auth.json; `memory` is `plugins/memory`'s `Shared` over the memory plugin's `Store`, merged by
 item ID (native storage's, else the agent directory's journal; a Worker object's or tab's
-`filestore.Journal` document). A round reads before it publishes. Per class, the group's set is
-the owners' vault of highest sequence, then smallest digest. A member takes it over its own,
-drops what it stopped sharing, and hands the owners only what it lacks or holds otherwise; an
-owner takes each new one the same way, merges in what members handed it, keeping its own, and
-seals what it holds at the next sequence unless the group's set already says it to everyone. A
-device leaves a class as it was while it cannot open the group's set of it, so a large memory
-vault still on its way holds back no credential. Between two OAuth logins the one that
+`filestore.Journal` document). A round reads before it publishes. An owner's vault of a class
+holds its entries with each one's version, `{v, by, d}` (a Lamport counter, the owner that set
+it, and the value's digest, empty once deleted), and the hand-in it folded in per member; a
+member's holds only its hand-in. A device merges every owner's vault it opens entry by entry,
+the higher `(v, by)` winning, so all converge whatever order vaults arrive in and an absence
+deletes nothing. A member takes the merged set over its own and hands the owners only what it
+lacks or holds otherwise; an owner takes what is newer than what it holds, folds in members'
+hand-ins (none another owner already folded in), keeping its own, versions anew what it holds
+otherwise than its versions say, and seals the result unless another owner's vault already says
+it to everyone. A member leaves a class as it was while it cannot open an owner's vault of it,
+so a large memory vault still on its way holds back no credential. Between two OAuth logins the one that
 expires later wins, so a token refreshed on any device replaces the copies its refresh made
 stale. An entry removed on an owner is removed everywhere; one removed on a member comes back
 from the group's set. Only API keys and OAuth logins are shared, never one whose key is a command
