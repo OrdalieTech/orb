@@ -156,37 +156,47 @@ func (t *tool) agents(ctx context.Context) ([]orbAgent, error) {
 		return nil, err
 	}
 	self := t.mitosis.Self()
-	var found []orbAgent
+	// Each device is described at once, so one out of reach (a peer just gone still shows
+	// connected until its channel times out) delays nothing and only lists nothing.
+	listed := make([]*orbAgent, len(machines))
+	var wg sync.WaitGroup
 	for i, peer := range machines {
-		a := orbAgent{peer: peer}
-		cursor := ""
-		for range 32 {
-			var page struct {
-				Name   string
-				Items  []conversation
-				Cursor string
+		wg.Go(func() {
+			a := orbAgent{peer: peer}
+			cursor := ""
+			for range 32 {
+				var page struct {
+					Name   string
+					Items  []conversation
+					Cursor string
+				}
+				if err := t.mitosis.Call(ctx, peer, "agent.describe", map[string]string{"cursor": cursor}, &page); err != nil {
+					return
+				}
+				a.name = cmp.Or(page.Name, a.name)
+				a.conversations = append(a.conversations, slices.DeleteFunc(page.Items, func(c conversation) bool { return c.ID == self })...)
+				if cursor = page.Cursor; cursor == "" {
+					break
+				}
 			}
-			if err = t.mitosis.Call(ctx, peer, "agent.describe", map[string]string{"cursor": cursor}, &page); err != nil {
-				break
-			}
-			a.name = cmp.Or(page.Name, a.name)
-			a.conversations = append(a.conversations, slices.DeleteFunc(page.Items, func(c conversation) bool { return c.ID == self })...)
-			if cursor = page.Cursor; cursor == "" {
-				break
-			}
-		}
-		if err != nil {
-			continue // a device out of reach lists nothing
+			listed[i] = &a
+		})
+	}
+	wg.Wait()
+	var found []orbAgent
+	for i, a := range listed {
+		if a == nil {
+			continue
 		}
 		if i == 0 {
 			a.name = cmp.Or(a.name, "this machine") + " (this machine)"
 			t.mu.Lock()
-			t.home, t.machine = peer, strings.TrimSuffix(a.name, " (this machine)")
+			t.home, t.machine = a.peer, strings.TrimSuffix(a.name, " (this machine)")
 			t.mu.Unlock()
 		} else {
 			a.name = cmp.Or(a.name, "a connected device")
 		}
-		found = append(found, a)
+		found = append(found, *a)
 	}
 	return found, nil
 }

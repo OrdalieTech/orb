@@ -78,6 +78,14 @@ func (d doc) valid() bool {
 	return !slices.ContainsFunc(d.Owners, func(o string) bool { return !slices.Contains(d.Members, o) })
 }
 
+// vaultBody is what a vault seals: a class's entries and, from an owner, those it changed or
+// removed against the group's set it built on, all another owner takes from it.
+type vaultBody struct {
+	Entries map[string]json.RawMessage `json:"entries"`
+	Changed []string                   `json:"changed,omitempty"`
+	Removed []string                   `json:"removed,omitempty"`
+}
+
 // bundle is what a group shares: per data class, entries by name; each class is its own vault.
 type bundle map[string]map[string]json.RawMessage
 
@@ -354,8 +362,8 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	shared, adopted := maps.Clone(b.state.Shared), maps.Clone(b.state.Merged)
 	b.mu.Unlock()
 
-	sets := map[string]map[string]json.RawMessage{} // class -> the group's set, opened
-	readers := map[string][]string{}                // class -> who the group's set is sealed to
+	sets := map[string]vaultBody{}   // class -> the group's set, opened
+	readers := map[string][]string{} // class -> who the group's set is sealed to
 	opened := map[string][]byte{}
 	merged := map[string]string{}
 	stale := map[string]bool{}
@@ -364,7 +372,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			continue
 		}
 		blob, err := b.fetch(ctx, s.vault, s.peer, true)
-		var in map[string]json.RawMessage
+		var in vaultBody
 		if err == nil {
 			in, readers[class], err = b.open(blob)
 		}
@@ -388,19 +396,26 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		}
 		var changed []string
 		if set, ok := sets[name]; ok && (!owner || adopted["* "+name] != best[name].vault.Digest) {
-			// An owner takes only what changed since the set it last saw, so its own changes
-			// still unpublished stand; a member takes the whole set.
-			var removed []string
-			for entry := range shared[name] {
-				if _, kept := set[entry]; !kept {
-					removed = append(removed, entry)
+			// An owner takes only what the set's publisher changed or removed, so its own changes
+			// still unpublished stand and what the publisher never saw is not deleted; a member
+			// takes the whole set and drops what it stopped sharing.
+			incoming, removed := set.Entries, set.Removed
+			if owner {
+				incoming = map[string]json.RawMessage{}
+				for _, entry := range set.Changed {
+					if v, ok := set.Entries[entry]; ok {
+						incoming[entry] = v
+					}
+				}
+			} else {
+				removed = nil
+				for entry := range shared[name] {
+					if _, kept := set.Entries[entry]; !kept {
+						removed = append(removed, entry)
+					}
 				}
 			}
-			if owner {
-				set = maps.Clone(set)
-				maps.DeleteFunc(set, func(entry string, v json.RawMessage) bool { return shared[name][entry] == digests(v) })
-			}
-			c, err := class.MergeShared(ctx, []map[string]json.RawMessage{set}, false, removed)
+			c, err := class.MergeShared(ctx, []map[string]json.RawMessage{incoming}, false, removed)
 			if err != nil {
 				return nil, err
 			}
@@ -409,12 +424,12 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		var incoming []map[string]json.RawMessage
 		for _, s := range handins[name] {
 			blob, err := b.fetch(ctx, s.vault, s.peer, false)
-			var in map[string]json.RawMessage
+			var in vaultBody
 			if err == nil {
 				in, _, err = b.open(blob)
 			}
 			if err == nil {
-				incoming, merged[s.peer+" "+name] = append(incoming, in), s.vault.Digest
+				incoming, merged[s.peer+" "+name] = append(incoming, in.Entries), s.vault.Digest
 			}
 		}
 		if len(incoming) > 0 {
@@ -429,7 +444,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			return nil, err
 		}
 		for entry, value := range own {
-			if set, ok := sets[name]; !owner && ok && bytes.Equal(set[entry], value) {
+			if set, ok := sets[name]; !owner && ok && bytes.Equal(set.Entries[entry], value) {
 				delete(own, entry)
 			}
 		}
@@ -470,24 +485,41 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	for name, entries := range out {
 		b.handing = b.handing || !owner && len(entries) > 0
 		if set, ok := sets[name]; ok {
-			b.state.Shared[name] = entryDigests(set)
+			b.state.Shared[name] = entryDigests(set.Entries)
 		} else if l, ok := b.sealed[name]; ok && best[name].peer == self {
 			b.state.Shared[name] = l.entries
 		}
 		set, ok := sets[name]
-		if len(recipients) == 0 || owner && ok && maps.EqualFunc(entries, set, func(x, y json.RawMessage) bool { return bytes.Equal(x, y) }) && !slices.ContainsFunc(recipients, func(p string) bool { return p != best[name].peer && !slices.Contains(readers[name], p) }) {
+		if len(recipients) == 0 || owner && ok && maps.EqualFunc(entries, set.Entries, func(x, y json.RawMessage) bool { return bytes.Equal(x, y) }) && !slices.ContainsFunc(recipients, func(p string) bool { return p != best[name].peer && !slices.Contains(readers[name], p) }) {
 			continue // the group's set already says it, to everyone
 		}
 		sum := sha256.Sum256(JSON([]any{recipients, entries}))
 		last, ok := b.sealed[name]
 		if !ok || last.sum != sum || b.vaults[last.vault.Digest] == nil || owner && best[name].peer != self && last.vault.Seq <= best[name].vault.Seq {
-			blob, err := seal(recipients, entries)
+			body, seq := vaultBody{Entries: entries}, uint64(0)
+			if owner {
+				// Against the group's set it built on, what this owner changed and removed; a
+				// reseal that changes nothing (after a restart) keeps its place, so it never
+				// outranks a set made since.
+				base := b.state.Shared[name]
+				for entry, v := range entries {
+					if base[entry] != digests(v) {
+						body.Changed = append(body.Changed, entry)
+					}
+				}
+				for entry := range base {
+					if _, kept := entries[entry]; !kept {
+						body.Removed = append(body.Removed, entry)
+					}
+				}
+				seq = best[name].vault.Seq + 1
+				if best[name].peer == self && len(body.Changed)+len(body.Removed) == 0 {
+					seq--
+				}
+			}
+			blob, err := seal(recipients, body)
 			if err != nil {
 				return nil, err
-			}
-			seq := uint64(0)
-			if owner {
-				seq = best[name].vault.Seq + 1
 			}
 			last = sealed{sum, pointer{vaultSchema, vaultDigest(blob), len(blob), seq}, entryDigests(entries)}
 			b.sealed[name], b.vaults[last.vault.Digest] = last, blob
@@ -670,7 +702,7 @@ func (b *Mitosis) serveVault(peer string, params json.RawMessage) (json.RawMessa
 // seal encrypts a class's entries once under a fresh key, and that key to each recipient's X25519
 // key. A vault is the recipient count (two bytes, big-endian), one envelope per recipient, then
 // the sealed entries.
-func seal(recipients []string, in map[string]json.RawMessage) ([]byte, error) {
+func seal(recipients []string, in vaultBody) ([]byte, error) {
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
 	out := binary.BigEndian.AppendUint16(nil, uint16(len(recipients)))
@@ -723,35 +755,35 @@ func split(blob []byte) (map[string][]byte, []byte, error) {
 }
 
 // open decrypts a vault sealed to this device and returns its entries and recipients.
-func (b *Mitosis) open(blob []byte) (map[string]json.RawMessage, []string, error) {
+func (b *Mitosis) open(blob []byte) (vaultBody, []string, error) {
 	envelopes, sealed, err := split(blob)
 	if err != nil {
-		return nil, nil, err
+		return vaultBody{}, nil, err
 	}
 	envelope := envelopes[b.PeerID()]
 	if envelope == nil {
-		return nil, slices.Collect(maps.Keys(envelopes)), Fail("unauthorized")
+		return vaultBody{}, slices.Collect(maps.Keys(envelopes)), Fail("unauthorized")
 	}
 	sum := sha512.Sum512(b.state.Key[:ed25519.SeedSize])
 	self, err := ecdh.X25519().NewPrivateKey(sum[:32])
 	if err != nil {
-		return nil, nil, err
+		return vaultBody{}, nil, err
 	}
 	pub := envelope[:32]
 	ephemeral, err := ecdh.X25519().NewPublicKey(pub)
 	if err != nil {
-		return nil, nil, err
+		return vaultBody{}, nil, err
 	}
 	shared, err := self.ECDH(ephemeral)
 	if err != nil {
-		return nil, nil, err
+		return vaultBody{}, nil, err
 	}
 	key, err := aead(envelopeKey(shared, pub, self.PublicKey().Bytes()), envelope[32:], pub, false)
 	if err != nil {
-		return nil, nil, err
+		return vaultBody{}, nil, err
 	}
 	plain, err := aead(key, sealed, nil, false)
-	var out map[string]json.RawMessage
+	var out vaultBody
 	if err == nil {
 		err = json.Unmarshal(plain, &out)
 	}

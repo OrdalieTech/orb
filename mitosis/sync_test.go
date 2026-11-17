@@ -331,6 +331,22 @@ func TestSyncOwnersLiveWithoutEachOther(t *testing.T) {
 	if key(b) != "k3" || published != [2]Record{a.state.Records[group+"/"+a.PeerID()], b.state.Records[group+"/"+b.PeerID()]} {
 		t.Fatal("an owner's own change was lost, or the owners keep resealing", key(a), key(b))
 	}
+	// b adds an entry while a is off; a comes back restarted, holding no vault, and runs a round
+	// before it sees b's record: it deletes nothing, and takes the entry.
+	_ = document.Replace(ctx, stores[b], []byte(`{"openai":{"type":"api_key","key":"k3"},"groq":{"type":"api_key","key":"g1"}}`))
+	round(b)
+	a.mu.Lock()
+	clear(a.sealed)
+	clear(a.vaults)
+	a.synced = ""
+	a.mu.Unlock()
+	_ = admin(a, `{}`)
+	round(a, b)
+	for _, x := range []*Mitosis{a, b} {
+		if raw, _ := stores[x].Read(ctx); !strings.Contains(string(raw), "g1") {
+			t.Fatalf("an owner back from a restart deleted what it never saw: %s", raw)
+		}
+	}
 
 	// Two owners removing each other at once leave one owner, whom both follow.
 	_ = admin(a, `{"remove":"`+b.PeerID()+`"}`)
