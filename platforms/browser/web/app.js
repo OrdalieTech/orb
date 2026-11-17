@@ -352,9 +352,12 @@ async function refreshTab() {
       await tab.rpc("new_session");
       ({ model } = await tab.rpc("get_state"));
     }
+    const online = status.peer_states?.[owner] === "connected" ? "online" : "offline";
+    // The panel's badge is the remote-control link; a member tab shows its own instead.
+    if (owner && !remote.connection) $("mitosis-status").textContent = `Member, ${online}`;
     $("model-label").textContent = [
       !owner ? "Not joined" : providers.length ? "Member" : "Waiting for your device",
-      status.peer_states?.[owner] === "connected" ? "online" : "offline",
+      online,
       `providers: ${providers.join(", ") || "none yet"}`,
       ...(model && model.provider !== "unknown" ? [`${model.provider}/${model.id}`] : []),
     ].join(" · ");
