@@ -170,7 +170,7 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 }
 
 // menuMark is the menu at the window's top right, as the phone's: the conversation shown, the
-// machine it runs on (this computer on Home), the Bridge, Settings.
+// machine it runs on (this computer on Home), the Mitosis, Settings.
 func (a *app) menuMark(c *ui.Context) {
 	o, pal := a.o, p(c)
 	t := o.tab(a.tab)
@@ -213,7 +213,7 @@ func (a *app) menuMark(c *ui.Context) {
 		m.Separator()
 		if m.Item("Devices · " + o.state.Summary).Chosen() {
 			reread()
-			a.stack = []screen{{kind: "bridge", peer: o.state.Self}}
+			a.stack = []screen{{kind: "mitosis", peer: o.state.Self}}
 		}
 		if m.Item("Settings").Shortcut(cmd, ui.KeyComma).Chosen() {
 			a.settings()
@@ -341,8 +341,8 @@ func (a *app) paletteSheet(c *ui.Context) {
 }
 
 // magi is this computer's state put to three votes, as NERV's MAGI put each decision to their
-// three computers: its Bridge is up, its paired machines are connected, its Orb is current. Each
-// says 承認 (approved) or 否決 (refused) in red; a refusal says why, and Bridge's open its screen.
+// three computers: its Mitosis is up, its paired machines are connected, its Orb is current. Each
+// says 承認 (approved) or 否決 (refused) in red; a refusal says why, and Mitosis's open its screen.
 func (a *app) magi(c *ui.Context) {
 	o, pal := a.o, p(c)
 	var self *Machine
@@ -362,17 +362,17 @@ func (a *app) magi(c *ui.Context) {
 		version = self.Version
 		current = o.state.Latest == "" || !newer(o.state.Latest, self.Version)
 	}
-	bridgeTip := "Bridge is starting"
+	mitosisTip := "Mitosis is starting"
 	if o.state.Up {
-		bridgeTip = "Bridge is up on this computer"
+		mitosisTip = "Mitosis is up on this computer"
 	}
 	votes := []struct {
 		name, value, tip string
-		yes, bridge      bool
+		yes, mitosis     bool
 	}{
-		{"bridge", map[bool]string{true: "up", false: "…"}[o.state.Up], bridgeTip, o.state.Up, true},
+		{"mitosis", map[bool]string{true: "up", false: "…"}[o.state.Up], mitosisTip, o.state.Up, true},
 		{"peers", fmt.Sprintf("%d/%d", connected, peers), fmt.Sprintf("%d of %d paired machines connected", connected, peers), connected == peers, true},
-		{"orb", version, map[bool]string{true: "This computer runs the newest Orb", false: "Orb " + o.state.Latest + " is out: orb update, then orb bridge stop && orb bridge start"}[current], current, false},
+		{"orb", version, map[bool]string{true: "This computer runs the newest Orb", false: "Orb " + o.state.Latest + " is out: orb update, then orb mitosis stop && orb mitosis start"}[current], current, false},
 	}
 	ui.Row(c).FillWidth().Gap(4).Children(func() {
 		for _, v := range votes {
@@ -388,9 +388,9 @@ func (a *app) magi(c *ui.Context) {
 					ui.Text(c, verdict).FontSize(labelSize).FontWeight(strong).TextColor(ink)
 				})
 			})
-			if v.bridge && press(cell) {
+			if v.mitosis && press(cell) {
 				reread()
-				a.stack = []screen{{kind: "bridge"}}
+				a.stack = []screen{{kind: "mitosis"}}
 			}
 		}
 	})

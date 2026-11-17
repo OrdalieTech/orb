@@ -133,7 +133,7 @@ private struct Bar: View {
             }
             Menu {
                 if let t = orb.tab(nav.tab) { Button("Details") { nav.inspector = true }; Button("Providers") { nav.providers(of: t) } }
-                Button("Bridge") { nav.pane = "pair"; nav.settings = true }
+                Button("Mitosis") { nav.pane = "pair"; nav.settings = true }
                 Button("Plugins") { nav.providers(of: orb.tab(nav.tab), pane: "plugins") }
             } label: { Image(systemName: "line.3.horizontal").frame(width: 44, height: 44) }.accessibilityLabel("Menu")
         }
@@ -181,7 +181,7 @@ private struct Start: View {
                             HStack { Text("No paired devices").foregroundStyle(Ink.mute); Spacer(); Text("Pair ›").fontWeight(.medium) }.padding(.vertical, 10)
                         }
                     }
-                    Text(orb.state.up ? orb.state.launching.isEmpty ? orb.state.summary : orb.state.launching : "starting Bridge…")
+                    Text(orb.state.up ? orb.state.launching.isEmpty ? orb.state.summary : orb.state.launching : "starting Mitosis…")
                         .font(.mono(Size.small)).foregroundStyle(Ink.meta)
                 }
                 // No rules between rows, on the page's own ground.
@@ -258,7 +258,7 @@ private struct Lifecycle: ViewModifier {
             .sheet(isPresented: $nav.settings) { Preferences() }
             // A pairing code opened as a link (the camera's, a message's) joins from Settings.
             .onOpenURL { url in
-                guard url.scheme == "orb-bridge" else { return }
+                guard url.scheme == "orb-mitosis" else { return }
                 nav.code = url.absoluteString
                 nav.pane = "pair"
                 nav.settings = true

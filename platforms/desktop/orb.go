@@ -17,7 +17,7 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// Orb is the app's side of `orb app`, the view every Orb app draws (bridge/view): what it shows,
+// Orb is the app's side of `orb app`, the view every Orb app draws (mitosis/view): what it shows,
 // kept as the view sends it, and the intents it sends back. Its fields are read and written on the
 // main thread only.
 type Orb struct {
@@ -48,7 +48,7 @@ const device = "this computer"
 
 func newOrb(alert func(tab, title, text string)) *Orb {
 	o := &Orb{alert: alert, rows: map[string][]Row{}, replies: map[string]chan reply{}, began: time.Now(), ready: make(chan struct{})}
-	o.state.Summary = "starting Bridge…"
+	o.state.Summary = "starting Mitosis…"
 	go o.run()
 	return o
 }
@@ -344,7 +344,7 @@ func (o *Orb) hue(peer string) int {
 }
 
 // environment is the login shell's: an app opened from the Finder or a desktop launcher gets a bare
-// PATH, and the Orbs this machine's Bridge starts, when this app starts it, run with what the
+// PATH, and the Orbs this machine's Mitosis starts, when this app starts it, run with what the
 // terminal has. Reading it takes the shell's startup (a third of a second or more), so `orb app`
 // starts with the one the last launch read, kept private in the user's cache, while this launch
 // reads it again for the next: a changed profile counts from the launch after.

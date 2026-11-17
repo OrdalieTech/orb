@@ -471,7 +471,7 @@ func (a *app) loginFlow(c *ui.Context, f *Login, vp *vendorPage, remote bool) {
 				open()
 			}
 			ui.Text(c, "Continue in the browser").FontSize(title).FontWeight(strong)
-			// A device signing in over Bridge listens on its own localhost: the code or final URL comes back by paste.
+			// A device signing in over Mitosis listens on its own localhost: the code or final URL comes back by paste.
 			if remote {
 				ui.Text(c, "Finish on the page that opened, then paste the code it shows or the final redirect URL here.").TextColor(pal.mute)
 			} else {
@@ -692,7 +692,7 @@ func (a *app) pluginsScreen(c *ui.Context, peer string) {
 }
 
 // settingsKinds are the tabs of Settings (⌘,), in order.
-var settingsKinds = []struct{ kind, name string }{{"general", "General"}, {"providers", "Providers"}, {"plugins", "Plugins"}, {"bridge", "Bridge"}}
+var settingsKinds = []struct{ kind, name string }{{"general", "General"}, {"providers", "Providers"}, {"plugins", "Plugins"}, {"mitosis", "Mitosis"}}
 
 // settings opens Settings on its first tab.
 func (a *app) settings() {

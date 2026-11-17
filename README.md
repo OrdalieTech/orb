@@ -35,7 +35,7 @@ orb -p "explain this repository"    # headless print mode
 ```
 
 Sessions and global state live in `~/.orb/state/orb.db` by default. On first launch, Orb migrates
-legacy state and preserves the original files; close older Orb and Bridge processes first. Use
+legacy state and preserves the original files; close older Orb and Mitosis processes first. Use
 `orb storage import <session.jsonl>` and `orb storage export <session-id> <output.jsonl>` to exchange
 sessions with Pi. Native sessions have IDs rather than live JSONL paths. SDK defaults remain
 file-backed, and `orb --pi-files ...` provides explicit compatibility in a separate state root.
@@ -44,15 +44,18 @@ See the [storage guide](docs/sdk.md#session-management) and [0.8.0 upgrade notes
 `orb --mode rpc` retains the upstream RPC protocol; upstream's unmodified suite also passes
 through the explicit Pi-file entry point.
 
-## Connect devices with Bridge
+## Connect devices with Mitosis
 
-Open **Bridge** from Settings or **Ctrl+P**, enable it, and choose **Add device**. Pair with an
-invitation or existing SSH access; SSH setup installs or updates remote Orb when needed, then
-conversation traffic uses Bridge over Tailcat. From the shell: `orb bridge connect-ssh user@host`.
-Pairing grants mutual conversation access. Bridge runs in the background until explicitly stopped;
-turning it off retains saved pairings. Recent foreign previews are read-only offline.
+Run `orb mitosis` on a machine you already use: it shows a code. On the new machine, run
+`orb mitosis join <code>`, then confirm its fingerprint on the first one. The new machine is then
+paired and in your sync group, with your logins and memory: `fedora and box in sync, 2 devices`.
+`orb mitosis ssh user@host` does the same for a server in one command, installing Orb there.
+The first machine owns the group; `orb mitosis sync` and `block` cover the rest. In the app, open
+**Mitosis** from Settings or **Ctrl+P** and choose **Add device**. Mitosis runs in the background
+until explicitly stopped; turning it off retains saved pairings. Recent foreign previews are
+read-only offline.
 
-The current release controls attached conversations; a unified multi-Bridge Sessions page remains
+The current release controls attached conversations; a unified multi-Mitosis Sessions page remains
 planned.
 
 ## Deploy anywhere
@@ -60,10 +63,10 @@ planned.
 Orb is a runtime you deploy, not a thin client of someone else's server: the same core runs on
 macOS and Linux, in containers, inside Go services and in a browser worker, and is being brought
 to Cloudflare Durable Objects, self-hosted workerd, Windows, Android, iOS and WASI. Each
-deployment runs its own model calls, tools and sessions, and deployments reach each other as Bridge
+deployment runs its own model calls, tools and sessions, and deployments reach each other as Mitosis
 peers.
 [docs/deployments.md](docs/deployments.md) lists every target with its status, capabilities,
-deploy command and Bridge role.
+deploy command and Mitosis role.
 
 ## Embed the SDK
 

@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -541,6 +542,19 @@ func (registry *ModelRegistry) Available(env map[string]string) []ai.Model {
 }
 
 func (registry *ModelRegistry) AvailableWithError(env map[string]string) ([]ai.Model, error) {
+	// A provider another process logged into or changed (a Mitosis sync, a login elsewhere)
+	// becomes available without a restart.
+	if stored, err := registry.readCredentials(); err == nil {
+		registry.mu.RLock()
+		same := len(stored) == len(registry.authProviders)
+		for provider, credential := range stored {
+			same = same && reflect.DeepEqual(credential, registry.authProviders[provider])
+		}
+		registry.mu.RUnlock()
+		if !same {
+			_ = registry.RefreshAuth()
+		}
+	}
 	registry.mu.RLock()
 	models := append([]ai.Model(nil), registry.all...)
 	credential := registry.authProviders["github-copilot"].Clone()

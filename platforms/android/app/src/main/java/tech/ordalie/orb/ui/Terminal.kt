@@ -17,7 +17,7 @@ import tech.ordalie.orb.R
 import tech.ordalie.orb.core.*
 
 /**
- * The terminal where a conversation runs, through `orb bridge shell` on its machine: this phone's
+ * The terminal where a conversation runs, through `orb mitosis shell` on its machine: this phone's
  * is Orb's Linux, the shell its agent's bash tool runs; a paired machine's is its owner's shell.
  * Each lives as long as the app does, so leaving the screen never ends what runs in it.
  */
@@ -30,7 +30,7 @@ private object Shell : TerminalSessionClient, TerminalViewClient {
     var size = 0 // pixels; 13sp until pinched
 
     fun session(orb: Orb, peer: String, cwd: String): TerminalSession = sessions[peer to cwd]?.takeIf { it.isRunning } ?: run {
-        TerminalSession(orb.binary, orb.cwd.path, arrayOf("liborb.so", "bridge", "shell", peer, cwd), (System.getenv() + orb.env() + ("TERM" to "xterm-256color")).map { (k, v) -> "$k=$v" }.toTypedArray(), 5000, this)
+        TerminalSession(orb.binary, orb.cwd.path, arrayOf("liborb.so", "mitosis", "shell", peer, cwd), (System.getenv() + orb.env() + ("TERM" to "xterm-256color")).map { (k, v) -> "$k=$v" }.toTypedArray(), 5000, this)
             .also { sessions[peer to cwd] = it }
     }.also { session = it }
 

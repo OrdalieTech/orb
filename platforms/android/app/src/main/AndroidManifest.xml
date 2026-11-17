@@ -31,14 +31,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- A Bridge invitation photographed with any camera: orb-bridge:v1:… is a URI. -->
+            <!-- A Mitosis invitation photographed with any camera: orb-mitosis:v1:… is a URI. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="orb-bridge" />
+                <data android:scheme="orb-mitosis" />
             </intent-filter>
-            <!-- A Bridge invitation shared from another Orb, or anything to cite in a prompt. -->
+            <!-- A Mitosis invitation shared from another Orb, or anything to cite in a prompt. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -52,7 +52,7 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/updates" />
         </provider>
-        <!-- After a reboot the phone is a Bridge peer again without being opened. -->
+        <!-- After a reboot the phone is a Mitosis peer again without being opened. -->
         <receiver android:name=".OrbService$Boot" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -64,7 +64,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Runs a local AI agent and its peer-to-peer Bridge" />
+                android:value="Runs a local AI agent and its peer-to-peer Mitosis" />
         </service>
     </application>
 </manifest>

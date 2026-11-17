@@ -202,8 +202,8 @@ func TestHerdrResumePreservesExplicitResourcesAndExclusions(t *testing.T) {
 
 func TestHerdrResumePreservesSafeOptionsWithoutSecretsOrPrompts(t *testing.T) {
 	secret, prompt := "secret", "private prompt"
-	args := CLIArgs{Auto: true, NoTools: true, NoBuiltinTools: true, NoContextFiles: true, NoSkills: true, NoPromptTemplates: true, NoThemes: true, Offline: true, Tools: []string{"read", "ls"}, ExcludeTools: []string{"bash"}, BridgeProfile: "personal", InstanceAlias: "work", APIKey: &secret, SystemPrompt: &prompt, AppendSystemPrompt: []string{prompt}, Messages: []string{prompt}}
-	want := []string{"--auto", "--no-tools", "--no-builtin-tools", "--no-context-files", "--no-skills", "--no-prompt-templates", "--no-themes", "--offline", "--tools", "read,ls", "--exclude-tools", "bash", "--bridge", "personal", "--instance", "work"}
+	args := CLIArgs{Auto: true, NoTools: true, NoBuiltinTools: true, NoContextFiles: true, NoSkills: true, NoPromptTemplates: true, NoThemes: true, Offline: true, Tools: []string{"read", "ls"}, ExcludeTools: []string{"bash"}, MitosisProfile: "personal", InstanceAlias: "work", APIKey: &secret, SystemPrompt: &prompt, AppendSystemPrompt: []string{prompt}, Messages: []string{prompt}}
+	want := []string{"--auto", "--no-tools", "--no-builtin-tools", "--no-context-files", "--no-skills", "--no-prompt-templates", "--no-themes", "--offline", "--tools", "read,ls", "--exclude-tools", "bash", "--mitosis", "personal", "--instance", "work"}
 	if got := herdrResumeArguments(args); !slices.Equal(got, want) {
 		t.Fatalf("resume arguments = %v", got)
 	}

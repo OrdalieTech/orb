@@ -30,11 +30,13 @@ func (db *DB) Memory(namespace string) *Memory { return &Memory{db, autocommit{d
 var _ memory.TransactionalStore = (*Memory)(nil)
 
 func (store *Memory) Append(ctx context.Context, item memory.Item) (string, error) {
-	id, err := uuidv7.Generate(time.Now())
-	if err != nil {
-		return "", err
+	if item.ID == "" {
+		id, err := uuidv7.Generate(time.Now())
+		if err != nil {
+			return "", err
+		}
+		item.ID = id
 	}
-	item.ID = id
 	if item.Time.IsZero() {
 		item.Time = time.Now().UTC()
 	}
@@ -42,8 +44,8 @@ func (store *Memory) Append(ctx context.Context, item memory.Item) (string, erro
 	if err != nil {
 		return "", err
 	}
-	_, err = store.connection.ExecContext(ctx, "INSERT INTO memory_items VALUES(?,?,?,?)", store.namespace, id, item.Time.UTC().Format("2006-01-02T15:04:05.000000000Z"), data)
-	return id, err
+	_, err = store.connection.ExecContext(ctx, "INSERT OR REPLACE INTO memory_items VALUES(?,?,?,?)", store.namespace, item.ID, item.Time.UTC().Format("2006-01-02T15:04:05.000000000Z"), data)
+	return item.ID, err
 }
 func (store *Memory) Get(ctx context.Context, id string) (memory.Item, error) {
 	var data []byte
@@ -80,7 +82,7 @@ func (store *Memory) Query(ctx context.Context, filter memory.Filter) ([]memory.
 	}
 	defer func() { _ = rows.Close() }()
 	limit := filter.Limit
-	if limit <= 0 || limit > 100 {
+	if limit == 0 || limit > 100 {
 		limit = 100
 	}
 	result := []memory.Item{}

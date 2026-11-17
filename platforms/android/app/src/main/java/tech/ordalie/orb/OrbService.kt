@@ -6,7 +6,7 @@ import android.content.pm.ServiceInfo
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.*
 
-/** Keeps the core and its Bridge alive while the screen is off; the notification is the lock-screen slot. */
+/** Keeps the core and its Mitosis alive while the screen is off; the notification is the lock-screen slot. */
 class OrbService : Service() {
     private var watch: Job? = null
 

@@ -1,0 +1,681 @@
+package view
+
+import (
+	"bytes"
+	"cmp"
+	"encoding/json"
+	"fmt"
+	"maps"
+	"regexp"
+	"slices"
+	"strings"
+
+	"github.com/OrdalieTech/orb/agent/session/exporthtml"
+)
+
+// Row is what an app draws of a conversation, one per line of it: what someone said (you), a
+// block of what Orb wrote (md), a run of what it did (run: thoughts and tool calls, folded into
+// one line past a single action), or a note.
+type Row struct {
+	Key     string   `json:"k"`
+	Kind    string   `json:"kind"`
+	Text    string   `json:"text,omitempty"`
+	Via     string   `json:"via,omitempty"` // "mitosis": a peer sent it, not this app
+	Alarm   bool     `json:"alarm,omitempty"`
+	Images  []string `json:"images,omitempty"` // references an app fetches with "image"
+	Block   *Block   `json:"block,omitempty"`
+	Live    bool     `json:"live,omitempty"`
+	What    string   `json:"what,omitempty"` // a run in words: "2 thoughts · 3 commands"
+	Now     string   `json:"now,omitempty"`  // what a run is doing now
+	Failed  int      `json:"failed,omitempty"`
+	Actions []Action `json:"actions,omitempty"`
+}
+
+// Action is one line of a run: a thought or a tool call, its target and what came of it. What
+// it was given and returned in full comes with "detail".
+type Action struct {
+	Key    string `json:"k"`
+	Verb   string `json:"verb"`
+	Target string `json:"target"`
+	Result string `json:"result,omitempty"`
+	Live   bool   `json:"live,omitempty"`
+	Failed bool   `json:"failed,omitempty"`
+}
+
+// item is one thing a conversation holds: what someone said ('y'), what Orb said and thought
+// ('s'), a tool it ran ('t'), or a note ('n').
+type item struct {
+	key, kind                          string
+	text, via, thinking                string
+	images                             []string
+	live, failed, alarm                bool
+	verb, target, args, result, output string
+	diff                               string // an edit's, as the TUI draws it: "+12 line", "-12 line"
+	blocks                             []Block
+	parsed                             *face // the text and state blocks were parsed for
+	drawn                              face  // what its rows showed when last sent
+}
+
+// face is what an item's rows show of it: an item whose face is unchanged needs no new rows.
+type face struct {
+	text, via, thinking, verb, target, result string
+	live, failed, alarm                       bool
+	images                                    int
+}
+
+func (it *item) face() face {
+	return face{it.text, it.via, it.thinking, it.verb, it.target, it.result, it.live, it.failed, it.alarm, len(it.images)}
+}
+
+// transcript folds Orb's agent events, live or replayed from a snapshot, into items. An item's
+// key is its message's place in the session and its own in the message, so loading earlier
+// messages, or the same ones again, keeps the keys of the rows already drawn.
+type transcript struct {
+	items               []*item
+	said, retry         *item
+	tools               map[string]*item
+	msg, seq            int      // the message items are keyed under, and the next item's place in it
+	next                int      // the place of the next message
+	sent                []string // texts this side sent: a user message not among them came by Mitosis
+	userOpen, replaying bool
+	index, last         int
+}
+
+const outputKept = 8000
+
+var (
+	verbs   = map[string]string{"ask_user_question": "ask", "todo": "tasks", "web_search": "search", "fetch_content": "fetch"}
+	kinds   = map[string]string{"bash": "command", "read": "read", "grep": "search", "find": "search", "glob": "search", "ls": "listing", "edit": "edit", "write": "edit"}
+	tagged  = regexp.MustCompile(`^<([a-z][\w-]*)[ >]`)
+	markup  = regexp.MustCompile(`<[^>]+>`)
+	spaces  = regexp.MustCompile(`\s+`)
+	status  = regexp.MustCompile(`^\d{3}`)
+	message = regexp.MustCompile(`"message"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+)
+
+func (t *transcript) clear() { *t = transcript{sent: t.sent} }
+
+func (t *transcript) add(it *item) *item {
+	t.items = append(t.items, t.keyed(it))
+	return it
+}
+
+func (t *transcript) keyed(it *item) *item {
+	it.key = fmt.Sprintf("%d.%d", t.msg, t.seq)
+	t.seq++
+	return it
+}
+
+func (t *transcript) note(text string, alarm bool) *item {
+	return t.add(&item{kind: "n", text: text, alarm: alarm})
+}
+
+// waiting says that a message sent during a run waits: steering lands after the current step,
+// a follow-up after the run.
+func (t *transcript) waiting(steer bool) {
+	t.add(&item{kind: "n", text: map[bool]string{true: "steering · lands after the current step", false: "queued · sends when this run ends"}[steer], live: true})
+}
+
+// shell is a `!command` this side ran: live until the conversation, reloaded, holds its output.
+func (t *transcript) shell(command string) {
+	t.add(&item{kind: "t", verb: "bash", target: firstLine(command, 120), args: command, live: true})
+}
+
+type wireEvent struct {
+	Type          string          `json:"type"`
+	Message       json.RawMessage `json:"message"`
+	ToolCallID    string          `json:"toolCallId"`
+	ToolName      string          `json:"toolName"`
+	Args          json.RawMessage `json:"args"`
+	PartialResult json.RawMessage `json:"partialResult"`
+	Result        json.RawMessage `json:"result"`
+	IsError       bool            `json:"isError"`
+	ErrorMessage  string          `json:"errorMessage"`
+	Aborted       bool            `json:"aborted"`
+	Attempt       int             `json:"attempt"`
+	MaxAttempts   int             `json:"maxAttempts"`
+	Success       bool            `json:"success"`
+}
+
+type wireMessage struct {
+	Role         string          `json:"role"`
+	Content      json.RawMessage `json:"content"`
+	StopReason   string          `json:"stopReason"`
+	ErrorMessage string          `json:"errorMessage"`
+	ToolCallID   string          `json:"toolCallId"`
+	IsError      bool            `json:"isError"`
+	Command      string          `json:"command"`
+	Output       string          `json:"output"`
+	ExitCode     int             `json:"exitCode"`
+	Details      json.RawMessage `json:"details"`
+	Display      bool            `json:"display"`
+	TokensBefore int             `json:"tokensBefore"`
+	Summary      string          `json:"summary"`
+}
+
+// content is a message's or tool result's text, thinking, image references and tool calls, an
+// edit's diff and a subagent's steps.
+type content struct {
+	text, thinking, diff, steps string
+	images                      []string
+	calls                       []struct {
+		ID, Name  string
+		Arguments json.RawMessage
+	}
+}
+
+func parse(raw json.RawMessage) (c content) {
+	if json.Unmarshal(raw, &c.text) == nil {
+		return c
+	}
+	var parts []struct {
+		Type, Text, Thinking, Ref, ID, Name string
+		Arguments                           json.RawMessage
+	}
+	_ = json.Unmarshal(raw, &parts)
+	for _, p := range parts {
+		switch p.Type {
+		case "text":
+			c.text += p.Text
+		case "thinking":
+			c.thinking += p.Thinking
+		case "image":
+			if p.Ref != "" {
+				c.images = append(c.images, p.Ref)
+			}
+		case "toolCall":
+			c.calls = append(c.calls, struct {
+				ID, Name  string
+				Arguments json.RawMessage
+			}{p.ID, p.Name, p.Arguments})
+		}
+	}
+	return c
+}
+
+func result(raw json.RawMessage) content {
+	var r struct{ Content, Details json.RawMessage }
+	_ = json.Unmarshal(raw, &r)
+	c := parse(r.Content)
+	c.details(r.Details)
+	return c
+}
+
+func (c *content) details(raw json.RawMessage) {
+	var d struct{ Diff, Steps string }
+	_ = json.Unmarshal(raw, &d)
+	c.diff, c.steps = d.Diff, d.Steps
+}
+
+// apply folds one agent event in; false when it changes nothing drawn.
+func (t *transcript) apply(raw json.RawMessage) bool {
+	var e wireEvent
+	if json.Unmarshal(raw, &e) != nil {
+		return false
+	}
+	switch e.Type {
+	case "message_start", "message_update", "message_end":
+		if e.Type == "message_start" {
+			t.begin()
+		}
+		var m wireMessage
+		if json.Unmarshal(e.Message, &m) != nil {
+			return false
+		}
+		t.message(m, e.Type == "message_end")
+	case "tool_execution_start":
+		t.tool(e.ToolCallID, e.ToolName, e.Args)
+	case "tool_execution_update":
+		if it := t.tools[e.ToolCallID]; it != nil {
+			out := result(e.PartialResult).text
+			it.result, it.output = firstLine(lastLine(out), 120), kept(out)
+		}
+	case "tool_execution_end":
+		if it := t.tools[e.ToolCallID]; it != nil {
+			it.finish(result(e.Result), e.IsError)
+		}
+	case "agent_end":
+		if t.said != nil {
+			t.said.live, t.said = false, nil
+		}
+		for _, it := range t.tools {
+			it.live = false
+		}
+	case "compaction_start":
+		t.note("compacting context…", false)
+	case "compaction_end":
+		var r struct{ TokensBefore int }
+		_ = json.Unmarshal(e.Result, &r)
+		switch {
+		case e.ErrorMessage != "":
+			t.note("compaction failed · "+errorText(e.ErrorMessage), true)
+		case e.Aborted:
+			t.note("compaction cancelled", false)
+		default:
+			t.note("context compacted"+tokensBefore(r.TokensBefore), false)
+		}
+	// Retries read as one line that updates, not a failure per attempt: the failed attempt's error
+	// gives way to it, and it disappears once a retry gets through.
+	case "auto_retry_start":
+		if n := len(t.items); n > 0 && t.items[n-1].kind == "n" && t.items[n-1].alarm {
+			t.items = t.items[:n-1]
+		}
+		t.retrying(fmt.Sprintf("retrying %d / %d · %s", e.Attempt, e.MaxAttempts, errorText(e.ErrorMessage)), false)
+	case "auto_retry_end":
+		if e.Success {
+			t.retrying("", false)
+		} else {
+			t.retrying(fmt.Sprintf("gave up after %d retries", e.Attempt), true)
+		}
+	default:
+		return false
+	}
+	return true
+}
+
+func (t *transcript) retrying(text string, alarm bool) {
+	at := slices.Index(t.items, t.retry)
+	t.retry = nil
+	if at >= 0 {
+		t.items = slices.Delete(t.items, at, at+1)
+	}
+	if text != "" {
+		if it := t.note(text, alarm); !alarm {
+			t.retry = it
+		}
+	}
+}
+
+// begin starts the next message: what it adds is keyed under its place in the session.
+func (t *transcript) begin() {
+	t.msg, t.seq = t.next, 0
+	t.next++
+}
+
+// load replays whole messages, the first at place from in the session: a snapshot's, or a page
+// of history.
+func (t *transcript) load(messages []json.RawMessage, from int) {
+	t.replaying, t.last, t.next = true, len(messages)-1, max(from, 0)
+	for i, raw := range messages {
+		var m wireMessage
+		t.begin()
+		if json.Unmarshal(raw, &m) == nil {
+			t.index = i
+			t.message(m, true)
+		}
+	}
+	t.replaying = false
+}
+
+func (t *transcript) message(m wireMessage, final bool) {
+	// Live messages come as start and end: those drawn whole (a note, a command) wait for the end.
+	if !final && m.Role != "user" && m.Role != "assistant" {
+		return
+	}
+	switch m.Role {
+	// Live user messages come as start and end; snapshots and history carry only the end.
+	case "user":
+		if final && t.userOpen {
+			t.userOpen = false
+			return
+		}
+		c := parse(m.Content)
+		text := invocation(c.text)
+		if tag := tagged.FindStringSubmatch(strings.TrimLeft(text, " \t\n")); tag != nil {
+			// Machine-written turns (<task-notification>…) are events, not the person speaking.
+			t.note(strings.ReplaceAll(tag[1], "-", " ")+" · "+clip(spaces.ReplaceAllString(strings.TrimSpace(markup.ReplaceAllString(text, " ")), " "), 160), false)
+		} else {
+			via := "mitosis"
+			if i := slices.Index(t.sent, text); i >= 0 || t.replaying {
+				via = ""
+				if i >= 0 {
+					t.sent = slices.Delete(t.sent, i, i+1)
+					// It landed: what said it waits goes.
+					if w := slices.IndexFunc(t.items, func(it *item) bool { return it.kind == "n" && it.live }); w >= 0 {
+						t.items = slices.Delete(t.items, w, w+1)
+					}
+				}
+			}
+			t.add(&item{kind: "y", text: text, via: via, images: c.images})
+		}
+		t.userOpen = !final
+	case "assistant":
+		s := t.said
+		if s == nil || !s.live {
+			s = t.add(&item{kind: "s", live: true})
+			t.said = s
+		}
+		c := parse(m.Content)
+		s.text, s.thinking = c.text, c.thinking
+		if !final {
+			return
+		}
+		for _, call := range c.calls {
+			t.tool(call.ID, call.Name, call.Arguments)
+		}
+		// In history, a failed attempt that a later message followed was retried: only a final failure shows.
+		if m.StopReason == "error" && (!t.replaying || t.index == t.last) {
+			t.note(errorText(cmp.Or(m.ErrorMessage, "error")), true)
+		}
+		if m.StopReason == "aborted" {
+			t.note("stopped", false)
+		}
+		s.live, t.said = false, nil
+		if strings.TrimSpace(s.text) == "" && strings.TrimSpace(s.thinking) == "" {
+			t.items = slices.DeleteFunc(t.items, func(it *item) bool { return it == s })
+		}
+	case "compactionSummary":
+		t.note("context compacted"+tokensBefore(m.TokensBefore), false)
+	case "branchSummary":
+		t.note("branch summary · "+firstLine(m.Summary, 160), false)
+	case "bashExecution":
+		it := t.add(&item{kind: "t", verb: "bash", target: firstLine(m.Command, 120), args: m.Command})
+		it.finish(content{text: m.Output}, m.ExitCode != 0)
+	case "custom":
+		if m.Display {
+			t.note(clip(parse(m.Content).text, 400), false)
+		}
+	case "toolResult":
+		if it := t.tools[m.ToolCallID]; it != nil {
+			c := parse(m.Content)
+			c.details(m.Details)
+			it.finish(c, m.IsError)
+		}
+	}
+}
+
+func (it *item) finish(c content, failed bool) {
+	it.result, it.output, it.diff, it.failed, it.live = summary(it.verb, c.text), kept(c.text), c.diff, failed, false
+	if c.steps != "" {
+		it.output = kept(c.steps + "\n\n" + c.text)
+	}
+	if c.images != nil {
+		it.images = c.images
+	}
+}
+
+func (t *transcript) tool(id, name string, raw json.RawMessage) {
+	if t.tools == nil {
+		t.tools = map[string]*item{}
+	}
+	if t.tools[id] != nil {
+		return
+	}
+	var args map[string]any
+	_ = json.Unmarshal(raw, &args)
+	target := ""
+	if qs, _ := args["questions"].([]any); len(qs) > 0 {
+		q, _ := qs[0].(map[string]any)
+		target, _ = q["question"].(string)
+	}
+	if items, _ := args["items"].([]any); name == "todo" {
+		for _, i := range items {
+			if task, _ := i.(map[string]any); task["status"] == "in_progress" {
+				target, _ = task["text"].(string)
+			}
+		}
+	}
+	for _, k := range []string{"path", "file_path", "command", "pattern", "url", "query", "task", "content", "text"} {
+		if s, _ := args[k].(string); target == "" && strings.TrimSpace(s) != "" {
+			target = s
+		}
+	}
+	// Else how many a list holds ("3 tasks"), the first text, or the first value as JSON.
+	keys := slices.Sorted(maps.Keys(args))
+	for _, k := range keys {
+		if list, ok := args[k].([]any); ok && target == "" {
+			target = fmt.Sprintf("%d %s", len(list), k)
+		}
+	}
+	for _, k := range keys {
+		if s, _ := args[k].(string); target == "" && strings.TrimSpace(s) != "" {
+			target = s
+		}
+	}
+	if target == "" && len(keys) > 0 {
+		pretty, _ := json.Marshal(args[keys[0]])
+		target = string(pretty)
+	}
+	// Shown as typed: a command's 2>&1 stays 2>&1, not \u003e\u0026.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(args)
+	pretty := bytes.TrimSpace(buf.Bytes())
+	if len(args) == 0 {
+		pretty = nil
+	}
+	verb := cmp.Or(verbs[name], name)
+	if strings.HasPrefix(name, "mcp__") {
+		verb = name[strings.LastIndex(name, "__")+2:] // mcp__server__tool: the tool says what it did
+	}
+	it := &item{kind: "t", verb: verb, target: firstLine(target, 120), args: clip(string(pretty), 2000), live: !t.replaying}
+	t.tools[id] = t.keyed(it)
+	// A call lands right after the message that made it and its earlier calls, ahead of what a
+	// live stream added since.
+	if at := slices.Index(t.items, t.said); t.said != nil && at >= 0 {
+		for at+1 < len(t.items) && t.items[at+1].kind == "t" {
+			at++
+		}
+		t.items = slices.Insert(t.items, at+1, it)
+	} else {
+		t.items = append(t.items, it)
+	}
+}
+
+// rows is the transcript as an app draws it: consecutive thoughts and tool calls make one run,
+// prose a row per markdown block, notes and what someone said a row each. last holds, per row,
+// the index of the last item it shows: a row changes only when an item up to there does.
+func (t *transcript) rows() (rows []Row, last []int) {
+	rows, last = make([]Row, 0, len(t.items)+8), make([]int, 0, len(t.items)+8)
+	var run []*item
+	end := 0
+	flush := func() {
+		if len(run) > 0 {
+			rows, last, run = append(rows, runRow(run)), append(last, end), nil
+		}
+	}
+	for i, it := range t.items {
+		switch it.kind {
+		case "y":
+			flush()
+			rows, last = append(rows, Row{Key: it.key, Kind: "you", Text: it.text, Via: it.via, Images: it.images}), append(last, i)
+		case "s":
+			if strings.TrimSpace(it.thinking) != "" {
+				run, end = append(run, it), i
+			}
+			if strings.TrimSpace(it.text) != "" {
+				flush()
+				for j, b := range it.markdown() {
+					rows, last = append(rows, Row{Key: fmt.Sprintf("%s.%d", it.key, j), Kind: "md", Block: &b}), append(last, i)
+				}
+			}
+		case "t":
+			run, end = append(run, it), i
+		case "n":
+			flush()
+			rows, last = append(rows, Row{Key: it.key, Kind: "note", Text: it.text, Alarm: it.alarm}), append(last, i)
+		}
+	}
+	flush()
+	return rows, last
+}
+
+// markdown is the item's text as blocks, parsed again only when the text or its state changed
+// (comparing a string kept by reference costs nothing).
+func (it *item) markdown() []Block {
+	if it.parsed == nil || it.parsed.text != it.text || it.parsed.live != it.live {
+		it.blocks, it.parsed = Blocks(it.text, !it.live), &face{text: it.text, live: it.live}
+	}
+	return it.blocks
+}
+
+// runRow folds a run of actions into one row, as the TUI folds exploration: what they were,
+// counted by kind, what runs now, and how many failed.
+func runRow(run []*item) Row {
+	row := Row{Key: run[0].key, Kind: "run"}
+	var order []string
+	count := map[string]int{}
+	for _, it := range run {
+		a := Action{Key: it.key, Verb: it.verb, Target: it.target, Result: it.result, Live: it.live, Failed: it.failed}
+		kind := cmp.Or(kinds[strings.ToLower(it.verb)], it.verb) // Claude Code names its tools Bash, Read…
+		if it.kind == "s" {
+			thought := strings.TrimSpace(it.thinking)
+			title, _, _ := strings.Cut(strings.TrimPrefix(firstLine(thought, 200), "**"), "**")
+			a = Action{Key: it.key + ":t", Verb: "thought", Target: title, Result: fmt.Sprintf("%d tok", len(thought)/4), Live: it.live && strings.TrimSpace(it.text) == ""}
+			kind = "thought"
+		} else {
+			row.Images = append(row.Images, it.images...)
+		}
+		if count[kind]++; count[kind] == 1 {
+			order = append(order, kind)
+		}
+		row.Live = row.Live || a.Live
+		if a.Failed {
+			row.Failed++
+		}
+		if a.Live && it.kind == "t" {
+			row.Now = a.Target
+		}
+		row.Actions = append(row.Actions, a)
+	}
+	what := make([]string, len(order))
+	for i, k := range order {
+		n := count[k]
+		switch {
+		case n == 1:
+			what[i] = "1 " + k
+		case k == "search":
+			what[i] = fmt.Sprintf("%d searches", n)
+		default:
+			what[i] = fmt.Sprintf("%d %ss", n, k)
+		}
+	}
+	row.What = strings.Join(what, " · ")
+	return row
+}
+
+// detail is what an action was given and returned in full, or a thought's whole text.
+func (t *transcript) detail(key string) map[string]string {
+	for _, it := range t.items {
+		switch {
+		case it.kind == "t" && it.key == key:
+			out := it.output
+			if out == "" {
+				out = map[bool]string{true: "running…", false: "no output"}[it.live]
+			}
+			return map[string]string{"args": it.args, "output": out, "diff": it.diff}
+		case it.kind == "s" && it.key+":t" == key:
+			return map[string]string{"text": strings.TrimSpace(it.thinking)}
+		}
+	}
+	return nil
+}
+
+// lastText is the last thing Orb said.
+func (t *transcript) lastText() string {
+	for i := len(t.items) - 1; i >= 0; i-- {
+		if t.items[i].kind == "s" && strings.TrimSpace(t.items[i].text) != "" {
+			return t.items[i].text
+		}
+	}
+	return ""
+}
+
+// invocation is a message that invoked skills as it was typed, their tokens in place; a stored
+// preview, clipped before its block closed, keeps the first skill's token.
+func invocation(raw string) string {
+	if skill, ok := exporthtml.ParseSkillBlock(raw); ok {
+		return skill.InvocationText()
+	}
+	if rest, ok := strings.CutPrefix(raw, `<skill name="`); ok {
+		if name, _, found := strings.Cut(rest, `"`); found {
+			return exporthtml.SkillTokenPrefix + name
+		}
+	}
+	return raw
+}
+
+// errorText keeps what a turn needs of a provider's error: its status and its sentence.
+func errorText(raw string) string {
+	var parts []string
+	if s := status.FindString(strings.TrimSpace(raw)); s != "" {
+		parts = append(parts, s)
+	}
+	if m := message.FindStringSubmatch(raw); m != nil {
+		parts = append(parts, strings.ReplaceAll(m[1], `\"`, `"`))
+	}
+	if len(parts) == 0 {
+		return firstLine(raw, 200)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// summary is the result an action line shows: an answer to questions, a command's last line,
+// or how many lines came back.
+func summary(verb, out string) string {
+	if verb == "ask" {
+		var r struct {
+			Cancelled bool
+			Answers   []struct {
+				Selected []string
+				Custom   string
+			}
+		}
+		if json.Unmarshal([]byte(out), &r) == nil {
+			if r.Answers == nil {
+				return map[bool]string{true: "dismissed", false: "done"}[r.Cancelled]
+			}
+			picked := make([]string, len(r.Answers))
+			for i, a := range r.Answers {
+				picked[i] = a.Custom
+				if len(a.Selected) > 0 && a.Selected[0] != "" {
+					picked[i] = a.Selected[0]
+				}
+			}
+			return strings.Join(picked, " · ")
+		}
+	}
+	lines := slices.DeleteFunc(strings.Split(strings.TrimRight(out, " \t\n"), "\n"), func(l string) bool { return strings.TrimSpace(l) == "" })
+	switch {
+	case len(lines) == 0:
+		return "done"
+	case verb == "tasks":
+		return fmt.Sprintf("%d / %d done", strings.Count(out, "[x]"), len(lines))
+	case verb == "bash" || len(lines) == 1:
+		return clip(lines[len(lines)-1], 120)
+	}
+	return fmt.Sprintf("%d lines", len(lines))
+}
+
+func tokensBefore(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" · from %dk tokens", n/1000)
+}
+
+func firstLine(s string, n int) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return clip(line, n)
+}
+
+func lastLine(s string) string {
+	s = strings.TrimRight(s, " \t\n")
+	return s[strings.LastIndex(s, "\n")+1:]
+}
+
+func clip(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}
+
+func kept(s string) string {
+	if r := []rune(s); len(r) > outputKept {
+		return string(r[len(r)-outputKept:])
+	}
+	return s
+}

@@ -46,11 +46,11 @@ fun ColumnScope.Home(c: Ctx) {
             SessionRow(named(e.title), m?.name.takeIf { device.isEmpty() }.orEmpty(), v.tab(e.tab)?.let(v::word).orEmpty().ifEmpty { if (e.unstored) "open" else ago(e.modified) },
                 e.live, e.asks, e.open, Modifier.animateItem(), hue = v.hue(e.machine), rename = { c.threadMenu(e) }) { c.open(e.key) }
         }
-        // Until the view sends Home (its Bridge starting), a loader rather than an empty list.
+        // Until the view sends Home (its Mitosis starting), a loader rather than an empty list.
         if (v.home.machines.isEmpty()) item(key = "loading") {
             Row(Modifier.padding(vertical = 22.dp), verticalAlignment = Alignment.CenterVertically) { Dot(p.mute, pulse = true); Spacer(Modifier.width(10.dp)); T("reading conversations…", color = p.mute) }
         } else if (v.home.machines.size < 2) item(key = "pair") {
-            Row(Modifier.fillMaxWidth().press { c.nav.go(Screen.Bridge) }.padding(vertical = 22.dp)) { T("No paired devices", Modifier.weight(1f), color = p.mute); T("Pair ›", weight = Medium) }
+            Row(Modifier.fillMaxWidth().press { c.nav.go(Screen.Mitosis) }.padding(vertical = 22.dp)) { T("No paired devices", Modifier.weight(1f), color = p.mute); T("Pair ›", weight = Medium) }
         }
         item { Spacer(Modifier.height(12.dp)) }
     }
@@ -69,7 +69,7 @@ private fun TitleCard() = Column(Modifier.fillMaxWidth().padding(start = Margin 
 }
 
 /**
- * Every machine of the Bridge put to the vote, as NERV's MAGI put each decision to their three
+ * Every machine of the Mitosis put to the vote, as NERV's MAGI put each decision to their three
  * computers: this phone first, up and on a current Orb, then each paired one, connected. Each says
  * 承認 (approved) or, in red, 否決 (refused), and how many Orbs run there. A card narrows the list
  * to its machine, and back.

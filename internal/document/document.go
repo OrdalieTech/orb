@@ -1,5 +1,5 @@
 // Package document is the durable-document port every layer shares, ai and
-// bridge included; host re-exports it as host.Document for embedders.
+// mitosis included; host re-exports it as host.Document for embedders.
 package document
 
 import (

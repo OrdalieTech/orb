@@ -122,7 +122,7 @@ func (host *interactiveSessionHost) SwitchSession(ctx context.Context, sessionPa
 	if !errors.As(err, &held) || runner == nil {
 		return result, err
 	}
-	if err = openBridgeView(ctx, runner.UI(), remoteLink{instance: held.ID, held: host.args.native}); err != nil || host.args.native.Held(held.ID) {
+	if err = openMitosisView(ctx, runner.UI(), remoteLink{instance: held.ID, held: host.args.native}); err != nil || host.args.native.Held(held.ID) {
 		return extensions.SessionReplacementResult{Cancelled: true}, err
 	}
 	return host.SwitchSession(ctx, sessionPath, cwdOverride, options)
@@ -217,7 +217,7 @@ func (host *interactiveSessionHost) Reload(ctx context.Context) error {
 	if err := host.Rebuild(ctx); err != nil {
 		return err
 	}
-	return host.args.bridgeLink.configureBridge(host.args.BridgeProfile != "" || host.currentInputs().Settings.GetPlugins()["bridge"])
+	return host.args.mitosisLink.configureMitosis(host.args.MitosisProfile != "" || host.currentInputs().Settings.GetPlugins()["mitosis"])
 }
 
 func (host *interactiveSessionHost) Dispose() {
@@ -658,7 +658,7 @@ func (host *interactiveSessionHost) fetchAccountUsage(ctx context.Context, provi
 	return book.usage(ctx, provider, id)
 }
 
-// PlanLimits reads as the Bridge pulse does, sharing the process's quota cache with it: never
+// PlanLimits reads as the Mitosis pulse does, sharing the process's quota cache with it: never
 // waiting, at most one request a minute.
 func (host *interactiveSessionHost) PlanLimits() *usage.Snapshot {
 	if session := host.Session(); session != nil {
@@ -667,12 +667,12 @@ func (host *interactiveSessionHost) PlanLimits() *usage.Snapshot {
 	return nil
 }
 
-// WatchOthers polls Bridge every 5 s, off the render path: Bridge offers no feed of its Orbs' states.
+// WatchOthers polls Mitosis every 5 s, off the render path: Mitosis offers no feed of its Orbs' states.
 func (host *interactiveSessionHost) WatchOthers(ctx context.Context, changed func(string)) {
 	catalogs, last := map[string]string{}, ""
 	for {
 		poll, cancel := context.WithTimeout(ctx, 5*time.Second)
-		now := ownerBridge{host.args, host.currentInputs().Settings}.others(poll, catalogs)
+		now := ownerMitosis{host.args, host.currentInputs().Settings}.others(poll, catalogs)
 		cancel()
 		if ctx.Err() != nil {
 			return

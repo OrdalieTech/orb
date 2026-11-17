@@ -12,26 +12,26 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/OrdalieTech/orb/bridge/protocol"
-	"github.com/OrdalieTech/orb/bridge/view"
-	nativebridge "github.com/OrdalieTech/orb/platforms/native/bridge"
+	"github.com/OrdalieTech/orb/mitosis/protocol"
+	"github.com/OrdalieTech/orb/mitosis/view"
+	nativemitosis "github.com/OrdalieTech/orb/platforms/native/mitosis"
 	"github.com/OrdalieTech/orb/platforms/native/selfupdate"
 )
 
-// runApp serves the view every Orb app draws (bridge/view) as JSON lines: intents on stdin,
-// state, rows and replies on stdout. It runs over this machine's Bridge, the CLI's own.
+// runApp serves the view every Orb app draws (mitosis/view) as JSON lines: intents on stdin,
+// state, rows and replies on stdout. It runs over this machine's Mitosis, the CLI's own.
 func runApp(ctx context.Context, args []string, streams cliStreams) int {
 	flags := flag.NewFlagSet("orb app", flag.ContinueOnError)
 	flags.SetOutput(streams.Stderr)
-	profile := flags.String("profile", "personal", "Bridge profile")
+	profile := flags.String("profile", "personal", "Mitosis profile")
 	name := flags.String("name", "this device", "what the app calls this machine")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
-	if err := startBridge(ctx, *profile, true); err != nil {
+	if err := startMitosis(ctx, *profile, true); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	dir, err := nativebridge.Dir(*profile)
+	dir, err := nativemitosis.Dir(*profile)
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
@@ -39,7 +39,7 @@ func runApp(ctx context.Context, args []string, streams cliStreams) int {
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	call, done := bridgeOwner(ctx, *profile)
+	call, done := mitosisOwner(ctx, *profile)
 	defer done()
 	cwd, _ := os.Getwd()
 	tabs, names := filepath.Join(dir, "app-tabs.json"), filepath.Join(dir, "app-names.json")

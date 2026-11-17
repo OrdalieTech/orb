@@ -43,7 +43,7 @@ func socketPair() (js.Value, js.Value) {
 func TestSocketConnStreamsBinaryMessages(t *testing.T) {
 	left, right := socketPair()
 	a, b := NewSocketConn(left), NewSocketConn(right)
-	payload := bytes.Repeat([]byte("orb bridge "), 10000)
+	payload := bytes.Repeat([]byte("orb mitosis "), 10000)
 	go func() {
 		for offset := 0; offset < len(payload); offset += 16 << 10 {
 			_, _ = a.Write(payload[offset:min(len(payload), offset+16<<10)])

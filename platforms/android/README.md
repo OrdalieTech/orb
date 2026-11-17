@@ -1,12 +1,12 @@
 # Orb for Android
 
 A native app whose core is the unmodified `orb` CLI. The phone runs its own sessions, tools and
-plugins, and is a full Bridge peer: paired Orbs see and drive its session, and it drives theirs.
+plugins, and is a full Mitosis peer: paired Orbs see and drive its session, and it drives theirs.
 
 ## How it is built
 
 ```
-Compose UI ── core/View ── orb app (bridge/view) ── this phone's Bridge ── Tailcat ── peers
+Compose UI ── core/View ── orb app (mitosis/view) ── this phone's Mitosis ── Tailcat ── peers
 ```
 
 - `core/Lines` is the only transport: one long-lived `orb app` process speaking JSON lines.
@@ -41,9 +41,9 @@ cd platforms/android
 ./gradlew installDebug          # builds the core, the app, and installs over adb
 ```
 
-Pair a computer from the app's Bridge screen: run `orb bridge pair` there and scan its QR code;
-the computer asks you to approve the phone's fingerprint. On a Linux server, accept the Bridge
-service it offers so Bridge outlives the SSH session and the machine's reboots.
+Pair a computer from the app's Mitosis screen: run `orb mitosis` there and scan its QR code;
+the computer asks you to approve the phone's fingerprint. On a Linux server, accept the Mitosis
+service it offers so Mitosis outlives the SSH session and the machine's reboots.
 
 ## Releases and updates
 
@@ -51,8 +51,8 @@ Each Orb release carries `orb_<version>_android_arm64.apk` and its `.sha256`, bu
 workflow with `release.sh build`, then signed in a step of its own with `release.sh sign`, so
 Gradle never runs with the key present. The app checks Orb's latest release and offers it on Home;
 the update downloads, verifies and hands the APK to Android's installer, which only accepts it
-over an app signed with the same key. The Bridge screen updates paired machines the same way
-(`host.update`: their Orb replaces itself, as `orb update` does, and restarts its Bridge).
+over an app signed with the same key. The Mitosis screen updates paired machines the same way
+(`host.update`: their Orb replaces itself, as `orb update` does, and restarts its Mitosis).
 
 Signing: the release key (`~/.config/orb/android-release.jks` and `.pass` on the owner's machine,
 the `ANDROID_KEYSTORE*` secrets in CI) rotated from the original debug key; `signing/lineage`

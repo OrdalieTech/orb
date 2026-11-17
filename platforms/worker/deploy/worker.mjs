@@ -1,30 +1,30 @@
 // Orb on Cloudflare Durable Objects and self-hosted workerd: one Durable Object
 // per agent name, each with its own Orb over the object's storage, all of an
 // isolate's objects in one Go runtime (orb.wasm, cmd/orb-worker). `make
-// worker-build` prepends Go's wasm_exec.js
-// (which defines globalThis.Go) to this module, so the bundle is one
+// worker-build` prepends Go's wasm_exec.js (which defines globalThis.Go) and
+// helpers.js (globalThis.orbHelpers) to this module, so the bundle is one
 // JavaScript module plus orb.wasm and needs no bundler.
 import orbModule from "./orb.wasm";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const AGENT_ROUTE = /^\/agents\/([A-Za-z0-9._~-]{1,128})\/(rpc|stats|bridge|bridge\/admin)$/;
-// Present once the object has a Bridge identity (platforms/worker/peer.StateKey).
-const BRIDGE_STATE_KEY = "doc/m/bridge/state.json";
+const AGENT_ROUTE = /^\/agents\/([A-Za-z0-9._~-]{1,128})\/(rpc|stats|mitosis|mitosis\/admin)$/;
+// Present once the object has a Mitosis identity (platforms/worker/peer.StateKey).
+const MITOSIS_STATE_KEY = "doc/m/mitosis/state.json";
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/health") return new Response("ok\n");
     const route = AGENT_ROUTE.exec(url.pathname);
-    if (!route) return problem(404, "Routes: /agents/<name>/rpc, /agents/<name>/stats, /agents/<name>/bridge, /agents/<name>/bridge/admin, /health");
-    // Bridge streams authenticate peers with pinned TLS inside the stream; a
+    if (!route) return problem(404, "Routes: /agents/<name>/rpc, /agents/<name>/stats, /agents/<name>/mitosis, /agents/<name>/mitosis/admin, /health");
+    // Mitosis streams authenticate peers with pinned TLS inside the stream; a
     // remote Orb has no ORB_TOKEN. Everything else needs the bearer token.
-    if (route[2] !== "bridge") {
+    if (route[2] !== "mitosis") {
       const denied = authorize(request, env);
       if (denied) return denied;
     } else if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
-      return problem(426, "/agents/<name>/bridge carries Bridge streams over WebSocket");
+      return problem(426, "/agents/<name>/mitosis carries Mitosis streams over WebSocket");
     }
     return env.ORB_AGENT.get(env.ORB_AGENT.idFromName(route[1])).fetch(request);
   },
@@ -49,41 +49,6 @@ function problem(status, error, headers = {}) {
   return Response.json({ error }, { status, headers });
 }
 
-// Go waits on JavaScript through these helpers (platforms/worker): each takes
-// the wait's id and the runtime's one settle callback, and calls it once with
-// the id and the results. The http transport (fetch_js.go) crosses as little
-// as it can: headers travel as "name\nvalue" lines, a response settles once,
-// and each read brings one chunk, null at the end or an error message.
-const message = error => (error instanceof Error ? String(error.message) : String(error));
-const helpers = {
-  // await settles with the promise's value, or undefined and the reason.
-  await(promise, id, settle) {
-    promise.then(value => settle(id, value), error => settle(id, undefined, message(error)));
-  },
-  fetch(url, method, headers, body, id, settle) {
-    const controller = new AbortController();
-    const lines = headers === "" ? [] : headers.split("\n");
-    const pairs = [];
-    for (let index = 0; index + 1 < lines.length; index += 2) pairs.push([lines[index], lines[index + 1]]);
-    fetch(url, { method, headers: pairs, body, signal: controller.signal }).then(
-      response => settle(id, response.status, [...response.headers].flat().join("\n"), response.redirected ? response.url : "", response.body?.getReader() ?? null),
-      error => settle(id, 0, `net/http: fetch() failed: ${error}${error?.cause === undefined ? "" : `: ${error.cause}`}`),
-    );
-    return controller;
-  },
-  read(reader, id, settle) {
-    reader.read().then(
-      ({ value }) => settle(id, value ?? null),
-      error => settle(id, String(error?.message ?? error)),
-    );
-  },
-  // A body Go stopped reading: one that has ended needs nothing, and
-  // cancelling it would abort a finished request.
-  release(reader) {
-    reader.read().then(({ done }) => done || reader.cancel(), () => {});
-  },
-};
-
 // The isolate's Go runtime, which its objects share, and the exit callbacks
 // of the objects open in it.
 let runtime;
@@ -101,7 +66,7 @@ function orbRuntime() {
       warn(code);
     };
     const ready = new Promise((resolve, reject) => {
-      globalThis.__orbWorkerBoot = { helpers, resolve, reject: message => reject(new Error(message)) };
+      globalThis.__orbWorkerBoot = { helpers: orbHelpers, resolve, reject: message => reject(new Error(message)) };
     });
     go.argv = ["orb-worker", "__orbWorkerBoot"];
     go.env = {};
@@ -252,8 +217,8 @@ export class OrbAgent {
     const url = new URL(request.url);
     const [, name, action] = AGENT_ROUTE.exec(url.pathname);
     if (action === "stats") return this.stats();
-    if (action === "bridge") return this.bridgeStream(request);
-    if (action === "bridge/admin") return this.bridgeAdmin(request, url, name);
+    if (action === "mitosis") return this.mitosisStream(request);
+    if (action === "mitosis/admin") return this.mitosisAdmin(request, url, name);
     if (request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
       const [client, server] = Object.values(new WebSocketPair());
       this.ctx.acceptWebSocket(server);
@@ -286,16 +251,16 @@ export class OrbAgent {
     return new Response(body, { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" } });
   }
 
-  // bridgeStream hands a WebSocket to the Go Bridge peer. It is accepted, not
+  // mitosisStream hands a WebSocket to the Go Mitosis peer. It is accepted, not
   // hibernatable: the TLS session inside it lives in the Go runtime, and the
   // open socket keeps the object resident. Unknown objects are not booted.
-  async bridgeStream(request) {
+  async mitosisStream(request) {
     const origin = request.headers.get("Origin");
-    if (origin && !(this.env.ORB_BRIDGE_ORIGINS ?? "").split(",").map(value => value.trim()).includes(origin)) {
-      return problem(403, "Origin not allowed; list it in ORB_BRIDGE_ORIGINS");
+    if (origin && !(this.env.ORB_MITOSIS_ORIGINS ?? "").split(",").map(value => value.trim()).includes(origin)) {
+      return problem(403, "Origin not allowed; list it in ORB_MITOSIS_ORIGINS");
     }
-    if ((await this.ctx.storage.get(BRIDGE_STATE_KEY)) === undefined) {
-      return problem(404, "This agent has no Bridge identity yet; create an invitation through /bridge/admin");
+    if ((await this.ctx.storage.get(MITOSIS_STATE_KEY)) === undefined) {
+      return problem(404, "This agent has no Mitosis identity yet; create an invitation through /mitosis/admin");
     }
     let api;
     try {
@@ -305,14 +270,14 @@ export class OrbAgent {
     }
     const [client, server] = Object.values(new WebSocketPair());
     server.accept();
-    api.bridgeAccept(server);
+    api.mitosisAccept(server);
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  // bridgeAdmin runs one owner method of `orb bridge` ({"method", "params"}).
+  // mitosisAdmin runs one owner method of `orb mitosis` ({"method", "params"}).
   // Invitations advertise this object's stream URL, from ORB_PUBLIC_ORIGIN
   // when a proxy fronts the Worker.
-  async bridgeAdmin(request, url, name) {
+  async mitosisAdmin(request, url, name) {
     if (request.method !== "POST") return problem(405, 'POST {"method": "...", "params": {...}}', { Allow: "POST" });
     let body;
     try {
@@ -322,7 +287,7 @@ export class OrbAgent {
     const origin = (this.env.ORB_PUBLIC_ORIGIN ?? url.origin).replace(/^http/, "ws").replace(/\/$/, "");
     try {
       const { api } = await this.boot();
-      const result = await api.bridgeAdmin(body.method, JSON.stringify(body.params ?? {}), `${origin}/agents/${name}/bridge`);
+      const result = await api.mitosisAdmin(body.method, JSON.stringify(body.params ?? {}), `${origin}/agents/${name}/mitosis`);
       return new Response(result, { headers: { "Content-Type": "application/json" } });
     } catch (error) {
       return problem(400, error.message);

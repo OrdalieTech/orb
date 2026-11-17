@@ -64,7 +64,7 @@ func TestStartupVersionCheckIgnoresPiControls(t *testing.T) {
 }
 
 func TestHelpDocumentsIndependentGlobalRoots(t *testing.T) {
-	for _, text := range []string{"--agent-dir", "--state-home", "--bridge-home", "ORB_AGENT_DIR", "ORB_STATE_HOME", "ORB_BRIDGE_HOME", "~/.orb/agent", "ORB_OFFLINE=1", "before runtime options/subcommands"} {
+	for _, text := range []string{"--agent-dir", "--state-home", "--mitosis-home", "ORB_AGENT_DIR", "ORB_STATE_HOME", "ORB_MITOSIS_HOME", "~/.orb/agent", "ORB_OFFLINE=1", "before runtime options/subcommands"} {
 		if !strings.Contains(helpText, text) {
 			t.Errorf("help missing %q", text)
 		}

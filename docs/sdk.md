@@ -267,9 +267,9 @@ expiry and 128-per-peer / 1,024-per-profile limits bound retention. Allocate a r
 before network I/O with `Begin`; `Forget` fences older responses as well as deleting content.
 The CLI uses SQLite by default at `$ORB_STATE_HOME/orb.db`, or `~/.orb/state/orb.db`.
 An explicit `ORB_AGENT_DIR` defaults to `<agentDir>/state/orb.db`; otherwise an explicit
-`ORB_BRIDGE_HOME` defaults to `<bridgeHome>/state/orb.db`. These are assembly choices, never
+`ORB_MITOSIS_HOME` defaults to `<mitosisHome>/state/orb.db`. These are assembly choices, never
 implicit SDK configuration.
-Only visited conversations are cached; reopening always consults the owning Bridge.
+Only visited conversations are cached; reopening always consults the owning Mitosis.
 
 Native startup automatically migrates existing v1/v2/v3 sessions and global capability state after
 checking that legacy Orb processes have stopped. To include additional session roots before the
@@ -504,39 +504,39 @@ server embedder:
   gate tenant behavior on the CLI's settings files.
 
 
-## Optional instance control and Bridge
+## Optional instance control and Mitosis
 
 Existing SDK constructors and subscriptions are unchanged. Importing `agent` does not import
-Bridge or Tailcat and starts no bridge process. `agent/bridge.Attach` adapts an existing
+Mitosis or Tailcat and starts no mitosis process. `agent/mitosis.Attach` adapts an existing
 `*agent.AgentSessionRuntime`; the caller supplies the runtime lifetime, durable ledger store,
 persistent InstanceID, and current authorization callback. Its `Close` releases observation
-subscriptions without disposing the runtime. Multiple bridges can attach independently.
+subscriptions without disposing the runtime. Several attachments can coexist independently.
 
-For in-process assembly, create `bridge.Open(metadataStore, create)`, enroll through the local
-owner, and construct `agent/bridge.Attach(ctx, runtime, Options{InstanceID: instance.ID,
-Store: ledgerStore, Authorize: bridge.Authorize})`. Register
-`bridge.NewLocal(attachment.Invoke)` with `(*bridge.Bridge).Attach`, then give the returned generation
-to `attachment.SetGeneration` before exposing the bridge. Keep metadata and ledger stores
+For in-process assembly, create `mitosis.Open(metadataStore, create)`, enroll through the local
+owner, and construct `agent/mitosis.Attach(ctx, runtime, Options{InstanceID: instance.ID,
+Store: ledgerStore, Authorize: mitosis.Authorize})`. Register
+`mitosis.NewLocal(attachment.Invoke)` with `(*mitosis.Mitosis).Attach`, then give the returned generation
+to `attachment.SetGeneration` before exposing the mitosis. Keep metadata and ledger stores
 separate. Both are `host.Document` values, the same port as every other Store document; a
 successful `Update` must mean durable replacement. The native implementation is
-`platforms/native/bridge.OpenStore`, which adds the profile's single-owner lock and quota.
+`platforms/native/mitosis.OpenStore`, which adds the profile's single-owner lock and quota.
 
-`bridge.Connect` accepts a caller-owned `net.Conn` and performs pinned mutual TLS and hello
-negotiation. Native/Tailcat hosting is an explicit CLI assembly; the portable `bridge` and
-`bridge/protocol` packages compile for Wasm; the browser transport is `platforms/websocket`.
-`plugins/bridgeagents.Extension` gives an agent its owner's other conversations: an `agents` tool
+`mitosis.Connect` accepts a caller-owned `net.Conn` and performs pinned mutual TLS and hello
+negotiation. Native/Tailcat hosting is an explicit CLI assembly; the portable `mitosis` and
+`mitosis/protocol` packages compile for Wasm; the browser transport is `platforms/websocket`.
+`plugins/mitosisagents.Extension` gives an agent its owner's other conversations: an `agents` tool
 that lists them (id, machine, folder, title, state), reads one's latest messages and sends one a
-message headed with the sender's id, title and machine. The host supplies its `Bridge`: the machines, a call made with the owner's reach, and the
+message headed with the sender's id, title and machine. The host supplies its `Mitosis`: the machines, a call made with the owner's reach, and the
 instance it runs as. The tool shows only while another conversation is reachable. A Worker's
-`agent/bridge/tool.NewTool` (`bridge_call`) instead calls under its instance's own grants,
+`agent/mitosis/tool.NewTool` (`mitosis_call`) instead calls under its instance's own grants,
 through the source attachment's outbound route. Discovery never authorizes execution.
 
-In Orb, open Bridge directly from Settings, Ctrl+P, or `/bridge`, then use its service switch.
+In Orb, open Mitosis directly from Settings, Ctrl+P, or `/mitosis`, then use its service switch.
 The home page shows the service switch, **Add device**, and your devices. Select a device to
 open its conversations; both lists update automatically. **Advanced** contains agent access and
 your fingerprint. Groups, grants, scopes, and receipts stay in the CLI.
-Opening Bridge before activation creates no profile or network service. `orb --bridge personal --instance work` explicitly attaches a named runtime. The service survives TUI exit; `orb bridge stop` remains effective until Start or
-re-enable. `orb bridge view <peer-id> <instance-id>` opens the same focused conversation view
+Opening Mitosis before activation creates no profile or network service. `orb --mitosis personal --instance work` explicitly attaches a named runtime. The service survives TUI exit; `orb mitosis stop` remains effective until Start or
+re-enable. `orb mitosis view <peer-id> <instance-id>` opens the same focused conversation view
 without constructing a local model or requiring provider credentials. Invitations contain a
 private transport locator and one-use claim secret; exchange them with the intended device,
 verify both displayed PeerIDs, and approve the exact directional grants locally.
@@ -546,31 +546,34 @@ choose **Add device → Paste an invitation**, paste it, and confirm **Trust thi
 fingerprint. The sharing screen automatically asks its owner to confirm the joining identity.
 Both Orbs then have full control of each other's current and future conversations, including
 new groups. The joining device opens the shared conversation picker. Either action enables
-Bridge when needed. Existing restricted grants remain unchanged and can be managed through the
-CLI. Controller trust does not enable agent calls or remote Bridge administration.
+Mitosis when needed. Existing restricted grants remain unchanged and can be managed through the
+CLI. Controller trust does not enable agent calls or remote Mitosis administration.
 Saved pairings survive stopping; **Connected**, **Offline**, and **Blocked** describe current
 connection state. Open device panels retry after interruptions and show newly attached conversations
 without reopening the picker. Closed conversations disappear automatically.
 
 For a server you already access through SSH, choose **Add device → Connect a server** or run
-`orb bridge connect-ssh user@host`. Your system SSH client must already connect without a
+`orb mitosis ssh user@host`, which also adds it to your sync group. Your system SSH client must already connect without a
 password or host-key prompt; SSH aliases and configuration are supported. Setup finds Orb on
 PATH or in `~/.local/bin` and installs or updates it there if needed, using a checksum-verified
 release for the server's platform. No sudo or remote shell edits are needed. The candidate must
-support Bridge before it replaces an existing installation. Until a Bridge-enabled release is
-published, development users need a compatible server build. The shortcut starts Bridge and
-grants mutual full conversation access using your SSH login, then traffic uses Bridge.
+support Mitosis before it replaces an existing installation. Until a Mitosis-enabled release is
+published, development users need a compatible server build. The shortcut starts Mitosis and
+grants mutual full conversation access using your SSH login, then traffic uses Mitosis.
 `--remote-profile` and `--remote-orb` select a different remote profile or an existing executable;
-`--profile` selects the local profile. Enable Bridge in a remote Orb conversation to attach it;
+`--profile` selects the local profile. Enable Mitosis in a remote Orb conversation to attach it;
 pairing can happen before any conversations exist.
 
-Scripted administration uses `orb bridge status|instances|peers|grants|groups|scopes`,
-`orb bridge pair invite`, `orb bridge pair join` (invitation JSON on stdin),
-and `orb bridge pair approve <invitation-id> <claimant-peer-id>`. The low-level pair commands
-retain their directional workflow; `orb bridge trust <peer-id>` grants the reverse full controller
+From the shell, `orb mitosis` shows a code and `orb mitosis join <code>` on the other machine
+pairs it and joins the sync group after one fingerprint check on the first.
+
+Scripted administration uses `orb mitosis status|instances|peers|grants|groups|scopes`,
+`orb mitosis pair invite`, `orb mitosis pair join` (invitation JSON on stdin),
+and `orb mitosis pair approve <invitation-id> <claimant-peer-id>`. The low-level pair commands
+retain their directional workflow; `orb mitosis trust <peer-id>` grants the reverse full controller
 access after approval, as the guided flows do automatically. `grant`, `revoke`, `group`,
 `assign`, `scope`, `publish`, and `takeover` read their local-owner request JSON from stdin;
-`revoke` takes `{ "grant_id": "…" }`. `orb bridge remote <peer-id> <method>` reads bounded
+`revoke` takes `{ "grant_id": "…" }`. `orb mitosis remote <peer-id> <method>` reads bounded
 method parameters from stdin. Wire schemas and limits live in `ARCHITECTURE.md`; their tests
 are independent of Pi fixtures.
 
@@ -590,10 +593,10 @@ bound to each replacement manager. A single fixed session can compose `driver.Lo
 into `AgentSessionOptions.SessionLoop`. SDK TUI hosts can supply `Options.RenderText` to
 render native tool summaries through their own text component; the CLI uses the existing plain-text
 tool renderer. Neither path gives Orb execution of Claude tools.
-No bridge, Claude SDK or JavaScript runtime enters binaries that import only the ordinary Orb SDK.
+No mitosis, Claude SDK or JavaScript runtime enters binaries that import only the ordinary Orb SDK.
 Claude background tasks remain within the owning execution lifetime; cancellation and trailing
 SDK events use the same engine contract. The plugin translates MCP elicitation into shared questions
-and native lifecycle events into ordinary messages/tool updates. Browser, mobile and Bridge clients
+and native lifecycle events into ordinary messages/tool updates. Browser, mobile and Mitosis clients
 consume those existing contracts; no Claude SDK types or platform checks enter the transport layer.
 The native SDK still runs on a host with Node and Claude installed.
 
@@ -606,18 +609,18 @@ For input, `SessionRuntime.RequestInput(ctx, title, choices)` exposes one execut
 `PendingInput` returns a copy and `ReplyInput(id, value)` accepts one valid response. Hosts can use the
 native extension UI or authenticated instance-control adapters. Disposing/cancelling the enclosing
 run cancels the request; closing a non-owning attachment does not answer it. A remotely supplied
-answer must use the session control execution fence, as `agent/bridge` does, rather than calling
+answer must use the session control execution fence, as `agent/mitosis` does, rather than calling
 `ReplyInput` on an untrusted session reference.
 
 The optional `plugins/questions` capability supplies `Extension()` for the native tool and
 `Ask` for executor adapters. Registered tools receive `extensions.InputHandlerFromContext(ctx)`;
 `ContextActions.RequestInput` lets custom hosts supply that callback. `extensions.WithInputOptions`
 adds an opaque presentation, a local renderer and a reply validator without changing the UI
-interface. Invalid replies leave the pending request intact. Bridge forwards the presentation as
+interface. Invalid replies leave the pending request intact. Mitosis forwards the presentation as
 bounded JSON; the CLI selects its renderer. Permission adapters continue using `BeforeToolCall`,
 where a non-nil, non-blocking result explicitly allows and nil leaves native policy in charge.
 
 `plugins/claudesessions.LimitsStatus(manager, now)` formats the latest plugin-owned native quota
-reading. The optional `agent/bridge.Options.Status` callback lets an assembly supply a bounded
+reading. The optional `agent/mitosis.Options.Status` callback lets an assembly supply a bounded
 informational status in instance descriptions; it changes no execution authority and requires no
-provider knowledge inside Bridge. The CLI wires Claude quota into this callback.
+provider knowledge inside Mitosis. The CLI wires Claude quota into this callback.

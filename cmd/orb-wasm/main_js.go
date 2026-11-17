@@ -36,7 +36,7 @@ func main() {
 	var session *browser.Session
 	var cancel context.CancelFunc
 	running := false
-	remote := &browserBridge{slots: make(chan struct{}, 16)}
+	remote := &browserMitosis{slots: make(chan struct{}, 16)}
 	dispatch := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) != 1 || args[0].Type() != js.TypeString {
 			return "expected one JSON request"
@@ -54,7 +54,7 @@ func main() {
 		if err := json.Unmarshal([]byte(raw), &request); err != nil {
 			return err.Error()
 		}
-		if strings.HasPrefix(request.Type, "bridge.") {
+		if strings.HasPrefix(request.Type, "mitosis.") {
 			return remote.dispatch(raw)
 		}
 		switch request.Type {
@@ -85,7 +85,7 @@ func main() {
 			tools := session.Agent.State().Tools
 			base := make([]engine.AgentTool, 0, len(tools)+1)
 			for _, tool := range tools {
-				if tool.Spec().Name != "bridge_call" {
+				if tool.Spec().Name != "mitosis_call" {
 					base = append(base, tool)
 				}
 			}

@@ -20,7 +20,7 @@ var uint8Array = js.Global().Get("Uint8Array")
 // Read sees incoming messages as one byte stream.
 //
 // The socket must not be hibernatable: the stream's state (a TLS session, for
-// Bridge) lives in this Go runtime, which hibernation discards while the
+// Mitosis) lives in this Go runtime, which hibernation discards while the
 // socket stays open.
 type SocketConn struct {
 	socket js.Value

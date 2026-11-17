@@ -20,7 +20,7 @@ class Orb(private val context: Context) {
     private val name: String = Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME) ?: Build.MODEL ?: "Android"
     private val prefs = context.getSharedPreferences("orb", Context.MODE_PRIVATE)
 
-    /** The environment of every orb the app starts, its Bridge and the Orbs that Bridge starts included. */
+    /** The environment of every orb the app starts, its Mitosis and the Orbs that Mitosis starts included. */
     fun env(): Map<String, String> = buildMap {
         put("HOME", home.path)
         put("TMPDIR", context.cacheDir.path)
@@ -28,7 +28,7 @@ class Orb(private val context: Context) {
         put("PATH", context.applicationInfo.nativeLibraryDir + ":/system/bin:/system/xbin:/vendor/bin")
         put("TERM", "dumb")
         put("ORB_CLIENT", "android")
-        put("ORB_BRIDGE_NAME", name)
+        put("ORB_MITOSIS_NAME", name)
         putAll(linux.env())
     }
 

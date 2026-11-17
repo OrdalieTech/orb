@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// TestDurableObjectBundle runs the deployable bundle — wasm_exec.js, the
-// scripted model and platforms/worker/deploy/worker.mjs over this program —
+// TestDurableObjectBundle runs the deployable bundle — wasm_exec.js, helpers.js,
+// the scripted model and platforms/worker/deploy/worker.mjs over this program —
 // in Node against Map-backed Durable Object storage, across an object restart.
 func TestDurableObjectBundle(t *testing.T) {
 	node, err := exec.LookPath("node")
@@ -30,6 +30,7 @@ func TestDurableObjectBundle(t *testing.T) {
 	var bundle []byte
 	for _, part := range []string{
 		filepath.Join(strings.TrimSpace(string(root)), "lib/wasm/wasm_exec.js"),
+		"../../platforms/worker/deploy/helpers.js",
 		"../../platforms/worker/e2e/fake-model.js",
 		"../../platforms/worker/deploy/worker.mjs",
 	} {
@@ -49,14 +50,14 @@ func TestDurableObjectBundle(t *testing.T) {
 	t.Log(strings.TrimSpace(string(output)))
 }
 
-// TestShimKnowsTheBridgeStateKey keeps the shim's pre-boot check on the key
+// TestShimKnowsTheMitosisStateKey keeps the shim's pre-boot check on the key
 // the Go peer writes.
-func TestShimKnowsTheBridgeStateKey(t *testing.T) {
+func TestShimKnowsTheMitosisStateKey(t *testing.T) {
 	shim, err := os.ReadFile("../../platforms/worker/deploy/worker.mjs")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(shim), `const BRIDGE_STATE_KEY = "`+peer.StateKey+`";`) {
+	if !strings.Contains(string(shim), `const MITOSIS_STATE_KEY = "`+peer.StateKey+`";`) {
 		t.Fatalf("worker.mjs does not check %s", peer.StateKey)
 	}
 }

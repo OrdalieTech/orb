@@ -1,0 +1,926 @@
+package daemon
+
+import (
+	"bufio"
+	"bytes"
+	"cmp"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"runtime/debug"
+	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/OrdalieTech/orb/engine/harness"
+	"github.com/OrdalieTech/orb/internal/lazyregexp"
+	"github.com/OrdalieTech/orb/mitosis"
+	"github.com/OrdalieTech/orb/mitosis/protocol"
+	"github.com/OrdalieTech/orb/platforms/native/selfupdate"
+	"github.com/OrdalieTech/orb/platforms/native/sqlite"
+	"github.com/creack/pty"
+)
+
+// maxLaunched bounds the Orbs one Mitosis starts for its peers; each is a full agent process.
+// One that shows no activity for launchedIdle ends, as does the one quiet the longest when another
+// would pass the bound; its thread reopens with the next message.
+const (
+	maxLaunched  = 8
+	launchedIdle = 30 * time.Minute
+	launchWait   = time.Minute // for a started Orb to come up on Mitosis
+)
+
+// launched is an Orb this Mitosis started for a peer. It lives while its stdin stays open: until
+// its peer's thread ends with the Mitosis, or the process exits by itself.
+type launched struct {
+	input   io.Closer
+	session string
+	alias   string
+	id      string       // its instance, once on Mitosis
+	turn    atomic.Bool  // a turn is running
+	last    atomic.Int64 // when it last said something, in Unix nanoseconds
+	stale   atomic.Bool  // it reads what changed only when it starts again: it ends after its turn
+}
+
+// host serves a peer's machine-level calls. host.sessions pages the threads stored on this
+// machine across folders, newest created first; host.launch starts Orb in a folder, on a new thread or resuming one,
+// and answers once that Orb is on Mitosis.
+func (s *Service) host(ctx context.Context, p mitosis.Principal, method string, params json.RawMessage) (json.RawMessage, error) {
+	if s.state == nil {
+		return nil, mitosis.Fail("unavailable")
+	}
+	switch method {
+	case "host.sessions":
+		var q struct {
+			Cursor string `json:"cursor,omitempty"`
+		}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		page, err := s.state.Sessions().Catalog(ctx, sqlite.CatalogQuery{Cursor: q.Cursor, Limit: min(max(protocol.PageLimit(ctx), 1), 128)})
+		if err != nil {
+			return nil, mitosis.Fail("invalid_params")
+		}
+		type item struct {
+			ID       string `json:"session_id"`
+			Name     string `json:"name,omitempty"`
+			CWD      string `json:"cwd"`
+			Modified int64  `json:"modified"`
+			Messages int    `json:"messages"`
+			First    string `json:"first"`
+		}
+		info, ok := debug.ReadBuildInfo()
+		out := struct {
+			Host    string `json:"host,omitempty"` // what the machine calls itself: peers have no names on the wire
+			Version string `json:"version"`        // its Orb, so a peer can offer host.update
+			Items   []item `json:"items"`
+			Cursor  string `json:"cursor,omitempty"`
+		}{machineName(), selfupdate.Plain(selfupdate.BuildVersion(s.version, info, ok)), []item{}, page.Next}
+		for _, e := range page.Sessions {
+			if e.MessageCount == 0 {
+				continue // a thread nobody wrote in is not worth reopening
+			}
+			modified, _ := time.Parse(time.RFC3339Nano, e.Modified)
+			first := []rune(e.Preview)
+			out.Items = append(out.Items, item{e.ID, e.Name, e.CWD, modified.UnixMilli(), e.MessageCount, string(first[:min(len(first), 160)])})
+		}
+		return mitosis.JSON(out), nil
+	case "host.read":
+		// A thread's last messages, as an Orb serving it would open with: a conversation shown
+		// while no Orb runs it reads as it was.
+		var q struct {
+			SessionID string `json:"session_id"`
+			Tail      int    `json:"tail,omitempty"`
+		}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		thread, err := s.state.Sessions().Open(ctx, harness.SessionMetadata{ID: q.SessionID})
+		if err != nil {
+			return nil, mitosis.Fail("not_found")
+		}
+		state, err := thread.Context()
+		if err != nil {
+			return nil, err
+		}
+		from := max(len(state.Messages)-max(q.Tail, 1), 0)
+		out := struct {
+			Messages []json.RawMessage `json:"messages"`
+			From     int               `json:"from"`
+		}{[]json.RawMessage{}, len(state.Messages)}
+		size := 0
+		for i := len(state.Messages) - 1; i >= from; i-- {
+			b, err := json.Marshal(state.Messages[i])
+			if err != nil || size+len(b) > protocol.MaxFrame/2 {
+				break
+			}
+			out.Messages, out.From, size = append(out.Messages, b), i, size+len(b)
+		}
+		slices.Reverse(out.Messages)
+		return mitosis.JSON(out), nil
+	case "host.launch":
+		var q struct {
+			CWD       string `json:"cwd,omitempty"`
+			SessionID string `json:"session_id,omitempty"`
+		}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		if q.SessionID != "" {
+			var err error
+			if q.CWD, err = s.state.Sessions().CWD(ctx, q.SessionID); err != nil {
+				return nil, mitosis.Fail("not_found")
+			}
+		}
+		cwd, err := launchFolder(q.CWD)
+		if err != nil {
+			return nil, err
+		}
+		return s.launch(ctx, p, cwd, q.SessionID)
+	case "host.attach":
+		// A file a peer cites in a message, sent in pieces: the first makes it in a folder of its
+		// own in the temp directory, the next (its path given) append to it, and only there.
+		var q struct {
+			Name string `json:"name,omitempty"`
+			Path string `json:"path,omitempty"`
+			Data []byte `json:"data"`
+		}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		path := q.Path
+		if path == "" {
+			dir, err := os.MkdirTemp("", "orb-attach-")
+			if err != nil {
+				return nil, err
+			}
+			name := filepath.Base(q.Name)
+			if name == "." || name == string(filepath.Separator) {
+				name = "file"
+			}
+			path = filepath.Join(dir, name)
+		} else if dir := filepath.Dir(path); filepath.Clean(path) != path || filepath.Dir(dir) != filepath.Clean(os.TempDir()) || !strings.HasPrefix(filepath.Base(dir), "orb-attach-") {
+			return nil, mitosis.Fail("invalid_params")
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			return nil, err
+		}
+		_, err = f.Write(q.Data)
+		if err = errors.Join(err, f.Close()); err != nil {
+			return nil, err
+		}
+		return mitosis.JSON(map[string]string{"path": path}), nil
+	case "host.dirs":
+		// The folders in a folder (the home when none), for a peer picking where to launch: hidden
+		// ones left out, sorted as Finder sorts, each marked when it is a git checkout.
+		var q struct {
+			Path string `json:"path,omitempty"`
+		}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		dir, err := launchFolder(cmp.Or(q.Path, "~"))
+		if err != nil {
+			return nil, err
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return nil, mitosis.Fail("not_found")
+		}
+		type folder struct {
+			Name string `json:"name"`
+			Git  bool   `json:"git"`
+		}
+		out := struct {
+			Path   string   `json:"path"`
+			Parent string   `json:"parent,omitempty"`
+			Dirs   []folder `json:"dirs"`
+		}{Path: dir, Dirs: []folder{}}
+		if parent := filepath.Dir(dir); parent != dir {
+			out.Parent = parent
+		}
+		for _, e := range entries {
+			path := filepath.Join(dir, e.Name())
+			if strings.HasPrefix(e.Name(), ".") {
+				continue
+			}
+			if info, err := os.Stat(path); err != nil || !info.IsDir() { // follows links to folders
+				continue
+			}
+			_, err := os.Stat(filepath.Join(path, ".git")) // a folder in a checkout, a file in a linked worktree
+			out.Dirs = append(out.Dirs, folder{e.Name(), err == nil})
+		}
+		slices.SortFunc(out.Dirs, func(a, b folder) int {
+			return cmp.Or(cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), cmp.Compare(a.Name, b.Name))
+		})
+		return mitosis.JSON(out), nil
+	case "host.update":
+		var q struct{}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		return s.update(ctx), nil
+	case "host.providers", "host.login.start", "host.login.poll", "host.login.answer", "host.login.cancel":
+		return s.login(ctx, method, params)
+	case "host.accounts", "host.accounts.use", "host.models", "host.models.use", "host.plugins", "host.plugins.set", "host.logout":
+		return s.cli(ctx, method, params)
+	case "host.terminal.open", "host.terminal.read", "host.terminal.write", "host.terminal.resize", "host.terminal.close":
+		return s.terminal(ctx, method, params)
+	}
+	return nil, mitosis.Fail("method_not_found")
+}
+
+// lines is what `orb <name> … --json` printed, one JSON value per line, as name in an answer.
+func lines(name string, output []byte) json.RawMessage {
+	rows := []json.RawMessage{}
+	for line := range bytes.SplitSeq(bytes.TrimSpace(output), []byte("\n")) {
+		if json.Valid(line) {
+			rows = append(rows, append(json.RawMessage(nil), line...))
+		}
+	}
+	return mitosis.JSON(map[string]any{name: rows})
+}
+
+// Compiled when first used: counted repetitions make large programs, which every orb process
+// (this package is in all of them) paid for as it started.
+var settingName = lazyregexp.New(`^[a-zA-Z][a-zA-Z0-9]{0,63}$`)
+
+// cli is what a peer reads and changes of this machine's Orb through its CLI here: its accounts
+// with their plan limits and the switch between them, its plugins and their choices, a provider's
+// sign-out. An Orb reads its plugins and credentials when it starts, so after a change the Orbs
+// this Mitosis started end, to reopen with it at their next message.
+func (s *Service) cli(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	exe, err := s.loginExecutable()
+	if err != nil {
+		return nil, err
+	}
+	var q struct {
+		Name     string `json:"name,omitempty"`
+		On       *bool  `json:"on,omitempty"`
+		Key      string `json:"key,omitempty"`
+		Value    string `json:"value,omitempty"`
+		Provider string `json:"provider,omitempty"`
+		ID       string `json:"id,omitempty"`
+		Level    string `json:"level,omitempty"`
+	}
+	if err := protocol.Decode(params, &q); err != nil {
+		return nil, err
+	}
+	var args []string
+	switch {
+	case method == "host.accounts":
+		args = []string{"accounts", "--json"}
+	case method == "host.plugins":
+		args = []string{"plugins", "list", "--json"}
+	case method == "host.accounts.use" && providerName().MatchString(q.Provider) && providerName().MatchString(q.ID):
+		args = []string{"accounts", "use", q.Provider, q.ID}
+	case method == "host.models":
+		args = []string{"models", "--json"}
+	case method == "host.models.use" && providerName().MatchString(q.Provider) && modelName().MatchString(q.ID) && (q.Level == "" || settingName().MatchString(q.Level)):
+		args = append([]string{"models", "use", q.Provider, q.ID}, strings.Fields(q.Level)...)
+	case method == "host.logout" && providerName().MatchString(q.Provider):
+		args = []string{"logout", q.Provider}
+	case method != "host.plugins.set" || !providerName().MatchString(q.Name):
+	case q.On != nil:
+		args = []string{"plugins", map[bool]string{true: "enable", false: "disable"}[*q.On], q.Name}
+	case settingName().MatchString(q.Key):
+		value, _ := json.Marshal(q.Value)
+		args = []string{"plugins", "set", q.Name, q.Key, string(value)}
+	}
+	if args == nil {
+		return nil, mitosis.Fail("invalid_params")
+	}
+	output, err := exec.CommandContext(ctx, exe, args...).Output()
+	if method == "host.plugins" || strings.HasPrefix(method, "host.accounts") || strings.HasPrefix(method, "host.models") {
+		// A refused account or model switch still says why, as an error line.
+		if err != nil && (method == "host.plugins" || len(output) == 0) {
+			return nil, mitosis.Fail("unavailable")
+		}
+		return lines(args[0], output), nil
+	}
+	if exit := (*exec.ExitError)(nil); errors.As(err, &exit) {
+		// What orb said is wrong (a choice it does not offer, say) is the peer's to show.
+		return mitosis.JSON(map[string]string{"error": strings.TrimPrefix(strings.TrimSpace(string(exit.Stderr)), "Error: ")}), nil
+	} else if err != nil {
+		return nil, mitosis.Fail("unavailable")
+	}
+	s.endLaunched(false)
+	return mitosis.JSON(struct{}{}), nil
+}
+
+// maxLogins bounds the sign-ins one Mitosis runs at once; loginPoll is how long a poll waits for
+// news; a sign-in its peer abandoned ends after loginLimit, as device codes do.
+const (
+	maxLogins  = 2
+	loginPoll  = 20 * time.Second
+	loginLimit = 15 * time.Minute
+)
+
+// hostLogin is a sign-in this machine runs for a peer, so a headless Orb is signed in from the
+// phone: `orb login --json`, whose lines (the link, a device code, prompts, progress, the
+// outcome) the peer polls and whose prompts it answers.
+type hostLogin struct {
+	stdin  io.WriteCloser
+	cancel context.CancelFunc
+	mu     sync.Mutex
+	lines  []json.RawMessage
+	done   bool
+	wake   chan struct{}
+}
+
+func (l *hostLogin) add(line json.RawMessage, done bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if line != nil {
+		l.lines = append(l.lines, line)
+	}
+	l.done = l.done || done
+	close(l.wake)
+	l.wake = make(chan struct{})
+}
+
+var providerName = lazyregexp.New(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+
+// modelName is a model id as providers write them (claude-opus-4-5, openai/gpt-5:free, Qwen/Qwen3…).
+var modelName = lazyregexp.New(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$`)
+
+func (s *Service) login(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	exe, err := s.loginExecutable()
+	if err != nil {
+		return nil, err
+	}
+	if method == "host.providers" {
+		var q struct{}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		output, err := exec.CommandContext(ctx, exe, "login", "--json").Output()
+		if err != nil {
+			return nil, mitosis.Fail("unavailable")
+		}
+		return lines("providers", output), nil
+	}
+	if method == "host.login.start" {
+		var q struct {
+			Provider string `json:"provider"`
+			Method   string `json:"method"`
+		}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		if !providerName().MatchString(q.Provider) || q.Method != "oauth" && q.Method != "api_key" {
+			return nil, mitosis.Fail("invalid_params")
+		}
+		return s.startLogin(exe, q.Provider, q.Method)
+	}
+	var q struct {
+		ID     string `json:"login_id"`
+		Cursor int    `json:"cursor,omitempty"`
+		Value  string `json:"value,omitempty"`
+	}
+	if err := protocol.Decode(params, &q); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	l := s.logins[q.ID]
+	s.mu.Unlock()
+	if l == nil {
+		return nil, mitosis.Fail("not_found")
+	}
+	switch method {
+	case "host.login.answer":
+		l.mu.Lock()
+		_, err := io.WriteString(l.stdin, strings.ReplaceAll(q.Value, "\n", " ")+"\n")
+		l.mu.Unlock()
+		if err != nil {
+			return nil, mitosis.Fail("unavailable")
+		}
+		return mitosis.JSON(struct{}{}), nil
+	case "host.login.cancel":
+		l.cancel()
+		s.endLogin(q.ID)
+		return mitosis.JSON(struct{}{}), nil
+	}
+	timer := time.NewTimer(loginPoll)
+	defer timer.Stop()
+	for {
+		l.mu.Lock()
+		lines, done, wake := l.lines[min(max(q.Cursor, 0), len(l.lines)):], l.done, l.wake
+		cursor := len(l.lines)
+		l.mu.Unlock()
+		if len(lines) > 0 || done {
+			if done {
+				s.endLogin(q.ID)
+			}
+			return mitosis.JSON(map[string]any{"events": lines, "cursor": cursor, "done": done}), nil
+		}
+		select {
+		case <-wake:
+		case <-timer.C:
+			return mitosis.JSON(map[string]any{"events": []json.RawMessage{}, "cursor": cursor, "done": false}), nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+func (s *Service) startLogin(exe, provider, method string) (json.RawMessage, error) {
+	s.mu.Lock()
+	if len(s.logins) >= maxLogins {
+		s.mu.Unlock()
+		return nil, mitosis.Fail("resource_exhausted")
+	}
+	id := protocol.NewID()
+	ctx, cancel := context.WithTimeout(s.ctx, loginLimit)
+	l := &hostLogin{cancel: cancel, wake: make(chan struct{})}
+	s.logins[id] = l
+	s.mu.Unlock()
+	command := exec.CommandContext(ctx, exe, "login", "--json", provider, method)
+	stdin, err := command.StdinPipe()
+	var stdout io.ReadCloser
+	if err == nil {
+		stdout, err = command.StdoutPipe()
+	}
+	if err == nil {
+		err = command.Start()
+	}
+	if err != nil {
+		cancel()
+		s.endLogin(id)
+		return nil, err
+	}
+	l.stdin = stdin
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		scanner.Buffer(make([]byte, 64<<10), 1<<20)
+		for scanner.Scan() {
+			if line := scanner.Bytes(); json.Valid(line) {
+				l.add(append(json.RawMessage(nil), line...), false)
+			}
+		}
+		// An Orb reads its accounts when it starts: the idle ones end, and reopen with the new
+		// credential at their next message.
+		if command.Wait() == nil {
+			s.endLaunched(false)
+		}
+		cancel()
+		l.add(nil, true)
+		// The outcome waits a minute for its peer's poll.
+		time.AfterFunc(time.Minute, func() { s.endLogin(id) })
+	}()
+	return mitosis.JSON(map[string]string{"login_id": id}), nil
+}
+
+func (s *Service) endLogin(id string) {
+	s.mu.Lock()
+	delete(s.logins, id)
+	s.mu.Unlock()
+}
+
+// A peer reaching the machine (host.launch) may also open a terminal on it: its owner's login
+// shell in a pseudo-terminal, in a folder, as Orb's own bash runs there. The output is kept as a
+// window the peer reads by offset, waiting up to terminalPoll for more; one left unread ends.
+const (
+	maxTerminals   = 4
+	terminalPoll   = 15 * time.Second // under the 20 s a peer gives any call
+	terminalIdle   = 30 * time.Minute
+	terminalWindow = 256 << 10
+)
+
+type hostTerminal struct {
+	pty  *os.File
+	idle *time.Timer
+	mu   sync.Mutex
+	out  []byte // the last terminalWindow bytes of output
+	end  int64  // the offset just past out
+	done bool
+	wake chan struct{}
+}
+
+func (s *Service) terminal(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	var q struct {
+		ID     string `json:"terminal_id,omitempty"`
+		CWD    string `json:"cwd,omitempty"`
+		Cols   uint16 `json:"cols,omitempty"`
+		Rows   uint16 `json:"rows,omitempty"`
+		Offset int64  `json:"offset,omitempty"`
+		Data   []byte `json:"data,omitempty"`
+	}
+	if err := protocol.Decode(params, &q); err != nil {
+		return nil, err
+	}
+	size := &pty.Winsize{Cols: max(q.Cols, 20), Rows: max(q.Rows, 5)}
+	if method == "host.terminal.open" {
+		cwd, err := launchFolder(cmp.Or(q.CWD, "~"))
+		if err != nil {
+			return nil, err
+		}
+		return s.openTerminal(cwd, size)
+	}
+	s.mu.Lock()
+	t := s.terminals[q.ID]
+	s.mu.Unlock()
+	if t == nil {
+		return nil, mitosis.Fail("not_found")
+	}
+	t.idle.Reset(terminalIdle)
+	switch method {
+	case "host.terminal.write":
+		if _, err := t.pty.Write(q.Data); err != nil {
+			return nil, mitosis.Fail("unavailable")
+		}
+		return mitosis.JSON(struct{}{}), nil
+	case "host.terminal.resize":
+		_ = pty.Setsize(t.pty, size)
+		return mitosis.JSON(struct{}{}), nil
+	case "host.terminal.close":
+		s.endTerminal(q.ID)
+		return mitosis.JSON(struct{}{}), nil
+	}
+	timer := time.NewTimer(terminalPoll)
+	defer timer.Stop()
+	for {
+		t.mu.Lock()
+		start := t.end - int64(len(t.out))
+		data := slices.Clone(t.out[min(max(q.Offset, start), t.end)-start:])
+		end, done, wake := t.end, t.done, t.wake
+		t.mu.Unlock()
+		if len(data) > 0 || done {
+			return mitosis.JSON(map[string]any{"data": data, "offset": end, "done": done}), nil
+		}
+		select {
+		case <-wake:
+		case <-timer.C:
+			return mitosis.JSON(map[string]any{"offset": end, "done": false}), nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+func (s *Service) openTerminal(cwd string, size *pty.Winsize) (json.RawMessage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.terminals) >= maxTerminals {
+		return nil, mitosis.Fail("resource_exhausted")
+	}
+	command := exec.Command(cmp.Or(os.Getenv("SHELL"), "/bin/sh"), "-l")
+	command.Dir, command.Env = cwd, append(os.Environ(), "TERM=xterm-256color")
+	f, err := pty.StartWithSize(command, size)
+	if err != nil {
+		return nil, mitosis.Fail("unavailable")
+	}
+	id := protocol.NewID()
+	t := &hostTerminal{pty: f, wake: make(chan struct{})}
+	t.idle = time.AfterFunc(terminalIdle, func() { s.endTerminal(id) })
+	s.terminals[id] = t
+	go func() {
+		buf := make([]byte, 32<<10)
+		for {
+			n, err := f.Read(buf)
+			t.mu.Lock()
+			t.out = append(t.out, buf[:n]...)
+			t.out = t.out[max(len(t.out)-terminalWindow, 0):]
+			t.end += int64(n)
+			t.done = err != nil
+			close(t.wake)
+			t.wake = make(chan struct{})
+			t.mu.Unlock()
+			if err != nil {
+				break
+			}
+		}
+		_ = command.Wait()
+		// The last output and the end wait a minute for their peer's read.
+		time.AfterFunc(time.Minute, func() { s.endTerminal(id) })
+	}()
+	return mitosis.JSON(map[string]string{"terminal_id": id}), nil
+}
+
+// endTerminal hangs up a terminal: closing its side of the pty ends the shell and what it started.
+func (s *Service) endTerminal(id string) {
+	s.mu.Lock()
+	t := s.terminals[id]
+	delete(s.terminals, id)
+	s.mu.Unlock()
+	if t != nil {
+		t.idle.Stop()
+		_ = t.pty.Close()
+	}
+}
+
+// update brings this machine's orb to the latest release, as `orb update` does, then restarts
+// the Mitosis on the new binary; peers see it back within seconds. The answer says what happened.
+func (s *Service) update(ctx context.Context) json.RawMessage {
+	u := selfupdate.New(s.version, false)
+	result := map[string]string{"from": selfupdate.Plain(u.CurrentVersion)}
+	tag, target, err := u.Update(ctx, func(string) func() { return func() {} })
+	switch {
+	case errors.Is(err, selfupdate.ErrDevelopment):
+		result["status"] = "a development build; update it by hand"
+	case errors.Is(err, selfupdate.ErrCurrent):
+		result["status"] = "already current"
+	case err != nil:
+		result["status"] = err.Error()
+	default:
+		result["to"], result["status"] = selfupdate.Plain(tag), "updated · Mitosis restarting"
+		s.restart(target)
+	}
+	return mitosis.JSON(result)
+}
+
+// follow restarts Mitosis into the binary at exe once another file is there (orb update, a new
+// build), at the first check with no turn, terminal or sign-in running for a peer: an update of
+// Orb brings this machine's Mitosis, and the host calls peers see, along without a restart by hand.
+func (s *Service) follow(exe string, every time.Duration) {
+	started, err := os.Stat(exe)
+	if err != nil {
+		return
+	}
+	tick := time.NewTicker(every)
+	defer tick.Stop()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-tick.C:
+		}
+		now, err := os.Stat(exe)
+		if err != nil || os.SameFile(started, now) && now.ModTime().Equal(started.ModTime()) {
+			continue
+		}
+		s.mu.Lock()
+		busy := len(s.terminals) > 0 || len(s.logins) > 0
+		for _, l := range s.launched {
+			busy = busy || l.turn.Load()
+		}
+		s.mu.Unlock()
+		// A file that does not run yet (a copy in progress, a broken build) is waited out.
+		if !busy && exec.CommandContext(s.ctx, exe, "--version").Run() == nil {
+			s.restart(exe)
+			return
+		}
+	}
+}
+
+// launchFolder accepts an absolute path or one under ~, and only an existing directory.
+func launchFolder(path string) (string, error) {
+	if rest, ok := strings.CutPrefix(path, "~"); ok && (rest == "" || rest[0] == '/') {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		path = home + rest
+	}
+	if len(path) > 4096 || !filepath.IsAbs(path) {
+		return "", mitosis.Fail("invalid_params")
+	}
+	path = filepath.Clean(path)
+	if info, err := os.Stat(path); err != nil || !info.IsDir() {
+		return "", mitosis.Fail("not_found")
+	}
+	return path, nil
+}
+
+func (s *Service) launch(ctx context.Context, p mitosis.Principal, cwd, session string) (json.RawMessage, error) {
+	s.mu.Lock()
+	for _, l := range s.launched {
+		// A thread already open in an Orb this Mitosis started is opened again, not twice.
+		if session != "" && l.session == session {
+			alias := l.alias
+			s.mu.Unlock()
+			open, err := s.launchedInstance(ctx, p, alias)
+			s.mu.Lock()
+			ended := s.launched[alias] == nil
+			s.mu.Unlock()
+			if err != nil && ended {
+				// It was ending (put to sleep): the thread opens in a new one.
+				return s.launch(ctx, p, cwd, session)
+			}
+			return open, err
+		}
+	}
+	if len(s.launched) >= maxLaunched {
+		var quiet *launched
+		for _, l := range s.launched {
+			if !l.turn.Load() && l.input != nil && (quiet == nil || l.last.Load() < quiet.last.Load()) {
+				quiet = l
+			}
+		}
+		if quiet == nil {
+			s.mu.Unlock()
+			return nil, mitosis.Fail("resource_exhausted")
+		}
+		_ = quiet.input.Close()
+		delete(s.launched, quiet.alias)
+	}
+	// The slot is taken before the process starts, so concurrent launches cannot pass the cap.
+	l := &launched{session: session, alias: "launch-" + strings.ToLower(protocol.NewID()[:8])}
+	s.launched[l.alias] = l
+	s.mu.Unlock()
+	release := func() {
+		s.mu.Lock()
+		delete(s.launched, l.alias)
+		s.mu.Unlock()
+	}
+	// A thread open in another Orb on this machine, one in a terminal say, cannot open twice: the
+	// peer joins that Orb, which comes on Mitosis for it as an Orb launched here would.
+	if session != "" && s.state != nil && s.state.Held(session) {
+		release()
+		if open := s.holding(ctx, p, session); open != nil {
+			return open, nil
+		}
+		if holder, err := s.state.Holder(ctx, session); err == nil {
+			asked, cancel := context.WithTimeout(ctx, launchWait)
+			err = holder.Call(asked, "mitosis", map[string]string{"profile": s.profile}, nil)
+			cancel()
+			_ = holder.Close()
+			for wait := 0; err == nil && wait < 50; wait++ {
+				if open := s.holding(ctx, p, session); open != nil {
+					return open, nil
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+		return nil, mitosis.Fail("busy")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		release()
+		return nil, err
+	}
+	args := []string{"--mode", "rpc", "--mitosis", s.profile, "--instance", l.alias}
+	if session != "" {
+		args = append(args, "--session", session)
+	}
+	cmd := exec.Command(exe, args...)
+	cmd.Dir = cwd
+	// Ephemeral: the instance retires its registration when it exits, like an unnamed one.
+	cmd.Env = append(os.Environ(), "ORB_MITOSIS_EPHEMERAL=1")
+	input, err := cmd.StdinPipe()
+	var output io.ReadCloser
+	if err == nil {
+		output, err = cmd.StdoutPipe()
+	}
+	if err == nil {
+		err = cmd.Start()
+	}
+	if err != nil {
+		release()
+		return nil, err
+	}
+	s.mu.Lock()
+	l.input = input
+	s.mu.Unlock()
+	go idle(output, l, launchedIdle)
+	go func() {
+		_ = cmd.Wait()
+		release()
+		_ = input.Close()
+	}()
+	result, err := s.launchedInstance(ctx, p, l.alias)
+	if err != nil {
+		_ = cmd.Process.Kill() // it never came up: nobody could reach it
+	}
+	return result, err
+}
+
+// holding is the Orb on Mitosis that has the thread open, as host.launch answers it, or nil.
+func (s *Service) holding(ctx context.Context, p mitosis.Principal, session string) json.RawMessage {
+	for _, i := range s.Mitosis.Catalog(p) {
+		if !i.Available {
+			continue
+		}
+		raw, err := s.Mitosis.Handle(ctx, p.PeerID, "instances.describe", mitosis.JSON(map[string]string{"instance_id": i.ID}))
+		var d struct {
+			Target struct {
+				SessionID string `json:"session_id"`
+			} `json:"target"`
+		}
+		if err == nil && json.Unmarshal(raw, &d) == nil && d.Target.SessionID == session {
+			return mitosis.JSON(map[string]string{"instance_id": i.ID, "alias": i.Alias})
+		}
+	}
+	return nil
+}
+
+// idle reads a launched Orb's RPC events and closes its input — which ends it — once it has been
+// quiet for limit outside a turn. Reading also keeps its output from filling up and blocking it.
+func idle(events io.Reader, l *launched, limit time.Duration) {
+	last := &l.last
+	last.Store(time.Now().UnixNano())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r := bufio.NewReader(events)
+		for {
+			line, _, err := r.ReadLine() // long lines come in pieces; the type leads each event
+			if err != nil {
+				return
+			}
+			last.Store(time.Now().UnixNano())
+			if bytes.Contains(line, []byte(`"type":"agent_start"`)) {
+				l.turn.Store(true)
+			} else if bytes.Contains(line, []byte(`"type":"agent_end"`)) {
+				l.turn.Store(false)
+				if l.stale.Load() {
+					_ = l.input.Close()
+				}
+			}
+		}
+	}()
+	tick := time.NewTicker(min(limit/4, time.Minute))
+	defer tick.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-tick.C:
+			if !l.turn.Load() && time.Since(time.Unix(0, last.Load())) > limit {
+				_ = l.input.Close()
+				return
+			}
+		}
+	}
+}
+
+// launchedInstance waits until the Orb with alias is on Mitosis and names it: a minute at most,
+// and not past the process, whose exit releases its slot.
+func (s *Service) launchedInstance(ctx context.Context, p mitosis.Principal, alias string) (json.RawMessage, error) {
+	ctx, cancel := context.WithTimeout(ctx, launchWait)
+	defer cancel()
+	for {
+		s.mu.Lock()
+		running := s.launched[alias] != nil
+		s.mu.Unlock()
+		if !running {
+			return nil, mitosis.Fail("unavailable")
+		}
+		for _, i := range s.Mitosis.Catalog(p) {
+			if i.Alias == alias && i.Available {
+				s.mu.Lock()
+				if l := s.launched[alias]; l != nil {
+					l.id = i.ID
+				}
+				s.mu.Unlock()
+				return mitosis.JSON(map[string]string{"instance_id": i.ID, "alias": alias}), nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, mitosis.Fail("unavailable")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
+// stopLaunched ends every Orb this Mitosis started by closing its input, and retires their
+// registrations here: with the Mitosis going away, they cannot retire themselves.
+func (s *Service) stopLaunched() { s.endLaunched(true) }
+
+// endLaunched ends the Orbs this Mitosis started and retires them, or those between turns and
+// the others once their turn ends.
+func (s *Service) endLaunched(busy bool) {
+	s.mu.Lock()
+	ids := []string{}
+	for _, l := range s.launched {
+		if l.stale.Store(true); !busy && l.turn.Load() {
+			continue
+		}
+		if l.input != nil {
+			_ = l.input.Close()
+		}
+		if l.id != "" {
+			ids = append(ids, l.id)
+		}
+	}
+	s.mu.Unlock()
+	if len(ids) > 0 {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(s.ctx), 2*time.Second)
+		defer cancel()
+		_, _ = s.Mitosis.Admin(ctx, "retire", mitosis.JSON(map[string][]string{"instance_ids": ids}))
+	}
+}
+
+// machineName is what this machine is called on its peers' screens, read once: ORB_MITOSIS_NAME
+// when set (the Android app names the phone), else a Mac's computer name, else the host name.
+var machineName = sync.OnceValue(func() string {
+	if name := os.Getenv("ORB_MITOSIS_NAME"); name != "" {
+		return name
+	}
+	if runtime.GOOS == "darwin" {
+		if out, err := exec.Command("scutil", "--get", "ComputerName").Output(); err == nil && strings.TrimSpace(string(out)) != "" {
+			return strings.TrimSpace(string(out))
+		}
+	}
+	host, _ := os.Hostname()
+	return strings.Split(host, ".")[0]
+})

@@ -6,6 +6,6 @@
   "copyright": "Ordalie",
   "icon": "icon.png",
   "resources": ["../android/app/src/main/res/font/ubuntu_sans_mono.ttf"],
-  "urlSchemes": ["orb-bridge"],
+  "urlSchemes": ["orb-mitosis"],
   "macos": { "minimumSystemVersion": "13.0", "infoPlist": { "LSApplicationCategoryType": "public.app-category.developer-tools" } }
 }

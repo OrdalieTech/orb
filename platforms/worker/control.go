@@ -12,7 +12,7 @@ import (
 // from the object's settings (a capability's plugin switch, for example).
 type ToolsFunc func(*config.SettingsManager) []extensions.ToolDefinition
 
-// EnableControl admits non-owning controllers (a Bridge attachment) to the
+// EnableControl admits non-owning controllers (a Mitosis attachment) to the
 // object's sessions; every replacement is then bracketed as a transition.
 func (instance *Instance) EnableControl() (*agent.SessionControl, error) {
 	instance.mu.Lock()

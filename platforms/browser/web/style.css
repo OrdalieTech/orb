@@ -52,8 +52,9 @@ textarea:focus-visible { outline: 0; }
 
 #remote-controls { display: flex; align-items: end; gap: 12px; padding-top: 8px; }
 #remote-controls label { flex: 1; min-width: 0; margin: 0; }
-#bridge-identity, #bridge-grant { font: 12px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
-#bridge-agent { width: auto; }
-#bridge-invitation { border: 1px solid #36383f; padding: 8px; font-size: 13px; }
+#mitosis-identity, #mitosis-grant { font: 12px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
+#mitosis-agent { width: auto; }
+#mitosis-notice { white-space: pre-line; }
+#mitosis-invitation { border: 1px solid #36383f; padding: 8px; font-size: 13px; }
 
 #remote-question { max-height: 25vh; overflow: auto; font-size: 12px; }

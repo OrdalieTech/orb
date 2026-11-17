@@ -29,7 +29,7 @@ func TestOrbSkillIsTheOneOrbLoadsAndNamesOnlySafeHelp(t *testing.T) {
 	t.Setenv("CODEX_HOME", "")
 	t.Setenv(config.EnvAgentDir, filepath.Join(root, "agent"))
 	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
-	t.Setenv("ORB_BRIDGE_HOME", filepath.Join(root, "bridge"))
+	t.Setenv("ORB_MITOSIS_HOME", filepath.Join(root, "mitosis"))
 	t.Setenv("ORB_OFFLINE", "1")
 	project := filepath.Join(root, "project")
 	if err := os.MkdirAll(project, 0o755); err != nil {

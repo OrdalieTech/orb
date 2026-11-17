@@ -1,4 +1,4 @@
-// Orb for the desktop (macOS, Linux and Windows): one native renderer of `orb app` (bridge/view),
+// Orb for the desktop (macOS, Linux and Windows): one native renderer of `orb app` (mitosis/view),
 // drawn by MyGo in pure Go. It holds no logic of its own; the view, shared with every Orb app,
 // does. build.sh assembles the apps with the orb they run.
 package main
@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	// One app per user: two would each run `orb app` over the same Bridge and save its tabs over the other's.
+	// One app per user: two would each run `orb app` over the same Mitosis and save its tabs over the other's.
 	if !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
@@ -28,10 +28,10 @@ func main() {
 	// `orb app` (after the login shell's environment, a third of a second or more) starts now and
 	// boots while the window opens.
 	a.o = newOrb(a.notify)
-	// A pairing code opened as a link (orb-bridge:…) joins from the Bridge screen; on Linux and
+	// A pairing code opened as a link (orb-mitosis:…) joins from the Mitosis screen; on Linux and
 	// Windows the link starts the app again, which hands it to this one.
 	join := func(url string) {
-		if strings.HasPrefix(url, "orb-bridge:") && a.o.win != nil {
+		if strings.HasPrefix(url, "orb-mitosis:") && a.o.win != nil {
 			a.o.win.Update(func() { a.push(screen{kind: "join", arg: url}) })
 		}
 	}

@@ -47,16 +47,16 @@ import tech.ordalie.orb.core.named
 sealed interface Screen {
     /** Home and the open conversations, side by side ([Nav.pager]). */
     data object Home : Screen
-    data object Bridge : Screen
+    data object Mitosis : Screen
     data object Invite : Screen
     data class Join(val text: String = "") : Screen
-    /** The providers of a machine on Bridge, this phone included. */
+    /** The providers of a machine on Mitosis, this phone included. */
     data class Providers(val peer: String) : Screen
     data class Vendor(val id: String, val peer: String) : Screen
     data class Plugins(val peer: String) : Screen
     data class Device(val peer: String) : Screen
     data class Folder(val peer: String, val cwd: String) : Screen
-    /** The terminal where [on] runs: this phone's Linux, or its machine over Bridge. */
+    /** The terminal where [on] runs: this phone's Linux, or its machine over Mitosis. */
     data class Terminal(val on: Tab? = null) : Screen
 }
 
@@ -124,11 +124,11 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
             if (full) hide(WindowInsetsCompat.Type.systemBars()) else show(WindowInsetsCompat.Type.systemBars())
         }
     }
-    // Shared text is either a Bridge invitation or something to cite.
+    // Shared text is either a Mitosis invitation or something to cite.
     LaunchedEffect(shared.value) {
         val text = shared.value ?: return@LaunchedEffect
         shared.value = null
-        if (text.contains("invitation_id") || text.contains("orb-bridge:v1:")) nav.go(Screen.Join(text))
+        if (text.contains("invitation_id") || text.contains("orb-mitosis:v1:")) nav.go(Screen.Join(text))
         else java.io.File(rt.orb.cwd, "cites/shared-${System.currentTimeMillis() / 1000}.txt").apply { parentFile?.mkdirs(); writeText(text); cites += "cites/$name" }
     }
     BackHandler(nav.stack.size > 1 || nav.pager.currentPage > 0 || picker != null || menu || deck != null || renaming != null || viewing != null || overview) {
@@ -221,7 +221,7 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
                                 CompositionLocalProvider(LocalMorph provides Morph(this@SharedTransitionLayout, this)) { if (on) Overview(ctx) { overview = false } else kept.SaveableStateProvider("deck") { Deck(ctx) } }
                             }
                         }
-                        Screen.Bridge -> BridgeScreen(ctx)
+                        Screen.Mitosis -> MitosisScreen(ctx)
                         Screen.Invite -> InviteScreen(ctx)
                         is Screen.Join -> JoinScreen(ctx, s.text)
                         is Screen.Providers -> ProvidersScreen(ctx, s.peer)
@@ -426,7 +426,7 @@ fun AnimatedVisibilityScope.PickerSheet(pk: Picker, dismiss: () -> Unit) = Sheet
 
 /**
  * The menu, sorted by what each thing acts on: the conversation on screen, the machine it runs on
- * (this phone on Home), and the Bridge that links them.
+ * (this phone on Home), and the Mitosis that links them.
  */
 @Composable
 fun AnimatedVisibilityScope.MenuSheet(c: Ctx, t: Tab?, dismiss: () -> Unit) = Sheet(dismiss) {
@@ -457,8 +457,8 @@ fun AnimatedVisibilityScope.MenuSheet(c: Ctx, t: Tab?, dismiss: () -> Unit) = Sh
     Item("plugins") { c.nav.go(Screen.Plugins(peer)) }
     if (t == null) Item("terminal") { c.nav.go(Screen.Terminal()) }
     Rule(Modifier.padding(top = 6.dp))
-    Section("bridge")
-    Item("devices", v.state.summary) { c.nav.go(Screen.Bridge) }
+    Section("mitosis")
+    Item("devices", v.state.summary) { c.nav.go(Screen.Mitosis) }
     Row(Modifier.padding(start = Margin, top = 8.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         Ordalie(11.dp, p.meta)
         T("orb ${c.rt.version}", size = 12.sp, color = p.meta)

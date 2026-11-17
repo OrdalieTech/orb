@@ -15,16 +15,16 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
-	connectagent "github.com/OrdalieTech/orb/agent/bridge"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
+	connectagent "github.com/OrdalieTech/orb/agent/mitosis"
 	"github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/ai"
-	"github.com/OrdalieTech/orb/bridge"
-	"github.com/OrdalieTech/orb/bridge/protocol"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/mitosis"
+	"github.com/OrdalieTech/orb/mitosis/protocol"
 	"github.com/OrdalieTech/orb/platforms/native/sandbox"
 	plugins "github.com/OrdalieTech/orb/plugins/permissions"
 	"github.com/OrdalieTech/orb/plugins/questions"
@@ -169,7 +169,7 @@ export function query({prompt,options:o}) {
   const tool=question?'AskUserQuestion':'Write';
   const input=question?{questions:[
     {header:'Diagram',question:'What should be diagrammed?',options:[{label:'Layers',description:'Show the runtime boundaries'},{label:'Flow',description:'Show one request'}]},
-    {header:'Details',question:'Which details?',multiSelect:true,options:[{label:'Sessions',description:'Include storage'},{label:'Bridge',description:'Include routing'}]}
+    {header:'Details',question:'Which details?',multiSelect:true,options:[{label:'Sessions',description:'Include storage'},{label:'Mitosis',description:'Include routing'}]}
   ]}:{file_path:'/fixture'};
   const hook=await o.hooks?.PreToolUse[0].hooks[0]({hook_event_name:'PreToolUse',tool_name:tool,tool_input:input,tool_use_id:'native-write',cwd:o.cwd},'native-write',{signal:abort.signal});
   const decision=hook?.hookSpecificOutput?.permissionDecision;
@@ -575,9 +575,9 @@ func TestStreamKeepsRedactedThinking(t *testing.T) {
 	}
 }
 
-func TestSDKBridgeApprovalFencesAndCancellation(t *testing.T) {
+func TestSDKMitosisApprovalFencesAndCancellation(t *testing.T) {
 	host, _ := fixture(t)
-	attachment, err := connectagent.Attach(context.Background(), host, connectagent.Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
+	attachment, err := connectagent.Attach(context.Background(), host, connectagent.Options{InstanceID: protocol.NewID(), Store: &document.Memory{}, Authorize: func(mitosis.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -593,7 +593,7 @@ func TestSDKBridgeApprovalFencesAndCancellation(t *testing.T) {
 	target := control.Target()
 	stale := target
 	stale.ExecutionID = protocol.NewID()
-	payload := string(bridge.JSON(map[string]string{"id": input.ID, "value": "y approve once"}))
+	payload := string(mitosis.JSON(map[string]string{"id": input.ID, "value": "y approve once"}))
 	if err = control.Execution(stale, "input.reply", payload); err == nil {
 		t.Fatal("cross-execution reply accepted")
 	}
@@ -691,7 +691,7 @@ func TestSDKInstanceProtocolResumeForkAndDeduplication(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	id := protocol.NewID()
-	a, err := connectagent.Attach(ctx, host, connectagent.Options{InstanceID: id, Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
+	a, err := connectagent.Attach(ctx, host, connectagent.Options{InstanceID: id, Store: &document.Memory{}, Authorize: func(mitosis.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -700,22 +700,22 @@ func TestSDKInstanceProtocolResumeForkAndDeduplication(t *testing.T) {
 		t.Fatal(err)
 	}
 	control, _ := host.EnableControl()
-	principal := bridge.Principal{PeerID: "fixture", Subject: bridge.Subject{Kind: "controller"}}
-	call := func(method string, args any) bridge.Request {
+	principal := mitosis.Principal{PeerID: "fixture", Subject: mitosis.Subject{Kind: "controller"}}
+	call := func(method string, args any) mitosis.Request {
 		target := control.Target()
-		request := bridge.Request{Principal: principal, Generation: "1", Call: bridge.Call{InstanceID: id, Service: protocol.Service, Method: method, SessionID: target.SessionID, Expected: bridge.Expected{Generation: "1", Revision: target.Revision}, OperationID: protocol.NewID(), Args: bridge.JSON(args)}}
-		if _, e := a.Invoke(ctx, "call", bridge.JSON(request)); e != nil {
+		request := mitosis.Request{Principal: principal, Generation: "1", Call: mitosis.Call{InstanceID: id, Service: protocol.Service, Method: method, SessionID: target.SessionID, Expected: mitosis.Expected{Generation: "1", Revision: target.Revision}, OperationID: protocol.NewID(), Args: mitosis.JSON(args)}}
+		if _, e := a.Invoke(ctx, "call", mitosis.JSON(request)); e != nil {
 			t.Fatal(e)
 		}
 		return request
 	}
-	wait := func(request bridge.Request) {
+	wait := func(request mitosis.Request) {
 		for {
-			raw, e := a.Invoke(ctx, "operations.get", bridge.JSON(map[string]any{"principal": principal, "params": map[string]string{"instance_id": id, "operation_id": request.Call.OperationID}}))
+			raw, e := a.Invoke(ctx, "operations.get", mitosis.JSON(map[string]any{"principal": principal, "params": map[string]string{"instance_id": id, "operation_id": request.Call.OperationID}}))
 			if e != nil {
 				t.Fatal(e)
 			}
-			var receipt bridge.Receipt
+			var receipt mitosis.Receipt
 			if e = json.Unmarshal(raw, &receipt); e != nil {
 				t.Fatal(e)
 			}
@@ -733,20 +733,20 @@ func TestSDKInstanceProtocolResumeForkAndDeduplication(t *testing.T) {
 		}
 	}
 	prompt := func() {
-		request := call("prompt", map[string]string{"text": "bridge prompt"})
+		request := call("prompt", map[string]string{"text": "mitosis prompt"})
 		input := awaitInput(t, host.Session())
-		snapshot, e := a.Invoke(ctx, "instances.describe", bridge.JSON(map[string]any{"principal": principal, "params": map[string]string{"instance_id": id}}))
+		snapshot, e := a.Invoke(ctx, "instances.describe", mitosis.JSON(map[string]any{"principal": principal, "params": map[string]string{"instance_id": id}}))
 		if e != nil || !strings.Contains(string(snapshot), input.ID) {
 			t.Fatalf("input missing from descriptor: %s %v", snapshot, e)
 		}
 		reply := call("input.reply", map[string]string{"execution_id": control.Target().ExecutionID, "id": input.ID, "value": "y approve once"})
 		wait(reply)
 		wait(request)
-		if _, e = a.Invoke(ctx, "call", bridge.JSON(request)); e != nil {
+		if _, e = a.Invoke(ctx, "call", mitosis.JSON(request)); e != nil {
 			t.Fatal("identical prompt retry", e)
 		}
-		request.Call.Args = bridge.JSON(map[string]string{"text": "conflicting prompt"})
-		if _, e = a.Invoke(ctx, "call", bridge.JSON(request)); bridge.Code(e) != "operation_conflict" {
+		request.Call.Args = mitosis.JSON(map[string]string{"text": "conflicting prompt"})
+		if _, e = a.Invoke(ctx, "call", mitosis.JSON(request)); mitosis.Code(e) != "operation_conflict" {
 			t.Fatal("conflicting retry accepted", e)
 		}
 	}
@@ -789,7 +789,7 @@ func TestSDKInstanceProtocolResumeForkAndDeduplication(t *testing.T) {
 	prompt()
 }
 
-func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
+func TestSDKLiveMitosisToolsAndFork(t *testing.T) {
 	sdk := os.Getenv("ORB_CLAUDE_LIVE_SDK")
 	if sdk == "" {
 		t.Skip("native account test")
@@ -825,18 +825,18 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer host.Dispose(ctx)
-	server, err := bridge.Open(&document.Memory{}, true)
+	server, err := mitosis.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = server.Close() }()
-	client, err := bridge.Open(&document.Memory{}, true)
+	client, err := mitosis.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = client.Close() }()
 	permissions := []string{"instance.list", "instance.inspect", "instance.prompt", "instance.input.reply", "instance.cancel", "instance.session.manage"}
-	invite, err := server.Invite([]bridge.Grant{{GroupID: server.PersonalGroup(), IncludeFuture: true, Permissions: permissions}})
+	invite, err := server.Invite([]mitosis.Grant{{GroupID: server.PersonalGroup(), IncludeFuture: true, Permissions: permissions}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -850,7 +850,7 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := connectagent.Attach(ctx, host, connectagent.Options{InstanceID: instance.ID, Store: &document.Memory{}, Authorize: func(r bridge.Request) bool {
+	a, err := connectagent.Attach(ctx, host, connectagent.Options{InstanceID: instance.ID, Store: &document.Memory{}, Authorize: func(r mitosis.Request) bool {
 		permission := "instance." + r.Call.Method
 		if strings.HasPrefix(r.Call.Method, "session.") {
 			permission = "instance.session.manage"
@@ -872,7 +872,7 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 	invoke := func(method string, args any) string {
 		target := control.Target()
 		id := protocol.NewID()
-		_, e := server.Call(ctx, client.Principal(), bridge.Call{InstanceID: instance.ID, Service: protocol.Service, Method: method, SessionID: target.SessionID, Expected: bridge.Expected{Generation: generation, Revision: target.Revision}, OperationID: id, Args: bridge.JSON(args)})
+		_, e := server.Call(ctx, client.Principal(), mitosis.Call{InstanceID: instance.ID, Service: protocol.Service, Method: method, SessionID: target.SessionID, Expected: mitosis.Expected{Generation: generation, Revision: target.Revision}, OperationID: id, Args: mitosis.JSON(args)})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -893,11 +893,11 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 				}
 				invoke("input.reply", map[string]string{"execution_id": control.Target().ExecutionID, "id": p.ID, "value": value})
 			}
-			raw, e := a.Invoke(ctx, "operations.get", bridge.JSON(map[string]any{"principal": client.Principal(), "params": map[string]string{"instance_id": instance.ID, "operation_id": id}}))
+			raw, e := a.Invoke(ctx, "operations.get", mitosis.JSON(map[string]any{"principal": client.Principal(), "params": map[string]string{"instance_id": instance.ID, "operation_id": id}}))
 			if e != nil {
 				t.Fatal(e)
 			}
-			var receipt bridge.Receipt
+			var receipt mitosis.Receipt
 			if e = json.Unmarshal(raw, &receipt); e != nil {
 				t.Fatal(e)
 			}
@@ -921,10 +921,10 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 	t.Logf("Native catalog: %d models; default %s", len(models), models[0].Name)
 	wait(invoke("session.model", map[string]string{"provider": Name, "model": "sonnet", "thinking": "low"}), false)
 	target := filepath.Join(dir, "proof.txt")
-	id := invoke("prompt", map[string]string{"text": "Use the Write tool to create " + target + " containing exactly ORB_BRIDGE_TOOL_OK. Then reply DONE. Do not run any other tools."})
+	id := invoke("prompt", map[string]string{"text": "Use the Write tool to create " + target + " containing exactly ORB_MITOSIS_TOOL_OK. Then reply DONE. Do not run any other tools."})
 	wait(id, true)
 	data, err := os.ReadFile(target)
-	if err != nil || strings.TrimSpace(string(data)) != "ORB_BRIDGE_TOOL_OK" {
+	if err != nil || strings.TrimSpace(string(data)) != "ORB_MITOSIS_TOOL_OK" {
 		t.Fatalf("native tool proof %q %v", data, err)
 	}
 	if approvals != 1 {
@@ -958,9 +958,9 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 	questionMessages := host.Session().State().Messages
 	questionResult, _ := json.Marshal(questionMessages[len(questionMessages)-1])
 	if questions != 1 || !strings.Contains(string(questionResult), "SELECTED_ARCHITECTURE") {
-		t.Fatalf("native Bridge question did not resume: %d replies, %s", questions, questionResult)
+		t.Fatalf("native Mitosis question did not resume: %d replies, %s", questions, questionResult)
 	}
-	t.Log("Native AskUserQuestion answered through Bridge input.reply and resumed")
+	t.Log("Native AskUserQuestion answered through Mitosis input.reply and resumed")
 	wait(invoke("session.model", map[string]string{"provider": Name, "model": "haiku", "thinking": "off"}), false)
 	original := host.Session().Manager().GetSessionID()
 	id = invoke("prompt", map[string]string{"text": "Reply exactly SECOND_TURN. Do not use tools."})
@@ -987,10 +987,10 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 		t.Fatal(*state.ErrorMessage)
 	}
 	raw, _ := json.Marshal(state.Messages[len(state.Messages)-1])
-	if !strings.Contains(string(raw), "ORB_BRIDGE_TOOL_OK") {
+	if !strings.Contains(string(raw), "ORB_MITOSIS_TOOL_OK") {
 		t.Fatalf("fork lost native context: %s", raw)
 	}
-	t.Logf("Pair, Bridge routing, native Write, resume and fork passed; %d explicit Write approvals", approvals)
+	t.Logf("Pair, Mitosis routing, native Write, resume and fork passed; %d explicit Write approvals", approvals)
 	started := make(chan struct{}, 1)
 	stop := host.Session().Subscribe(func(event any) {
 		if tool, ok := event.(engine.ToolExecutionStartEvent); ok && tool.ToolName == "Bash" {
@@ -1018,7 +1018,7 @@ func TestSDKLiveBridgeToolsAndFork(t *testing.T) {
 	if !ok || last.StopReason != ai.StopReasonAborted {
 		t.Fatalf("cancel did not settle aborted: %#v", last)
 	}
-	t.Logf("Native Bridge cancellation settled in %s", time.Since(began).Round(time.Millisecond))
+	t.Logf("Native Mitosis cancellation settled in %s", time.Since(began).Round(time.Millisecond))
 }
 
 func TestSDKIndependentInstancesCancelSeparately(t *testing.T) {
@@ -1125,7 +1125,7 @@ func TestSDKQuestionsPreserveCustomAndMultipleAnswers(t *testing.T) {
 	if err := s.ReplyInput(p.ID, `{"answers":[]}`); err == nil {
 		t.Fatal("incomplete answer consumed the pending question")
 	}
-	rawAnswer, _ := json.Marshal(questions.Result{Answers: []questions.Answer{{ID: "1", Selected: []string{}, Custom: "Custom diagram"}, {ID: "2", Selected: []string{"Bridge"}}}})
+	rawAnswer, _ := json.Marshal(questions.Result{Answers: []questions.Answer{{ID: "1", Selected: []string{}, Custom: "Custom diagram"}, {ID: "2", Selected: []string{"Mitosis"}}}})
 	if err := s.ReplyInput(p.ID, string(rawAnswer)); err != nil {
 		t.Fatal(err)
 	}
@@ -1133,7 +1133,7 @@ func TestSDKQuestionsPreserveCustomAndMultipleAnswers(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(s.State().Messages)
-	if !strings.Contains(string(raw), `\"What should be diagrammed?\":\"Custom diagram\"`) || !strings.Contains(string(raw), `\"Which details?\":\"Bridge\"`) {
+	if !strings.Contains(string(raw), `\"What should be diagrammed?\":\"Custom diagram\"`) || !strings.Contains(string(raw), `\"Which details?\":\"Mitosis\"`) {
 		t.Fatalf("native answers lost: %s", raw)
 	}
 	definition := s.GetToolDefinition("AskUserQuestion")
@@ -1315,12 +1315,12 @@ func TestSDKSubscriptionLimits(t *testing.T) {
 		t.Fatal(got)
 	}
 	id := protocol.NewID()
-	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }, Status: func(s *agent.AgentSession) string { return LimitsStatus(s.Manager(), now) }, Usage: func(s *agent.AgentSession) *usage.Snapshot { return Limits(s.Manager(), now) }})
+	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &document.Memory{}, Authorize: func(mitosis.Request) bool { return true }, Status: func(s *agent.AgentSession) string { return LimitsStatus(s.Manager(), now) }, Usage: func(s *agent.AgentSession) *usage.Snapshot { return Limits(s.Manager(), now) }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = attachment.Close() }()
-	data, err := attachment.Invoke(t.Context(), "instances.describe", bridge.JSON(map[string]any{"params": map[string]string{"instance_id": id}}))
+	data, err := attachment.Invoke(t.Context(), "instances.describe", mitosis.JSON(map[string]any{"params": map[string]string{"instance_id": id}}))
 	if err != nil || !strings.Contains(string(data), "Claude 7d 40%") || !strings.Contains(string(data), `"windows":[{"name":"5h","remaining":75,"resets_at":`) || !strings.Contains(string(data), `{"name":"7d","remaining":40`) {
 		t.Fatalf("remote quota missing: %s %v", data, err)
 	}
@@ -1454,10 +1454,10 @@ func TestNativeContextModelAndCompactionInvalidation(t *testing.T) {
 	}
 }
 
-func TestSDKElicitationUsesBridgeQuestionsAndValidation(t *testing.T) {
+func TestSDKElicitationUsesMitosisQuestionsAndValidation(t *testing.T) {
 	host, _ := fixture(t)
 	id := protocol.NewID()
-	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &document.Memory{}, Authorize: func(bridge.Request) bool { return true }})
+	attachment, err := connectagent.Attach(t.Context(), host, connectagent.Options{InstanceID: id, Store: &document.Memory{}, Authorize: func(mitosis.Request) bool { return true }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1470,12 +1470,12 @@ func TestSDKElicitationUsesBridgeQuestionsAndValidation(t *testing.T) {
 		if input.Presentation == nil || input.Presentation.Kind != questions.Kind {
 			t.Fatal("MCP form did not use shared questions")
 		}
-		snapshot, err := attachment.Invoke(t.Context(), "instances.describe", bridge.JSON(map[string]any{"params": map[string]string{"instance_id": id}}))
+		snapshot, err := attachment.Invoke(t.Context(), "instances.describe", mitosis.JSON(map[string]any{"params": map[string]string{"instance_id": id}}))
 		if err != nil || !strings.Contains(string(snapshot), "fixture MCP") {
 			t.Fatalf("missing remote form: %s %v", snapshot, err)
 		}
 		value, _ := json.Marshal(questions.Result{Answers: []questions.Answer{{ID: "field", Selected: []string{}, Custom: answer}}})
-		if err := control.Execution(control.Target(), "input.reply", string(bridge.JSON(map[string]string{"id": input.ID, "value": string(value)}))); err != nil {
+		if err := control.Execution(control.Target(), "input.reply", string(mitosis.JSON(map[string]string{"id": input.ID, "value": string(value)}))); err != nil {
 			t.Fatal(err)
 		}
 		if answer == "9" {

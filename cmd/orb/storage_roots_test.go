@@ -16,7 +16,7 @@ func TestNativeRootPrefixes(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	for _, key := range []string{"ORB_AGENT_DIR", "ORB_STATE_HOME", "ORB_BRIDGE_HOME"} {
+	for _, key := range []string{"ORB_AGENT_DIR", "ORB_STATE_HOME", "ORB_MITOSIS_HOME"} {
 		t.Setenv(key, "")
 	}
 	pi := filepath.Join(home, ".pi", "agent")
@@ -49,7 +49,7 @@ func TestHerdrRootsPreserveDefaultDatabase(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	for _, key := range []string{"ORB_AGENT_DIR", "ORB_STATE_HOME", "ORB_BRIDGE_HOME"} {
+	for _, key := range []string{"ORB_AGENT_DIR", "ORB_STATE_HOME", "ORB_MITOSIS_HOME"} {
 		t.Setenv(key, "")
 	}
 	agentDir, err := config.GetAgentDir()
@@ -81,7 +81,7 @@ func TestNativeIDSurvivesAgentDirectorySeparation(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	for _, key := range []string{"ORB_AGENT_DIR", "ORB_STATE_HOME", "ORB_BRIDGE_HOME"} {
+	for _, key := range []string{"ORB_AGENT_DIR", "ORB_STATE_HOME", "ORB_MITOSIS_HOME"} {
 		t.Setenv(key, "")
 	}
 	oldDir := filepath.Join(home, ".pi", "agent")
@@ -123,7 +123,7 @@ func TestFileRestorePrefixesAvoidDefaultMigratedRoot(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	for _, key := range []string{"ORB_AGENT_DIR", "ORB_STATE_HOME", "ORB_BRIDGE_HOME"} {
+	for _, key := range []string{"ORB_AGENT_DIR", "ORB_STATE_HOME", "ORB_MITOSIS_HOME"} {
 		t.Setenv(key, "")
 	}
 	defaultDir, err := config.GetAgentDir()
@@ -156,7 +156,7 @@ func TestFileRestorePrefixesAvoidDefaultMigratedRoot(t *testing.T) {
 }
 
 func TestNativeRootValidation(t *testing.T) {
-	for _, args := range [][]string{{"--agent-dir"}, {"--state-home", ""}, {"--bridge-home", "--version"}} {
+	for _, args := range [][]string{{"--agent-dir"}, {"--state-home", ""}, {"--mitosis-home", "--version"}} {
 		if _, _, err := nativeRootOptions(args); err == nil {
 			t.Fatalf("accepted %v", args)
 		}

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai/providers/faux"
-	"github.com/OrdalieTech/orb/bridge"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/OrdalieTech/orb/platforms/websocket"
 	"github.com/OrdalieTech/orb/platforms/worker"
 )
@@ -52,8 +52,8 @@ func fakeDurable() (storage, left, right js.Value) {
 	return fakes.Index(0), fakes.Index(1), fakes.Index(2)
 }
 
-// TestPeerOverDurableObjectPorts runs Bridge's pinned TLS over the Worker
-// WebSocket net.Conn, with the identity kept by the bridge.Store adapter in
+// TestPeerOverDurableObjectPorts runs Mitosis's pinned TLS over the Worker
+// WebSocket net.Conn, with the identity kept by the mitosis.Store adapter in
 // fake Durable Object storage, across an object restart.
 func TestPeerOverDurableObjectPorts(t *testing.T) {
 	ctx := t.Context()
@@ -77,7 +77,7 @@ func TestPeerOverDurableObjectPorts(t *testing.T) {
 	if err != nil || self.PeerID() != peerID {
 		t.Fatalf("restarted peer = %v, %v; want %s", self, err, peerID)
 	}
-	laptop, err := bridge.Open(&document.Memory{}, true)
+	laptop, err := mitosis.Open(&document.Memory{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestPeerOverDurableObjectPorts(t *testing.T) {
 	}
 	defer func() { _ = channel.Close() }()
 	var catalog struct {
-		Items []bridge.Instance `json:"items"`
+		Items []mitosis.Instance `json:"items"`
 	}
 	if err = channel.Call(ctx, "instances.list", struct{}{}, &catalog); err != nil || len(catalog.Items) != 1 || catalog.Items[0].ID != self.InstanceID() || !catalog.Items[0].Available {
 		raw, _ := json.Marshal(catalog)

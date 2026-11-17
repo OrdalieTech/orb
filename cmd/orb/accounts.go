@@ -154,7 +154,7 @@ func (b accountBook) usage(ctx context.Context, provider, id string) (usage.Snap
 }
 
 // hostAccounts gives plugins the interactive host's accounts once it exists; elsewhere (print,
-// RPC, Bridge-launched Orbs) there is no one to ask which account to switch to.
+// RPC, Mitosis-launched Orbs) there is no one to ask which account to switch to.
 type hostAccounts struct {
 	host atomic.Pointer[interactiveSessionHost]
 }

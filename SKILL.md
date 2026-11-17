@@ -1,6 +1,6 @@
 ---
 name: orb
-description: "Understand, drive and configure Orb, the pure-Go agent runtime behind the `orb` CLI. Use when the user mentions Orb or asks you to run Orb headlessly, script it, or change its settings, models, logins, plugins, MCP servers, skills, extensions, sessions, chat platforms, team agents or Bridge peers. Do not use merely because you are running inside Orb, and not for pi itself."
+description: "Understand, drive and configure Orb, the pure-Go agent runtime behind the `orb` CLI. Use when the user mentions Orb or asks you to run Orb headlessly, script it, or change its settings, models, logins, plugins, MCP servers, skills, extensions, sessions, chat platforms, team agents or Mitosis peers. Do not use merely because you are running inside Orb, and not for pi itself."
 ---
 
 # Orb
@@ -20,7 +20,7 @@ orb --help
 Then print the relevant command's help:
 
 ```bash
-orb bridge --help
+orb mitosis --help
 orb chat --help
 orb plugins --help
 orb mcp --help
@@ -35,11 +35,11 @@ orb list --help
 orb config --help
 ```
 
-These print and change nothing. Bare `orb` and `orb config` open a TUI, and bare `orb update` replaces the running binary. `orb chat <platform>`, `orb app` (which also starts Bridge) and the RPC and ACP modes run until stopped. Do not probe a nested command by omitting its arguments: `orb storage migrate`, `orb bridge start` and `orb bridge pair` act at once.
+These print and change nothing. Bare `orb` and `orb config` open a TUI, and bare `orb update` replaces the running binary. `orb chat <platform>`, `orb app` (which also starts Mitosis) and the RPC and ACP modes run until stopped. Do not probe a nested command by omitting its arguments: `orb storage migrate`, `orb mitosis start` and bare `orb mitosis` act at once.
 
 ## Core and hosts
 
-The core is the same on every target: the model layer, the agent loop and its tools, sessions, settings, extensions and Bridge. A host supplies its ports: files, processes, a document store, network and environment. Capabilities follow the ports, so a host without processes, such as a browser or Cloudflare worker, has no bash, process MCP servers or JavaScript extensions; those tools are absent rather than failing.
+The core is the same on every target: the model layer, the agent loop and its tools, sessions, settings, extensions and Mitosis. A host supplies its ports: files, processes, a document store, network and environment. Capabilities follow the ports, so a host without processes, such as a browser or Cloudflare worker, has no bash, process MCP servers or JavaScript extensions; those tools are absent rather than failing.
 
 ## State and configuration
 
@@ -62,16 +62,16 @@ The core is the same on every target: the model layer, the agent loop and its to
 - `orb chat <platform>...` runs one agent on chat platforms as one process with one memory. Give its conversations tools only when the agent runs isolated, one container per agent.
 - `orb chat setup <platform>` onboards the agent on a platform that has a setup, such as Buzz: it makes the agent's own identity there and saves the settings `orb chat` reads. You can run it for yourself when asked to join one; the step it reports as your owner's (approving your identity) is theirs alone, so pass it on to them rather than asking for their key.
 
-## Bridge
+## Mitosis
 
 Every Orb has a peer identity and registers its conversations as instances. Two Orbs become peers through an invitation each owner approves, or over SSH. Grants are explicit and of two kinds that never merge. Controllers are people: they list, watch and drive another Orb's conversations, which keep running there with that Orb's tools and credentials, and full controller access also launches Orb in a folder on that machine (`host.launch`). Agents are Orbs acting on their own: an agent reaches another Orb only under its own grant, and with agent access on, its owner's other conversations with the owner's reach.
 
 ## Deployments
 
-The same core runs as this CLI on desktops, servers and containers, embedded in Go programs, and in browser and Cloudflare workers. Each deployment runs its own models, tools and state and reaches the others as a Bridge peer; `orb bridge --help` shows how to connect them.
+The same core runs as this CLI on desktops, servers and containers, embedded in Go programs, and in browser and Cloudflare workers. Each deployment runs its own models, tools and state and reaches the others as a Mitosis peer; `orb mitosis --help` shows how to connect them.
 
 ## Rules
 
 - Read state from Orb's output, never from this file or memory: `orb plugins list` and `orb mcp list` show what is configured.
-- Sign in or out, install or remove packages, update Orb, and pair, grant or start Bridge only when the user asks; Bridge changes decide who can reach this machine.
+- Sign in or out, install or remove packages, update Orb, and pair, grant or start Mitosis only when the user asks; Mitosis changes decide who can reach this machine.
 - Never edit `orb.db` by hand.

@@ -78,13 +78,13 @@ Only kernel paths carry port obligation; other upstream changes are cherry-picke
 
 `ai/` unified LLM layer · `engine/` loop, Agent, harness · `tui/` renderer and components ·
 `agent/` tools, session, config, extensions, modes, assembly · `plugins/` capability modules ·
-`bridge/` peer protocol · `host/` and `platforms/` ports and hosts · `chat/` gateway ·
+`mitosis/` peer protocol · `host/` and `platforms/` ports and hosts · `chat/` gateway ·
 `cmd/orb` CLI · `internal/` helpers · `conformance/` extract (TS, dev-only), fixtures, runner.
 Full tree: ARCHITECTURE §1.
 
 ## Open work
 
-- Bridge fully in the core (P4, P11): a host-supplied transport port and every session registered
+- Mitosis fully in the core (P4, P11): a host-supplied transport port and every session registered
   as an instance by default. Per-target gaps are in `docs/deployments.md`.
 - Upgrade Ordalie-back from Orb v0.7.0: filter system messages out of client SSE, and move
   `agentengine` from `shouldStopAfterTurn` to `finishTurn` and from `SetSystemPrompt` to a system

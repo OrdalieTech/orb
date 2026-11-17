@@ -14,7 +14,7 @@ import (
 func TestQuestionPanelSelectionCustomBackAndDismiss(t *testing.T) {
 	request := questions.Request{Questions: []questions.Question{
 		{ID: "design", Question: "Choose the design", Options: []questions.Option{{Label: "custom", Description: "A valid option named custom"}, {Label: "Second"}}},
-		{ID: "details", Question: "Which details?", MultiSelect: true, Options: []questions.Option{{Label: "Sessions", Description: "Persistent conversations"}, {Label: "Bridge", Preview: "A → B"}}},
+		{ID: "details", Question: "Which details?", MultiSelect: true, Options: []questions.Option{{Label: "Sessions", Description: "Persistent conversations"}, {Label: "Mitosis", Preview: "A → B"}}},
 	}}
 	var result questions.Result
 	panel := New(request, extensions.NewNoopUI().Theme(), func() int { return 32 }, func() {}, func(r questions.Result) { result = r })
@@ -35,7 +35,7 @@ func TestQuestionPanelSelectionCustomBackAndDismiss(t *testing.T) {
 	key("\r") // choose option literally named custom
 	key(" ")  // Sessions
 	key("\x1b[B")
-	key(" ") // Bridge
+	key(" ") // Mitosis
 	key("\x1b[A")
 	key(" ") // deselect Sessions
 	key("3") // custom answer
@@ -47,7 +47,7 @@ func TestQuestionPanelSelectionCustomBackAndDismiss(t *testing.T) {
 	if err := request.ValidateReply(string(raw)); err != nil {
 		t.Fatal(err, string(raw))
 	}
-	if result.Answers[0].Selected[0] != "custom" || strings.Join(result.Answers[1].Selected, ",") != "Bridge" || result.Answers[1].Custom != "Extra detail" {
+	if result.Answers[0].Selected[0] != "custom" || strings.Join(result.Answers[1].Selected, ",") != "Mitosis" || result.Answers[1].Custom != "Extra detail" {
 		t.Fatalf("%+v", result)
 	}
 	panel = New(request, extensions.NewNoopUI().Theme(), func() int { return 32 }, func() {}, func(r questions.Result) { result = r })

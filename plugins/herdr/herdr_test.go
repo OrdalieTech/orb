@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -120,6 +121,13 @@ func fakeHerdr(t *testing.T, root, logPath string) string {
 		}
 		binary = executable
 		t.Setenv(fakeHerdrEnv, "1")
+		// Windows scans an executable on its first runs, which can outlast the reporter's
+		// 500 ms budget and kill the call before it logs; one run outside that budget first.
+		warm := exec.Command(executable)
+		warm.Env = append(os.Environ(), "HERDR_TEST_LOG="+filepath.Join(root, "warm"))
+		if err := warm.Run(); err != nil {
+			t.Fatal(err)
+		}
 	} else if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_TEST_LOG\"\nif [ -n \"$HERDR_TEST_LEGACY\" ]; then for arg in \"$@\"; do if [ \"$arg\" = -- ]; then echo \"unexpected argument --\" >&2; exit 2; fi; done; fi\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}

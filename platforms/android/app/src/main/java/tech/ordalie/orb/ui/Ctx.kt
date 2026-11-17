@@ -38,7 +38,7 @@ class Ctx(
         when (r.obj?.optString("nav")) {
             "model" -> chooseModel(t)
             "home" -> nav.home()
-            "pair" -> nav.go(Screen.Bridge)
+            "pair" -> nav.go(Screen.Mitosis)
             "providers" -> nav.go(Screen.Providers(t?.peer ?: v.state.self))
             "plugins" -> nav.go(Screen.Plugins(t?.peer ?: v.state.self))
         }

@@ -615,15 +615,15 @@ func (data *clickableFooterData) StatusAction(key string) func() {
 	if key == "orb:thinking" {
 		return func() { data.thinkingClicked++ }
 	}
-	if key == "quota" || key == "bridge" {
+	if key == "quota" || key == "mitosis" {
 		return func() { data.clicked++ }
 	}
 	return nil
 }
 
 func (data *clickableFooterData) StatusLabel(key string) string {
-	if key == "bridge" {
-		return "Bridge"
+	if key == "mitosis" {
+		return "Mitosis"
 	}
 	return ""
 }
@@ -783,7 +783,7 @@ func TestPaletteOpensManagementPagesWithoutChangingDraft(t *testing.T) {
 	opened := make(chan string, 3)
 	registry := extensions.NewRegistry(cwd)
 	err = registry.Register("management", func(api extensions.API) error {
-		for _, name := range []string{"plugins", "bridge", "external-session"} {
+		for _, name := range []string{"plugins", "mitosis", "external-session"} {
 			api.RegisterCommand(name, extensions.Command{SettingsLabel: name, Handler: func(context.Context, string, extensions.CommandContext) error { opened <- name; return nil }})
 		}
 		return nil
@@ -799,7 +799,7 @@ func TestPaletteOpensManagementPagesWithoutChangingDraft(t *testing.T) {
 	mode.session = runtime
 	mode.setupAutocomplete()
 	mode.editor.SetText("keep my draft")
-	for _, name := range []string{"plugins", "bridge", "external-session"} {
+	for _, name := range []string{"plugins", "mitosis", "external-session"} {
 		found := false
 		for _, row := range mode.commandPaletteRows() {
 			if row.Value == name {
@@ -827,12 +827,12 @@ func TestPaletteOpensManagementPagesWithoutChangingDraft(t *testing.T) {
 	}
 	found := false
 	for _, item := range mode.settingItems() {
-		if item.ID == "bridge" {
+		if item.ID == "mitosis" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("Bridge is missing from Settings")
+		t.Fatal("Mitosis is missing from Settings")
 	}
 }
 

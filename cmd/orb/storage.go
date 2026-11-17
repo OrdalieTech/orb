@@ -124,8 +124,8 @@ func nativeRootOptions(argv []string) ([]string, bool, error) {
 			name = config.EnvAgentDir
 		case "--state-home":
 			name = "ORB_STATE_HOME"
-		case "--bridge-home":
-			name = "ORB_BRIDGE_HOME"
+		case "--mitosis-home":
+			name = "ORB_MITOSIS_HOME"
 		default:
 			goto apply
 		}
@@ -191,7 +191,7 @@ func runNativeCLI(ctx context.Context, argv []string, streams cliStreams) int {
 		sessionDirs = append(sessionDirs, argv[2:]...)
 	}
 	state, err := openNativeState(ctx, agentDir, migrate, sessionDirs...)
-	if errors.Is(err, native.ErrLegacyMigration) && len(argv) > 1 && argv[0] == "bridge" && (argv[1] == "stop" || argv[1] == "status") {
+	if errors.Is(err, native.ErrLegacyMigration) && len(argv) > 1 && argv[0] == "mitosis" && (argv[1] == "stop" || argv[1] == "status") {
 		return runCLI(ctx, argv, streams)
 	}
 	if errors.Is(err, native.ErrLegacyMigration) && !migrate {
@@ -280,7 +280,7 @@ func runStorageCommand(ctx context.Context, state *native.State, argv []string, 
 			count, err = state.DB.RestoreSessions(ctx, path, "personal")
 		}
 		if err == nil {
-			_, _ = fmt.Fprintf(streams.Stdout, "Recovered %d conversations. Current credentials, Bridge authority and delivery state are unchanged.\n", count)
+			_, _ = fmt.Fprintf(streams.Stdout, "Recovered %d conversations. Current credentials, Mitosis authority and delivery state are unchanged.\n", count)
 		}
 		return err
 	case len(argv) == 1 && argv[0] == "sessions":

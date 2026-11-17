@@ -925,7 +925,7 @@ func (runtime *SessionRuntime) reportExtensionError(extensionError extensions.Ex
 	runtime.notifyExtensionErrorListeners(extensionError)
 }
 
-// setSlashResolver publishes resolver, which is never written afterwards: RPC, bridge and
+// setSlashResolver publishes resolver, which is never written afterwards: RPC, mitosis and
 // follower goroutines load it while extensions bind or reload.
 func (runtime *SessionRuntime) setSlashResolver(resolver *SlashResolver) {
 	resolver.OnError = func(err error) {

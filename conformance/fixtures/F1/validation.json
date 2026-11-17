@@ -7321,8 +7321,8 @@
       "error": "Validation failed for tool \"send_file\":\n  - path: missing\n\nReceived arguments:\n{}"
     },
     {
-      "name": "bridge-call-valid",
-      "tool": "bridge_call",
+      "name": "mitosis-call-valid",
+      "tool": "mitosis_call",
       "schema": {
         "type": "object",
         "properties": {
@@ -7407,8 +7407,8 @@
       }
     },
     {
-      "name": "bridge-call-errors",
-      "tool": "bridge_call",
+      "name": "mitosis-call-errors",
+      "tool": "mitosis_call",
       "schema": {
         "type": "object",
         "properties": {
@@ -7482,7 +7482,7 @@
         "additionalProperties": false
       },
       "arguments": "{\"peer_id\":\"p\",\"call\":{\"instance_id\":\"i\",\"service\":\"orb.instance/2\",\"method\":\"Prompt\",\"expected\":{\"registration_generation\":\"1\"},\"extra\":1}}",
-      "error": "Validation failed for tool \"bridge_call\":\n  - call.args: missing\n  - call.service: expected \"orb.instance/1\"\n  - call.method: expected one of [\"inspect\",\"prompt\",\"steer\",\"follow_up\",\"cancel\",\"session.list\",\"session.new\",\"session.switch\",\"session.fork\",\"session.name\"]\n  - call.expected.session_revision: missing\n  - call.extra: unknown field\n\nReceived arguments:\n{\n  \"peer_id\": \"p\",\n  \"call\": {\n    \"instance_id\": \"i\",\n    \"service\": \"orb.instance/2\",\n    \"method\": \"Prompt\",\n    \"expected\": {\n      \"registration_generation\": \"1\"\n    },\n    \"extra\": 1\n  }\n}"
+      "error": "Validation failed for tool \"mitosis_call\":\n  - call.args: missing\n  - call.service: expected \"orb.instance/1\"\n  - call.method: expected one of [\"inspect\",\"prompt\",\"steer\",\"follow_up\",\"cancel\",\"session.list\",\"session.new\",\"session.switch\",\"session.fork\",\"session.name\"]\n  - call.expected.session_revision: missing\n  - call.extra: unknown field\n\nReceived arguments:\n{\n  \"peer_id\": \"p\",\n  \"call\": {\n    \"instance_id\": \"i\",\n    \"service\": \"orb.instance/2\",\n    \"method\": \"Prompt\",\n    \"expected\": {\n      \"registration_generation\": \"1\"\n    },\n    \"extra\": 1\n  }\n}"
     },
     {
       "name": "tool-search-limit-string",

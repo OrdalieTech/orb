@@ -63,7 +63,7 @@ cat >"$app/Info.plist" <<EOF
 	<key>UILaunchScreen</key><dict/>
 	<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
 	<key>UIAppFonts</key><array><string>ubuntu_sans_mono.ttf</string></array>
-	<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>tech.ordalie.orb.pair</string><key>CFBundleURLSchemes</key><array><string>orb-bridge</string></array></dict></array>
+	<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>tech.ordalie.orb.pair</string><key>CFBundleURLSchemes</key><array><string>orb-mitosis</string></array></dict></array>
 	<key>NSCameraUsageDescription</key><string>Orb reads the pairing code another of your devices shows.</string>
 	<key>NSLocalNetworkUsageDescription</key><string>Orb reaches your paired devices directly when they are on this network.</string>
 	<key>ITSAppUsesNonExemptEncryption</key><true/>

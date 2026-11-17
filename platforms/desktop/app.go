@@ -15,7 +15,7 @@ import (
 
 // screen is a screen above Home and its conversations; the zero screen is them.
 type screen struct {
-	kind      string // general · bridge · invite · join · providers · vendor · plugins
+	kind      string // general · mitosis · invite · join · providers · vendor · plugins
 	peer, arg string // the machine it shows; a provider, a folder or a code
 }
 
@@ -135,7 +135,7 @@ func (a *app) back() {
 // next is the model sheet of a machine's default: what a new conversation there starts on.
 const next = "next"
 
-// starts is what a new conversation on this computer starts on, read once Bridge is up and again
+// starts is what a new conversation on this computer starts on, read once Mitosis is up and again
 // after another screen or conversation showed (Providers signs in; a conversation's model change
 // becomes the default).
 func (a *app) starts() *Tab {
@@ -427,7 +427,7 @@ func (a *app) send(t *Tab, text string) {
 		case "home":
 			a.show("")
 		case "pair":
-			a.push(screen{kind: "bridge"})
+			a.push(screen{kind: "mitosis"})
 		case "providers", "plugins":
 			a.push(screen{kind: r.Nav, peer: peer})
 		}
@@ -855,8 +855,8 @@ func (a *app) screen(c *ui.Context, top screen) {
 	switch top.kind {
 	case "general":
 		a.generalScreen(c)
-	case "bridge":
-		a.bridgeScreen(c)
+	case "mitosis":
+		a.mitosisScreen(c)
 	case "invite":
 		a.inviteScreen(c)
 	case "join":

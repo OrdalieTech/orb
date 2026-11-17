@@ -5341,7 +5341,7 @@ func (mode *InteractiveMode) commandPaletteRows() []tui.GridRow {
 		"fork": "Fork from message", "clone": "Duplicate session", "compact": "Compact context", "session": "Session details",
 		"export": "Export session", "import": "Import session", "login": "Providers",
 		"trust": "Project trust", "reload": "Reload resources", "scoped-models": "Favorite models", "hotkeys": "Keyboard shortcuts",
-		"changelog": "Changelog", "quit": "Quit Orb", "plugins": "Plugins", "bridge": "Bridge",
+		"changelog": "Changelog", "quit": "Quit Orb", "plugins": "Plugins", "mitosis": "Mitosis",
 	}
 	if mode.session != nil {
 		if runner := mode.session.ExtensionRunner(); runner != nil {
