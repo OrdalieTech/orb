@@ -67,7 +67,7 @@ func runMitosisPair(ctx context.Context, profile string, auto bool, streams cliS
 		return reportCLIError(streams.Stderr, err)
 	}
 	if auto {
-		_, _ = fmt.Fprintf(streams.Stdout, "\nClaimed by %s\n", claimed.Claimant)
+		_, _ = fmt.Fprintf(streams.Stdout, "\n%s claimed the code and joins unchecked (--yes); orb mitosis block %s cuts it off.\n", claimed.Claimant, claimed.Claimant)
 	} else if _, _ = fmt.Fprintf(streams.Stdout, "\n%s\nis the fingerprint the other machine shows? It gets this Orb's conversations, logins and memory. [y/N] ", claimed.Claimant); !yes(bufio.NewReader(io.LimitReader(streams.Stdin, 256))) {
 		_, _ = fmt.Fprintln(streams.Stdout, "Not paired.")
 		return 1
@@ -101,7 +101,7 @@ func reportInSync(ctx context.Context, client *protocol.Conn, streams cliStreams
 	for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(time.Second) {
 		if client.Call(ctx, "sync", struct{}{}, &group) == nil && group.InSync && slices.Contains(group.Members, peer) && group.Names[peer] != "" {
 			name := func(p string) string { return cmp.Or(group.Names[p], p) }
-			_, _ = fmt.Fprintf(streams.Stdout, "%s and %s in sync, %d devices.\n", name(group.Self), name(peer), len(group.Members))
+			_, _ = fmt.Fprintf(streams.Stdout, "%s and %s (%s) in sync, %d devices.\n", name(group.Self), name(peer), peer, len(group.Members))
 			return 0
 		}
 	}

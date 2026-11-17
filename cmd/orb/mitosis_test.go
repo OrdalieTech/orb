@@ -705,7 +705,7 @@ func TestMitosisPairApprovesOnlyAfterAnExplicitYes(t *testing.T) {
 		if strings.Contains(out.String(), "▀") || !strings.Contains(out.String(), mitosis.InvitationCode(inv)) || !strings.Contains(out.String(), "orb:ed25519:phone") {
 			t.Fatalf("output has a QR off a terminal, or lacks the code or claimant: %s %s", out.String(), errs.String())
 		}
-		if yes := answer == "y\n"; (code == 0) != yes || (approved != "") != yes || yes && (!strings.Contains(approved, `"claimant":"orb:ed25519:phone"`) || !strings.Contains(out.String(), "laptop and phone in sync, 2 devices.")) {
+		if yes := answer == "y\n"; (code == 0) != yes || (approved != "") != yes || yes && (!strings.Contains(approved, `"claimant":"orb:ed25519:phone"`) || !strings.Contains(out.String(), "laptop and phone (orb:ed25519:phone) in sync, 2 devices.")) {
 			t.Fatalf("answer %q: code %d approved %q output %s", answer, code, approved, out.String())
 		}
 	}
@@ -756,7 +756,7 @@ func TestMitosisJoinTrustsAndFollowsTheInviterOnceItApproves(t *testing.T) {
 	}
 	// The inviter gets the conversations back, never the machine: that is the owner's own call.
 	// This Orb, in no group yet, follows the inviter's.
-	if polls != 2 || !strings.Contains(granted, inv.PeerID) || strings.Contains(granted, "host.launch") || !strings.Contains(joined, inv.PeerID) || !strings.Contains(out.String(), "box and laptop in sync, 2 devices.") {
+	if polls != 2 || !strings.Contains(granted, inv.PeerID) || strings.Contains(granted, "host.launch") || !strings.Contains(joined, inv.PeerID) || !strings.Contains(out.String(), "box and laptop ("+inv.PeerID+") in sync, 2 devices.") {
 		t.Fatalf("polls %d granted %q joined %q output %s", polls, granted, joined, out.String())
 	}
 	// A paired machine shares its Orbs, terminal ones included, unless its owner said otherwise.
