@@ -5,6 +5,7 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- The browser page at netapy.com/orb takes the desktop and Android apps' look (their paper and ink in light and dark, Ubuntu Sans Mono, their prompt box) and keeps only what a tab needs: paste the code `orb mitosis` shows, confirm the fingerprint, then talk. The bring-your-own-key agent, the remote-control panel and the debug panel are gone from it.
 - Mitosis no longer leaves a device relaying a WireGuard handshake every 5 s, for about 20 min, to each peer that dialled it and hung up: the dialler now acknowledges the close before its engine stops. At 64 devices, a sync group's owner relayed ~270 KiB/min this way after the members dialled it, and now relays nothing.
 
 ## [0.23.1] - 2026-11-17

@@ -1,306 +1,115 @@
-import { RemoteMitosis, randomID } from "./mitosis.js";
 import { indexedStorage, openPeer } from "./peer.js";
 const $ = id => document.getElementById(id);
-let worker, loaded = false, running = false, connected = false, pending = null;
-let state = { messages: [], files: {} };
-let events = [], count = 0;
-const remote = new RemoteMitosis(message => worker.postMessage(message));
-let selected = "", remoteReady = false, remoteBusy = false, receipt = null, selection = 0;
-let localDraft = "";
-let renderedMessages = null, renderedCount = 0;
-// tab: this tab as one of the user's devices (peer.js); its agent then runs there, not in worker.js.
-let tab = null, streamed = "";
+// tab: this tab's own Orb (peer.wasm), one of the user's devices; word: what it does now; where: its link and model.
+let tab = null, me = "", running = false, messages = [], streamed = "", word = "", where = "";
 
 function showError(message) {
   $("error").textContent = message || "";
   $("error").hidden = !message;
-  if (message) $("status").textContent = "Needs attention";
+}
+// show picks the one screen: the invitation, its approval, or the conversation.
+function show(screen) {
+  $("pair").hidden = screen === "chat";
+  $("chat").hidden = screen !== "chat";
+  $("invite").hidden = screen !== "invite";
+  $("approve").hidden = screen !== "approve";
 }
 function controls() {
-  $("mitosis-connect").disabled = !loaded || remoteBusy;
-  $("mitosis-join").disabled = remoteBusy || !!localStorage.getItem("orb.tab.owner");
-  $("mitosis-disconnect").disabled = !remote.connection;
-  $("location").disabled = running || remoteBusy;
-  $("mitosis-agent").disabled = running;
-  $("reset").disabled = selected ? !remoteReady || remoteBusy : false;
-  $("send").disabled = !loaded || running || (selected && (!remoteReady || remoteBusy || ((!!receipt || !!remote.view?.info.target.execution_id) && !remote.view?.info.input)));
-  $("prompt").disabled = !loaded;
-  $("configuration").disabled = !loaded || running;
-  $("cancel").hidden = selected ? !remoteReady || !remote.view?.info.target.execution_id : !running;
-  $("export").disabled = running || !(selected ? remote.view?.messages.length : state.messages.length);
+  $("status").textContent = word || where;
+  $("send").textContent = running ? "■" : "↑";
+  $("send").classList.toggle("stop", running);
+  $("send").disabled = !running && !$("prompt").value.trim();
+  $("reset").disabled = running;
 }
 function text(content) {
   return typeof content === "string" ? content : (content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
 }
-function renderMessages(messages, follow = true) {
-  if (messages === renderedMessages && messages.length === renderedCount) return;
-  renderedMessages = messages; renderedCount = messages.length;
-  const transcript = $("transcript"), scroll = transcript.scrollTop;
-  const following = transcript.scrollHeight - scroll - transcript.clientHeight < 80;
-  const rows = messages.filter(m => ["user", "assistant"].includes(m.role) && text(m.content)).map(message => {
-    const row = document.createElement("article");
-    row.className = message.role;
-    const label = document.createElement("strong");
-    label.textContent = message.role === "user" ? "You" : "Orb";
-    const body = document.createElement("pre");
-    body.textContent = text(message.content);
-    row.append(label, body);
-    return row;
-  });
-  $("messages").replaceChildren(...rows);
-  if (!rows.length) { const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = "What would you like to try?"; $("messages").append(empty); }
-  transcript.scrollTop = follow || following ? transcript.scrollHeight : scroll;
+function node(tag, ...children) {
+  const element = document.createElement(tag);
+  element.append(...children);
+  return element;
 }
-function render(snapshot, local = true) {
-  const display = { messages: snapshot.messages || [], files: snapshot.files || {} };
-  if (local) state = display;
-  renderMessages(display.messages, local);
-  $("files").replaceChildren(...Object.entries(display.files).sort().map(([path, content]) => {
-    const row = document.createElement("details"), label = document.createElement("summary"), body = document.createElement("pre");
-    label.textContent = path;
-    body.textContent = content;
-    row.append(label, body);
+// markdown draws what the apps draw of a reply (headings, lists, code blocks, inline code, bold,
+// italic) as elements, never as HTML.
+function markdown(source) {
+  const blocks = [];
+  let list = null, paragraph = null;
+  const lines = source.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i], item = /^\s*([-*+]|\d+[.)])\s+(.*)/.exec(line), heading = /^#{1,6}\s+(.*)/.exec(line), fence = line.startsWith("```");
+    if (!item) list = null;
+    if (item || heading || fence || !line.trim()) paragraph = null;
+    if (fence) {
+      const code = [];
+      while (++i < lines.length && !lines[i].startsWith("```")) code.push(lines[i]);
+      blocks.push(node("pre", code.join("\n")));
+    } else if (item) {
+      const tag = /\d/.test(item[1]) ? "OL" : "UL";
+      if (list?.tagName !== tag) blocks.push(list = node(tag));
+      list.append(node("li", ...inline(item[2])));
+    } else if (heading) blocks.push(node("h3", ...inline(heading[1])));
+    else if (paragraph) paragraph.append("\n", ...inline(line));
+    else if (line.trim()) blocks.push(paragraph = node("p", ...inline(line)));
+  }
+  return blocks;
+}
+function inline(text) {
+  return text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*\s][^*]*\*)/).map((part, i) => i % 2 === 0 ? part
+    : part[0] === "`" ? node("code", part.slice(1, -1)) : part[1] === "*" ? node("strong", part.slice(2, -2)) : node("em", part.slice(1, -1)));
+}
+// What the person said sits at right on a soft ground; Orb just speaks, full width.
+function renderMessages(list) {
+  const transcript = $("transcript");
+  $("messages").replaceChildren(...list.filter(m => ["user", "assistant"].includes(m.role) && text(m.content)).map(message => {
+    const row = message.role === "user" ? node("p", text(message.content)) : node("div", ...markdown(text(message.content)));
+    row.className = message.role;
     return row;
   }));
-  if (!Object.keys(display.files).length) $("files").textContent = "No files yet.";
-  $("stream").hidden = true;
-}
-function clearEvents() {
-  events = []; count = 0;
-  $("count").textContent = "0 events";
-  $("events").textContent = "No events yet.";
+  transcript.scrollTop = transcript.scrollHeight;
 }
 function idle() {
-  running = false;
-  $("status").textContent = "Ready";
+  running = false; word = "";
+  $("stream").hidden = true;
   controls();
 }
-function prompt(value) {
-  pending = null;
-  $("prompt").value = "";
-  $("settings-panel").open = false;
-  renderMessages([...state.messages, { role: "user", content: value }]);
-  $("stream").hidden = true;
-  $("status").textContent = "Waiting for reply…";
-  worker.postMessage({ type: "prompt", text: value, agentCalls: $("mitosis-agent").checked });
-}
-function boot() {
-  remote.reset(); selected = ""; remoteReady = false; selection++; receipt = null;
-  $("location").value = ""; $("remote-controls").hidden = true; $("mitosis-status").textContent = "Disconnected";
-  worker?.terminate();
-  loaded = running = connected = false; pending = null;
-  $("status").textContent = "Loading…";
-  controls(); showError(""); render({}); clearEvents();
-  const current = worker = new Worker("worker.js");
-  current.onerror = event => { loaded = running = false; controls(); showError(`${event.message}. Click New chat to restart.`); };
-  current.onmessage = ({ data }) => {
-    if (worker !== current) return;
-    const message = JSON.parse(data);
-    if (message.type.startsWith("mitosis.")) {
-      remote.receive(message);
-      if (!remote.connection && message.type === "mitosis.closed") {
-        remoteReady = false; $("mitosis-status").textContent = "Disconnected"; controls();
-        if (selected) showError("Mitosis disconnected. Reconnect to continue; remote execution is unaffected.");
-      }
-      return;
-    }
-    switch (message.type) {
-      case "boot": loaded = true; idle(); break;
-      case "ready":
-        connected = true;
-        render(message); clearEvents();
-        if (pending !== null) prompt(pending);
-        else idle();
-        break;
-      case "event": onEvent(message.event); break;
-      case "settled": render(message); idle(); showError(message.error); $("prompt").focus(); break;
-      case "error":
-        if (pending !== null) { $("settings-panel").open = true; pending = null; }
-        idle(); showError(message.error); break;
-      case "fatal": loaded = running = false; controls(); showError(`${message.error}. Click New chat to restart.`); break;
-    }
-  };
-}
-// RPC frames carry message_update as deltas (agent/rpc), the worker as whole messages.
+// RPC frames carry message_update as deltas (agent/rpc).
 function onEvent(event) {
-  count++; events.push(event); if (events.length > 100) events.shift();
-  $("count").textContent = `${count} events`;
-  if ($("event-panel").open) renderEvents();
-  if (event.type === "tool_execution_start") $("status").textContent = `Using ${event.toolName}…`;
+  if (event.type === "tool_execution_start") word = `using ${event.toolName}`;
   if (event.type === "message_start") streamed = "";
   if (event.type === "message_update") {
     const transcript = $("transcript");
     const following = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 80;
     const delta = event.assistantMessageEvent;
     const reply = event.message ? text(event.message.content) : (streamed += delta?.type === "text_delta" ? delta.delta : "");
-    $("stream").textContent = reply;
+    $("stream").replaceChildren(...markdown(reply));
     $("stream").hidden = !reply;
     if (following) transcript.scrollTop = transcript.scrollHeight;
-    if (reply) $("status").textContent = "Replying…";
+    if (reply) word = "replying";
   }
+  controls();
 }
-function config() {
-  return { api: $("provider").value, model: $("model").value.trim(), baseURL: $("endpoint").value.trim(), apiKey: $("key").value.trim() };
-}
-function configure() {
-  connected = false;
-  const value = config();
-  $("model-label").textContent = value.model || "Configure a provider";
-}
-$("settings").oninput = configure;
-$("settings").onsubmit = event => event.preventDefault();
-$("provider").onchange = () => {
-  const api = $("provider").value;
-  $("endpoint").value = api === "openrouter" ? "https://openrouter.ai/api/v1" : api === "anthropic-messages" ? "https://api.anthropic.com" : "https://api.openai.com/v1";
-  $("model").value = api === "openrouter" ? "openai/gpt-5.6-luna" : "";
-  $("key").value = "";
-  $("hint").textContent = "Enter your model and API key, then send. Keys stay in this tab. The endpoint must allow browser requests (CORS). Changing settings starts a new conversation.";
-  configure();
-};
 $("prompt-form").onsubmit = event => {
   event.preventDefault();
-  if (!loaded || running) return;
+  if (!tab) return;
+  if (running) { tab.rpc("abort").catch(error => showError(error.message)); return; }
   const value = $("prompt").value;
-  if (!value.trim() || new TextEncoder().encode(value).length > 16384) { showError("Enter a message of at most 16 KiB."); return; }
-  if (selected) {
-    const input = remote.view?.info.input;
-    const args = input ? { id: input.id, execution_id: remote.view.info.target.execution_id, value } : { text: value };
-    remoteCommand(input ? "input.reply" : "prompt", args).then(ok => { if (ok) $("prompt").value = ""; });
-    return;
-  }
-  if (tab) {
-    running = true; controls(); showError(""); pending = null;
-    $("prompt").value = "";
-    renderMessages([...state.messages, { role: "user", content: value }]);
-    $("status").textContent = "Waiting for reply…";
-    tab.rpc("prompt", { message: value }).catch(error => { idle(); showError(error.message); renderMessages(state.messages); });
-    return;
-  }
-  const settings = config();
-  if (!connected) {
-    for (const [id, message] of [["model", "Enter a model ID in Model settings."], ["key", "Enter an API key in Model settings. Your terminal login isn't available in the browser."], ["endpoint", "Enter an HTTP(S) API base URL."]]) {
-      if (!$(id).value.trim() || (id === "endpoint" && !/^https?:\/\//.test(settings.baseURL))) {
-        $("settings-panel").open = true; showError(message); $(id).focus(); return;
-      }
-    }
-  }
-  running = true; controls(); showError("");
-  if (!connected) { pending = value; $("status").textContent = "Starting…"; worker.postMessage({ type: "start", config: settings }); }
-  else prompt(value);
+  if (!value.trim()) return;
+  running = true; word = "waiting"; showError("");
+  $("prompt").value = "";
+  controls();
+  renderMessages([...messages, { role: "user", content: value }]);
+  tab.rpc("prompt", { message: value }).catch(error => { idle(); showError(error.message); renderMessages(messages); });
 };
+$("prompt").oninput = controls;
 $("prompt").onkeydown = event => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     if (!running) $("prompt-form").requestSubmit();
   }
 };
-function renderEvents() { $("events").textContent = events.map(event => JSON.stringify(event)).join("\n"); }
-$("event-panel").addEventListener("toggle", renderEvents);
-$("cancel").onclick = () => { if (selected) { remoteCommand("cancel", { execution_id: remote.view?.info.target.execution_id }); return; } if (tab) tab.rpc("abort"); else worker.postMessage({ type: "cancel" }); $("status").textContent = "Stopping…"; };
-$("reset").onclick = () => selected ? remoteCommand("session.new") : tab ? tab.rpc("new_session").then(settle, error => showError(error.message)) : boot();
-$("export").onclick = () => {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(selected ? { messages: remote.view?.messages || [] } : state, null, 2)], { type: "application/json" }));
-  const link = document.createElement("a"); link.href = url; link.download = "orb-browser-debug.json"; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-};
-function browserIdentity() {
-  const saved = localStorage.getItem("orb.mitosis.identity");
-  if (saved) return JSON.parse(saved);
-  const identity = { seed: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replaceAll("=", ""), agentID: randomID() };
-  localStorage.setItem("orb.mitosis.identity", JSON.stringify(identity));
-  return identity;
-}
-async function refreshInstances() {
-  const items = await remote.instances();
-  $("location").replaceChildren(new Option("Local · this browser", ""), ...items.filter(i => i.available).map(i => new Option(i.alias || i.instance_id, i.instance_id)));
-  if (selected && !items.some(i => i.instance_id === selected && i.available)) { selectConversation(""); showError("Remote instance is no longer available"); }
-  $("location").value = selected;
-  $("remote-controls").hidden = false;
-  $("mitosis-status").textContent = "Connected";
-  $("mitosis-notice").textContent = "Connected. Choose a remote conversation, or keep working locally.";
-}
-async function refreshSessions() {
-  const instance = selected, version = selection;
-  if (!instance || !remoteReady || !remote.view.info.methods.includes("session.list")) return;
-  try {
-    const items = await remote.sessions(instance);
-    if (version !== selection) return;
-    $("remote-sessions").replaceChildren(...items.map(i => new Option(i.name || i.session_id, i.session_id)));
-    $("remote-sessions").value = remote.view.info.target.session_id;
-  } catch (error) { if (version === selection) showError(error.message); }
-}
-function selectConversation(instance) {
-  if (!selected) localDraft = $("prompt").value;
-  if (instance) { $("settings-panel").open = false; $("mitosis-panel").open = false; }
-  selected = instance; selection++; receipt = null; remoteReady = false; remote.view = null;
-  $("location").value = instance;
-  $("remote-sessions-label").hidden = !instance;
-  $("prompt").value = instance ? "" : localDraft;
-  $("remote-question").hidden = true;
-  showError(""); clearEvents();
-  render(instance ? {} : state, false);
-  $("status").textContent = instance ? "Loading remote session…" : "Ready";
-  controls();
-}
-async function remoteCommand(method, args = {}) {
-  if (!remoteReady || remoteBusy) return false;
-  const version = selection;
-  remoteBusy = true; controls(); showError("");
-  try {
-    const accepted = await remote.command(method, args);
-    if (version === selection) { receipt = accepted; $("status").textContent = `Remote · ${accepted.status}`; }
-    return true;
-  } catch (error) {
-    if (version === selection) showError(`${error.message}. The command was not retried automatically.`);
-    return false;
-  } finally { remoteBusy = false; controls(); }
-}
-async function pollRemote() {
-  const instance = selected, version = selection;
-  try {
-    if (!instance || !remote.connection) return;
-    const previousSession = remote.view?.info.target.session_id;
-    const view = await remote.refresh(instance);
-    if (version !== selection) return;
-    const first = !remoteReady;
-    remoteReady = true; showError("");
-    render({ messages: view.messages }, false);
-    $("stream").textContent = text(view.partial?.content); $("stream").hidden = !$("stream").textContent;
-    $("remote-question").textContent = view.info.input ? JSON.stringify(view.info.input.presentation || view.info.input, null, 2) : "";
-    $("remote-question").hidden = !view.info.input;
-    $("status").textContent = view.info.input ? "Remote · reply to the pending question" : view.info.target.execution_id ? "Remote · running" : "Remote · ready";
-    if (receipt) {
-      const result = await remote.call("operations.get", { instance_id: instance, operation_id: receipt.operation_id });
-      if (version !== selection) return;
-      if (["failed", "cancelled", "outcome_unknown"].includes(result.status)) showError(`Remote operation ${result.status}${result.error ? ": " + result.error : ""}`);
-      if (!["accepted", "running"].includes(result.status)) receipt = null;
-    }
-    if (first || previousSession !== view.info.target.session_id) await refreshSessions();
-  } catch (error) {
-    if (version === selection) { remoteReady = false; if (["unauthorized", "not_found"].includes(error.message)) { render({}, false); remote.view = null; } showError(error.message); }
-  } finally { controls(); setTimeout(pollRemote, 700); }
-}
-$("mitosis-connect").onclick = async () => {
-  remoteBusy = true; controls();
-  try {
-    const invitation = JSON.parse($("mitosis-invitation").value || localStorage.getItem("orb.mitosis.remote") || "{}");
-    const identity = browserIdentity();
-    const result = await remote.connect(invitation, identity);
-    localStorage.setItem("orb.mitosis.remote", JSON.stringify({ locator: invitation.locator, peer_id: invitation.peer_id }));
-    $("mitosis-invitation").value = "";
-    $("mitosis-identity").textContent = `Browser identity: ${result.peer_id}\nLocal agent: ${result.agent_id}`;
-    $("mitosis-grant").textContent = JSON.stringify({ principal: { peer_id: result.peer_id, subject: { kind: "instance", instance_id: result.agent_id } }, group_id: "*", include_future: true, permissions: ["instance.inspect", "instance.prompt"] }, null, 2);
-    $("mitosis-status").textContent = "Awaiting approval";
-    $("mitosis-notice").textContent = "Approve this browser identity on the remote Mitosis, then click Refresh.";
-    $("remote-controls").hidden = false;
-    try { await refreshInstances(); } catch (error) { if (error.message !== "unauthorized") throw error; }
-  } catch (error) { $("mitosis-notice").textContent = error.message; }
-  finally { remoteBusy = false; controls(); }
-};
-$("mitosis-disconnect").onclick = async () => { try { await remote.disconnect(); selectConversation(""); $("remote-controls").hidden = true; $("mitosis-status").textContent = "Disconnected"; } catch (error) { showError(error.message); } controls(); };
-$("mitosis-refresh").onclick = () => refreshInstances().then(refreshSessions).catch(error => showError(error.message));
-// The tab's own Orb (peer.wasm) over IndexedDB, which keeps its identity, received providers,
-// memory and conversation across reloads. Starting its Mitosis makes it dial its devices.
+$("reset").onclick = () => tab.rpc("new_session").then(settle, error => showError(error.message));
+// The tab's Orb over IndexedDB, which keeps its identity, received providers, memory and
+// conversation across reloads. Starting its Mitosis makes it dial its devices.
 async function openTab() {
   // One runtime owns the tab's storage for the page's life: its journals are read once and
   // appended in memory, so a second page writing the same database would overwrite them.
@@ -321,7 +130,7 @@ async function openTab() {
       if (frame.type !== "response") onEvent(frame);
       if (frame.type === "agent_end") settle().catch(error => showError(error.message));
     },
-    exit: () => { tab = null; running = false; controls(); showError("This tab's Orb stopped. Reload the page."); },
+    exit: () => { tab = null; idle(); showError("This tab's Orb stopped. Reload the page."); },
   });
   tab = {
     admin: async (method, params = {}) => JSON.parse(await peer.mitosisAdmin(method, JSON.stringify(params), "")),
@@ -332,64 +141,52 @@ async function openTab() {
       if (refused) { replies.delete(id); reject(new Error(refused)); }
     }),
   };
-  await tab.admin("self");
-  $("configuration").hidden = true;
-  $("hint").textContent = "This tab is one of your devices: it uses the providers and memory your profile shares with it.";
+  ({ peer_id: me } = await tab.admin("self"));
+  $("fingerprint").textContent = me.split(":").at(-1).slice(0, 8);
+  $("self").textContent = me;
   await settle();
   refreshTab();
 }
 async function settle() {
-  const { messages } = await tab.rpc("get_messages");
-  render({ messages }); idle();
+  ({ messages } = await tab.rpc("get_messages"));
+  renderMessages(messages); idle();
   const last = messages.at(-1);
   showError(last?.role === "assistant" && last.stopReason === "error" ? last.errorMessage : "");
 }
-// Provider names only: credentials never leave the tab's Orb.
+// Provider names only: credentials never leave the tab's Orb. The first provider the device
+// shares is its approval: the conversation replaces the fingerprint.
 async function refreshTab() {
   try {
     const owner = localStorage.getItem("orb.tab.owner");
     const [status, { models }] = await Promise.all([tab.admin("status"), tab.rpc("get_available_models")]);
-    const providers = [...new Set(models.map(model => model.provider))];
     let { model } = await tab.rpc("get_state");
     // A session started before any provider arrived has no model; a new one takes the preferred one.
-    if (providers.length && (!model || model.provider === "unknown") && !running && !state.messages.length) {
+    if (models.length && (!model || model.provider === "unknown") && !running && !messages.length) {
       await tab.rpc("new_session");
       ({ model } = await tab.rpc("get_state"));
     }
-    const online = status.peer_states?.[owner] === "connected" ? "online" : "offline";
-    // The panel's badge is the remote-control link; a member tab shows its own instead.
-    if (owner && !remote.connection) $("mitosis-status").textContent = `Member, ${online}`;
-    $("model-label").textContent = [
-      !owner ? "Not joined" : providers.length ? "Member" : "Waiting for your device",
-      online,
-      `providers: ${providers.join(", ") || "none yet"}`,
-      ...(model && model.provider !== "unknown" ? [`${model.provider}/${model.id}`] : []),
-    ].join(" · ");
-  } catch (error) { $("model-label").textContent = error.message; }
+    show(models.length ? "chat" : "approve");
+    where = [status.peer_states?.[owner] === "connected" ? "online" : "offline", ...(model && model.provider !== "unknown" ? [`${model.provider}/${model.id}`] : [])].join(" · ");
+    controls();
+  } catch (error) { showError(error.message); }
   finally { setTimeout(refreshTab, 3000); }
 }
-$("mitosis-join").onclick = async () => {
-  remoteBusy = true; controls();
+$("join").onclick = async () => {
+  $("join").disabled = true; showError("");
   try {
     // The code orb mitosis shows (orb-mitosis:v1:<base64url JSON>), or the invitation JSON itself.
-    const text = $("mitosis-invitation").value.trim(), code = text.split("orb-mitosis:v1:")[1]?.split(/\s/)[0];
-    const invitation = JSON.parse(code ? atob(code.replace(/-/g, "+").replace(/_/g, "/")) : text || "{}");
-    if (!invitation.peer_id || !invitation.token) throw new Error("Paste an invitation first.");
+    const value = $("code").value.trim(), code = value.split("orb-mitosis:v1:")[1]?.split(/\s/)[0];
+    const invitation = JSON.parse(code ? atob(code.replace(/-/g, "+").replace(/_/g, "/")) : value || "{}");
+    if (!invitation.peer_id || !invitation.token) throw new Error("Paste the code orb mitosis shows.");
     if (!tab) await openTab();
-    const { peer_id: self } = await tab.admin("self");
     await tab.admin("join", invitation);
     await tab.admin("trust", { peer_id: invitation.peer_id });
     // Until the device admits the tab, the first round has nothing to open; later rounds retry.
     await tab.admin("sync", { join: invitation.peer_id }).catch(() => {});
     localStorage.setItem("orb.tab.owner", invitation.peer_id);
-    $("mitosis-invitation").value = "";
-    $("mitosis-notice").textContent = `Joined. Confirm this fingerprint on your device:\n${self}`;
-  } catch (error) { $("mitosis-notice").textContent = error.message; }
-  finally { remoteBusy = false; controls(); }
+    show("approve");
+  } catch (error) { showError(error.message); }
+  finally { $("join").disabled = false; }
 };
-$("location").onchange = () => selectConversation($("location").value);
-$("remote-sessions").onchange = () => remoteCommand("session.switch", { session_id: $("remote-sessions").value });
-configure();
-boot();
-pollRemote();
 if (localStorage.getItem("orb.tab.owner")) openTab().catch(error => showError(error.message));
+else show("invite");

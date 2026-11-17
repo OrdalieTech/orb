@@ -2,70 +2,39 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Orb · Browser</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+  <title>Orb</title>
   <link rel="stylesheet" href="style.css">
   <script type="module" src="app.js"></script>
 </head>
 <body>
-  <header><h1>Orb <span>browser</span></h1><div><output id="status" role="status">Loading…</output><button id="reset" type="button">New chat</button></div></header>
-  <main>
-    <div class="toolbar">
-      <details id="settings-panel" name="inspector">
-        <summary>Model <span id="model-label">Configure a provider</span></summary>
-        <form id="settings" class="panel">
-          <fieldset id="configuration" disabled>
-            <label>Provider<select id="provider"><option value="openrouter">OpenRouter</option><option value="anthropic-messages">Claude · Anthropic API</option><option value="openai-completions">OpenAI-compatible API</option></select></label>
-            <div id="api-fields">
-              <label>Model ID<input id="model" placeholder="Your model ID" value="openai/gpt-5.6-luna" autocomplete="off"></label>
-              <label>API key<input id="key" type="password" placeholder="Paste your API key" autocomplete="off"></label>
-              <label class="wide">API base URL<input id="endpoint" type="url" value="https://openrouter.ai/api/v1" required></label>
-            </div>
-          </fieldset>
-          <p id="hint">Enter your model and API key, then send a message. Credentials stay in this tab. Changing model settings starts a new conversation.</p>
-        </form>
-      </details>
-      <details id="mitosis-panel" name="inspector">
-        <summary>Mitosis <span id="mitosis-status">Disconnected</span></summary>
-        <div class="panel">
-          <label>Invitation<textarea id="mitosis-invitation" rows="3" placeholder="Paste the code orb mitosis shows" spellcheck="false"></textarea></label>
-          <button id="mitosis-join" type="button">Add this tab to my devices</button>
-          <button id="mitosis-connect" type="button" disabled>Connect</button>
-          <button id="mitosis-disconnect" type="button" disabled>Disconnect</button>
-          <button id="mitosis-refresh" type="button">Refresh</button>
-          <p id="mitosis-notice" role="status">Add this tab to use your providers and memory here. Connect controls a remote Orb instead. This browser keeps its identity across reloads.</p>
-          <pre id="mitosis-identity"></pre>
-          <label><input id="mitosis-agent" type="checkbox"> Allow the local model to call this Mitosis</label>
-          <details><summary>Agent authorization</summary><p>Agent calls need their own grant on the remote Mitosis. Controller pairing does not grant model access. Save this JSON and pass it to <code>orb mitosis grant</code> on the remote host, adjusting its scope as needed.</p><pre id="mitosis-grant"></pre></details>
-        </div>
-      </details>
-      <details id="debug" name="inspector">
-        <summary>Debug <span id="count">0 events</span></summary>
-        <div class="panel">
-        <p>The agent runs locally in Wasm. Tools: read, write, edit. Files and conversation are temporary; no shell or device filesystem access.</p>
-        <h2>Virtual files</h2><div id="files">No files yet.</div>
-        <details id="event-panel"><summary>Engine events</summary><pre id="events">No events yet.</pre></details>
-        <button id="export" type="button" disabled>Export snapshot</button>
-        </div>
-      </details>
+  <section id="pair" hidden>
+    <div id="invite">
+      <h1>Pair this tab</h1>
+      <p>On your computer, run</p>
+      <code>orb mitosis</code>
+      <p class="meta">then paste the code it shows. It asks you to approve this tab there.</p>
+      <textarea id="code" rows="3" placeholder="orb-mitosis:v1:…" spellcheck="false"></textarea>
+      <button id="join" class="inverted" type="button">pair</button>
     </div>
-    <div id="remote-controls" hidden>
-      <label>Conversation<select id="location"><option value="">Local · this browser</option></select></label>
-      <label id="remote-sessions-label" hidden>Remote session<select id="remote-sessions"></select></label>
+    <div id="approve" hidden>
+      <h1>Approve on the computer</h1>
+      <p>On the computer, answer y. It shows this tab as</p>
+      <strong id="fingerprint"></strong>
+      <p id="self" class="meta"></p>
+      <p><span class="dot"></span>waiting for the yes</p>
     </div>
-    <section id="conversation" aria-label="Conversation">
-      <div id="transcript" tabindex="0" aria-label="Messages">
-        <div id="messages"><p class="empty">What would you like to try?</p></div>
-        <pre id="stream" hidden></pre>
-      </div>
-      <pre id="remote-question" hidden></pre>
-      <p id="error" role="alert" hidden></p>
-      <form id="prompt-form">
-        <label class="sr-only" for="prompt">Message</label>
-        <textarea id="prompt" rows="2" maxlength="16384" placeholder="Message Orb…" disabled></textarea>
-        <div class="actions"><small>Enter to send · Shift+Enter for a new line</small><button id="cancel" type="button" hidden>Stop</button><button id="send" disabled>Send</button></div>
-      </form>
-    </section>
-  </main>
+  </section>
+  <section id="chat" hidden>
+    <div id="transcript" tabindex="0" aria-label="Messages">
+      <div id="messages"></div>
+      <div id="stream" class="assistant" hidden></div>
+    </div>
+    <form id="prompt-form">
+      <textarea id="prompt" rows="2" maxlength="16384" placeholder="What next?" aria-label="Message"></textarea>
+      <div><output id="status"></output><button id="reset" type="button">new</button><button id="send" class="round" aria-label="Send">↑</button></div>
+    </form>
+  </section>
+  <p id="error" role="alert" hidden></p>
 </body>
 </html>

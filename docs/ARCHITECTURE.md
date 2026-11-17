@@ -148,63 +148,45 @@ cross-host gate: one scripted tool-using turn through a Host must produce the sa
 tool results, files and journal natively, in `js/wasm` without a host filesystem, and under
 WASI without mounts.
 
-### Wasm host and browser debug screen
+### Wasm host and browser page
 
-The opt-in `make browser-serve` target builds and serves a static debug screen at
-`http://127.0.0.1:8787` (`BROWSER_PORT` overrides the port; Python 3 serves static assets only).
-`make browser-build` writes the deployable assets into `.tools/browser`, including the matching
-Go toolchain's `wasm_exec.js`, with the wasm gzipped (the page inflates it, and `peer.wasm` alone
-is over Cloudflare Pages' 25 MiB file cap). No agent process or model proxy runs on the server. Each
-release attaches `make browser-dist`'s `orb_<version>_browser.tar.gz`, listed in the signed
-`checksums.txt`: an `index.html` whose `<base>` points at a directory named by version and digest,
-so a cache never mixes two releases' files. netapy.com/orb serves the latest release's.
+`make browser-serve` builds and serves the browser page at `http://127.0.0.1:8787`
+(`BROWSER_PORT` overrides the port; Python 3 serves static assets only). `make browser-build`
+writes the deployable assets into `.tools/browser`, including the matching Go toolchain's
+`wasm_exec.js`, the Android app's Ubuntu Sans Mono and the desktop's Ordalie mark, with the wasm
+gzipped (the page inflates it, and `peer.wasm` alone is over Cloudflare Pages' 25 MiB file cap).
+No agent process or model proxy runs on the server. Each release attaches `make browser-dist`'s
+`orb_<version>_browser.tar.gz`, listed in the signed `checksums.txt`: an `index.html` whose
+`<base>` points at a directory named by version and digest, so a cache never mixes two releases'
+files. netapy.com/orb serves the latest release's.
 
-The dependency direction is `platforms/browser/web` → `cmd/orb-wasm` → the `platforms/browser` Go assembly
-→ `engine`, `ai`, and the existing `agent/tools` operations. The Wasm assembly owns one engine
-and a bounded in-memory workspace per session; it contains no JavaScript, DOM, TUI, settings
-discovery or native storage. The entry point alone uses `syscall/js` to translate worker commands
-and forward existing engine events. The browser's worker loads Wasm and the plain DOM UI renders
-messages, virtual files and a bounded event log. Layering tests forbid reverse imports and native
-product dependencies in the shared assembly. A future non-browser host can reuse the assembly,
-but must supply its own transport and lifecycle; the worker entry point is specifically `js/wasm`.
+The page makes the tab one of the user's devices, and does nothing else: the code `orb mitosis`
+shows opens `peer.js` over IndexedDB, which joins, trusts the inviting device and follows its sync
+group, and the page shows the fingerprint to confirm there, which approves the tab and adds it to
+the group. The first provider the group shares replaces the fingerprint with the conversation,
+which runs on the peer's Orb through its RPC `command` entry point, with the providers and memory
+the profile shares; its status line shows the link and the model, never a credential. A reload
+reopens the peer with its identity, data and conversation, and it dials its devices again. The
+page takes the apps' tokens (`platforms/desktop/theme.go`, Android's `ui/Theme.kt`): their
+palette in both appearances, their face, radii and type scale, the desktop's on a wide screen and
+the phone's on a narrow one.
 
-The screen uses real providers only, defaulting to OpenRouter with GPT-5.6 Luna. Existing
-Anthropic Messages and OpenAI Completions providers run directly through browser Fetch; endpoints
-must allow CORS. Enter sends and Shift+Enter inserts a newline. Model IDs and credentials are
-explicit and keys remain in tab memory. New chat clears the conversation and workspace while
-retaining the entered credentials; reload discards all state. The debug
-model descriptor assumes a 32K context window and 4K output limit; it does not discover model
-capabilities. Read/write/edit are attached explicitly to a virtual `/workspace` capped at 128
-files and 1 MiB. No shell, native Claude executor, plugin catalog, durable workspace storage or
-automatic compaction is included. The optional Mitosis panel uses an outbound WebSocket connection:
-`mitosis.ConnectClient` shares pinned TLS and the protocol handshake, rejects incoming runtime calls,
-and starts no local Mitosis, listener, subprocess, or native transport. The remote host explicitly
-runs `orb mitosis run --web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787`;
-`--web-url wss://host/mitosis` advertises a reverse-proxied endpoint in invitations. Remote browser
-URLs require WSS; loopback WS is allowed. The listener checks exact allowed origins, limits active
-connections, and exposes the existing peer protocol without the owner/admin API.
+A device reaches the tab over an outbound WebSocket: the device runs `orb mitosis run --web-listen
+127.0.0.1:8789 --web-origin <page origin>`, and `--web-url wss://host/mitosis` advertises a
+reverse-proxied endpoint in invitations. Remote browser URLs require WSS; loopback WS is allowed.
+The listener checks exact allowed origins, limits active connections, and exposes the existing peer
+protocol without the owner/admin API.
 
-Browser identity and the remote URL/pin live in origin-scoped localStorage; invitation tokens and
-model credentials are never persisted. Connecting claims an invitation but does not approve it;
-the remote owner approves the displayed browser identity, then Refresh lists authorized instances.
-The UI switches between the local agent and remote conversations, pages snapshots and sessions,
-uses cursor replay, checks session/generation fences, and never automatically replays mutations.
-Disconnect releases observation without cancelling remote execution. Reload retains pairing but
-requires explicit reconnection. A Worker's `mitosis_call` is separately opt-in and uses an instance
-subject with its own remote grants, never the human controller's authority.
-
-The same panel can instead add the tab to the user's devices: the code `orb mitosis` shows opens
-`peer.js` over IndexedDB, which joins, trusts the inviting device and follows its sync group, and
-the page shows the fingerprint to confirm there, which approves the tab and adds it to the group.
-From then on the local conversation runs on the peer's Orb through its RPC `command` entry point,
-not `orb.wasm`, with the providers and memory the profile shares; the Model summary shows
-membership, connection and provider names, never a value. A reload reopens the peer with its
-identity, data and conversation, and it dials its devices again.
-
-`agent/mitosis/tool.NewTool` is headless. Transport stays in `platforms/websocket`,
-worker ownership in `cmd/orb-wasm`, and browser controller state in `platforms/browser/web/mitosis.js`. Tests execute the built Wasm
-without a host filesystem and cover event forwarding, tool execution, concurrent-prompt rejection,
-cancellation and session replacement, alongside native workspace and dependency checks.
+`cmd/orb-wasm` is the headless Wasm assembly (`platforms/browser`) over `engine`, `ai` and the
+existing `agent/tools` operations, with no page of its own. It owns one engine and a bounded
+in-memory workspace per session (read/write/edit on a virtual `/workspace` capped at 128 files and
+1 MiB, provider calls through browser Fetch, which needs CORS); it contains no JavaScript, DOM,
+TUI, settings discovery or native storage, and its entry point alone uses `syscall/js`. It can
+also act as a remote controller (`mitosis.ConnectClient` shares pinned TLS and the protocol
+handshake, rejects incoming runtime calls, and starts no local Mitosis, listener, subprocess, or
+native transport). Layering tests forbid reverse imports and native product dependencies in the
+shared assembly, and run the built Wasm without a host filesystem: event forwarding, tool
+execution, concurrent-prompt rejection, cancellation and session replacement.
 
 ### Permission boundaries
 
@@ -858,7 +840,7 @@ in the same Store a Worker object keeps, and dials its peers' `ws://` or `wss://
 (`platforms/worker/peer` `Dial`, which runs `mitosis.Peers` with a WebSocket dialer). It joins an
 invitation, trusts the device it joined, follows its sync group and reconnects on reload like a
 native device, though no one dials it; a Worker object only accepts streams. The browser debug
-page uses it to make a tab one of the user's devices ("Wasm host and browser debug screen").
+page uses it to make a tab one of the user's devices ("Wasm host and browser page").
 
 ### Native v1 method schemas
 

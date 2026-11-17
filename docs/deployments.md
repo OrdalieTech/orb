@@ -108,29 +108,23 @@ process-tree cleanup, a native console terminal and a user-only Mitosis IPC sock
 runs green on `windows-latest` and blocks every commit. Windows binaries join releases once the
 release workflow packages and verifies them; until then, build with `go build ./cmd/orb`.
 
-### Browser (Wasm worker)
+### Browser
 
-A browser tab can run a local Orb agent: the core compiled to `js/wasm` inside a web worker, with
-read/write/edit on a bounded virtual workspace and provider calls made directly through `fetch`
-(the endpoint must allow CORS). The same page can pair with a remote Orb over Mitosis and drive
-its conversations, whose tools and models then run on that remote machine.
+A browser tab can be one of your devices, a full Mitosis peer (`platforms/browser/web/peer.js`,
+which `make browser-build` ships with `peer.wasm`): it runs the Worker runtime over IndexedDB,
+joins an invitation, and follows its owner's sync group, so its Orb has the owner's providers and
+memory ("Profile sync" in ARCHITECTURE.md). The page does this and nothing else: run `orb mitosis`
+on your device, paste the full code it prints for apps and tabs (`orb-mitosis:v1:…`; the short
+code needs Tailcat, which a tab cannot run), and confirm the tab's fingerprint there. The tab is
+then in your sync group, and the conversation it opens uses your providers and memory with no key
+typed, across reloads. The device reaches the tab with `orb mitosis run --web-listen …
+--web-origin …` (see [ARCHITECTURE.md](ARCHITECTURE.md#wasm-host-and-browser-page)).
 
 ```sh
 make browser-serve        # http://127.0.0.1:8787
 ```
 
-This is a debug screen today: typed keys and files live in tab memory. A remote Orb accepts the
-browser with `orb mitosis run --web-listen … --web-origin …`
-(see [ARCHITECTURE.md](ARCHITECTURE.md#wasm-host-and-browser-debug-screen)).
-
-A tab can also be a full Mitosis peer (`platforms/browser/web/peer.js`, which `make
-browser-build` ships with `peer.wasm`): it runs the Worker runtime over IndexedDB, joins an
-invitation, and follows its owner's sync group, so its Orb has the owner's providers and memory
-("Profile sync" in ARCHITECTURE.md). `make worker-e2e-mitosis-browser` checks it end to end under
-Node against a native `orb`. The debug page does this from its Mitosis panel: run `orb mitosis` on
-your device, paste the full code it prints for apps and tabs (`orb-mitosis:v1:…`; the short code
-needs Tailcat, which a tab cannot run), and confirm the tab's fingerprint there. The tab is then in
-your sync group, and its agent uses your providers and memory with no key typed, across reloads.
+`make worker-e2e-mitosis-browser` checks the peer end to end under Node against a native `orb`.
 
 ### Cloudflare Durable Objects
 

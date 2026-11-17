@@ -1,60 +1,74 @@
-:root { color-scheme: dark; font: 15px/1.6 system-ui, sans-serif; color: #e5e5e7; background: #141517; }
-* { box-sizing: border-box; }
-body { max-width: 1040px; height: 100dvh; margin: 0 auto; padding: 0 32px 24px; display: flex; flex-direction: column; }
-header, header > div, .actions, .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-header { min-height: 80px; flex-shrink: 0; }
-h1 { margin: 0; font-size: 22px; letter-spacing: -.6px; } h1 span { margin-left: 6px; font-size: 13px; font-weight: 400; letter-spacing: 0; color: #8b8e96; }
-h2 { font-size: 13px; margin-top: 20px; }
-p, small, output, summary span { color: #9699a2; }
-output { font-size: 12px; }
-main, #conversation { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.toolbar { position: relative; border-block: 1px solid #292b30; padding: 4px 0; flex-shrink: 0; }
-.toolbar > details { min-width: 0; }
-summary { cursor: pointer; padding: 9px 0; font-size: 13px; } summary span { margin-left: 8px; font-size: 12px; }
-#settings-panel > summary { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-#debug { flex-shrink: 0; }
-.panel { position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 1; padding: 20px; margin: 0; max-height: calc(100dvh - 210px); overflow: auto; border: 1px solid #393b42; border-radius: 12px; background: #1b1c20; box-shadow: 0 16px 40px #0006; }
-.panel > p { font-size: 12px; margin: 0 0 12px; }
-fieldset { border: 0; padding: 0; margin: 0; }
-#api-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
-.wide { grid-column: 1 / -1; }
-label { display: block; font-size: 12px; color: #b8bbc3; margin-bottom: 10px; }
-input, select, textarea, button { font: inherit; color: inherit; border: 1px solid #36383f; border-radius: 8px; background: #23252a; }
-input, select, textarea { width: 100%; padding: 9px 11px; margin-top: 4px; }
-button { cursor: pointer; padding: 7px 14px; font-size: 13px; white-space: nowrap; }
-button:active:enabled { transform: scale(.97); }
-@media (hover: hover) { button:hover:enabled { background: #33363e; } summary:hover { color: #fff; } }
-#send { color: #17191d; background: #e5e7eb; border-color: #e5e7eb; }
-:disabled { opacity: .45; cursor: default; }
-:focus-visible { outline: 2px solid #aabfdf; outline-offset: 3px; }
-#transcript { flex: 1; min-height: 0; overflow-y: auto; overflow-wrap: anywhere; padding: 8px 12px 24px; scrollbar-width: thin; scrollbar-color: #3c3e45 transparent; }
-.empty { padding: clamp(32px, 15vh, 160px) 0 32px; text-align: center; font-size: 19px; letter-spacing: -.3px; }
-article { margin: 24px 0; } article strong { font-size: 11px; font-weight: 500; color: #9699a2; }
-article.user { width: fit-content; max-width: 85%; margin-left: auto; padding: 10px 16px; background: #24262b; border-radius: 14px 14px 4px 14px; }
-pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: 5px 0; }
-#stream { padding: 8px 0; }
-#prompt-form { flex-shrink: 0; border: 1px solid #3c3f47; border-radius: 16px; background: #1c1e22; padding: 16px; box-shadow: 0 6px 24px #0002; }
-#prompt-form:focus-within { border-color: #686f7e; }
-textarea { display: block; resize: vertical; min-height: 52px; max-height: min(180px, 30dvh); border: 0; background: transparent; margin: 0 0 12px; padding: 0; }
-textarea:focus-visible { outline: 0; }
-.actions { gap: 8px; } .actions small { flex: 1; font-size: 11px; }
-#error { color: #ffb4ab; overflow-wrap: anywhere; margin: 8px 0; max-height: 20vh; overflow: auto; }
-#events, #files pre { font: 12px/1.6 ui-monospace, monospace; max-height: 300px; overflow: auto; padding: 12px; background: #141517; border-radius: 8px; }
-#files { overflow-wrap: anywhere; } #export { margin-top: 12px; }
-.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-[hidden] { display: none !important; }
-@media (max-width: 550px) {
-  body { padding: 0 14px max(14px, env(safe-area-inset-bottom)); } header { min-height: 64px; } header > div { gap: 8px; }
-  #api-fields { grid-template-columns: 1fr; } .panel { padding: 16px; } #count { display: none; }
-  #transcript { padding-inline: 2px; } #prompt-form { padding: 12px; } .actions small { font-size: 10px; }
-  input, select, textarea { font-size: 16px; } article.user { max-width: 92%; }
+/* Ordalie tokens, as the desktop sets them (platforms/desktop/theme.go) and Android (ui/Theme.kt):
+   soft ink on sage paper, one rupture; one face, Ubuntu Sans Mono; the desktop's scale on a wide
+   screen, the phone's on a narrow one. */
+@font-face { font-family: "Ubuntu Sans Mono"; src: url(ubuntu_sans_mono.ttf); font-weight: 100 900; }
+:root {
+  --bg: #E3E7E0; --fg: #2A2D2B; --mute: #444A45; --meta: #646A65; --rule: #9EA49F; --raised: #ECEFE9; --shade: #00000012;
+  --rupture: #C94A3D; --title: 18px; --body: 15px; --small: 13px; --label: 10px; --round: 30px;
+  --soft: 6px; --pane: 10px; --margin: 16px; --ease: cubic-bezier(.23, 1, .32, 1);
+  color-scheme: light dark; font: 400 var(--body)/1.45 "Ubuntu Sans Mono", monospace; color: var(--fg); background: var(--bg);
 }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1C201E; --fg: #DADFD8; --mute: #A8AEA9; --meta: #8A918C; --rule: #4E5550; --raised: #242927; --shade: #00000059; }
+}
+@media (max-width: 600px) { :root { --title: 19px; --label: 11px; --round: 36px; } }
+* { box-sizing: border-box; }
+body { height: 100dvh; margin: 0; display: flex; flex-direction: column; }
+section { flex: 1; min-height: 0; display: flex; flex-direction: column; width: 100%; max-width: calc(720px + 2 * var(--margin)); margin: 0 auto; padding: 0 var(--margin); }
+[hidden] { display: none !important; }
+h1 { margin: 0 0 10px; font-size: var(--title); font-weight: 600; letter-spacing: -.02em; }
+p { margin: 0; }
+.meta { font-size: var(--small); color: var(--meta); overflow-wrap: anywhere; }
+button, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; padding: 8px 14px; font-size: var(--small); font-weight: 600; border: 1px solid var(--fg); border-radius: var(--soft); background: none; transition: transform 120ms var(--ease), opacity 120ms; }
+button:active:enabled { transform: scale(.97); }
+button.inverted { color: var(--bg); background: var(--fg); }
+:disabled { opacity: .45; cursor: default; }
+:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 
-#remote-controls { display: flex; align-items: end; gap: 12px; padding-top: 8px; }
-#remote-controls label { flex: 1; min-width: 0; margin: 0; }
-#mitosis-identity, #mitosis-grant { font: 12px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
-#mitosis-agent { width: auto; }
-#mitosis-notice { white-space: pre-line; }
-#mitosis-invitation { border: 1px solid #36383f; padding: 8px; font-size: 13px; }
+/* Pairing: the card of the apps' Mitosis screens, centred where the app waits on you. */
+#pair { justify-content: center; max-width: 480px; }
+#invite, #approve { padding: var(--margin); border: 1px solid var(--rule); border-radius: var(--pane); }
+#pair p { color: var(--mute); }
+#pair .meta { color: var(--meta); }
+#pair code { display: block; width: fit-content; margin: 8px 0; padding: 8px 12px; border: 1px solid var(--rule); border-radius: var(--soft); font-weight: 600; }
+#code { display: block; width: 100%; margin: 16px 0 12px; padding: 9px 12px; resize: none; font-size: 12px; border: 1px solid var(--rule); border-radius: var(--soft); background: none; }
+#code:not(:placeholder-shown), #code:focus-visible { outline: 0; border-color: var(--fg); }
+#fingerprint { display: block; margin: 8px 0; font-size: 28px; }
+#approve p:last-child { margin-top: 16px; display: flex; align-items: center; gap: 10px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mute); animation: blink 1.4s steps(1) infinite; }
+@keyframes blink { 50% { opacity: .25; } }
 
-#remote-question { max-height: 25vh; overflow: auto; font-size: 12px; }
+/* The conversation: what the person said sits at right on a soft ground; Orb just speaks, full
+   width, its blocks 8 apart; an empty one shows the maker's mark, small and faint. */
+#transcript { flex: 1; min-height: 0; padding-top: 12px; overflow-y: auto; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+#transcript:focus-visible { outline: 0; }
+#messages:empty { height: 100%; background: var(--rule); mask: url(ordalie.svg) center / 26px no-repeat; }
+.user { width: fit-content; max-width: calc(100% - 48px); margin: 28px 0 16px auto; padding: 8px 12px; white-space: pre-wrap; border-radius: var(--pane); background: color-mix(in srgb, var(--fg) 7%, transparent); }
+.user:first-child { margin-top: 0; }
+.assistant { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 8px; }
+.assistant :is(p, h3, ul, ol, pre) { margin: 0; }
+.assistant p { white-space: pre-wrap; }
+.assistant h3 { margin-top: 4px; font-size: var(--title); font-weight: 600; letter-spacing: -.02em; }
+.assistant :is(ul, ol) { display: flex; flex-direction: column; gap: 4px; padding-left: 3ch; }
+.assistant ul { padding-left: 2ch; list-style: "· "; }
+.assistant li::marker { color: var(--meta); }
+.assistant code { padding: 0 4px; border-radius: 4px; background: color-mix(in srgb, var(--fg) 7%, transparent); }
+.assistant pre { overflow-x: auto; padding: 12px; font: inherit; font-size: var(--small); border: 1px solid var(--rule); border-radius: var(--pane); background: var(--raised); }
+#stream::after { content: ""; width: .55em; height: 1.1em; background: var(--rupture); animation: blink 1.06s steps(1) infinite; }
+
+/* The prompt box, as on the desktop: raised and outlined, the draft above, under it where it
+   runs and the one action, round. */
+#prompt-form { flex-shrink: 0; margin: 8px -8px max(16px, env(safe-area-inset-bottom)); padding: 14px 10px 10px; border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent); border-radius: 16px; background: var(--raised); box-shadow: 0 6px 24px var(--shade); }
+#prompt { display: block; width: 100%; min-height: 2.9em; max-height: min(14lh, 30dvh); field-sizing: content; padding: 0 14px 4px; border: 0; resize: none; background: none; }
+#prompt::placeholder { color: var(--meta); }
+#prompt:focus-visible { outline: 0; }
+#prompt-form > div { display: flex; align-items: center; gap: 12px; padding-left: 14px; }
+#status { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--small); font-weight: 500; color: var(--mute); }
+#reset { padding: 2px 6px; border: 0; color: var(--meta); font-weight: 500; }
+.round { width: var(--round); height: var(--round); padding: 0; flex-shrink: 0; border: 0; border-radius: 50%; color: var(--bg); background: var(--fg); font-size: 15px; }
+.round:disabled { opacity: 1; background: var(--rule); }
+.round.stop { background: var(--rupture); }
+
+#error { position: fixed; top: 12px; left: 50%; translate: -50%; width: min(720px, calc(100% - 2 * var(--margin))); max-height: 30vh; overflow: auto; padding: 8px 12px; border: 1px solid var(--rupture); border-radius: var(--pane); background: var(--raised); color: var(--rupture); font-size: var(--small); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 600px) { #prompt { font-size: 16px; } }
