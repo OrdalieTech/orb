@@ -134,7 +134,8 @@ func (b *Mitosis) Held(ctx context.Context) map[string]string {
 	return out
 }
 
-// permits reports whether p may do what permission names with this agent's conversations.
+// permits reports whether p may do what permission names with this agent's conversations; an
+// empty permission asks whether p holds any grant here.
 func (b *Mitosis) permits(p Principal, permission string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -142,7 +143,7 @@ func (b *Mitosis) permits(p Principal, permission string) bool {
 		return false
 	}
 	return b.owner(p) || slices.ContainsFunc(b.state.Grants, func(g Grant) bool {
-		return g.Principal == p && g.Destination == "" && slices.Contains(g.Permissions, permission)
+		return g.Principal == p && g.Destination == "" && (permission == "" || slices.Contains(g.Permissions, permission))
 	})
 }
 

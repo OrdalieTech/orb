@@ -444,7 +444,11 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 			}
 			return JSON(map[string]any{"items": result.Items, "snapshot_id": snapshot, "offset": result.Cursor, "cursor": cursor}), nil
 		}
-		if !b.permits(principal, "agent.inspect") {
+		gate := "agent.inspect"
+		if method == "operations.get" {
+			gate = "" // a receipt is the caller's own: whoever holds a grant here reads its operations
+		}
+		if !b.permits(principal, gate) {
 			return nil, Fail("not_found")
 		}
 		var catalog *string
