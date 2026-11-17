@@ -35,9 +35,9 @@ const (
 	vaultChunk = 512 << 10
 	// envelope: the recipient's Ed25519 key, an ephemeral X25519 key, and the sealed bundle key.
 	envelopeSize = 32 + 32 + 12 + 32 + 16
-	// maxPeers bounds the devices one Mitosis pairs with, holds channels to, or counts in a scope:
+	// MaxPeers bounds the devices one Mitosis pairs with, holds channels to, or counts in a scope:
 	// their locators and records stay well within the 1 MiB profile state.
-	maxPeers = 256
+	MaxPeers = 256
 )
 
 // pointer is what a record says of one of its publisher's vaults.
@@ -124,7 +124,7 @@ func (b *Mitosis) setGroup(join, add, remove string) error {
 			if b.state.Peers[add] == "" && !slices.ContainsFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == add }) {
 				return Fail("not_found") // a device this one never paired with is never reached
 			}
-			if len(members) >= maxPeers {
+			if len(members) >= MaxPeers {
 				return Fail("resource_exhausted")
 			}
 			members = append(members, add)

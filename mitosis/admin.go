@@ -227,7 +227,7 @@ func (b *Mitosis) SavePeer(peer, locator string) error {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if len(b.state.Peers) >= maxPeers {
+	if len(b.state.Peers) >= MaxPeers {
 		return Fail("resource_exhausted")
 	}
 	b.state.Peers[peer] = locator

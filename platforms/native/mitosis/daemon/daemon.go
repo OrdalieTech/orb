@@ -315,7 +315,7 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 	// (a device pairing) also hold a place in a small pool of their own while they are unknown,
 	// and only for an invitation's lifetime: throwaway identities can fill that pool, never the
 	// slots of paired peers, and a device once paired gives its place back to the next one.
-	slots, strangers := make(chan struct{}, 128), make(chan struct{}, 8)
+	slots, strangers := make(chan struct{}, mitosis.MaxPeers), make(chan struct{}, 8)
 	paired := func(peer *protocol.Conn, id string) bool {
 		select {
 		case strangers <- struct{}{}:

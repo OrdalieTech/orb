@@ -603,7 +603,7 @@ func (b *Mitosis) Approve(id, claimant string) error {
 		approved = append(approved, g)
 	}
 	if i.ClaimantLocator != "" {
-		if len(b.state.Peers) >= maxPeers && b.state.Peers[claimant] == "" {
+		if len(b.state.Peers) >= MaxPeers && b.state.Peers[claimant] == "" {
 			return Fail("resource_exhausted")
 		}
 		b.state.Peers[claimant] = i.ClaimantLocator
