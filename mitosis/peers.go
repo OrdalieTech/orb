@@ -97,8 +97,28 @@ func (ps *Peers) dial(ctx context.Context, id, locator string) error {
 	if err != nil {
 		return err
 	}
-	go Keepalive(ps.ctx, c, 4*time.Second)
+	go func() {
+		opened := time.Now()
+		Keepalive(ps.ctx, c, 4*time.Second)
+		// A paired peer whose channel from here died after a while (it restarted, say) is dialled
+		// again at once, where the next sweep could take 30 s; one that drops the channel at once
+		// waits for the sweep, and a channel kept the other way stops it.
+		if ps.ctx.Err() == nil && time.Since(opened) > time.Minute && ps.paired(id) {
+			ctx, cancel := context.WithTimeout(ps.ctx, 20*time.Second)
+			_, _ = ps.Peer(ctx, id, "")
+			cancel()
+		}
+	}()
 	return nil
+}
+
+func (ps *Peers) paired(id string) bool {
+	raw, err := ps.Mitosis.Admin(ps.ctx, "peers", JSON(struct{}{}))
+	var status struct {
+		Peers  []string          `json:"peers"`
+		States map[string]string `json:"peer_states"`
+	}
+	return err == nil && json.Unmarshal(raw, &status) == nil && slices.Contains(status.Peers, id) && status.States[id] != "blocked"
 }
 func (ps *Peers) Remote(ctx context.Context, id, method string, p any) (json.RawMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
