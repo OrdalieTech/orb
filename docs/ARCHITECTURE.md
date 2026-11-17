@@ -864,7 +864,7 @@ IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain 
 | `operations.get` | `instance_id`, `operation_id` → caller-scoped receipt |
 | `events.subscribe` | optional `instance_id` (absent means catalog); either replay `cursor`, or optional `snapshot_id` and page `offset` → replay events or frozen transcript page plus cursor and partial message |
 | `events.unsubscribe` | `instance_id`, `snapshot_id` → release retained snapshot |
-| `peers.list` | `scope_id`, optional `cursor` → scoped signed records |
+| `peers.list` | `scope_id`, `have` (the caller's revision by record peer), optional `cursor` → the scoped signed records newer than `have`, and `behind`, the record peers the caller holds newer or alone |
 | `peers.publish` | bounded `records` array → validated, durably merged revisions |
 
 `expected` contains `registration_generation` and `session_revision`. Prompt arguments are
@@ -903,9 +903,22 @@ The native adapter serves separate `admin.sock` and `attach.sock` endpoints with
 Its stores use an exclusive file lock, private permissions, atomic replacement, file fsync,
 and directory fsync. `ORB_MITOSIS_HOME` explicitly overrides the profile root for isolated hosts.
 Transport metadata contains the pinned server key, PSK, relay region, and per-peer client keys.
-No remote-supplied relay map or embedded relay definition is accepted. Contact changes trigger
-reconciliation, with a 15-second retry sweep; signed recovery locators must authenticate the
-already-pinned PeerID. Native direct and forced-relay tests are separate from the hermetic gate.
+No remote-supplied relay map or embedded relay definition is accepted; the transport keeps the
+map it fetched for an hour, then revalidates it, and uses it while the map server is unreachable.
+A Tailcat client is a whole WireGuard engine, so one lives only while it carries a stream, and two
+peers that dial each other keep the channel the lower PeerID dialled. A quiet channel is pinged
+every 4 s by whichever end heard nothing in that time. A pairing device holds one of eight
+stranger places only until it is approved. Every change triggers reconciliation, with a
+15-second sweep. A device reconciles a scope with its first member (a sync group's owner), the
+members a power of two ahead of it on the ring of members by PeerID, and any member it has a
+channel to, so a change crosses n members in about log2(n) hops over about log2(n) dialled
+channels a device. `peers.list` carries the caller's revisions and returns only what it lacks;
+a link whose records and channel are unchanged since its last exchange waits five minutes, and
+one that failed a minute. A sync group's owner leaves its members to dial it, a device hangs up
+the channels it dialled to scope members it neither links to nor paired with, and a paired
+peer whose channel from here died after a minute or more is dialled again at once.
+Signed recovery locators must authenticate the already-pinned PeerID. Native direct and
+forced-relay tests are separate from the hermetic gate.
 
 ### App view (`orb app`)
 
