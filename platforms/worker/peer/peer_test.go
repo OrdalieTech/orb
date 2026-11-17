@@ -131,28 +131,25 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 	admin(t, self, "approve", map[string]string{"invitation_id": invitation.ID, "claimant": laptop.PeerID()})
 
 	// Laptop → object: list, inspect, prompt, read back.
-	var catalog struct {
-		Items []mitosis.Instance `json:"items"`
+	var agent struct {
+		Items []mitosis.Conversation `json:"items"`
 	}
-	if err = channel.Call(ctx, "instances.list", struct{}{}, &catalog); err != nil || len(catalog.Items) != 1 || catalog.Items[0].ID != self.InstanceID() || !catalog.Items[0].Available || catalog.Items[0].Alias != "durable-object-1" {
-		t.Fatalf("catalog = %+v, %v", catalog, err)
+	if err = channel.Call(ctx, "agent.describe", struct{}{}, &agent); err != nil || len(agent.Items) != 1 || agent.Items[0].SessionID == "" {
+		t.Fatalf("agent = %+v, %v", agent, err)
 	}
 	var described struct {
-		Generation string `json:"registration_generation"`
-		Target     struct {
+		Target struct {
 			SessionID string `json:"session_id"`
-			Revision  string `json:"session_revision"`
 		} `json:"target"`
 	}
-	call := mitosis.Call{InstanceID: self.InstanceID(), Service: protocol.Service, Method: "inspect", Args: json.RawMessage(`{}`)}
-	if err = channel.Call(ctx, "instances.call", call, &described); err != nil || described.Target.SessionID == "" {
+	if err = channel.Call(ctx, "agent.call", mitosis.AgentCall{Method: "inspect"}, &described); err != nil || described.Target.SessionID != agent.Items[0].SessionID {
 		t.Fatalf("inspect = %+v, %v", described, err)
 	}
 	provider.SetResponses([]faux.ResponseStep{faux.AssistantMessage("hello laptop")})
-	call = mitosis.Call{InstanceID: self.InstanceID(), Service: protocol.Service, Method: "prompt", SessionID: described.Target.SessionID,
-		Expected: mitosis.Expected{Generation: described.Generation, Revision: described.Target.Revision}, OperationID: protocol.NewID(), Args: json.RawMessage(`{"text":"hi from the laptop"}`)}
+	session := described.Target.SessionID
+	call := mitosis.AgentCall{SessionID: session, Method: "prompt", OperationID: protocol.NewID(), Args: json.RawMessage(`{"text":"hi from the laptop"}`)}
 	var receipt mitosis.Receipt
-	if err = channel.Call(ctx, "instances.call", call, &receipt); err != nil || receipt.Status != "accepted" {
+	if err = channel.Call(ctx, "agent.call", call, &receipt); err != nil || receipt.Status != "accepted" || receipt.SessionID != session {
 		t.Fatalf("prompt receipt = %+v, %v", receipt, err)
 	}
 	for deadline := time.Now().Add(10 * time.Second); receipt.Status != "succeeded"; {
@@ -160,12 +157,12 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 			t.Fatalf("prompt operation = %+v", receipt)
 		}
 		time.Sleep(10 * time.Millisecond)
-		if err = channel.Call(ctx, "operations.get", map[string]string{"instance_id": self.InstanceID(), "operation_id": call.OperationID}, &receipt); err != nil {
+		if err = channel.Call(ctx, "operations.get", map[string]string{"session_id": session, "operation_id": call.OperationID}, &receipt); err != nil {
 			t.Fatal(err)
 		}
 	}
 	var snapshot json.RawMessage
-	if err = channel.Call(ctx, "events.subscribe", map[string]string{"instance_id": self.InstanceID()}, &snapshot); err != nil ||
+	if err = channel.Call(ctx, "events.subscribe", map[string]string{"session_id": session}, &snapshot); err != nil ||
 		!strings.Contains(string(snapshot), "hi from the laptop") || !strings.Contains(string(snapshot), "hello laptop") {
 		t.Fatalf("conversation read back = %s, %v", snapshot, err)
 	}
@@ -178,6 +175,9 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 		t.Fatal(err)
 	}
 	endpoint := mitosis.NewLocal(func(_ context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+		if method == "instances.describe" {
+			return json.RawMessage(`{"target":{"session_id":"laptop-thread"}}`), nil
+		}
 		var request mitosis.Request
 		if err := json.Unmarshal(params, &request); err != nil {
 			return nil, err
@@ -194,7 +194,7 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 	if err = laptop.AddGrant(mitosis.Grant{Principal: subject, Permissions: []string{"agent.inspect"}}); err != nil {
 		t.Fatal(err)
 	}
-	arguments := map[string]any{"peer_id": laptop.PeerID(), "call": map[string]any{"instance_id": registration.ID, "service": protocol.Service, "method": "inspect", "args": map[string]any{}}}
+	arguments := map[string]any{"peer_id": laptop.PeerID(), "call": map[string]any{"method": "inspect", "args": map[string]any{}}}
 	// Without the object's own destination grant the call is refused on the
 	// object; with it, the laptop answers.
 	provider.SetResponses([]faux.ResponseStep{
@@ -226,7 +226,7 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(received) != 1 || received[0].Principal != subject || received[0].Call.Method != "inspect" ||
+	if len(received) != 1 || received[0].Principal != subject || received[0].Call.Method != "inspect" || received[0].Call.SessionID != "laptop-thread" ||
 		!strings.Contains(results["granted"], "laptop") || !strings.Contains(results["denied"], "unauthorized") {
 		t.Fatalf("laptop received %+v; tool results %v", received, results)
 	}
@@ -271,11 +271,11 @@ func TestPeerIdentitySurvivesRestart(t *testing.T) {
 	}
 	channel := dial(t, again, laptop)
 	defer func() { _ = channel.Close() }()
-	var catalog struct {
-		Items []mitosis.Instance `json:"items"`
+	var described struct {
+		Generation string `json:"registration_generation"`
 	}
-	if err = channel.Call(ctx, "instances.list", struct{}{}, &catalog); err != nil || len(catalog.Items) != 1 || catalog.Items[0].Generation != "2" {
-		t.Fatalf("catalog after restart = %+v, %v", catalog, err)
+	if err = channel.Call(ctx, "agent.call", mitosis.AgentCall{Method: "inspect"}, &described); err != nil || described.Generation != "2" {
+		t.Fatalf("the agent after restart = %+v, %v", described, err)
 	}
 	if _, err = again.Admin(ctx, "join", nil, ""); err == nil {
 		t.Fatal("join should be refused on a Worker object")

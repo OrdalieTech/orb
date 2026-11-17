@@ -455,7 +455,7 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	manager, sessionContext, err := createCLISession(cwd, args, streams, dependencies.selectSession)
 	// A conversation another Orb here holds opens as a live view of that Orb, and here once it lets go.
 	for held := (native.HeldError{}); isInteractive && errors.As(err, &held); {
-		if code := runMitosisView(ctx, remoteLink{instance: held.ID, held: args.native}, streams); code != 0 || args.native.Held(held.ID) {
+		if code := runMitosisView(ctx, remoteLink{session: held.ID, held: args.native}, streams); code != 0 || args.native.Held(held.ID) {
 			return code
 		}
 		args.Session = &held.ID

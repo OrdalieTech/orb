@@ -524,19 +524,21 @@ successful `Update` must mean durable replacement. The native implementation is
 `mitosis.Connect` accepts a caller-owned `net.Conn` and performs pinned mutual TLS and hello
 negotiation. Native/Tailcat hosting is an explicit CLI assembly; the portable `mitosis` and
 `mitosis/protocol` packages compile for Wasm; the browser transport is `platforms/websocket`.
-`plugins/mitosisagents.Extension` gives an agent its owner's other conversations: an `agents` tool
-that lists them (id, machine, folder, title, state), reads one's latest messages and sends one a
-message headed with the sender's id, title and machine. The host supplies its `Mitosis`: the machines, a call made with the owner's reach, and the
-instance it runs as. The tool shows only while another conversation is reachable. A Worker's
-`agent/mitosis/tool.NewTool` (`mitosis_call`) instead calls under its instance's own grants,
-through the source attachment's outbound route. Discovery never authorizes execution.
+`plugins/mitosisagents.Extension` gives an agent its owner's other agents and their conversations:
+an `agents` tool that lists them (agent id and name; conversation id, folder, title, state), reads
+one's latest messages and sends one a message headed with the sender's agent, conversation, title
+and machine. The host supplies its `Mitosis`: the machines, a call made with the owner's reach, and
+the conversation it holds. The tool shows only while another conversation is reachable. A Worker's
+`agent/mitosis/tool.NewTool` (`mitosis_call`) instead calls a peer's agent (`agent.call`, one of its
+conversations or its default one) under its agent's own grants, through the source attachment's
+outbound route. Discovery never authorizes execution.
 
 In Orb, open Mitosis directly from Settings, Ctrl+P, or `/mitosis`, then use its service switch.
 The home page shows the service switch, **Add device**, and your devices. Select a device to
 open its conversations; both lists update automatically. **Advanced** contains agent access and
 your fingerprint. Groups, grants, scopes, and receipts stay in the CLI.
 Opening Mitosis before activation creates no profile or network service. `orb --mitosis personal --instance work` explicitly attaches a named runtime. The service survives TUI exit; `orb mitosis stop` remains effective until Start or
-re-enable. `orb mitosis view <peer-id> <instance-id>` opens the same focused conversation view
+re-enable. `orb mitosis view <peer-id> <session-id>` opens the same focused conversation view
 without constructing a local model or requiring provider credentials. Invitations contain a
 private transport locator and one-use claim secret; exchange them with the intended device,
 verify both displayed PeerIDs, and approve the exact directional grants locally.
@@ -567,7 +569,7 @@ pairing can happen before any conversations exist.
 From the shell, `orb mitosis` shows a code and `orb mitosis join <code>` on the other machine
 pairs it and joins the sync group after one fingerprint check on the first.
 
-Scripted administration uses `orb mitosis status|instances|peers|grants|groups|scopes`,
+Scripted administration uses `orb mitosis status|instances|peers|grants|scopes`,
 `orb mitosis pair invite`, `orb mitosis pair join` (invitation JSON on stdin),
 and `orb mitosis pair approve <invitation-id> <claimant-peer-id>`. The low-level pair commands
 retain their directional workflow; `orb mitosis trust <peer-id>` grants the reverse full controller

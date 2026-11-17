@@ -56,7 +56,7 @@ func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = c.Close() }()
-	if err = c.Call(ctx, "instances.list", struct{}{}, nil); err == nil {
+	if err = c.Call(ctx, "agent.describe", struct{}{}, nil); err == nil {
 		t.Fatal("unpaired client has access")
 	}
 	inv, err := b.Invite([]mitosis.Grant{{Permissions: []string{"agent.list", "agent.inspect"}}})
@@ -66,13 +66,13 @@ func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 	if err = c.Call(ctx, "pair.claim", map[string]string{"invitation_id": inv.ID, "token": inv.Token}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err = c.Call(ctx, "instances.list", struct{}{}, nil); err == nil {
+	if err = c.Call(ctx, "agent.describe", struct{}{}, nil); err == nil {
 		t.Fatal("unapproved client has access")
 	}
 	if err = b.Approve(inv.ID, peer); err != nil {
 		t.Fatal(err)
 	}
-	if err = c.Call(ctx, "instances.list", struct{}{}, nil); err != nil {
+	if err = c.Call(ctx, "agent.describe", struct{}{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err = c.Call(ctx, "status", struct{}{}, nil); err == nil {
@@ -84,17 +84,17 @@ func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	endpoint := mitosis.NewLocal(func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
-		return mitosis.JSON(struct{}{}), nil
+		return json.RawMessage(`{"target":{"session_id":"s"}}`), nil
 	})
 	if _, err = b.Attach(instance.ID, token, protocol.NewID(), endpoint); err != nil {
 		t.Fatal(err)
 	}
-	call := mitosis.Call{InstanceID: instance.ID, Service: protocol.Service, Method: "inspect", Args: mitosis.JSON(struct{}{})}
-	if err = c.Call(ctx, "instances.call", call, nil); err != nil {
+	call := mitosis.AgentCall{SessionID: "s", Method: "inspect"}
+	if err = c.Call(ctx, "agent.call", call, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err = c.Call(ctx, "instances.call", struct {
-		mitosis.Call
+	if err = c.Call(ctx, "agent.call", struct {
+		mitosis.AgentCall
 		Subject mitosis.Subject `json:"subject"`
 	}{call, mitosis.Subject{Kind: "agent"}}, nil); err == nil {
 		t.Fatal("controller grant leaked to agent")
@@ -108,7 +108,7 @@ func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 	if incoming == nil {
 		t.Fatal("connection not registered")
 	}
-	if err = incoming.Call(ctx, "instances.list", struct{}{}, nil); err == nil {
+	if err = incoming.Call(ctx, "agent.describe", struct{}{}, nil); err == nil {
 		t.Fatal("client accepts inbound calls")
 	}
 	_ = c.Close()
@@ -116,7 +116,7 @@ func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = c.Call(ctx, "instances.list", struct{}{}, nil); err != nil {
+	if err = c.Call(ctx, "agent.describe", struct{}{}, nil); err != nil {
 		t.Fatal("pairing did not survive reconnect", err)
 	}
 	if !b.Available(instance.ID) {
@@ -125,7 +125,7 @@ func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 	if err = b.Block(peer); err != nil {
 		t.Fatal(err)
 	}
-	if err = c.Call(ctx, "instances.list", struct{}{}, nil); err == nil {
+	if err = c.Call(ctx, "agent.describe", struct{}{}, nil); err == nil {
 		t.Fatal("blocked peer retained access")
 	}
 }

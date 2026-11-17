@@ -81,7 +81,8 @@ func (c *client) until(t *testing.T, what string, ok func() bool) {
 	}
 }
 
-// orb is a machine's Mitosis with one Orb on a faux model attached, which an app reaches as its owner.
+// orb is a machine's Mitosis with one Orb on a faux model attached, which an app reaches as its
+// owner, and the session it holds.
 func orb(t *testing.T, speed float64, steps ...faux.ResponseStep) (*App, *client, string) {
 	t.Helper()
 	return orbWith(t, nil, speed, steps...)
@@ -154,7 +155,7 @@ func orbWith(t *testing.T, plugin extensions.Factory, speed float64, steps ...fa
 	})
 	app.Do([]byte(`{"do":"hello","budget":4}`))
 	app.Do([]byte(`{"do":"visible","on":true}`))
-	return app, c, enrolled.ID
+	return app, c, host.Session().Manager().GetSessionID()
 }
 
 func (c *client) tab(id string) Tab {
@@ -170,11 +171,11 @@ func (c *client) tab(id string) Tab {
 // typed, then Orb's markdown a block per row, as the turn streams and once it ends.
 func TestAnAppOpensAnOrbAndDrawsItsAnswer(t *testing.T) {
 	answer := "Here is **the plan**:\n\n- read the diff\n- run the tests\n\n> a quote\n> on two lines\n\n```go\nfmt.Println(1)\n```"
-	app, c, instance := orb(t, 0, faux.AssistantMessage(answer))
+	app, c, session := orb(t, 0, faux.AssistantMessage(answer))
 	c.until(t, "the Orb on Home", func() bool {
-		return slices.ContainsFunc(c.home, func(e Entry) bool { return e.Key == "i:"+instance && e.Unstored })
+		return slices.ContainsFunc(c.home, func(e Entry) bool { return e.Key == "i:"+session && e.Unstored })
 	})
-	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + instance + `"}`))
+	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + session + `"}`))
 	c.until(t, "the tab", func() bool { return c.replies["1"] != nil })
 	var opened struct{ Tab string }
 	_ = json.Unmarshal(c.replies["1"], &opened)
@@ -210,9 +211,9 @@ func TestAnAppOpensAnOrbAndDrawsItsAnswer(t *testing.T) {
 // changed, so a token resends the paragraph it grew, never the conversation.
 func TestAStreamedAnswerArrivesAsSmallPatches(t *testing.T) {
 	long := strings.Repeat("A first paragraph that the stream will not touch again. ", 40) + "\n\n" + strings.Repeat("word ", 400)
-	app, c, instance := orb(t, 400, faux.AssistantMessage(long))
+	app, c, session := orb(t, 400, faux.AssistantMessage(long))
 	c.until(t, "the Orb on Home", func() bool { return len(c.home) > 0 })
-	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + instance + `"}`))
+	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + session + `"}`))
 	c.until(t, "the tab", func() bool { return c.replies["1"] != nil })
 	var opened struct{ Tab string }
 	_ = json.Unmarshal(c.replies["1"], &opened)
@@ -262,7 +263,7 @@ func TestAModelIsKnownByItsProvider(t *testing.T) {
 	a := &App{ctx: t.Context(), asked: map[*tab]bool{}, o: Options{Emit: func(any) {}, Call: func(_ context.Context, _ string, _, result any) error {
 		return json.Unmarshal([]byte(describe), result)
 	}}}
-	tb := &tab{a: a, instance: "i"}
+	tb := &tab{a: a, running: true, session: "s"}
 	if !tb.describe() || tb.Model != "openai-codex/gpt-6-luna" || len(tb.Levels) != 2 {
 		t.Fatalf("model %q, levels %v", tb.Model, tb.Levels)
 	}
@@ -275,7 +276,7 @@ func TestAnAnswerDescribedMidTurnStillEndsUnread(t *testing.T) {
 	a := &App{ctx: t.Context(), asked: map[*tab]bool{}, o: Options{Emit: func(any) {}, Call: func(_ context.Context, _ string, _, result any) error {
 		return json.Unmarshal([]byte(describe), result)
 	}}}
-	tb := &tab{a: a, instance: "i"}
+	tb := &tab{a: a, running: true, session: "s"}
 	a.tabs = []*tab{tb}
 	for _, step := range []struct {
 		describe string
@@ -320,10 +321,10 @@ func TestAnAsleepTabShowsItsThreadWhileItsOrbStarts(t *testing.T) {
 		if method == "remote" {
 			reply = `{}`
 			switch params.(map[string]any)["method"] {
-			case "host.launch":
+			case "agent.call":
 				<-started
-				reply = `{"instance_id":"i"}`
-			case "instances.describe":
+				return nil
+			case "conversation.describe":
 				reply = `{"target":{"session_id":"s"}}`
 			case "host.read":
 				reply = `{"messages":[` + message + `],"from":0}`
@@ -370,9 +371,9 @@ func TestEarlierMessagesKeepTheRowsKeys(t *testing.T) {
 // An answer that finishes out of sight counts as unread until its tab shows, and alerts once
 // while the app itself is out of sight: on screen, its unread count says it.
 func TestAnAnswerOutOfSightIsUnreadUntilShown(t *testing.T) {
-	app, c, instance := orb(t, 0, faux.AssistantMessage("done"))
+	app, c, session := orb(t, 0, faux.AssistantMessage("done"))
 	c.until(t, "the Orb on Home", func() bool { return len(c.home) > 0 })
-	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + instance + `"}`))
+	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + session + `"}`))
 	c.until(t, "the tab", func() bool { return c.replies["1"] != nil })
 	var opened struct{ Tab string }
 	_ = json.Unmarshal(c.replies["1"], &opened)
@@ -387,9 +388,9 @@ func TestAnAnswerOutOfSightIsUnreadUntilShown(t *testing.T) {
 // A tab brought back after a restart follows the Orb that has its thread open, even on a machine
 // that does not let this app start Orb (this one has no launcher at all).
 func TestARestoredTabFollowsTheOrbThatHasItsThread(t *testing.T) {
-	app, c, instance := orb(t, 0, faux.AssistantMessage("hello again"))
+	app, c, session := orb(t, 0, faux.AssistantMessage("hello again"))
 	c.until(t, "the Orb on Home", func() bool { return len(c.home) > 0 })
-	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + instance + `"}`))
+	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + session + `"}`))
 	c.until(t, "the tab", func() bool { return c.replies["1"] != nil })
 	var opened struct{ Tab string }
 	_ = json.Unmarshal(c.replies["1"], &opened)
@@ -430,9 +431,9 @@ func TestOnlyWebAndMailLinksStayLinks(t *testing.T) {
 // change) shows as ended, to reopen at the next message, instead of staying a live tab that
 // drops what is sent to it.
 func TestAnOrbThatEndsOverThereShowsEnded(t *testing.T) {
-	app, c, instance := orb(t, 0, faux.AssistantMessage("hi"))
+	app, c, session := orb(t, 0, faux.AssistantMessage("hi"))
 	c.until(t, "the Orb on Home", func() bool { return len(c.home) > 0 })
-	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + instance + `"}`))
+	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + session + `"}`))
 	c.until(t, "the tab", func() bool { return c.replies["1"] != nil })
 	var opened struct{ Tab string }
 	_ = json.Unmarshal(c.replies["1"], &opened)
@@ -486,9 +487,9 @@ func TestAPluginsWidgetAndNoticeShowBesideTheConversation(t *testing.T) {
 		})
 		return nil
 	}
-	app, c, instance := orbWith(t, plugin, 0, faux.AssistantMessage("one"), faux.AssistantMessage("two"))
+	app, c, session := orbWith(t, plugin, 0, faux.AssistantMessage("one"), faux.AssistantMessage("two"))
 	c.until(t, "the Orb on Home", func() bool { return len(c.home) > 0 })
-	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + instance + `"}`))
+	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + session + `"}`))
 	c.until(t, "the tab", func() bool { return c.replies["1"] != nil })
 	var opened struct{ Tab string }
 	_ = json.Unmarshal(c.replies["1"], &opened)

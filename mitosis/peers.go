@@ -143,7 +143,7 @@ func (ps *Peers) Remote(ctx context.Context, id, method string, p any) (json.Raw
 	}
 	// A dead connection fails, or is superseded by the channel a restarted peer opens to greet
 	// this one; one retry reaches the peer's fresh channel or redials. Only calls safe to repeat
-	// are retried: reads, and instances.call, which the peer deduplicates by operation id.
+	// are retried: reads, and agent.call, which the peer deduplicates by operation id.
 	retries := 1
 	if method == "host.launch" || method == "host.terminal.open" || method == "host.terminal.write" {
 		retries = 0

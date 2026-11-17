@@ -44,7 +44,7 @@ func TestBrowserWasmLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	endpoint := mitosis.NewLocal(func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
-		return json.RawMessage(`{"wasm_mitosis":true}`), nil
+		return json.RawMessage(`{"wasm_mitosis":true,"target":{"session_id":"wasm-session"}}`), nil
 	})
 	if _, err = b.Attach(instance.ID, token, protocol.NewID(), endpoint); err != nil {
 		t.Fatal(err)
@@ -58,7 +58,7 @@ func TestBrowserWasmLifecycle(t *testing.T) {
 	}
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	fixture := mitosis.JSON(map[string]string{"url": "ws" + strings.TrimPrefix(server.URL, "http"), "peer": b.PeerID(), "seed": base64.RawStdEncoding.EncodeToString(key.Seed()), "instance": instance.ID})
+	fixture := mitosis.JSON(map[string]string{"url": "ws" + strings.TrimPrefix(server.URL, "http"), "peer": b.PeerID(), "seed": base64.RawStdEncoding.EncodeToString(key.Seed()), "session": "wasm-session"})
 	run := exec.CommandContext(t.Context(), "node", "testdata/smoke.cjs", filepath.Join(strings.TrimSpace(string(root)), "lib/wasm/wasm_exec.js"), binary)
 	run.Env = append(os.Environ(), "ORB_TEST_MITOSIS="+string(fixture))
 	if output, err := run.CombinedOutput(); err != nil {

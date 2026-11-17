@@ -98,7 +98,7 @@ orb mitosis pair join < invitation.json          # prints the claim, with the la
 curl -s -X POST https://<host>/agents/demo/mitosis/admin -H "Authorization: Bearer $ORB_TOKEN" \
   -d '{"method":"approve","params":{"invitation_id":"<id>","claimant":"<laptop peer ID>"}}'
 orb mitosis trust <object peer ID>               # optional: the object may list and call this laptop
-orb mitosis remote <object peer ID> instances.list < /dev/null
+orb mitosis remote <object peer ID> agent.describe < /dev/null
 ```
 
 ## Deploy
@@ -191,6 +191,6 @@ erase stored objects first, deploy a migration with
 | `go test ./platforms/worker/... ./cmd/orb-worker/...` | FS conformance (`envtest`), restart persistence and key hygiene, documents, session resume, `new_session` and `switch_session`. It also runs the real bundle in Node against a Map-backed Durable Object storage, restarts the object and asserts the frames. |
 | `GOOS=js GOARCH=wasm go test -exec="$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./platforms/worker/...` | The same suites through the syscall/js storage mitosis, against an asynchronous fake `ctx.storage`. |
 | `make -f platforms/worker/worker.mk worker-e2e-workerd` | workerd (`wrangler dev`) with a local scripted OpenAI-compatible model: write then read over WebSocket, a dev-server restart, then history and file checks over HTTP NDJSON. |
-| `make -f platforms/worker/worker.mk worker-e2e-mitosis-workerd` | Mitosis in both directions with this tree's native `orb`, confined to `.tools/worker-mitosis-e2e/laptop` (its own `HOME`, `ORB_STATE_HOME`, `ORB_MITOSIS_HOME` and `ORB_AGENT_DIR`, profile `e2e`). The object invites, the laptop joins over the advertised URL, and the owner approves. The laptop lists, inspects and prompts the object and reads the conversation back with `orb mitosis remote`. The object's agent then calls the laptop's Orb with `mitosis_call` under its own instance grant. After a restart the laptop reconnects to the same identity. |
+| `make -f platforms/worker/worker.mk worker-e2e-mitosis-workerd` | Mitosis in both directions with this tree's native `orb`, confined to `.tools/worker-mitosis-e2e/laptop` (its own `HOME`, `ORB_STATE_HOME`, `ORB_MITOSIS_HOME` and `ORB_AGENT_DIR`, profile `e2e`). The object invites, the laptop joins over the advertised URL, and the owner approves. The laptop describes the object's agent, inspects and prompts its conversation and reads it back with `orb mitosis remote`. The object's agent then calls the laptop Orb's conversation with `mitosis_call` under its own agent grant. After a restart the laptop reconnects to the same identity. |
 | `make -f platforms/worker/worker.mk worker-e2e-mitosis-deployed ORB_WORKER_URL=…` | The same against a deployed `worker-e2e-build` bundle. It redeploys `.tools/worker-e2e` once to restart the object. |
 | `worker-e2e-build`, then `worker-e2e-deployed` | A deployed check. `worker-e2e-build` adds `e2e/fake-model.js`, so the scripted model runs inside the Worker and no provider key is needed. `node platforms/worker/e2e/e2e.mjs --configure-deploy .tools/worker-e2e --name orb-do-e2e` writes its `wrangler.json`. Deploy that directory and set `ORB_TOKEN`. Then run `WORKER_E2E_PHASE=write`, redeploy (a new version restarts every object) and run `WORKER_E2E_PHASE=verify`, with `ORB_WORKER_URL` and `ORB_TOKEN` set. |

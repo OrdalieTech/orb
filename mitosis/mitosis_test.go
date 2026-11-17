@@ -113,13 +113,13 @@ func TestAgentCallsRequireBothDirectionalGrants(t *testing.T) {
 	}
 	call := Call{InstanceID: target.ID, Service: protocol.Service, Method: "prompt", SessionID: "session", Expected: Expected{Generation: generation, Revision: "1"}, OperationID: protocol.NewID(), Args: JSON(map[string]string{"text": "hello"})}
 	principal := Principal{PeerID: source.PeerID(), Subject: Subject{Kind: "agent"}}
-	if _, err = source.Outbound(origin.ID, destination.PeerID(), call); err == nil {
+	if _, err = source.Outbound(origin.ID, destination.PeerID(), call.Method); err == nil {
 		t.Fatal("missing source grant allowed")
 	}
 	if err = source.AddGrant(Grant{Principal: principal, Destination: destination.PeerID(), Permissions: []string{"agent.prompt"}}); err != nil {
 		t.Fatal(err)
 	}
-	subject, err := source.Outbound(origin.ID, destination.PeerID(), call)
+	subject, err := source.Outbound(origin.ID, destination.PeerID(), call.Method)
 	if err != nil || subject != principal.Subject {
 		t.Fatal(subject, err)
 	}
@@ -137,7 +137,7 @@ func TestAgentCallsRequireBothDirectionalGrants(t *testing.T) {
 	if _, err = destination.Call(context.Background(), forged, call); err == nil {
 		t.Fatal("the source's controller inherited its agent's authority")
 	}
-	if _, err = source.Outbound(origin.ID, newMitosis(t).PeerID(), call); err == nil {
+	if _, err = source.Outbound(origin.ID, newMitosis(t).PeerID(), call.Method); err == nil {
 		t.Fatal("destination grant forwarded to third mitosis")
 	}
 }
@@ -308,14 +308,14 @@ func TestTheOwnerReachesItsOwnMachineWithoutGrants(t *testing.T) {
 		hosted = method
 		return JSON(struct{}{}), nil
 	})
-	raw, err := b.Handle(t.Context(), b.PeerID(), "instances.list", JSON(struct{}{}))
+	raw, err := b.Handle(t.Context(), b.PeerID(), "agent.describe", JSON(struct{}{}))
 	if err != nil || !json.Valid(raw) || len(b.Catalog(b.Principal())) != 1 || !b.Allowed(b.Principal(), instance.ID, "agent.prompt") {
 		t.Fatalf("owner catalog: %s %v", raw, err)
 	}
 	if _, err = b.Handle(t.Context(), b.PeerID(), "host.sessions", JSON(struct{}{})); err != nil || hosted != "host.sessions" {
 		t.Fatalf("owner host call: %v", err)
 	}
-	if _, err = b.Handle(t.Context(), stranger.PeerID(), "instances.list", JSON(struct{}{})); Code(err) != "unauthorized" {
+	if _, err = b.Handle(t.Context(), stranger.PeerID(), "agent.describe", JSON(struct{}{})); Code(err) != "unauthorized" {
 		t.Fatalf("stranger: %v", err)
 	}
 	agent := b.Principal()

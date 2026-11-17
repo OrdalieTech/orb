@@ -230,11 +230,14 @@ func (b *Mitosis) PeerLocator(peer string) (string, error) {
 	}
 	return locator, nil
 }
-func (b *Mitosis) Outbound(instance, peer string, call Call) (Subject, error) {
+
+// Outbound is the subject a call this agent's runtime instance makes to peer carries: the agent
+// itself, when granted the call there.
+func (b *Mitosis) Outbound(instance, peer, method string) (Subject, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	p := Principal{PeerID: b.PeerID(), Subject: Subject{Kind: "agent"}}
-	if !b.allowed(p, call.InstanceID, permission(call.Method), peer) {
+	if !b.allowed(p, "", permission(method), peer) {
 		return Subject{}, Fail("unauthorized")
 	}
 	if _, ok := b.active[instance]; !ok {

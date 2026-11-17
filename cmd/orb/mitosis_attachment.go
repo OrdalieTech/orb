@@ -34,17 +34,22 @@ type cliMitosisLink struct {
 	mu         sync.Mutex
 	connection *protocol.Conn
 	configure  func(bool) error
-	instance   string // the instance this Orb attached as
+	instance   string        // the instance this Orb attached as
+	session    func() string // the conversation it holds
 }
 
-// self is the instance this Orb attached as, empty before it attaches.
+// self is the conversation this Orb holds on Mitosis, empty before it attaches.
 func (l *cliMitosisLink) self() string {
 	if l == nil {
 		return ""
 	}
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.instance
+	attached, session := l.instance != "", l.session
+	l.mu.Unlock()
+	if !attached || session == nil {
+		return ""
+	}
+	return session()
 }
 
 func (l *cliMitosisLink) invoke(ctx context.Context, method string, p any, result any) error {
@@ -148,6 +153,12 @@ func attachEnabledMitosis(lifetime context.Context, host attach.Host, args CLIAr
 	}
 	link.mu.Lock()
 	link.instance = identity.InstanceID
+	link.session = func() string {
+		if s := host.Session(); s != nil {
+			return s.Manager().GetSessionID()
+		}
+		return ""
+	}
 	link.mu.Unlock()
 	quota := &providerUsage{cache: args.usageCache}
 	a, err := attach.Attach(lifetime, host, attach.Options{InstanceID: identity.InstanceID, Store: ledger, Status: func(s *agent.AgentSession) string {

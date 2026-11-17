@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/mitosis"
+	"github.com/OrdalieTech/orb/mitosis/protocol"
 )
 
 // Machine is a device on Mitosis, this one first, as Home, the pickers and the Mitosis screen show it.
@@ -27,7 +28,8 @@ type Machine struct {
 	Folders   []Folder  `json:"folders,omitempty"`
 }
 
-// Running is an Orb running on a machine, labelled for a picker.
+// Running is a conversation an Orb runs on a machine, labelled for a picker; Instance is its
+// session, the address a picker opens.
 type Running struct {
 	Instance string `json:"instance"`
 	Label    string `json:"label"`
@@ -61,15 +63,14 @@ type Entry struct {
 
 type machine struct {
 	id, host, version, state string
-	instances                []instance
+	instances                []instance // the conversations its Orbs run
 	threads                  []thread
-	launch, fetching, read   bool              // read: its running Orbs were read at least once
-	catalogs                 map[string]string // per instance, the digest a describe sends back
+	launch, fetching, read   bool // read: its running Orbs were read at least once
 }
 
 type instance struct {
-	id, title, cwd, session string
-	busy                    bool
+	title, cwd, session string
+	busy, asks          bool
 }
 
 type thread struct {
@@ -177,7 +178,7 @@ func (a *App) refresh(first bool) {
 		}
 		m := a.machine(id)
 		if m == nil {
-			m = &machine{id: id, catalogs: map[string]string{}}
+			m = &machine{id: id}
 		}
 		if m.state != "connected" || len(m.instances) == 0 {
 			m.state = state
@@ -215,8 +216,8 @@ func (a *App) refresh(first bool) {
 	}
 }
 
-// fetch reads a machine's running Orbs; its catalog is paged and may remember many past
-// registrations, so only the running ones count. A peer not named yet is asked its name.
+// fetch reads the conversations a machine's Orbs run (agent.describe), and its name when a peer
+// was not named yet.
 func (a *App) fetch(peer string) {
 	ctx, cancel := context.WithTimeout(a.ctx, time.Minute)
 	defer cancel()
@@ -246,45 +247,21 @@ func (a *App) fetch(peer string) {
 		}
 		a.flush()
 	}()
-	var running []string
 	cursor := ""
 	for range 32 {
 		var page struct {
-			Items []struct {
-				ID        string `json:"instance_id"`
-				Available *bool  `json:"available"`
-			}
+			Items  []mitosis.Conversation
 			Cursor string
 		}
-		if err = a.remote(ctx, peer, "instances.list", map[string]string{"cursor": cursor}, &page); err != nil {
+		if err = a.remote(ctx, peer, "agent.describe", map[string]string{"cursor": cursor}, &page); err != nil {
 			return
 		}
-		for _, it := range page.Items {
-			if it.Available == nil || *it.Available {
-				running = append(running, it.ID)
-			}
+		for _, c := range page.Items {
+			found = append(found, instance{title: c.Title, cwd: c.CWD, session: c.SessionID, busy: c.State == "running", asks: c.State == "asking"})
 		}
 		if cursor = page.Cursor; cursor == "" {
 			break
 		}
-	}
-	for _, id := range running {
-		params := map[string]string{"instance_id": id}
-		a.mu.Lock()
-		if m := a.machine(peer); m != nil && m.catalogs[id] != "" {
-			params["catalog"] = m.catalogs[id]
-		}
-		a.mu.Unlock()
-		var d descriptor
-		if a.remote(ctx, peer, "instances.describe", params, &d) != nil {
-			continue
-		}
-		a.mu.Lock()
-		if m := a.machine(peer); m != nil && d.Catalog != "" {
-			m.catalogs[id] = d.Catalog
-		}
-		a.mu.Unlock()
-		found = append(found, instance{id: id, title: d.Name, cwd: d.CWD, session: d.Target.Session, busy: d.Target.Execution != ""})
 	}
 }
 
@@ -350,7 +327,7 @@ func (a *App) machinesState() ([]Machine, []Entry) {
 		name := a.name(m)
 		out := Machine{ID: m.id, Name: name, Self: m.id == a.self, Connected: m.state == "connected", Version: m.version, Launch: m.launch, Hue: hues[m.id]}
 		for _, i := range m.instances {
-			what := cmp.Or(a.tabTitle(i.id), i.title)
+			what := cmp.Or(a.tabTitle(m.id, i.session), i.title)
 			for _, th := range m.threads {
 				if what == "" && th.id == i.session {
 					what = th.title
@@ -361,7 +338,7 @@ func (a *App) machinesState() ([]Machine, []Entry) {
 			for slices.ContainsFunc(out.Running, func(r Running) bool { return r.Label == label }) {
 				label += " ·"
 			}
-			out.Running = append(out.Running, Running{Instance: i.id, Label: label, Busy: i.busy, Open: a.instanceTab(i.id) != nil})
+			out.Running = append(out.Running, Running{Instance: i.session, Label: label, Busy: i.busy, Open: a.threadTab(m.id, i.session) != nil})
 		}
 		for _, th := range m.threads {
 			at := slices.IndexFunc(out.Folders, func(f Folder) bool { return f.CWD == th.cwd })
@@ -379,9 +356,7 @@ func (a *App) machinesState() ([]Machine, []Entry) {
 			t := a.threadTab(m.id, th.id)
 			e := Entry{Key: "t:" + m.id + "|" + th.id, Title: th.title, Machine: m.id, CWD: th.cwd, Modified: th.modified, Open: t != nil, Deletable: m.id == a.self && at < 0}
 			e.Live = at >= 0 && m.instances[at].busy
-			if t == nil && at >= 0 {
-				t = a.instanceTab(m.instances[at].id)
-			}
+			e.Asks = at >= 0 && m.instances[at].asks
 			if t != nil {
 				e.Live, e.Asks, e.Open, e.Tab = t.Busy, t.Ask != nil, true, t.ID
 			}
@@ -394,8 +369,8 @@ func (a *App) machinesState() ([]Machine, []Entry) {
 			if slices.ContainsFunc(m.threads, func(th thread) bool { return th.id == i.session }) {
 				continue
 			}
-			e := Entry{Key: "i:" + i.id, Title: cmp.Or(a.tabTitle(i.id), i.title, base(i.cwd), "new thread"), Machine: m.id, CWD: i.cwd, Modified: now, Live: i.busy, Unstored: true}
-			if t := a.instanceTab(i.id); t != nil {
+			e := Entry{Key: "i:" + i.session, Title: cmp.Or(a.tabTitle(m.id, i.session), i.title, base(i.cwd), "new thread"), Machine: m.id, CWD: i.cwd, Modified: now, Live: i.busy, Asks: i.asks, Unstored: true}
+			if t := a.threadTab(m.id, i.session); t != nil {
 				e.Live, e.Asks, e.Open, e.Tab = t.Busy, t.Ask != nil, true, t.ID
 			}
 			home = append(home, e)
@@ -436,15 +411,6 @@ func base(dir string) string {
 	return path.Base(dir)
 }
 
-func (a *App) instanceTab(id string) *tab {
-	for _, t := range a.tabs {
-		if t.instance == id {
-			return t
-		}
-	}
-	return nil
-}
-
 func (a *App) threadTab(peer, session string) *tab {
 	for _, t := range a.tabs {
 		if t.Peer == peer && t.session == session {
@@ -454,80 +420,74 @@ func (a *App) threadTab(peer, session string) *tab {
 	return nil
 }
 
-func (a *App) tabTitle(instance string) string {
-	if t := a.instanceTab(instance); t != nil {
+func (a *App) tabTitle(peer, session string) string {
+	if t := a.threadTab(peer, session); t != nil {
 		return t.Title
 	}
 	return ""
 }
 
-// launch starts Orb on a machine, in a folder on a new thread or on a stored thread, and returns
-// it as soon as it is on Mitosis: the conversation describes itself.
+// launch starts Orb on a machine, in a folder (the home folder when none) on a new thread or on a
+// stored thread, and returns the thread as soon as its Orb is on Mitosis.
 func (a *App) launch(peer, cwd, session string) (string, error) {
-	params := map[string]string{}
-	if cwd != "" {
-		params["cwd"] = cwd
-	}
+	params := map[string]string{"cwd": cmp.Or(cwd, "~")}
 	if session != "" {
-		params["session_id"] = session
+		params = map[string]string{"session_id": session}
 	}
 	var r struct {
-		ID string `json:"instance_id"`
+		ID string `json:"session_id"`
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, time.Minute)
 	defer cancel()
-	err := a.remote(ctx, peer, "host.launch", params, &r)
-	switch mitosis.Code(err) {
-	case "":
-		return r.ID, err
-	case "unauthorized":
-		return "", fmt.Errorf("this device does not let %s start Orb · on it, run  orb mitosis trust %s", a.o.Name, a.self)
-	case "not_found":
-		return "", errors.New("no such folder or thread there")
-	case "resource_exhausted":
-		return "", errors.New("every Orb that machine can start is in the middle of a turn · try again when one finishes")
-	case "busy":
-		return "", errors.New("this thread is open in another Orb on that device · continue it there, or turn on its mitosis plugin to follow it here")
-	}
-	return "", err
+	err := a.launchError(a.remote(ctx, peer, "host.launch", params, &r))
+	return r.ID, err
 }
 
-// open opens a row of Home or a picker ("t:<machine>|<thread>", "i:<instance>") in a tab: the
-// tab that follows it, the Orb that has it open, or one started on it.
+// launchError says why a machine did not start Orb on a thread or in a folder.
+func (a *App) launchError(err error) error {
+	switch mitosis.Code(err) {
+	case "":
+		return nil
+	case "unauthorized":
+		return fmt.Errorf("this device does not let %s start Orb · on it, run  orb mitosis trust %s", a.o.Name, a.self)
+	case "not_found":
+		return errors.New("no such folder or thread there")
+	case "resource_exhausted":
+		return errors.New("every Orb that machine can start is in the middle of a turn · try again when one finishes")
+	case "busy":
+		return errors.New("this thread is open in another Orb on that device · continue it there, or turn on its mitosis plugin to follow it here")
+	}
+	return err
+}
+
+// open opens a row of Home or a picker ("t:<machine>|<thread>", "i:<thread>" for one an Orb runs)
+// in a tab: the tab that follows it, the Orb that has it open, or one started on it.
 func (a *App) open(key string) (any, error) {
 	kind, rest, _ := strings.Cut(key, ":")
 	a.mu.Lock()
-	var peer, session, running string
+	var peer, session string
+	running := false
 	switch kind {
 	case "i":
-		running = rest
+		session = rest
 		for _, m := range a.machines {
-			for _, i := range m.instances {
-				if i.id == rest {
-					peer, session = m.id, i.session
-				}
+			if slices.ContainsFunc(m.instances, func(i instance) bool { return i.session == rest }) {
+				peer, running = m.id, true
 			}
 		}
 	case "t":
 		peer, session, _ = strings.Cut(rest, "|")
 		if m := a.machine(peer); m != nil {
-			for _, i := range m.instances {
-				if i.session == session {
-					running = i.id
-				}
-			}
+			running = slices.ContainsFunc(m.instances, func(i instance) bool { return i.session == session })
 		}
 	}
 	m := a.machine(peer)
 	t := a.threadTab(peer, session)
-	if running != "" && t == nil {
-		t = a.instanceTab(running)
-	}
-	if t == nil && m != nil && running != "" {
-		t = a.newTab(peer, running, a.name(m), session)
+	if t == nil && m != nil && running {
+		t = a.newTab(peer, a.name(m), session, true)
 		// Titled from the start, as start does, so it never shows its folder's name meanwhile.
 		for _, i := range m.instances {
-			if i.id == running {
+			if i.session == session {
 				t.Title = i.title
 			}
 		}
@@ -561,7 +521,7 @@ func (a *App) start(peer, cwd, session, text string) (any, error) {
 	a.launching = "starting Orb on " + where + "…"
 	a.flush()
 	a.mu.Unlock()
-	running, err := a.launch(peer, cwd, session)
+	session, err := a.launch(peer, cwd, session)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	defer a.flush()
@@ -570,7 +530,7 @@ func (a *App) start(peer, cwd, session, text string) (any, error) {
 		return nil, err
 	}
 	a.launching = ""
-	t := a.newTab(peer, running, where, session)
+	t := a.newTab(peer, where, session, true)
 	// Titled from the start, so it never shows its folder's name while its Orb describes itself.
 	t.Title = firstLine(text, 48)
 	for _, th := range m.threads {
@@ -602,7 +562,8 @@ func (a *App) sendHome(text string) (any, error) {
 	return a.start(self, a.o.CWD, "", text)
 }
 
-// renameThread names a thread from Home through the Orb that has it open, starting one if none does.
+// renameThread names a thread from Home through the Orb that has it open, its machine starting one
+// if none does.
 func (a *App) renameThread(key, name string) (any, error) {
 	peer, session, _ := strings.Cut(strings.TrimPrefix(key, "t:"), "|")
 	a.mu.Lock()
@@ -611,30 +572,13 @@ func (a *App) renameThread(key, name string) (any, error) {
 		a.mu.Unlock()
 		return nil, nil
 	}
-	running := ""
-	if m := a.machine(peer); m != nil {
-		for _, i := range m.instances {
-			if i.session == session {
-				running = i.id
-			}
-		}
-	}
 	a.mu.Unlock()
-	if running == "" {
-		var err error
-		if running, err = a.launch(peer, "", session); err != nil {
-			return nil, err
-		}
+	ctx, cancel := context.WithTimeout(a.ctx, time.Minute)
+	defer cancel()
+	call := mitosis.AgentCall{SessionID: session, Method: "session.name", OperationID: protocol.NewID(), Args: mitosis.JSON(map[string]string{"name": name})}
+	if err := a.remote(ctx, peer, "agent.call", call, nil); err != nil {
+		return nil, err
 	}
-	// A tab the app does not show: describe the Orb, then name its session.
-	t := &tab{a: a, Tab: Tab{Peer: peer}, instance: running}
-	for range 20 {
-		if t.describe() && t.info.Target.Session != "" {
-			break
-		}
-		time.Sleep(250 * time.Millisecond)
-	}
-	t.call("session.name", map[string]string{"name": name})
 	a.mu.Lock()
 	a.threadsAt = time.Time{}
 	a.mu.Unlock()

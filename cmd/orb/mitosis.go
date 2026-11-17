@@ -60,8 +60,8 @@ orb mitosis sync [add|remove|promote|demote <peer-id> | join <peer-id>]   (the s
 orb mitosis run [--web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 --web-url wss://host/mitosis]
 orb mitosis pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>
 orb mitosis trust <peer-id> | grant|revoke|scope|takeover|publish < request.json
-orb mitosis remote <peer-id> <method> < params.json | view <peer-id> <instance-id> | shell <peer-id> [folder]
-orb mitosis instances|peers|grants|groups|scopes|prune|pipe`)
+orb mitosis remote <peer-id> <method> < params.json | view <peer-id> <session-id> | shell <peer-id> [folder]
+orb mitosis instances|peers|grants|scopes|prune|pipe`)
 		return 0
 	}
 	if args[0] == "run" {
@@ -157,7 +157,7 @@ orb mitosis instances|peers|grants|groups|scopes|prune|pipe`)
 		return reportInSync(ctx, client, streams, peer, err)
 	}
 	if args[0] == "view" && len(args) == 3 {
-		return runMitosisView(ctx, remoteLink{profile: profile, peer: args[1], instance: args[2]}, streams)
+		return runMitosisView(ctx, remoteLink{profile: profile, peer: args[1], session: args[2]}, streams)
 	}
 	if args[0] == "shell" && (len(args) == 2 || len(args) == 3) {
 		return runMitosisShell(ctx, profile, args[1], strings.Join(args[2:], ""), streams)

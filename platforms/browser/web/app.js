@@ -211,9 +211,9 @@ function browserIdentity() {
   return identity;
 }
 async function refreshInstances() {
-  const items = await remote.instances();
-  $("location").replaceChildren(new Option("Local · this browser", ""), ...items.filter(i => i.available).map(i => new Option(i.alias || i.instance_id, i.instance_id)));
-  if (selected && !items.some(i => i.instance_id === selected && i.available)) { selectConversation(""); showError("Remote instance is no longer available"); }
+  const items = await remote.conversations();
+  $("location").replaceChildren(new Option("Local · this browser", ""), ...items.map(i => new Option(i.title || i.cwd || i.session_id, i.session_id)));
+  if (selected && !items.some(i => i.session_id === selected)) { selectConversation(""); showError("Remote conversation is no longer available"); }
   $("location").value = selected;
   $("remote-controls").hidden = false;
   $("mitosis-status").textContent = "Connected";
@@ -248,7 +248,13 @@ async function remoteCommand(method, args = {}) {
   remoteBusy = true; controls(); showError("");
   try {
     const accepted = await remote.command(method, args);
-    if (version === selection) { receipt = accepted; $("status").textContent = `Remote · ${accepted.status}`; }
+    if (version === selection) {
+      receipt = accepted; $("status").textContent = `Remote · ${accepted.status}`;
+      if (accepted.session_id && accepted.session_id !== selected) { // the conversation it left the Orb in
+        if (![...$("location").options].some(o => o.value === accepted.session_id)) $("location").add(new Option(accepted.session_id, accepted.session_id));
+        selected = accepted.session_id; selection++; remoteReady = false; remote.view = null; $("location").value = selected;
+      }
+    }
     return true;
   } catch (error) {
     if (version === selection) showError(`${error.message}. The command was not retried automatically.`);
@@ -270,7 +276,7 @@ async function pollRemote() {
     $("remote-question").hidden = !view.info.input;
     $("status").textContent = view.info.input ? "Remote · reply to the pending question" : view.info.target.execution_id ? "Remote · running" : "Remote · ready";
     if (receipt) {
-      const result = await remote.call("operations.get", { instance_id: instance, operation_id: receipt.operation_id });
+      const result = await remote.call("operations.get", { session_id: instance, operation_id: receipt.operation_id });
       if (version !== selection) return;
       if (["failed", "cancelled", "outcome_unknown"].includes(result.status)) showError(`Remote operation ${result.status}${result.error ? ": " + result.error : ""}`);
       if (!["accepted", "running"].includes(result.status)) receipt = null;

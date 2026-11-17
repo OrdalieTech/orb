@@ -94,11 +94,13 @@ configured name — never supply a command.
 ### mitosis-agent-calls
 
 Agent access, switched on in `/mitosis` → Advanced. An agent gets an `agents` tool for its owner's
-other conversations, on this machine and on connected devices: `list` gives each one's id,
-machine, folder, title and state (idle, working, waiting for an answer), `read` its latest
-messages (tool output left out), and `send` gives it a message, queued after its current turn
-while it works, opening with a line that names the sender (its id, title and machine) so the
-recipient can answer. The agent acts with your reach, as the apps do. The tool exists for the model only
+agents, this machine's and those of connected devices: `list` gives each agent's id and name
+and the conversations open in it, each with its id, folder, title and state (idle, working,
+waiting for an answer); `read` shows a conversation's latest messages (tool output left out),
+and `send` gives it a message, queued after its current turn while it works, opening with a
+line that names the sender (its agent, conversation, title and machine) so the recipient can
+answer. An agent is named by its id or an unambiguous start of it; without a conversation,
+`read` and `send` go to the agent's default one, its latest. The agent acts with your reach, as the apps do. The tool exists for the model only
 while Mitosis is on and another conversation is reachable, so it costs nothing otherwise.
 
 ### jobs

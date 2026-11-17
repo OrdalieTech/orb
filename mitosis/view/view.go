@@ -103,7 +103,7 @@ func New(ctx context.Context, o Options) *App {
 	_ = json.Unmarshal(o.Names, &a.names)
 	a.mu.Lock()
 	for _, s := range saved {
-		t := a.newTab(s.Peer, "", s.Where, s.Session)
+		t := a.newTab(s.Peer, s.Where, s.Session, false)
 		t.ID, t.Title = cmp.Or(s.ID, t.ID), s.Title
 	}
 	a.mu.Unlock()
@@ -413,7 +413,7 @@ func (a *App) state() State {
 		n := len(t.tr.items)
 		t.Streaming = n > 0 && t.tr.items[n-1].kind == "s" && t.tr.items[n-1].live
 		t.Remote = t.Peer != a.self
-		t.Asleep = t.gone || t.instance == ""
+		t.Asleep = t.gone || !t.running
 		you := lastYou(&t.tr)
 		t.Acting = !t.Remote && t.Busy && you != nil && you.via != ""
 		s.Acting = s.Acting || t.Acting

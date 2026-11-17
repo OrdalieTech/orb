@@ -84,7 +84,7 @@ type Command struct {
 	Now  bool   `json:"now,omitempty"`
 }
 
-// descriptor is what `instances.describe` says of an Orb.
+// descriptor is what `conversation.describe` says of a conversation and the Orb running it.
 type descriptor struct {
 	Name, CWD, Model, Provider, Status, Catalog, State string
 	Thinking                                           *string
@@ -130,12 +130,12 @@ type question struct {
 	Options              []struct{ Label string }
 }
 
-// tab follows a conversation in an Orb on Mitosis, this machine's or a peer's, with the calls
-// `orb mitosis view` makes and long polls. Its fields are guarded by the app's lock.
+// tab follows a conversation on Mitosis, this machine's or a peer's, by its session, with the
+// calls `orb mitosis view` makes and long polls. Its fields are guarded by the app's lock.
 type tab struct {
 	a                      *App
-	Tab                    // what the app draws
-	instance               string
+	Tab                           // what the app draws
+	running                bool   // an Orb was found running its thread
 	session                string // the thread, kept across the Orbs that serve it
 	info                   descriptor
 	cursor, pulse          string
@@ -165,8 +165,8 @@ const tail = 80
 
 const ended = "asleep · a message wakes it"
 
-func (a *App) newTab(peer, instance, where, session string) *tab {
-	t := &tab{a: a, Tab: Tab{ID: protocol.NewID(), Peer: peer, Where: where, Online: true}, instance: instance, session: session, from: -1, stale: true, wake: make(chan struct{}, 1), done: make(chan struct{})}
+func (a *App) newTab(peer, where, session string, running bool) *tab {
+	t := &tab{a: a, Tab: Tab{ID: protocol.NewID(), Peer: peer, Where: where, Online: true}, running: running, session: session, from: -1, stale: true, wake: make(chan struct{}, 1), done: make(chan struct{})}
 	a.tabs = append(a.tabs, t)
 	go t.follow()
 	return t
@@ -197,8 +197,8 @@ func (t *tab) follow() {
 func (t *tab) step() time.Duration {
 	a := t.a
 	a.mu.Lock()
-	reopen := (t.instance == "" || t.gone) && t.wakes && time.Now().After(t.nextTry)
-	idle := t.instance == "" || t.gone
+	reopen := (!t.running || t.gone) && t.wakes && time.Now().After(t.nextTry)
+	idle := !t.running || t.gone
 	live, waits := t.watched || t.follows, t.info.Waits
 	describe := t.stale || !waits || !live
 	unread := idle && live && !t.threadRead && len(t.tr.items) == 0 && t.session != ""
@@ -262,7 +262,7 @@ func (t *tab) remote(method string, params, result any) error {
 func (t *tab) describe() bool {
 	a := t.a
 	a.mu.Lock()
-	params := map[string]string{"instance_id": t.instance}
+	params := map[string]string{"session_id": t.session}
 	// Its models and commands come only when they changed since the digest this side holds; an Orb
 	// that never gave one (before 0.19) takes no such parameter.
 	if t.info.Catalog != "" {
@@ -270,7 +270,7 @@ func (t *tab) describe() bool {
 	}
 	a.mu.Unlock()
 	var d descriptor
-	err := t.remote("instances.describe", params, &d)
+	err := t.remote("conversation.describe", params, &d)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	defer a.flush()
@@ -394,7 +394,7 @@ func (t *tab) question() *Ask {
 func (t *tab) snapshot() {
 	a := t.a
 	a.mu.Lock()
-	instance, asked, waits := t.instance, t.from, t.info.Waits
+	session, asked, waits := t.session, t.from, t.info.Waits
 	a.mu.Unlock()
 	offset := ""
 	if asked > 0 {
@@ -406,11 +406,11 @@ func (t *tab) snapshot() {
 	from := -1
 	defer func() {
 		if snap != "" {
-			_ = t.remote("events.unsubscribe", map[string]string{"instance_id": instance, "snapshot_id": snap}, nil)
+			_ = t.remote("events.unsubscribe", map[string]string{"session_id": session, "snapshot_id": snap}, nil)
 		}
 	}()
 	for range 64 {
-		params := map[string]any{"instance_id": instance, "snapshot_id": snap, "offset": offset}
+		params := map[string]any{"session_id": session, "snapshot_id": snap, "offset": offset}
 		if snap == "" && asked < 0 && waits {
 			params["tail"] = tail
 		}
@@ -463,7 +463,7 @@ func (t *tab) readThread(waking bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	t.threadRead = true
-	if err == nil && len(t.tr.items) == 0 && (t.instance == "" || t.gone) {
+	if err == nil && len(t.tr.items) == 0 && (!t.running || t.gone) {
 		t.tr.load(r.Messages, r.From)
 		t.Loaded = true
 		if !waking {
@@ -476,7 +476,7 @@ func (t *tab) readThread(waking bool) {
 func (t *tab) events(waits bool) {
 	a := t.a
 	a.mu.Lock()
-	params := map[string]any{"instance_id": t.instance, "cursor": t.cursor}
+	params := map[string]any{"session_id": t.session, "cursor": t.cursor}
 	if waits {
 		params["wait"], params["state"] = true, t.pulse
 	}
@@ -513,7 +513,8 @@ func (t *tab) events(waits bool) {
 
 // call runs a method on the Orb's session; its error, if any, becomes the tab's status. Not
 // found is an Orb that ended over there (its machine retires those it started when their
-// plugins change) before this side noticed.
+// plugins change) before this side noticed. A call leaving the Orb on another session (a new or
+// switched one) moves the tab there.
 func (t *tab) call(method string, args any) {
 	a := t.a
 	a.mu.Lock()
@@ -521,26 +522,36 @@ func (t *tab) call(method string, args any) {
 		a.mu.Unlock()
 		return
 	}
-	call := mitosis.Call{InstanceID: t.instance, Service: protocol.Service, Method: method, SessionID: t.info.Target.Session, OperationID: protocol.NewID(),
+	call := mitosis.AgentCall{SessionID: t.session, Method: method, OperationID: protocol.NewID(),
 		Expected: mitosis.Expected{Generation: t.info.Generation, Revision: t.info.Target.Revision}, Args: mitosis.JSON(args)}
 	a.mu.Unlock()
-	if err := t.remote("instances.call", call, nil); err != nil {
-		a.mu.Lock()
+	var r struct {
+		SessionID string `json:"session_id"`
+	}
+	err := t.remote("agent.call", call, &r)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	switch {
+	case err != nil:
 		t.Status = err.Error()
 		if mitosis.Code(err) == "not_found" {
 			t.gone, t.Status = true, ended
 		}
 		a.flush()
-		a.mu.Unlock()
+	case r.SessionID != "" && r.SessionID != t.session:
+		t.session, t.cursor, t.from, t.Loaded, t.stale = r.SessionID, "", -1, false, true
+		t.tr.clear()
+		t.wakeUp()
+		a.flush()
 	}
 }
 
 // read is a read-only call on the Orb, answered at once.
 func (t *tab) read(method string, args, result any) error {
 	t.a.mu.Lock()
-	instance := t.instance
+	session := t.session
 	t.a.mu.Unlock()
-	return t.remote("instances.call", mitosis.Call{InstanceID: instance, Service: protocol.Service, Method: method, Args: mitosis.JSON(args)}, result)
+	return t.remote("agent.call", mitosis.AgentCall{SessionID: session, Method: method, Args: mitosis.JSON(args)}, result)
 }
 
 func (t *tab) execution(args map[string]any) map[string]any {
@@ -559,7 +570,7 @@ func (t *tab) invoking(text string) string {
 func (t *tab) prompt(text string) {
 	t.tr.sent = append(t.tr.sent, text)
 	switch {
-	case t.gone || t.instance == "":
+	case t.gone || !t.running:
 		go t.reopen(text)
 	case t.info.Target.Session == "":
 		t.queued, t.queuedFrom = text, ""
@@ -582,7 +593,7 @@ func (t *tab) prompt(text string) {
 }
 
 // reopen follows the Orb that has the thread open over there (a restored tab's, or another since
-// this one's ended), or starts Orb on it: a machine may not let this app start one at all.
+// this one's ended), or has its machine start Orb on it: a machine may not let this app start one.
 func (t *tab) reopen(text string) {
 	a := t.a
 	a.mu.Lock()
@@ -596,32 +607,19 @@ func (t *tab) reopen(text string) {
 		return
 	}
 	t.reopening, t.Status = true, "opening the thread…"
-	session, read := t.session, m.read
+	session := t.session
 	a.flush()
 	a.mu.Unlock()
-	if !read {
-		a.fetch(t.Peer)
-	}
-	a.mu.Lock()
-	running := ""
-	for _, i := range m.instances {
-		// The machine's list may still hold the Orb that just ended.
-		if i.session == session && session != "" && i.id != t.instance {
-			running = i.id
-		}
-	}
-	a.mu.Unlock()
-	instance, err := running, error(nil)
-	if running == "" {
-		instance, err = a.launch(t.Peer, "", session)
-	}
+	ctx, cancel := context.WithTimeout(a.ctx, time.Minute)
+	err := a.launchError(a.remote(ctx, t.Peer, "agent.call", mitosis.AgentCall{SessionID: session, Method: "inspect"}, nil))
+	cancel()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	t.reopening, t.Status = false, ""
 	if err != nil {
 		t.Status, t.nextTry = err.Error(), time.Now().Add(30*time.Second)
 	} else {
-		t.instance, t.gone, t.cursor, t.stale = instance, false, "", true
+		t.running, t.gone, t.cursor, t.stale = true, false, "", true
 		t.wakeUp()
 	}
 	a.flush()

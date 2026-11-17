@@ -885,16 +885,16 @@ func TestMitosisConversationListFollowsPagesAndUsesStableIDs(t *testing.T) {
 		if err := json.Unmarshal(raw, &req); err != nil {
 			return nil, err
 		}
-		if method != "remote" || req.Method != "instances.list" || req.Peer != "peer" {
+		if method != "remote" || req.Method != "agent.describe" || req.Peer != "peer" {
 			t.Errorf("wrong catalog request: %s", raw)
 		}
 		if req.Params.Cursor == "" {
-			return mitosis.JSON(map[string]any{"items": []mitosis.Instance{{ID: "first", Alias: "same · alias", Available: true}, {ID: "stale", Alias: "closed", Available: false}}, "cursor": "next"}), nil
+			return mitosis.JSON(map[string]any{"items": []mitosis.Conversation{{SessionID: "first", Title: "same · title"}}, "cursor": "next"}), nil
 		}
 		if req.Params.Cursor != "next" {
 			t.Errorf("wrong cursor: %s", req.Params.Cursor)
 		}
-		return mitosis.JSON(map[string]any{"items": []mitosis.Instance{{ID: "second", Alias: "same · alias", Available: true}}}), nil
+		return mitosis.JSON(map[string]any{"items": []mitosis.Conversation{{SessionID: "second", Title: "same · title"}}}), nil
 	})
 	client := protocol.NewConn(x, nil)
 	defer func() { _ = client.Close(); _ = server.Close() }()
@@ -933,7 +933,7 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 			return nil, &protocol.RPCError{Code: -32000, Message: "unauthorized"}
 		}
 		switch method {
-		case "instances.describe":
+		case "conversation.describe":
 			revision := "1"
 			if phase.Load() == 5 {
 				revision = "2"
@@ -953,7 +953,7 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 				phase.Store(5)
 			}
 			return mitosis.JSON(map[string]any{"snapshot_id": "snapshot", "cursor": "1", "messages": []json.RawMessage{json.RawMessage(`{"role":"user","content":"hello from remote"}`), json.RawMessage(`{"role":"assistant","content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"remote answer"}]}`)}}), nil
-		case "instances.call":
+		case "agent.call":
 			commands.Add(1)
 		}
 		return mitosis.JSON(struct{}{}), nil
@@ -966,7 +966,7 @@ func TestRemotePreviewCacheReconnectAndRevocation(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runRemoteConversation(ctx, "instance", func(method string, p, result any) error { return client.Call(ctx, method, p, result) }, requests, body, status, func() {
+		runRemoteConversation(ctx, "remote-session", func(method string, p, result any) error { return client.Call(ctx, method, p, result) }, requests, body, status, func() {
 			select {
 			case changed <- struct{}{}:
 			default:
@@ -1108,7 +1108,7 @@ func TestASecondOrbFollowsTheOrbHoldingItsConversation(t *testing.T) {
 	go func() {
 		defer close(done)
 		defer closeRemote()
-		runRemoteConversation(ctx, heldInstance(id), remote, requests, body, status, func() {}, nil, "", id)
+		runRemoteConversation(ctx, id, remote, requests, body, status, func() {}, nil, "", id)
 	}()
 	wait := func(what string, text func() string, want ...string) {
 		t.Helper()
@@ -1197,21 +1197,15 @@ func TestMitosisLiveForeignPreview(t *testing.T) {
 		return client.Call(ctx, "remote", map[string]any{"peer_id": peer, "method": method, "params": p}, result)
 	}
 	var catalog struct {
-		Items []mitosis.Instance `json:"items"`
+		Items []mitosis.Conversation `json:"items"`
 	}
-	if err := remote("instances.list", struct{}{}, &catalog); err != nil {
+	if err := remote("agent.describe", struct{}{}, &catalog); err != nil {
 		t.Fatal(err)
 	}
-	instance := ""
-	for _, i := range catalog.Items {
-		if i.Available {
-			instance = i.ID
-			break
-		}
+	if len(catalog.Items) == 0 {
+		t.Fatal("no live conversation")
 	}
-	if instance == "" {
-		t.Fatal("no live instance")
-	}
+	session := catalog.Items[0].SessionID
 	cache, closeCache, err := daemon.Cache(ctx, stateFromContext(ctx), "personal")
 	if err != nil {
 		t.Fatal(err)
@@ -1222,7 +1216,7 @@ func TestMitosisLiveForeignPreview(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runRemoteConversation(ctx, instance, remote, requests, body, status, func() {}, cache, peer, "")
+		runRemoteConversation(ctx, session, remote, requests, body, status, func() {}, cache, peer, "")
 	}()
 	defer func() { cancel(); <-done }()
 	ticker := time.NewTicker(100 * time.Millisecond)

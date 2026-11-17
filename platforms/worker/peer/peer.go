@@ -176,16 +176,16 @@ func (p *Peer) Dial(ctx context.Context, dial func(ctx context.Context, peer, lo
 	go p.peers.Greet()
 }
 
-// Call is the object's agent-initiated call: it needs this object's own
-// instance grant for the destination, and a channel the destination opened.
-func (p *Peer) Call(ctx context.Context, peer string, call mitosis.Call) (json.RawMessage, error) {
-	subject, err := p.mitosis.Outbound(p.instanceID, peer, call)
+// Call is the object's agent-initiated call: it needs this agent's own
+// grant for the destination, and a channel the destination opened.
+func (p *Peer) Call(ctx context.Context, peer string, call mitosis.AgentCall) (json.RawMessage, error) {
+	subject, err := p.mitosis.Outbound(p.instanceID, peer, call.Method)
 	if err != nil {
 		return nil, err
 	}
 	var result json.RawMessage
-	err = p.remote(ctx, peer, "instances.call", struct {
-		mitosis.Call
+	err = p.remote(ctx, peer, "agent.call", struct {
+		mitosis.AgentCall
 		Subject mitosis.Subject `json:"subject"`
 	}{call, subject}, &result)
 	return result, err
@@ -333,7 +333,7 @@ func (h host) Fork(context.Context, string, *extensions.ForkOptions) (agent.Agen
 }
 
 func callTool(open func(context.Context) (*Peer, error)) extensions.ToolDefinition {
-	tool, _ := mitosistool.NewTool(func(ctx context.Context, peer string, call mitosis.Call) (json.RawMessage, error) {
+	tool, _ := mitosistool.NewTool(func(ctx context.Context, peer string, call mitosis.AgentCall) (json.RawMessage, error) {
 		self, err := open(ctx)
 		if err != nil {
 			return nil, err

@@ -76,6 +76,7 @@ type state struct {
 type registration struct {
 	generation string
 	endpoint   Endpoint
+	catalog    string // the digest of models and commands its last describe sent
 }
 type Mitosis struct {
 	mu             sync.Mutex
@@ -109,7 +110,7 @@ func (b *Mitosis) SetHost(h Host) {
 	b.mu.Unlock()
 }
 
-// SetName is what this machine is called on its peers' screens ("Baudouin's MacBook Pro").
+// SetName is what this agent is called on its peers' screens ("Baudouin's MacBook Pro").
 func (b *Mitosis) SetName(name string) {
 	b.mu.Lock()
 	b.name = name
@@ -415,7 +416,7 @@ func (b *Mitosis) Attach(id, credential, boot string, endpoint Endpoint) (string
 	if err = b.save(); err != nil {
 		return "", err
 	}
-	b.active[id] = registration{r.Generation, endpoint}
+	b.active[id] = registration{generation: r.Generation, endpoint: endpoint}
 	return r.Generation, nil
 }
 func (b *Mitosis) Detach(id, generation string) {

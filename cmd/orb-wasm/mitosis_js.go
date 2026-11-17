@@ -151,15 +151,15 @@ func (b *browserMitosis) tool() (engine.AgentTool, error) {
 	if c == nil {
 		return nil, errors.New("connect a Mitosis before enabling agent calls")
 	}
-	return mitosistool.NewTool(func(ctx context.Context, target string, call mitosis.Call) (json.RawMessage, error) {
+	return mitosistool.NewTool(func(ctx context.Context, target string, call mitosis.AgentCall) (json.RawMessage, error) {
 		if target != peer {
 			return nil, mitosis.Fail("unauthorized")
 		}
 		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
 		var result json.RawMessage
-		err := c.Call(ctx, "instances.call", struct {
-			mitosis.Call
+		err := c.Call(ctx, "agent.call", struct {
+			mitosis.AgentCall
 			Subject mitosis.Subject `json:"subject"`
 		}{call, mitosis.Subject{Kind: "agent"}}, &result)
 		return result, err
