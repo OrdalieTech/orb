@@ -504,6 +504,21 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 	}
 }
 
+// Hangup closes the channels this Mitosis dialled to peer; those peer dialled stay its own.
+func (b *Mitosis) Hangup(peer string) {
+	b.mu.Lock()
+	var out []*protocol.Conn
+	for c := range b.channels[peer] {
+		if b.dialled[c] {
+			out = append(out, c)
+		}
+	}
+	b.mu.Unlock()
+	for _, c := range out {
+		_ = c.Close()
+	}
+}
+
 // Connection returns an existing authenticated channel in either direction.
 func (b *Mitosis) Connection(peer string) *protocol.Conn {
 	b.mu.Lock()

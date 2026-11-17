@@ -305,9 +305,10 @@ func (ps *Peers) Greet() {
 		return
 	}
 	var status struct {
-		Peers     []string          `json:"peers"`
-		States    map[string]string `json:"peer_states"`
-		Instances []Instance        `json:"instances"`
+		Peers     []string            `json:"peers"`
+		States    map[string]string   `json:"peer_states"`
+		Instances []Instance          `json:"instances"`
+		Scopes    map[string][]string `json:"scopes"`
 	}
 	_ = json.Unmarshal(raw, &status)
 	// Orbs a previous run started for peers ended with it (a crash left no one to retire them).
@@ -328,10 +329,12 @@ func (ps *Peers) Greet() {
 		}
 	})
 	// A peer that restarted behind a NAT cannot always dial back (a phone after an app update):
-	// every known peer without a channel is dialled again until one opens.
+	// every known peer without a channel is dialled again until one opens. The members of this
+	// device's own sync group dial it, so a group's owner holds no client for each of them.
 	for {
+		own := status.Scopes[groupID(ps.Mitosis.PeerID())]
 		for _, peer := range status.Peers {
-			if status.States[peer] == "blocked" || peer == ps.Mitosis.PeerID() || ps.Mitosis.Connection(peer) != nil {
+			if status.States[peer] == "blocked" || peer == ps.Mitosis.PeerID() || ps.Mitosis.Connection(peer) != nil || slices.Contains(own, peer) {
 				continue
 			}
 			go func() {
@@ -381,6 +384,7 @@ func (ps *Peers) Reconcile() {
 		}
 		var status struct {
 			Scopes map[string][]string `json:"scopes"`
+			Peers  []string            `json:"peers"`
 		}
 		_ = json.Unmarshal(raw, &status)
 		var wg sync.WaitGroup
@@ -417,14 +421,29 @@ func (ps *Peers) Reconcile() {
 			}
 		}
 		wg.Wait()
+		// A channel this device dialled to a member it no longer links to and never paired with
+		// (the ring moved as the scope grew) holds a Tailcat client for nothing.
+		dials := map[string]bool{}
+		for _, members := range status.Scopes {
+			for _, p := range ps.dials(members) {
+				dials[p] = true
+			}
+		}
+		for _, members := range status.Scopes {
+			for _, p := range members {
+				if !dials[p] && !slices.Contains(status.Peers, p) {
+					ps.Mitosis.Hangup(p)
+				}
+			}
+		}
 	}
 }
 
-// links is who this device reconciles a scope with: its first member (a sync group's owner),
-// every member it has a channel to, and the members a power of two ahead of it on the ring of
-// members by PeerID. A change then crosses n members in about log2(n) hops with about log2(n)
-// dialled channels a device, where dialling every member would take n-1.
-func (ps *Peers) links(members []string) []string {
+// dials is who this device dials to reconcile a scope: its first member (a sync group's owner)
+// and the members a power of two ahead of it on the ring of members by PeerID. A change then
+// crosses n members in about log2(n) hops with about log2(n) dialled channels a device, where
+// dialling every member would take n-1.
+func (ps *Peers) dials(members []string) []string {
 	self := ps.Mitosis.PeerID()
 	ring := slices.Compact(slices.Sorted(slices.Values(members)))
 	i, found := slices.BinarySearch(ring, self)
@@ -443,9 +462,16 @@ func (ps *Peers) links(members []string) []string {
 	for d := 1; d < len(ring); d *= 2 {
 		add(ring[(i+d)%len(ring)])
 	}
+	return out
+}
+
+// links is who this device reconciles a scope with: those it dials, and every member it already
+// has a channel to.
+func (ps *Peers) links(members []string) []string {
+	out := ps.dials(members)
 	for _, p := range members {
-		if ps.Mitosis.Connection(p) != nil {
-			add(p)
+		if p != ps.Mitosis.PeerID() && !slices.Contains(out, p) && ps.Mitosis.Connection(p) != nil {
+			out = append(out, p)
 		}
 	}
 	return out
