@@ -175,6 +175,8 @@ func (ps *Peers) call(ctx context.Context, id string, c *protocol.Conn, method s
 // Keepalive pings a peer connection until the connection or the service ends, and closes it when
 // the peer stops answering. A peer that restarted or lost its network leaves a half-open connection
 // behind; without this, the next call on it would wait out its timeout before anything redialled.
+// A frame heard within the period proves the peer is there (the other end's ping, a reply, an
+// event), so the two ends of a quiet channel take turns and a busy one is never pinged.
 func Keepalive(ctx context.Context, c *protocol.Conn, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
@@ -185,6 +187,9 @@ func Keepalive(ctx context.Context, c *protocol.Conn, every time.Duration) {
 		case <-c.Done():
 			return
 		case <-t.C:
+		}
+		if time.Since(c.Heard()) < every {
+			continue
 		}
 		ping, cancel := context.WithTimeout(ctx, every)
 		err := c.Call(ping, "mitosis.ping", struct{}{}, nil)

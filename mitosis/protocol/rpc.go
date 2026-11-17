@@ -8,6 +8,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type Handler func(context.Context, string, json.RawMessage) (json.RawMessage, error)
@@ -30,6 +31,7 @@ type frame struct {
 
 type Conn struct {
 	frameLimit atomic.Int64
+	heard      atomic.Int64
 	stream     io.ReadWriteCloser
 	handler    Handler
 	ctx        context.Context
@@ -52,6 +54,9 @@ func NewConn(stream io.ReadWriteCloser, handler Handler) *Conn {
 }
 func (c *Conn) Done() <-chan struct{} { return c.ctx.Done() }
 func (c *Conn) Close() error          { c.once.Do(func() { c.cancel(); _ = c.stream.Close() }); return nil }
+
+// Heard is when the last frame arrived.
+func (c *Conn) Heard() time.Time { return time.Unix(0, c.heard.Load()) }
 func (c *Conn) Invoke(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	var r json.RawMessage
 	err := c.Call(ctx, method, params, &r)
@@ -139,6 +144,7 @@ func (c *Conn) read() {
 		if err != nil {
 			return
 		}
+		c.heard.Store(time.Now().UnixNano())
 		// Read validated the frame, so it decodes without another canonical pass.
 		var f frame
 		d := json.NewDecoder(bytes.NewReader(b))
