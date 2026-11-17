@@ -113,7 +113,7 @@ func Start(ctx context.Context, state *native.State, profile string, explicit bo
 	if err != nil {
 		return err
 	}
-	log, err := os.OpenFile(filepath.Join(dir, "service.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	log, err := os.OpenFile(filepath.Join(dir, "service.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return err
 	}

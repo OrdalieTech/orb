@@ -615,6 +615,13 @@ func (b *Mitosis) Approve(id, claimant string) error {
 }
 func (b *Mitosis) Block(peer string) error {
 	b.mu.Lock()
+	members := b.state.Scopes[b.state.Group]
+	b.mu.Unlock()
+	if len(members) > 0 && members[0] == b.PeerID() && slices.Contains(members, peer) {
+		// Out of the owner's group first, while its channel still carries the news.
+		_, _ = b.SyncAdmin(context.Background(), JSON(map[string]string{"remove": peer}), nil)
+	}
+	b.mu.Lock()
 	b.state.Blocked[peer] = true
 	b.state.Grants = slices.DeleteFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == peer })
 	for id, i := range b.state.Invitations {

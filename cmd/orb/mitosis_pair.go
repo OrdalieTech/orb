@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/term"
@@ -34,13 +36,23 @@ func runMitosisPair(ctx context.Context, profile string, auto bool, streams cliS
 	if err = client.Call(ctx, "invite", map[string]any{"grants": []mitosis.Grant{mitosis.FullGrant("")}}, &inv); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
+	// Interrupted, the invitation is withdrawn: its full code, printed below, must not stay usable.
+	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	defer func() {
+		done, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		_ = client.Call(done, "uninvite", map[string]string{"invitation_id": inv.ID}, nil) // an approved one stays
+	}()
 	code := mitosis.InvitationCode(inv)
 	// The code, fingerprint and expiry below must stay on screen: the QR shows only on a terminal
 	// it fits.
+	scan := ""
 	if q, err := qr.Encode([]byte(code)); err == nil {
 		f, _ := streams.Stdout.(*os.File)
 		if cols, rows, err := term.GetSize(int(f.Fd())); err == nil && cols >= len(q)+2 && rows >= (len(q)+3)/2+8 {
 			_, _ = fmt.Fprint(streams.Stdout, q.Terminal())
+			scan = "scan the QR code or "
 		}
 	}
 	// A short code for a terminal, when the relay can carry it; apps take the full one.
@@ -48,7 +60,7 @@ func runMitosisPair(ctx context.Context, profile string, auto bool, streams cliS
 	if short, stop, err := offerShortCode(ctx, code); err == nil {
 		defer stop()
 		join = short
-		_, _ = fmt.Fprintf(streams.Stdout, "\nIn an app or a browser tab, scan the QR code or paste:\n%s\n", code)
+		_, _ = fmt.Fprintf(streams.Stdout, "\nIn an app or a browser tab, %spaste:\n%s\n", scan, code)
 	}
 	_, _ = fmt.Fprintf(streams.Stdout, "\nOn the other machine run:\n  orb mitosis join %s\n\nThis Orb   %s\nExpires in 10 minutes · Ctrl-C cancels\n", join, inv.PeerID)
 	claimed, err := pollMitosisPairing(ctx, inv.Expires, func(ctx context.Context) (mitosis.Invitation, bool, error) {

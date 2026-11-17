@@ -153,12 +153,16 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 		return nil, err
 	}
 	b.mu.Lock()
-	left := b.state.Group == ""
+	group := b.state.Group
 	b.mu.Unlock()
-	if left && p.Remove != "" {
+	if group == "" && p.Remove != "" {
 		return JSON(struct{}{}), nil
 	}
-	return b.sync(ctx, endpoints)
+	out, err := b.sync(ctx, endpoints)
+	if p.Remove != "" {
+		b.tellRemoved(b.Connection(p.Remove), group)
+	}
+	return out, err
 }
 
 // Sync runs one round of the group: the owner folds in what members handed it, keeping its own,
@@ -243,6 +247,11 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		}
 	}
 	if ownerSet == nil && len(stale) > 0 && excluded == nil {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if !slices.Contains(b.state.Scopes[group], self) { // refused by the group (Refused)
+			return b.groupResult(group, owner, false, nil), nil
+		}
 		return nil, Fail("unavailable")
 	}
 	if ownerSet == nil && excluded != nil {
@@ -414,6 +423,42 @@ func (b *Mitosis) groupResult(group, owner string, inSync bool, received map[str
 		}
 	}
 	return JSON(map[string]any{"group_id": group, "self": b.PeerID(), "owner": owner, "members": b.state.Scopes[group], "names": names, "in_sync": inSync, "received": received})
+}
+
+// Refused is a member of this device's sync group refusing it the group's records: that member
+// does not count it, as the owner does not once it removed or blocked it (or not yet, which the
+// owner's next vault sealed to it corrects). The group then reads without this device, and the
+// owner's vaults it holds are dropped, so an old one no longer says otherwise.
+func (b *Mitosis) Refused(scope string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	members, self := b.state.Scopes[scope], b.PeerID()
+	if scope != b.state.Group || len(members) == 0 || members[0] == self || !slices.Contains(members, self) {
+		return
+	}
+	for _, v := range b.pointers(scope, members[0]) {
+		delete(b.vaults, v.Digest)
+	}
+	b.state.Scopes[scope] = slices.DeleteFunc(slices.Clone(members), func(p string) bool { return p == self })
+	_ = b.save()
+}
+
+// tellRemoved hands a device the owner just left out its new record, whose vaults no longer seal
+// to it, over a channel already open, so it stops showing itself a member and no older vault a
+// lagging member still serves brings it back; one offline learns it when the group refuses it.
+func (b *Mitosis) tellRemoved(c *protocol.Conn, group string) {
+	if c == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	b.mu.Lock()
+	r, ok := b.state.Records[group+"/"+b.PeerID()]
+	b.mu.Unlock()
+	if ok {
+		_ = c.Call(ctx, "peers.publish", map[string]any{"records": []Record{r}}, nil)
+	}
+	_ = c.Call(ctx, "sync.removed", map[string]string{"group_id": group}, nil)
 }
 
 // sealed is a class this device last sealed: a digest of what it sealed, and its vault.

@@ -443,6 +443,9 @@ func (ps *Peers) Reconcile() {
 					if err == nil {
 						err = ps.exchange(ctx, c, scope, peer, versions)
 					}
+					if Code(err) == "unauthorized" {
+						ps.Mitosis.Refused(scope)
+					}
 					m := mark{string(JSON(versions)), ps.Mitosis.Connection(peer), time.Now().Add(time.Minute)}
 					if after, e := ps.Mitosis.Versions(peer, scope); err == nil && e == nil {
 						m = mark{string(JSON(after)), c, time.Now().Add(5 * time.Minute)}

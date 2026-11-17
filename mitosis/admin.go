@@ -96,6 +96,20 @@ func (b *Mitosis) Admin(ctx context.Context, method string, params json.RawMessa
 		}
 		r, err := b.Invite(p.Grants)
 		return JSON(r), err
+	case "uninvite": // an invitation not yet approved, withdrawn (orb mitosis interrupted)
+		var p struct {
+			ID string `json:"invitation_id"`
+		}
+		if err := protocol.Decode(params, &p); err != nil {
+			return nil, err
+		}
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if i, ok := b.state.Invitations[p.ID]; ok && i.Status != "approved" {
+			delete(b.state.Invitations, p.ID)
+			return JSON(struct{}{}), b.save()
+		}
+		return JSON(struct{}{}), nil
 	case "approve":
 		var p struct {
 			ID       string `json:"invitation_id"`

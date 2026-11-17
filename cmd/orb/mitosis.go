@@ -317,6 +317,9 @@ func peerArg(ctx context.Context, client *protocol.Conn, arg string) (string, er
 	if len(match) > 1 {
 		return "", fmt.Errorf("%s matches %d devices; type more of it", arg, len(match))
 	}
+	if _, err := mitosis.ParsePeerID(arg); len(match) == 0 && err != nil {
+		return "", fmt.Errorf("no device here matches %s; orb mitosis status lists them", arg)
+	}
 	return append(match, arg)[0], nil
 }
 
