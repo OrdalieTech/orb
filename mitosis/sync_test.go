@@ -314,6 +314,14 @@ func TestSyncOwnersLiveWithoutEachOther(t *testing.T) {
 	if key(a) != "k2" || key(c) != "k1" || c.state.Group != "" || slices.Contains(a.state.Scopes[group], c.PeerID()) {
 		t.Fatal("an owner's change did not hold", key(a), key(c), c.state.Group)
 	}
+	// a's own change, made after it took b's set, holds too, and the owners then reseal nothing.
+	_ = document.Replace(ctx, stores[a], []byte(`{"openai":{"type":"api_key","key":"k3"}}`))
+	round(a, b)
+	published := [2]Record{a.state.Records[group+"/"+a.PeerID()], b.state.Records[group+"/"+b.PeerID()]}
+	round(a, b)
+	if key(b) != "k3" || published != [2]Record{a.state.Records[group+"/"+a.PeerID()], b.state.Records[group+"/"+b.PeerID()]} {
+		t.Fatal("an owner's own change was lost, or the owners keep resealing", key(a), key(b))
+	}
 
 	// Two owners removing each other at once leave one owner, whom both follow.
 	_ = admin(a, `{"remove":"`+b.PeerID()+`"}`)

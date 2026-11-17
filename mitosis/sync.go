@@ -383,11 +383,17 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		}
 		var changed []string
 		if set, ok := sets[name]; ok && (!owner || adopted["* "+name] != best[name].vault.Digest) {
+			// An owner takes only what changed since the set it last saw, so its own changes
+			// still unpublished stand; a member takes the whole set.
 			var removed []string
-			for _, entry := range shared[name] {
+			for entry := range shared[name] {
 				if _, kept := set[entry]; !kept {
 					removed = append(removed, entry)
 				}
+			}
+			if owner {
+				set = maps.Clone(set)
+				maps.DeleteFunc(set, func(entry string, v json.RawMessage) bool { return shared[name][entry] == digests(v) })
 			}
 			c, err := class.MergeShared(ctx, []map[string]json.RawMessage{set}, false, removed)
 			if err != nil {
@@ -438,7 +444,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	}
 	maps.Copy(b.state.Merged, merged)
 	if b.state.Shared == nil {
-		b.state.Shared = map[string][]string{}
+		b.state.Shared = map[string]map[string]string{}
 	}
 	recipients := owners
 	if owner {
@@ -458,12 +464,12 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	for name, entries := range out {
 		b.handing = b.handing || !owner && len(entries) > 0
 		if set, ok := sets[name]; ok {
-			b.state.Shared[name] = slices.Sorted(maps.Keys(set))
+			b.state.Shared[name] = entryDigests(set)
 		} else if l, ok := b.sealed[name]; ok && best[name].peer == self {
-			b.state.Shared[name] = l.names
+			b.state.Shared[name] = l.entries
 		}
 		set, ok := sets[name]
-		if len(recipients) == 0 || owner && ok && maps.EqualFunc(entries, set, func(x, y json.RawMessage) bool { return bytes.Equal(x, y) }) && !slices.ContainsFunc(recipients, func(p string) bool { return !slices.Contains(readers[name], p) }) {
+		if len(recipients) == 0 || owner && ok && maps.EqualFunc(entries, set, func(x, y json.RawMessage) bool { return bytes.Equal(x, y) }) && !slices.ContainsFunc(recipients, func(p string) bool { return p != best[name].peer && !slices.Contains(readers[name], p) }) {
 			continue // the group's set already says it, to everyone
 		}
 		sum := sha256.Sum256(JSON([]any{recipients, entries}))
@@ -477,7 +483,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			if owner {
 				seq = best[name].vault.Seq + 1
 			}
-			last = sealed{sum, pointer{vaultSchema, vaultDigest(blob), len(blob), seq}, slices.Sorted(maps.Keys(entries))}
+			last = sealed{sum, pointer{vaultSchema, vaultDigest(blob), len(blob), seq}, entryDigests(entries)}
 			b.sealed[name], b.vaults[last.vault.Digest] = last, blob
 		}
 		vaults[name] = last.vault
@@ -541,11 +547,24 @@ func (b *Mitosis) groupResult(group string, inSync bool, received map[string][]s
 }
 
 // sealed is a class this device last sealed: a digest of what it sealed, its vault, and its
-// entries' names.
+// entries' digests.
 type sealed struct {
-	sum   [32]byte
-	vault pointer
-	names []string
+	sum     [32]byte
+	vault   pointer
+	entries map[string]string
+}
+
+func digests(v json.RawMessage) string {
+	sum := sha256.Sum256(v)
+	return string(sum[:])
+}
+
+func entryDigests(entries map[string]json.RawMessage) map[string]string {
+	out := make(map[string]string, len(entries))
+	for entry, v := range entries {
+		out[entry] = digests(v)
+	}
+	return out
 }
 
 // pointers reads the vaults, by class, that peer's record in the group points at: none unless
