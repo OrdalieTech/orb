@@ -64,7 +64,7 @@ The core is the same on every target: the model layer, the agent loop and its to
 
 ## Mitosis
 
-Every Orb has a peer identity and registers its conversations as instances. Two Orbs become peers through an invitation each owner approves, or over SSH. Grants are explicit and of two kinds that never merge. Controllers are people: they list, watch and drive another Orb's conversations, which keep running there with that Orb's tools and credentials, and full controller access also launches Orb in a folder on that machine (`host.launch`). Agents are Orbs acting on their own: an agent reaches another Orb only under its own grant, and with agent access on, its owner's other conversations with the owner's reach.
+Every Orb is an agent with a peer identity, and its conversations are addresses under it. Two Orbs become peers through an invitation each owner approves, or over SSH. Grants are explicit and of two kinds that never merge. Controllers are people: they list, watch and drive another Orb's conversations, which keep running there with that Orb's tools and credentials, and full controller access also launches Orb in a folder on that machine (`host.launch`). Agents are Orbs acting on their own: an agent reaches another Orb only under its own grant, and with agent access on, its owner's other conversations with the owner's reach.
 
 ## Deployments
 

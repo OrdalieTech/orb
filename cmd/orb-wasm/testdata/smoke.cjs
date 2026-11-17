@@ -75,12 +75,12 @@ const deadline = setTimeout(() => { console.error("Wasm lifecycle timed out"); p
   const connected = await rpc("mitosis.connect", fixture);
   assert.equal(connected.error, "");
   const connection = connected.result.connection;
-  const catalog = await rpc("mitosis.call", { connection, method: "instances.list", params: {} });
+  const catalog = await rpc("mitosis.call", { connection, method: "agent.describe", params: {} });
   assert.equal(catalog.error, "");
-  assert.equal(catalog.result.items[0].instance_id, fixture.instance);
-  const inspect = await rpc("mitosis.call", { connection, method: "instances.describe", params: { instance_id: fixture.instance } });
+  assert.equal(catalog.result.items[0].session_id, fixture.session);
+  const inspect = await rpc("mitosis.call", { connection, method: "conversation.describe", params: { session_id: fixture.session } });
   assert.equal(inspect.result.wasm_mitosis, true);
-  const stale = await rpc("mitosis.call", { connection: "wrong", method: "instances.list", params: {} });
+  const stale = await rpc("mitosis.call", { connection: "wrong", method: "agent.describe", params: {} });
   assert.equal(stale.error, "unavailable");
   const blocked = await rpc("mitosis.call", { connection, method: "status", params: {} });
   assert.equal(blocked.error, "method_not_found");

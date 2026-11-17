@@ -37,10 +37,10 @@ export class RemoteMitosis {
     if (!this.connection) return Promise.reject(new Error("Mitosis disconnected. Reconnect to continue."));
     return this.request("mitosis.call", { method, params });
   }
-  async instances() {
+  async conversations() {
     const items = []; let cursor = "";
     for (let pages = 0; pages < 32; pages++) {
-      const page = await this.call("instances.list", { cursor });
+      const page = await this.call("agent.describe", { cursor });
       items.push(...page.items);
       if (!page.cursor) return items;
       if (page.cursor === cursor) throw new Error("Invalid catalog cursor");
@@ -48,10 +48,10 @@ export class RemoteMitosis {
     }
     throw new Error("Mitosis catalog exceeds debug limit");
   }
-  async sessions(instance) {
+  async sessions(session) {
     const items = []; let offset = "";
     for (let pages = 0; pages < 128; pages++) {
-      const page = await this.call("instances.call", { instance_id: instance, service: "orb.instance/1", method: "session.list", args: { offset } });
+      const page = await this.call("agent.call", { session_id: session, method: "session.list", args: { offset } });
       items.push(...page.items);
       if (!page.offset) return items;
       if (offset === page.offset) throw new Error("Invalid session cursor");
@@ -59,11 +59,11 @@ export class RemoteMitosis {
     }
     throw new Error("Session list exceeds debug limit");
   }
-  async refresh(instance) {
-    const info = await this.call("instances.describe", { instance_id: instance });
+  async refresh(session) {
+    const info = await this.call("conversation.describe", { session_id: session });
     let view = this.view;
-    if (!view || view.instance !== instance || view.info.target.session_id !== info.target.session_id || view.info.registration_generation !== info.registration_generation || view.info.target.session_revision !== info.target.session_revision) {
-      view = { instance, messages: [], partial: null, cursor: "", info };
+    if (!view || view.session !== session || view.info.target.session_id !== info.target.session_id || view.info.registration_generation !== info.registration_generation || view.info.target.session_revision !== info.target.session_revision) {
+      view = { session, messages: [], partial: null, cursor: "", info };
     }
     if (!view.cursor) {
       let snapshot = "", offset = "", size = 0;
@@ -71,7 +71,7 @@ export class RemoteMitosis {
       try {
         for (let pages = 0; ; pages++) {
           if (pages >= 128) throw new Error("Conversation exceeds debug limit");
-          const page = await this.call("events.subscribe", { instance_id: instance, snapshot_id: snapshot, offset });
+          const page = await this.call("events.subscribe", { session_id: session, snapshot_id: snapshot, offset });
           snapshot = page.snapshot_id;
           size += JSON.stringify(page.messages).length;
           if (size > 8 * 1024 * 1024) throw new Error("Conversation exceeds debug limit");
@@ -81,11 +81,11 @@ export class RemoteMitosis {
           offset = page.offset;
         }
       } finally {
-        if (snapshot) await this.call("events.unsubscribe", { instance_id: instance, snapshot_id: snapshot });
+        if (snapshot) await this.call("events.unsubscribe", { session_id: session, snapshot_id: snapshot });
       }
     } else {
       let page;
-      try { page = await this.call("events.subscribe", { instance_id: instance, cursor: view.cursor }); }
+      try { page = await this.call("events.subscribe", { session_id: session, cursor: view.cursor }); }
       catch (error) { this.view = null; throw error; }
       for (const { data: event } of page.events) {
         if (event.type === "message_start" || event.type === "message_update") view.partial = event.message;
@@ -95,20 +95,21 @@ export class RemoteMitosis {
       view.cursor = page.cursor;
       if (view.messages.length > 16384 || JSON.stringify(view.messages).length > 8 * 1024 * 1024) { this.view = null; throw new Error("Conversation exceeds debug limit"); }
     }
-    const current = await this.call("instances.describe", { instance_id: instance });
+    const current = await this.call("conversation.describe", { session_id: session });
     if (current.target.session_id !== info.target.session_id || current.target.session_revision !== info.target.session_revision || current.registration_generation !== info.registration_generation) {
       this.view = null; throw new Error("Remote session changed; refreshing");
     }
     view.info = current; this.view = view;
     return view;
   }
+  // command answers its receipt; its session_id is the conversation to follow, a new one after
+  // session.new or session.switch.
   command(method, args = {}) {
     if (!this.view) return Promise.reject(new Error("Wait for the remote conversation to load"));
-    const { instance, info } = this.view;
+    const { session, info } = this.view;
     if (!info.methods.includes(method)) return Promise.reject(new Error("This control is not permitted"));
-    return this.call("instances.call", {
-      instance_id: instance, service: "orb.instance/1", method, args,
-      session_id: info.target.session_id, operation_id: randomID(),
+    return this.call("agent.call", {
+      session_id: session, method, args, operation_id: randomID(),
       expected: { registration_generation: info.registration_generation, session_revision: info.target.session_revision },
     });
   }

@@ -28,8 +28,8 @@ func (store *Store) Shareable(ctx context.Context) (map[string]json.RawMessage, 
 }
 
 // MergeShared folds in credentials a sync group shared and returns the providers it changed.
-// keepOwn (the group's owner) takes only providers it lacks; a member takes the owner's over its
-// own and drops removed, the providers the owner no longer shares. Between two OAuth logins the one
+// keepOwn (an owner folding hand-ins) takes only providers it lacks; otherwise it takes the group's
+// over its own and drops removed, the providers the group no longer shares. Between two OAuth logins the one
 // that expires later always wins, so a refreshed token replaces the copies its refresh made stale.
 // Invalid or unshareable entries are ignored, and auth.json is written only when something changed.
 func (store *Store) MergeShared(ctx context.Context, incoming []map[string]json.RawMessage, keepOwn bool, removed []string) ([]string, error) {

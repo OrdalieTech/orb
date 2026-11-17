@@ -134,7 +134,7 @@ try {
   // The owner admits the tab to its sync group; the tab follows it.
   await orb(["sync", "add", self.peer_id]);
   const joined = await peer.admin("sync", { join: owner });
-  check(joined.owner === owner, "the tab joined another group", joined);
+  check(joined.owners?.includes(owner), "the tab joined another group", joined);
   const began = Date.now();
   await until("the owner's provider in the tab", async () => (await peer.models()).includes("fake/scripted"));
   await until("the owner's memory in the tab", async () => stored("/agent/memory/memory.jsonl").includes(OWNER_MEMORY));

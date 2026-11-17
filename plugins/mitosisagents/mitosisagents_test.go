@@ -18,23 +18,23 @@ import (
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 )
 
-// fakeMitosis is this machine, mac (p0), where this Orb runs as i0, and a
-// connected device, lab (p1).
+// fakeMitosis is this machine's agent, mac (p0), where this Orb holds s0, and a connected
+// device's, lab (p1). An agent missing from conversations is out of reach.
 type fakeMitosis struct {
-	mu        sync.Mutex
-	instances map[string][]string // peer → available instances
-	calls     []map[string]any    // instances.call payloads
-	open      int                 // snapshots not given back
+	mu            sync.Mutex
+	conversations map[string][]string // peer → the conversations open in its agent
+	calls         []map[string]any    // agent.call payloads but inspect
+	open          int                 // snapshots not given back
 }
 
 var descriptors = map[string]string{
-	"i0": `{"name":"me","cwd":"/work","target":{"session_id":"s0"}}`,
-	"i1": `{"name":"Docs","cwd":"/work/docs","registration_generation":"g1","target":{"session_id":"s1","session_revision":"r1"}}`,
-	"i2": `{"name":"Build","cwd":"/srv/app","registration_generation":"g2","target":{"session_id":"s2","session_revision":"r2","execution_id":"e2"}}`,
+	"s0": `{"name":"me","cwd":"/work","target":{"session_id":"s0"}}`,
+	"s1": `{"name":"Docs","cwd":"/work/docs","registration_generation":"g1","target":{"session_id":"s1","session_revision":"r1"}}`,
+	"s2": `{"name":"Build","cwd":"/srv/app","registration_generation":"g2","target":{"session_id":"s2","session_revision":"r2","execution_id":"e2"}}`,
 }
 
 func (b *fakeMitosis) Machines(context.Context) ([]string, error) { return []string{"p0", "p1"}, nil }
-func (b *fakeMitosis) Self() string                               { return "i0" }
+func (b *fakeMitosis) Self() string                               { return "s0" }
 
 func (b *fakeMitosis) Call(_ context.Context, peer, method string, params, result any) error {
 	b.mu.Lock()
@@ -44,17 +44,26 @@ func (b *fakeMitosis) Call(_ context.Context, peer, method string, params, resul
 	_ = json.Unmarshal(encoded, &p)
 	var reply string
 	switch method {
-	case "instances.list":
-		items := []map[string]any{}
-		for _, id := range b.instances[peer] {
-			items = append(items, map[string]any{"instance_id": id, "available": true})
+	case "agent.describe":
+		sessions, ok := b.conversations[peer]
+		if !ok {
+			return errors.New("unavailable")
 		}
-		data, _ := json.Marshal(map[string]any{"items": items})
+		items := []map[string]any{}
+		for _, id := range sessions {
+			var d struct {
+				Name, CWD string
+				Target    struct {
+					Execution string `json:"execution_id"`
+				}
+			}
+			_ = json.Unmarshal([]byte(descriptors[id]), &d)
+			items = append(items, map[string]any{"session_id": id, "title": d.Name, "cwd": d.CWD, "state": map[bool]string{true: "running", false: "idle"}[d.Target.Execution != ""]})
+		}
+		data, _ := json.Marshal(map[string]any{"name": map[string]string{"p0": "mac", "p1": "lab"}[peer], "items": items})
 		reply = string(data)
-	case "instances.describe":
-		reply = descriptors[p["instance_id"].(string)]
-	case "mitosis.ping":
-		reply = map[string]string{"p0": `{"name":"mac"}`, "p1": `{"name":"lab"}`}[peer]
+	case "conversation.describe":
+		reply = descriptors[p["session_id"].(string)]
 	case "events.subscribe":
 		b.open++
 		reply = `{"snapshot_id":"x","messages":[` +
@@ -64,7 +73,19 @@ func (b *fakeMitosis) Call(_ context.Context, peer, method string, params, resul
 	case "events.unsubscribe":
 		b.open--
 		return nil
-	case "instances.call":
+	case "agent.call":
+		session, _ := p["session_id"].(string)
+		if session == "" { // the agent's default conversation: its first here
+			session = b.conversations[peer][0]
+		}
+		if p["method"] == "inspect" {
+			var d map[string]any
+			_ = json.Unmarshal([]byte(descriptors[session]), &d)
+			d["session_id"] = session
+			data, _ := json.Marshal(d)
+			reply = string(data)
+			break
+		}
 		b.calls = append(b.calls, p)
 		return nil
 	default:
@@ -73,12 +94,12 @@ func (b *fakeMitosis) Call(_ context.Context, peer, method string, params, resul
 	return json.Unmarshal([]byte(reply), result)
 }
 
-// An agent sees the agents tool only while another conversation is reachable,
-// lists them without itself, reads one's latest messages without tool output,
-// and messages them, saying who writes: a prompt to an idle one, a follow-up
-// to a working one, each fenced by the revision it described.
+// An agent sees the agents tool only while another conversation is reachable, lists the agents
+// with their conversations but itself, reads one's latest messages without tool output, and
+// messages them, saying who writes: a prompt to an idle one, a follow-up to a working one (an
+// agent's default conversation when none is named), each fenced by the revision it described.
 func TestAgentsListReadAndMessageOtherConversations(t *testing.T) {
-	alone := &fakeMitosis{instances: map[string][]string{"p0": {"i0"}}}
+	alone := &fakeMitosis{conversations: map[string][]string{"p0": {"s0"}}}
 	offered := func(request ai.Context) bool {
 		return request.Tools != nil && slices.ContainsFunc(*request.Tools, func(tool ai.Tool) bool { return tool.Name == name })
 	}
@@ -91,12 +112,12 @@ func TestAgentsListReadAndMessageOtherConversations(t *testing.T) {
 		t.Fatal("agents tool offered with no other conversation reachable")
 	}
 
-	others := &fakeMitosis{instances: map[string][]string{"p0": {"i0", "i1"}, "p1": {"i2"}}}
+	others := &fakeMitosis{conversations: map[string][]string{"p0": {"s0", "s1"}, "p1": {"s2"}}}
 	script := []map[string]any{
 		{"action": "list"},
-		{"action": "read", "id": "i1"},
-		{"action": "send", "id": "i1", "text": "Docs build is green?"},
-		{"action": "send", "id": "i2", "text": "Stop after the build."},
+		{"action": "read", "conversation": "s1"},
+		{"action": "send", "agent": "p0", "conversation": "s1", "text": "Docs build is green?"},
+		{"action": "send", "agent": "p1", "text": "Stop after the build."},
 	}
 	var shown bool
 	var results []string
@@ -121,25 +142,25 @@ func TestAgentsListReadAndMessageOtherConversations(t *testing.T) {
 	if len(results) != len(script) {
 		t.Fatalf("results = %q", results)
 	}
-	if want := "i1 · mac · /work/docs · Docs · idle\ni2 · lab · /srv/app · Build · working"; results[0] != want {
+	if want := "Agent p0 · mac (this machine)\n  s1 · /work/docs · Docs · idle\nAgent p1 · lab\n  s2 · /srv/app · Build · working"; results[0] != want {
 		t.Fatalf("list = %q, want %q", results[0], want)
 	}
-	if read := results[1]; !strings.Contains(read, "State: idle") || !strings.Contains(read, "user: Fix the docs build") ||
+	if read := results[1]; !strings.Contains(read, "state: idle") || !strings.Contains(read, "user: Fix the docs build") ||
 		!strings.Contains(read, "assistant: Running it.") || strings.Contains(read, "huge build log") {
 		t.Fatalf("read = %q", read)
 	}
-	if results[2] != "Sent." || !strings.HasPrefix(results[3], "Queued") || others.open != 0 {
+	if !strings.HasPrefix(results[2], "Sent") || !strings.HasPrefix(results[3], "Queued") || others.open != 0 {
 		t.Fatalf("send results = %q, %q; snapshots left open %d", results[2], results[3], others.open)
 	}
 	if len(others.calls) != 2 {
 		t.Fatalf("calls = %v", others.calls)
 	}
 	idle, busy := others.calls[0], others.calls[1]
-	if text := idle["args"].(map[string]any)["text"]; text != "Message from an Orb conversation i0 (me, mac):\n\nDocs build is green?" {
+	if text := idle["args"].(map[string]any)["text"]; text != "Message from Orb agent p0, conversation s0 (me, mac):\n\nDocs build is green?" {
 		t.Fatalf("sent text = %q", text)
 	}
 	if idle["method"] != "prompt" || idle["session_id"] != "s1" || idle["expected"].(map[string]any)["session_revision"] != "r1" ||
-		busy["method"] != "follow_up" || busy["args"].(map[string]any)["execution_id"] != "e2" || busy["expected"].(map[string]any)["registration_generation"] != "g2" {
+		busy["method"] != "follow_up" || busy["session_id"] != "s2" || busy["args"].(map[string]any)["execution_id"] != "e2" || busy["expected"].(map[string]any)["registration_generation"] != "g2" {
 		t.Fatalf("calls = %v", others.calls)
 	}
 }

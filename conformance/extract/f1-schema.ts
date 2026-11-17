@@ -825,7 +825,7 @@ async function validationCases(Type: any, StringEnum: any): Promise<ValidationCa
 			schema: questionSchema,
 			arguments: j({ questions: Array.from({ length: 5 }, (_, index) => ({ id: `q${index}`, question: "Q" })) }),
 		},
-		{ name: "agents-valid", tool: "agents", schema: agentsSchema, arguments: j({ action: "send", id: "x", text: "hi" }) },
+		{ name: "agents-valid", tool: "agents", schema: agentsSchema, arguments: j({ action: "send", agent: "x", text: "hi" }) },
 		{ name: "agents-bad-action", tool: "agents", schema: agentsSchema, arguments: j({ action: "LIST" }) },
 		{ name: "send-file-number", tool: "send_file", schema: sendFileSchema, arguments: j({ path: 5 }) },
 		{ name: "send-file-missing", tool: "send_file", schema: sendFileSchema, arguments: j({}) },
@@ -833,7 +833,7 @@ async function validationCases(Type: any, StringEnum: any): Promise<ValidationCa
 			name: "mitosis-call-valid",
 			tool: "mitosis_call",
 			schema: mitosisCallSchema,
-			arguments: j({ peer_id: "p", call: { instance_id: "i", service: "orb.instance/1", method: "inspect", args: {} } }),
+			arguments: j({ peer_id: "p", session_id: "s", call: { method: "inspect", args: {} } }),
 		},
 		{
 			name: "mitosis-call-errors",
@@ -841,7 +841,7 @@ async function validationCases(Type: any, StringEnum: any): Promise<ValidationCa
 			schema: mitosisCallSchema,
 			arguments: j({
 				peer_id: "p",
-				call: { instance_id: "i", service: "orb.instance/2", method: "Prompt", expected: { registration_generation: "1" }, extra: 1 },
+				call: { method: "Prompt", expected: { registration_generation: "1" }, extra: 1 },
 			}),
 		},
 		{ name: "tool-search-limit-string", tool: "tool_search", schema: toolSearchSchema, arguments: j({ query: "q", limit: "3" }) },

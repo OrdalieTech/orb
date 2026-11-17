@@ -1,10 +1,10 @@
 // Mitosis end-to-end check: a native `orb` on this machine, with a throwaway
 // Mitosis profile and state under --laptop (never ~/.orb), pairs with a Worker
 // object over its ws(s):// stream URL. Then:
-//   (a) laptop → object: list the object's instance, prompt it, read its
-//       conversation back, all through `orb mitosis remote`;
-//   (b) object → laptop: the object's agent calls the laptop's Orb with
-//       mitosis_call under the object's own instance grant.
+//   (a) laptop → object: describe the object's agent, prompt its conversation,
+//       read it back, all through `orb mitosis remote`;
+//   (b) object → laptop: the object's agent calls the laptop Orb's
+//       conversation with mitosis_call under the object's own agent grant.
 // Locally the object restarts and the laptop reconnects to the same identity.
 //
 //   node mitosis.mjs --runtime workerd --dir .tools/worker --orb .tools/worker-mitosis-e2e/orb --laptop .tools/worker-mitosis-e2e/laptop
@@ -101,8 +101,8 @@ const CALLED = "hello from the durable object";
 async function scenario(base, token, restart) {
   const laptopStatus = await mitosisCLI(["status"]);
   const laptopPeer = laptopStatus.peer_id;
-  const laptopID = await until("the laptop instance", async () =>
-    (await mitosisCLI(["instances"])).instances.find(instance => instance.alias === "laptop" && instance.available)?.instance_id);
+  const laptopSession = await until("the laptop conversation", async () =>
+    (await mitosisCLI(["remote", laptopPeer, "agent.describe"], {})).items[0]?.session_id);
 
   // Pairing: the object invites, the laptop joins over the advertised URL, the owner approves.
   const invitation = await objectAdmin(base, token, "invite");
@@ -113,40 +113,38 @@ async function scenario(base, token, restart) {
   const self = await objectAdmin(base, token, "self");
   check(self.peer_id === invitation.peer_id, "the object's identity changed during pairing", self);
   await orb(["mitosis", "--profile", PROFILE, "trust", self.peer_id]);
-  // Each side grants the object's own instance subject: the laptop lets it
-  // inspect and prompt the laptop Orb, the object lets its agent call there.
-  const subject = { peer_id: self.peer_id, subject: { kind: "instance", instance_id: self.instance_id } };
-  const permissions = ["instance.inspect", "instance.prompt"];
-  await mitosisCLI(["grant"], { principal: subject, instances: [laptopID], permissions });
-  await objectAdmin(base, token, "grant", { principal: subject, destination: laptopPeer, instances: [laptopID], permissions });
-  report.pairing = { object: self.peer_id, instance: self.instance_id, laptop: laptopPeer, laptopInstance: laptopID, locator: invitation.locator };
+  // Each side grants the object's agent: the laptop lets it inspect and prompt
+  // the laptop's conversations, the object lets its agent call there.
+  const subject = { peer_id: self.peer_id, subject: { kind: "agent" } };
+  const permissions = ["agent.inspect", "agent.prompt"];
+  await mitosisCLI(["grant"], { principal: subject, permissions });
+  await objectAdmin(base, token, "grant", { principal: subject, destination: laptopPeer, permissions });
+  report.pairing = { object: self.peer_id, laptop: laptopPeer, laptopSession, locator: invitation.locator };
 
   // (a) laptop → object.
   const remote = (method, params) => mitosisCLI(["remote", self.peer_id, method], params);
-  const catalog = await remote("instances.list", {});
-  check(catalog.items.some(item => item.instance_id === self.instance_id && item.available), "the object's instance is not listed", catalog);
-  const call = { instance_id: self.instance_id, service: "orb.instance/1" };
-  const described = await remote("instances.call", { ...call, method: "inspect", args: {} });
+  const catalog = await remote("agent.describe", {});
+  check(catalog.items.length === 1 && catalog.items[0].session_id, "the object's conversation is not listed", catalog);
+  // Without a session, the call reaches the agent's default conversation: the object's one.
+  const described = await remote("agent.call", { method: "inspect", args: {} });
+  const session = described.session_id;
+  check(session === catalog.items[0].session_id && described.target.session_id === session, "the default conversation is not the object's", described);
   const operation = randomBytes(16).toString("base64url");
-  const receipt = await remote("instances.call", {
-    ...call, method: "prompt", session_id: described.target.session_id, operation_id: operation,
-    expected: { registration_generation: described.registration_generation, session_revision: described.target.session_revision },
-    args: { text: `orb-e2e write ${FILE} ${WRITTEN}` },
-  });
-  check(receipt.status === "accepted", "the prompt was not accepted", receipt);
+  const receipt = await remote("agent.call", { session_id: session, method: "prompt", operation_id: operation, args: { text: `orb-e2e write ${FILE} ${WRITTEN}` } });
+  check(receipt.status === "accepted" && receipt.session_id === session, "the prompt was not accepted", receipt);
   const done = await until("the object's prompt", async () => {
-    const current = await remote("operations.get", { instance_id: self.instance_id, operation_id: operation });
+    const current = await remote("operations.get", { session_id: session, operation_id: operation });
     check(current.status !== "failed", "the object's prompt failed", current);
     return current.status === "succeeded" && current;
   });
-  const snapshot = await remote("events.subscribe", { instance_id: self.instance_id });
+  const snapshot = await remote("events.subscribe", { session_id: session });
   const transcript = JSON.stringify(snapshot.messages);
   check(transcript.includes(`orb-e2e write ${FILE}`) && transcript.includes(`read back: ${WRITTEN}`), "the conversation read back lacks the turn", snapshot.messages);
   report.laptopToObject = { listed: catalog.items.length, operation: done.status, messagesReadBack: snapshot.messages.length };
 
   // (b) object → laptop: the object's agent runs mitosis_call twice.
   const laptopFrames = laptop.frames.length;
-  const run = await overHTTP(base, agent, token, [{ id: "b1", type: "prompt", message: `orb-e2e mitosis ${laptopPeer} ${laptopID} ${CALLED}` }]);
+  const run = await overHTTP(base, agent, token, [{ id: "b1", type: "prompt", message: `orb-e2e mitosis ${laptopPeer} ${laptopSession} ${CALLED}` }]);
   check(response(run.frames, "b1")?.success, "the mitosis prompt was refused", run.frames.filter(frame => frame.type === "response"));
   const calls = toolResults(run.frames);
   check(calls.length === 2 && calls.every(result => result.tool === "mitosis_call" && !result.error), "mitosis_call failed", calls);
@@ -162,9 +160,9 @@ async function scenario(base, token, restart) {
   if (restart) {
     // The object restarts; the laptop reconnects to the same pinned identity.
     await restart();
-    const again = await until("the restarted object", async () => (await remote("instances.list", {})).items.find(item => item.instance_id === self.instance_id));
+    const again = await until("the restarted object", async () => await remote("agent.call", { method: "inspect", args: {} }));
     const after = await objectAdmin(base, token, "self");
-    check(after.peer_id === self.peer_id && again.registration_generation !== catalog.items[0].registration_generation, "identity or registration after restart", { after, again });
+    check(after.peer_id === self.peer_id && again.registration_generation !== described.registration_generation, "identity or registration after restart", { after, again });
     report.afterRestart = { peer: after.peer_id === self.peer_id, generation: again.registration_generation };
   }
   report.objectStats = await stats(base, agent, token);

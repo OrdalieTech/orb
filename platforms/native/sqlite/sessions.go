@@ -138,6 +138,12 @@ func (r *Sessions) CWD(ctx context.Context, id string) (string, error) {
 	return cwd, err
 }
 
+// Latest is the stored thread written in last, among those anyone wrote in: sql.ErrNoRows when none.
+func (r *Sessions) Latest(ctx context.Context) (id, cwd string, err error) {
+	err = r.db.QueryRowContext(ctx, "SELECT id,cwd FROM sessions WHERE namespace=? AND archived=? AND message_count>0 ORDER BY modified DESC,id LIMIT 1", r.namespace, false).Scan(&id, &cwd)
+	return id, cwd, err
+}
+
 func (r *Sessions) List(ctx context.Context, options harness.SessionListOptions) ([]harness.SessionMetadata, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT header FROM sessions WHERE namespace=? AND (?='' OR cwd=?) ORDER BY modified DESC,id`, r.namespace, options.CWD, options.CWD)
 	if err != nil {

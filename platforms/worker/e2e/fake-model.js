@@ -6,8 +6,8 @@
 //
 // A prompt "orb-e2e write <path> <text...>" makes the model call write, then
 // read, then answer "read back: <file>"; "orb-e2e read <path>" skips the write.
-// "orb-e2e mitosis <peer> <instance> <text...>" makes it inspect that Mitosis
-// instance with mitosis_call, prompt it with <text> at the inspected target,
+// "orb-e2e mitosis <peer> <session> <text...>" makes it inspect that agent's
+// conversation with mitosis_call, prompt it with <text> at the inspected target,
 // then answer "mitosis prompt: <receipt status>".
 (() => {
   const encoder = new TextEncoder();
@@ -41,9 +41,8 @@
     return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
   }
 
-  function mitosis(peer, [instance, ...words], calls, results, id) {
-    const call = { instance_id: instance, service: "orb.instance/1" };
-    if (calls.length === 0) return { id, tool: "mitosis_call", args: { peer_id: peer, call: { ...call, method: "inspect", args: {} } } };
+  function mitosis(peer, [session, ...words], calls, results, id) {
+    if (calls.length === 0) return { id, tool: "mitosis_call", args: { peer_id: peer, session_id: session, call: { method: "inspect", args: {} } } };
     let result = {};
     try {
       result = JSON.parse(results.at(-1));
@@ -52,8 +51,8 @@
     }
     if (calls.length === 1) {
       const expected = { registration_generation: result.registration_generation, session_revision: result.target?.session_revision };
-      const prompt = { ...call, method: "prompt", session_id: result.target?.session_id, expected, operation_id: operationID(), args: { text: words.join(" ") } };
-      return { id, tool: "mitosis_call", args: { peer_id: peer, call: prompt } };
+      const prompt = { method: "prompt", expected, operation_id: operationID(), args: { text: words.join(" ") } };
+      return { id, tool: "mitosis_call", args: { peer_id: peer, session_id: result.session_id, call: prompt } };
     }
     return { text: `mitosis prompt: ${result.status}` };
   }

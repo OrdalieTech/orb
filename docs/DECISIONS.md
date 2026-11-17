@@ -105,50 +105,19 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
 - **P11 — Deployable anywhere, connected as peers.** Orb is a runtime to deploy, not a remote
   client: every P2 target runs the full core with its own model calls, tools, sessions and state,
   and hosted targets (Cloudflare Durable Objects, self-hosted workerd) are in scope. Deployments
-  reach each other as Mitosis peers: people control conversations on any Orb that granted them, and
-  an Orb's agent calls another Orb only under its own grants. A target is supported only with
-  evidence: its ports pass the conformance suites, the cross-host scenario matches native, a target
-  end-to-end test runs in CI, one documented command deploys and removes it, and it states its
-  capability profile and Mitosis role. `docs/deployments.md` is the catalogue; a target's status
-  there changes only with that evidence. Mitosis is core: every Orb, on every host, has a peer
-  identity, registers its sessions as instances, and dials peers through the transports its host
-  supplies. Listening, advertised addresses and every grant stay explicit and owner-approved;
-  controller and agent-subject authority never merge.
-
-Older numbers still cited in code and docs map as follows: D1/D3 → P1, D7/D8 → P2, D16 and
-D32–D34 → P3/P4, D2/D4/D5/D6/D13 → P5, D30/D35 → P6, D31 → P7, G4 (self-update) → "Releases".
-D10, D12, D14, D15, D18, D24 and D27–D29 are live decisions below.
-
-## The compat kernel
-
-The kernel is every surface an external artifact can observe: files on disk, bytes on the wire,
-and the extension and RPC protocols. Internal Go APIs, package layout, feature set and UI are not
-kernel. Kernel surfaces:
-
-- Configuration file formats and relative layout under the explicitly chosen agent directory
-  (Orb defaults to `~/.orb/agent/`, not Pi’s directory): `settings.json` (global + project merge semantics),
-  `models.json`, `auth.json` (0600), `trust.json`, `keybindings.json`.
-- Product session JSONL v3 (+ v1/v2 migration).
-- Agent event JSON taxonomy and payloads (load-bearing for trace conformance).
-- RPC-mode frames and print/JSON output shapes.
-- Provider request/stream wire shapes, including `pi-messages`.
-- The JS extension surface: host protocol, `orb-extension-sdk` (`@earendil-works/pi-*` API),
-  pi package manifests, skills and prompt-template formats.
-- HTML-export theme variables (F6).
-
-CLI-flag parity is pursued but not contractual. Only released upstream versions are pinned, and
-only kernel paths carry port obligation. The kernel is operationally defined by the conformance
-suite: a coverage gap is closed by a fixture, never by a mapping table. Families F1–F13 gate it;
-the render families are Orb-owned (P6). Growing or shrinking the kernel is an owner decision
-recorded here. Fixture strategy: language-neutral goldens extracted from upstream and consumed by
-both sides, plus upstream's RPC/CLI tests run as-is against the orb binary.
-
-## Live decisions
-
-Each holds until changed by owner-signed decision.
-
-### Providers and models
-
+  reach each other as Mitosis peers, and the unit of Mitosis is the agent: an agent directory with
+  its identity, memory and tools, which is one peer. Addressing, discovery, grants and the name
+  shown are per agent; a conversation is only an address under its agent, and a message to an
+  agent with none named goes to its default conversation. People control an agent's conversations
+  on any Orb that granted them, and an agent calls another only under its own grants. A target is
+  supported only with evidence: its ports pass the conformance suites, the cross-host scenario
+  matches native, a target end-to-end test runs in CI, one documented command deploys and removes
+  it, and it states its capability profile and Mitosis role. `docs/deployments.md` is the
+  catalogue; a target's status there changes only with that evidence. Mitosis is core: every Orb,
+  on every host, has a peer identity for its agent, routes a conversation's calls to the runtime
+  holding it, and dials peers through the transports its host supplies. Listening, advertised
+  addresses and every grant stay explicit and owner-approved; controller and agent authority never
+  merge.
 - **D10 — Lean provider layer.** Wire codecs are Orb's own, and an official Go SDK stays only
   where it carries protocol work: `aws-sdk-go-v2/config` (the AWS shared config and credential
   chain, on native hosts). The `openai-go/v3` and Anthropic clients only posted bodies Orb had
@@ -462,10 +431,13 @@ Each holds until changed by owner-signed decision.
   against GitHub's published sha256. proot maps the app's copy onto `/data/data/com.termux`, so
   `pkg`/`apt` work unmodified without the Termux app. The bash tool's `shellPath` and the in-app
   terminal start `liblinux.so`; the core stays the plain binary outside proot.
-- **Mitosis profile sync.** A profile has at most one sync group: a Mitosis discovery scope owned
-  by one device. Only the owner admits (`orb mitosis sync add`, paired devices only) and removes
-  (`sync remove`) devices; a device follows a group with `sync join <owner>`, and nothing derives
-  membership from pairing. v1 shares two data classes: credentials (auth.json's API keys and OAuth
+- **Mitosis profile sync.** A profile has at most one sync group: a Mitosis discovery scope with a
+  set of owners among its members. Any owner admits (`orb mitosis sync add`, paired devices only),
+  removes, promotes and demotes devices; a plain member cannot. Each change is a new version of the
+  membership, signed into that owner's record; a version counts when its publisher owns the version
+  it replaces, the highest wins, and of two of one version the smaller digest, so two owners
+  removing each other at once leave one; a group never has no owner. A device follows a group with
+  `sync join <peer>` through any member, and nothing derives membership from pairing. v1 shares two data classes: credentials (auth.json's API keys and OAuth
   logins, never a key that is a command, `!…`) and memory (the memory plugin's items, merged by ID
   with the same rules); a class is a registered Shareable/MergeShared pair, so configuration can be
   added later the same way, but none is built. Each class travels in a vault of its own: a device's
@@ -474,19 +446,23 @@ Each holds until changed by owner-signed decision.
   unblocked recipients; a vault is capped at 64 MiB, since every member, a browser tab included,
   holds it in memory. A vault is sealed with AES-256-GCM under a fresh 256-bit key on every publish, and that key is
   sealed to each recipient's X25519 key (the Montgomery form of its Ed25519 identity), stdlib only.
-  Only the owner publishes the group's set: it merges in the entries members hand it, keeping its
-  own, and seals the result to every current, unblocked member. A member applies the owner's set
-  and hands the owner alone what that set lacks or holds otherwise. Between two OAuth logins the
-  one that expires later wins, so a token refreshed on any device replaces the stale copies; an
-  entry removed on the owner is removed everywhere. Any member relays the owner's signed record, so
-  a device keeps catching up while the owner is off. Removing or blocking a device on the owner
+  Every owner publishes what it holds, each entry with its version (a Lamport counter and the
+  owner that set it), deletions included, and every device merges the owners' vaults entry by
+  entry, the later version winning, so all converge on one set whatever order the vaults come in
+  and an absence never deletes anything. An owner merges in the entries members hand it, keeping
+  its own, versions what it changed, and seals the result to every current, unblocked member. A
+  member applies the group's set and hands the owners alone what that set lacks or holds
+  otherwise. Between two OAuth logins the one that expires later wins, so a token
+  refreshed on any device replaces the stale copies; an entry removed on an owner is removed
+  everywhere. Any member relays the owners' signed records, so the group lives on while some
+  owners are off, and with one owner left nothing stops. Removing or blocking a device on an owner
   leaves it out of every later set, though it keeps what it already received, so revoking a key
-  means rotating it; a member leaves by removing the owner, which is how a profile recovers from
-  losing it. Native devices run a round on every reconciliation, so a group converges with no
+  means rotating it; a device leaves its group by removing itself. Native devices run a round on every reconciliation, so a group converges with no
   command; `orb mitosis sync` runs one at once (a Worker object syncs that way). Sync is inert
   until a group exists. A device that boots unattended can decrypt its own vault, which is accepted
   as the cost of autonomy; a low-trust host belongs in a group of its own, with capped credentials.
-  Owner, 2026-11-16; memory and vaults by digest added at the owner's request, 2026-11-17.
+  Owner, 2026-11-16; memory and vaults by digest added at the owner's request, 2026-11-17; several
+  owners, 2026-11-17.
 
 ## Divergence ledger
 

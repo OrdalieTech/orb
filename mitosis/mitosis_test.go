@@ -23,10 +23,9 @@ func newMitosis(t *testing.T) *Mitosis {
 	}
 	return b
 }
-func TestPairOnceTwentyInstancesAndFixedGrants(t *testing.T) {
+func TestPairOnceCoversTheAgentButNotAgentCalls(t *testing.T) {
 	b, phone := newMitosis(t), newMitosis(t)
-	group := b.PersonalGroup()
-	inv, err := b.Invite([]Grant{{GroupID: group, IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect"}}})
+	inv, err := b.Invite([]Grant{{Permissions: []string{"agent.list", "agent.prompt"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,28 +38,23 @@ func TestPairOnceTwentyInstancesAndFixedGrants(t *testing.T) {
 	if err = b.Approve(inv.ID, phone.PeerID()); err != nil {
 		t.Fatal(err)
 	}
+	// One grant covers the agent: every conversation it runs, now or later.
 	for i := 0; i < 20; i++ {
-		r, token, err := b.Enroll("", group)
+		r, token, err := b.Enroll("")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err = b.Attach(r.ID, token, protocol.NewID(), &endpoint{}); err != nil {
 			t.Fatal(err)
 		}
+		agent := phone.Principal()
+		agent.Subject = Subject{Kind: "agent"}
+		if !b.Allowed(phone.Principal(), r.ID, "agent.prompt") || b.Allowed(agent, r.ID, "agent.prompt") {
+			t.Fatal("a controller grant missed a conversation, or gave agent access")
+		}
 	}
 	if n := len(b.Catalog(phone.Principal())); n != 20 {
 		t.Fatal(n)
-	}
-	fixed := newMitosis(t)
-	if err = b.AddGrant(Grant{Principal: fixed.Principal(), GroupID: group, Permissions: []string{"instance.list"}}); err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = b.Enroll("last", group)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(b.Catalog(fixed.Principal())) != 20 || len(b.Catalog(phone.Principal())) != 21 {
-		t.Fatal("fixed grant widened")
 	}
 	_ = b.Block(phone.PeerID())
 	if len(b.Catalog(phone.Principal())) != 0 {
@@ -68,37 +62,9 @@ func TestPairOnceTwentyInstancesAndFixedGrants(t *testing.T) {
 	}
 }
 
-func TestFullAccessCoversCurrentAndFutureGroupsButNotAgentCalls(t *testing.T) {
-	b, peer := newMitosis(t), newMitosis(t)
-	grant := Grant{Principal: peer.Principal(), GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.prompt"}}
-	if err := b.AddGrant(grant); err != nil {
-		t.Fatal(err)
-	}
-	group := protocol.NewID()
-	if _, err := b.Admin(t.Context(), "group", JSON(map[string]string{"group_id": group, "name": "later"})); err != nil {
-		t.Fatal(err)
-	}
-	for _, g := range []string{b.PersonalGroup(), group} {
-		instance, _, err := b.Enroll("test-"+g, g)
-		if err != nil || !b.Allowed(peer.Principal(), instance.ID, "instance.prompt") {
-			t.Fatalf("full access missing: %v", err)
-		}
-		agent := peer.Principal()
-		agent.Subject = Subject{Kind: "instance", InstanceID: protocol.NewID()}
-		if b.Allowed(agent, instance.ID, "instance.prompt") {
-			t.Fatal("controller trust granted agent access")
-		}
-	}
-	if err := b.Block(peer.PeerID()); err != nil {
-		t.Fatal(err)
-	}
-	if len(b.Catalog(peer.Principal())) != 0 {
-		t.Fatal("blocked peer retained full access")
-	}
-}
 func TestRegistrationCredentialIsolationAndFencing(t *testing.T) {
 	b := newMitosis(t)
-	r, secret, err := b.Enroll("one", b.PersonalGroup())
+	r, secret, err := b.Enroll("one")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,14 +96,14 @@ func TestRegistrationCredentialIsolationAndFencing(t *testing.T) {
 
 func TestAgentCallsRequireBothDirectionalGrants(t *testing.T) {
 	source, destination := newMitosis(t), newMitosis(t)
-	origin, credential, err := source.Enroll("origin", source.PersonalGroup())
+	origin, credential, err := source.Enroll("origin")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err = source.Attach(origin.ID, credential, protocol.NewID(), &endpoint{}); err != nil {
 		t.Fatal(err)
 	}
-	target, credential, err := destination.Enroll("target", destination.PersonalGroup())
+	target, credential, err := destination.Enroll("target")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,54 +112,54 @@ func TestAgentCallsRequireBothDirectionalGrants(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := Call{InstanceID: target.ID, Service: protocol.Service, Method: "prompt", SessionID: "session", Expected: Expected{Generation: generation, Revision: "1"}, OperationID: protocol.NewID(), Args: JSON(map[string]string{"text": "hello"})}
-	principal := Principal{PeerID: source.PeerID(), Subject: Subject{Kind: "instance", InstanceID: origin.ID}}
-	if _, err = source.Outbound(origin.ID, destination.PeerID(), call); err == nil {
+	principal := Principal{PeerID: source.PeerID(), Subject: Subject{Kind: "agent"}}
+	if _, err = source.Outbound(origin.ID, destination.PeerID(), call.Method); err == nil {
 		t.Fatal("missing source grant allowed")
 	}
-	if err = source.AddGrant(Grant{Principal: principal, Destination: destination.PeerID(), Instances: []string{target.ID}, Permissions: []string{"instance.prompt"}}); err != nil {
+	if err = source.AddGrant(Grant{Principal: principal, Destination: destination.PeerID(), Permissions: []string{"agent.prompt"}}); err != nil {
 		t.Fatal(err)
 	}
-	subject, err := source.Outbound(origin.ID, destination.PeerID(), call)
+	subject, err := source.Outbound(origin.ID, destination.PeerID(), call.Method)
 	if err != nil || subject != principal.Subject {
 		t.Fatal(subject, err)
 	}
 	if _, err = destination.Call(context.Background(), principal, call); err == nil {
 		t.Fatal("missing destination grant allowed")
 	}
-	if err = destination.AddGrant(Grant{Principal: principal, Instances: []string{target.ID}, Permissions: []string{"instance.prompt"}}); err != nil {
+	if err = destination.AddGrant(Grant{Principal: principal, Permissions: []string{"agent.prompt"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = destination.Call(context.Background(), principal, call); err != nil {
 		t.Fatal(err)
 	}
 	forged := principal
-	forged.Subject.InstanceID = protocol.NewID()
+	forged.Subject.Kind = "controller"
 	if _, err = destination.Call(context.Background(), forged, call); err == nil {
-		t.Fatal("another source instance inherited authority")
+		t.Fatal("the source's controller inherited its agent's authority")
 	}
-	if _, err = source.Outbound(origin.ID, newMitosis(t).PeerID(), call); err == nil {
+	if _, err = source.Outbound(origin.ID, newMitosis(t).PeerID(), call.Method); err == nil {
 		t.Fatal("destination grant forwarded to third mitosis")
 	}
 }
 
 func TestInvitationCannotMutateAuthorityAndCatalogCursorExpires(t *testing.T) {
 	b, peer := newMitosis(t), newMitosis(t)
-	inv, err := b.Invite([]Grant{{GroupID: b.PersonalGroup(), IncludeFuture: true, Permissions: []string{"instance.list"}}})
+	inv, err := b.Invite([]Grant{{Permissions: []string{"agent.list"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	inv.Grants[0].Permissions[0] = "instance.prompt"
+	inv.Grants[0].Permissions[0] = "agent.prompt"
 	if _, err = b.Claim(peer.PeerID(), inv.ID, inv.Token); err != nil {
 		t.Fatal(err)
 	}
 	if err = b.Approve(inv.ID, peer.PeerID()); err != nil {
 		t.Fatal(err)
 	}
-	r, _, err := b.Enroll("test", b.PersonalGroup())
+	r, _, err := b.Enroll("test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b.Allowed(peer.Principal(), r.ID, "instance.prompt") {
+	if b.Allowed(peer.Principal(), r.ID, "agent.prompt") {
 		t.Fatal("caller mutated persisted invitation")
 	}
 	items := make([]int, protocol.MaxPage+1)
@@ -209,7 +175,7 @@ func TestInvitationCannotMutateAuthorityAndCatalogCursorExpires(t *testing.T) {
 
 func TestCatalogObservationAndGrantRevocation(t *testing.T) {
 	b, peer := newMitosis(t), newMitosis(t)
-	if err := b.AddGrant(Grant{Principal: peer.Principal(), GroupID: b.PersonalGroup(), IncludeFuture: true, Permissions: []string{"instance.list"}}); err != nil {
+	if err := b.AddGrant(Grant{Principal: peer.Principal(), Permissions: []string{"agent.list"}}); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
@@ -226,7 +192,7 @@ func TestCatalogObservationAndGrantRevocation(t *testing.T) {
 	if _, err = b.Handle(ctx, peer.PeerID(), "events.subscribe", JSON(map[string]string{"cursor": snapshot.Cursor})); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = b.Enroll("new", b.PersonalGroup()); err != nil {
+	if _, _, err = b.Enroll("new"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = b.Handle(ctx, peer.PeerID(), "events.subscribe", JSON(map[string]string{"cursor": snapshot.Cursor})); Code(err) != "cursor_expired" {
@@ -249,7 +215,7 @@ func TestCatalogObservationAndGrantRevocation(t *testing.T) {
 
 func TestPairClaimRecoveryBindsApprovalToIdentity(t *testing.T) {
 	b, claimant, attacker := newMitosis(t), newMitosis(t), newMitosis(t)
-	inv, err := b.Invite([]Grant{{GroupID: b.PersonalGroup(), Permissions: []string{"instance.list"}}})
+	inv, err := b.Invite([]Grant{{Permissions: []string{"agent.list"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +238,7 @@ func TestPairClaimRecoveryBindsApprovalToIdentity(t *testing.T) {
 	if err = b.Approve(inv.ID, claimant.PeerID()); Code(err) != "identity_conflict" {
 		t.Fatal(err)
 	}
-	inv, err = b.Invite([]Grant{{GroupID: b.PersonalGroup(), Permissions: []string{"instance.list"}}})
+	inv, err = b.Invite([]Grant{{Permissions: []string{"agent.list"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,14 +254,13 @@ func TestPairClaimRecoveryBindsApprovalToIdentity(t *testing.T) {
 	}
 }
 
-// Throwaway instances whose Orb has gone are retired; attached ones, named
-// ones, never-attached ones, and those a grant names stay. Named IDs go regardless.
+// Throwaway instances whose Orb has gone are retired; attached ones, named ones and
+// never-attached ones stay. Named IDs go regardless.
 func TestRetireRemovesGoneThrowawayInstances(t *testing.T) {
 	b := newMitosis(t)
-	group := b.PersonalGroup()
 	enroll := func(alias string, attach, detach bool) Instance {
 		t.Helper()
-		r, token, err := b.Enroll(alias, group)
+		r, token, err := b.Enroll(alias)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -314,17 +279,13 @@ func TestRetireRemovesGoneThrowawayInstances(t *testing.T) {
 	live := enroll("instance-live0001", true, false)
 	fresh := enroll("instance-fresh001", false, false)
 	named := enroll("laptop", true, true)
-	granted := enroll("instance-grant001", true, true)
-	if err := b.AddGrant(Grant{Principal: newMitosis(t).Principal(), Instances: []string{granted.ID}, Permissions: []string{"instance.list"}}); err != nil {
-		t.Fatal(err)
-	}
 	if removed, err := b.Retire(nil); err != nil || removed != 1 {
 		t.Fatalf("pruned %d, %v", removed, err)
 	}
 	if _, ok := b.state.Instances[gone.ID]; ok {
 		t.Fatal("gone throwaway instance kept")
 	}
-	for _, r := range []Instance{live, fresh, named, granted} {
+	for _, r := range []Instance{live, fresh, named} {
 		if _, ok := b.state.Instances[r.ID]; !ok {
 			t.Fatalf("%s pruned", r.Alias)
 		}
@@ -338,7 +299,7 @@ func TestRetireRemovesGoneThrowawayInstances(t *testing.T) {
 // included, with no grant; a stranger reaches nothing, and the owner's agents nothing either.
 func TestTheOwnerReachesItsOwnMachineWithoutGrants(t *testing.T) {
 	b, stranger := newMitosis(t), newMitosis(t)
-	instance, _, err := b.Enroll("phone", b.PersonalGroup())
+	instance, _, err := b.Enroll("phone")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,19 +308,19 @@ func TestTheOwnerReachesItsOwnMachineWithoutGrants(t *testing.T) {
 		hosted = method
 		return JSON(struct{}{}), nil
 	})
-	raw, err := b.Handle(t.Context(), b.PeerID(), "instances.list", JSON(struct{}{}))
-	if err != nil || !json.Valid(raw) || len(b.Catalog(b.Principal())) != 1 || !b.Allowed(b.Principal(), instance.ID, "instance.prompt") {
+	raw, err := b.Handle(t.Context(), b.PeerID(), "agent.describe", JSON(struct{}{}))
+	if err != nil || !json.Valid(raw) || len(b.Catalog(b.Principal())) != 1 || !b.Allowed(b.Principal(), instance.ID, "agent.prompt") {
 		t.Fatalf("owner catalog: %s %v", raw, err)
 	}
 	if _, err = b.Handle(t.Context(), b.PeerID(), "host.sessions", JSON(struct{}{})); err != nil || hosted != "host.sessions" {
 		t.Fatalf("owner host call: %v", err)
 	}
-	if _, err = b.Handle(t.Context(), stranger.PeerID(), "instances.list", JSON(struct{}{})); Code(err) != "unauthorized" {
+	if _, err = b.Handle(t.Context(), stranger.PeerID(), "agent.describe", JSON(struct{}{})); Code(err) != "unauthorized" {
 		t.Fatalf("stranger: %v", err)
 	}
 	agent := b.Principal()
-	agent.Subject = Subject{Kind: "instance", InstanceID: instance.ID}
-	if b.Allowed(agent, instance.ID, "instance.prompt") {
+	agent.Subject = Subject{Kind: "agent"}
+	if b.Allowed(agent, instance.ID, "agent.prompt") {
 		t.Fatal("the owner's authority passed to an agent")
 	}
 }

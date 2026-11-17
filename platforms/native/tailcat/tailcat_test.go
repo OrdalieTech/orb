@@ -50,7 +50,7 @@ func TestLiveNativePath(t *testing.T) {
 		t.Fatal("pin mismatch")
 	}
 	// The unknown identity can negotiate, but cannot read any catalog.
-	if err = c.Call(ctx, "instances.list", struct{}{}, nil); mitosis.Code(err) != "unauthorized" {
+	if err = c.Call(ctx, "agent.describe", struct{}{}, nil); mitosis.Code(err) != "unauthorized" {
 		t.Fatal(err)
 	}
 	client := n.clients[peer]
