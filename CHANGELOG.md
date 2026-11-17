@@ -7,7 +7,7 @@ shown by `/changelog`.
 
 ## [0.23.0] - 2026-11-17
 
-Bridge becomes Mitosis, with no alias, and replicates a profile: its devices, a browser tab or a Worker object included, hold each other's logins and memory, sealed to each device, and keep them when the others are off, over a serverless network that stays light at 64 devices. Peers paired before must be paired again.
+Bridge becomes Mitosis, with no alias, and replicates a profile: `orb mitosis` on one machine, `orb mitosis join <code>` on another and one yes, and the new machine holds the profile's logins and memory, sealed to each device, and keeps them when the others are off. A browser tab or a Worker object can join too, over a serverless network measured up to 256 devices. Peers paired before must be paired again.
 
 - Bridge is now Mitosis, everywhere and with no alias: `orb mitosis`, `/mitosis`, `ORB_MITOSIS_HOME`, the `mitosis` and `mitosis-agent-calls` plugins, the `mitosis_call` and `mitosis_agents` tools, the `orb-mitosis` service and the apps' pages. The protocol is renamed too (`orb-mitosis/1`, `orb-mitosis:v1:` invitations), and state lives in a new place, so peers paired before must be paired again: run `orb mitosis` on one device and `orb mitosis join <code>` on the other, and install the service again where it was installed.
 
