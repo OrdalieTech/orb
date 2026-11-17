@@ -215,15 +215,16 @@ func TestAPeerLearnsTheNameOnlyOnceGranted(t *testing.T) {
 
 func TestPeersDiallingEachOtherKeepOneChannel(t *testing.T) {
 	a, b := newMitosis(t), newMitosis(t)
-	dial := func(from, to *Mitosis) {
+	dial := func(from, to *Mitosis) error {
 		x, y := net.Pipe()
 		go func() { _, _, _ = to.Connect(t.Context(), y, "", true) }()
-		if _, _, err := from.Connect(t.Context(), x, to.PeerID(), false); err != nil {
-			t.Fatal(err)
-		}
+		_, _, err := from.Connect(t.Context(), x, to.PeerID(), false)
+		return err
 	}
-	dial(a, b)
-	dial(b, a)
+	if err := dial(a, b); err != nil {
+		t.Fatal(err)
+	}
+	_ = dial(b, a) // the channel that gives way may close before its greeting is over
 	lower := a
 	if b.PeerID() < a.PeerID() {
 		lower = b

@@ -1,6 +1,7 @@
 package mitosis
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -70,14 +71,12 @@ func (ps *Peers) Peer(ctx context.Context, id, locator string) (*protocol.Conn, 
 	for {
 		select {
 		case err := <-dialed:
-			if err != nil {
-				return nil, err
-			}
-			// The channel dialled may have given way to one the peer dialled at the same time.
+			// The channel dialled may have given way to one the peer dialled at the same time,
+			// even before its greeting was over.
 			if c := ps.Mitosis.Connection(id); c != nil {
 				return c, nil
 			}
-			return nil, Fail("unavailable")
+			return nil, cmp.Or(err, Fail("unavailable"))
 		case <-tick.C:
 			if c := ps.Mitosis.Connection(id); c != nil {
 				return c, nil
