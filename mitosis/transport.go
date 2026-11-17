@@ -116,13 +116,39 @@ func (b *Mitosis) Connect(ctx context.Context, stream net.Conn, expected string,
 	}
 	b.arrivals++
 	b.channels[id][c] = b.arrivals
+	if !server {
+		b.dialled[c] = true
+	}
+	// Both ends dialling at once (each back from a restart, say) leave a channel each way, and
+	// each way holds a Tailcat client: both ends drop the ones the higher PeerID dialled.
+	ways := map[bool]bool{}
+	for o := range b.channels[id] {
+		select {
+		case <-o.Done():
+		default:
+			ways[b.dialled[o]] = true
+		}
+	}
+	dropped := []*protocol.Conn{evicted}
+	if ways[true] && ways[false] {
+		higher := b.PeerID() > id
+		for o := range b.channels[id] {
+			if b.dialled[o] == higher {
+				delete(b.channels[id], o)
+				dropped = append(dropped, o)
+			}
+		}
+	}
 	b.mu.Unlock()
-	if evicted != nil {
-		_ = evicted.Close()
+	for _, o := range dropped {
+		if o != nil {
+			_ = o.Close()
+		}
 	}
 	go func() {
 		<-c.Done()
 		b.mu.Lock()
+		delete(b.dialled, c)
 		delete(b.channels[id], c)
 		if len(b.channels[id]) == 0 {
 			delete(b.channels, id)

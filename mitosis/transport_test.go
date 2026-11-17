@@ -212,3 +212,34 @@ func TestAPeerLearnsTheNameOnlyOnceGranted(t *testing.T) {
 		t.Fatalf("a granted peer learned %q", got)
 	}
 }
+
+func TestPeersDiallingEachOtherKeepOneChannel(t *testing.T) {
+	a, b := newMitosis(t), newMitosis(t)
+	dial := func(from, to *Mitosis) {
+		x, y := net.Pipe()
+		go func() { _, _, _ = to.Connect(t.Context(), y, "", true) }()
+		if _, _, err := from.Connect(t.Context(), x, to.PeerID(), false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dial(a, b)
+	dial(b, a)
+	lower := a
+	if b.PeerID() < a.PeerID() {
+		lower = b
+	}
+	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		a.mu.Lock()
+		kept := len(a.channels[b.PeerID()]) == 1 && a.dialled[a.connectionLocked(b.PeerID())] == (lower == a)
+		a.mu.Unlock()
+		b.mu.Lock()
+		kept = kept && len(b.channels[a.PeerID()]) == 1 && b.dialled[b.connectionLocked(a.PeerID())] == (lower == b)
+		b.mu.Unlock()
+		if kept {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("both ways stayed open, or the lower PeerID's channel gave way")
+		}
+	}
+}

@@ -86,6 +86,7 @@ type Mitosis struct {
 	active         map[string]registration
 	channels       map[string]map[*protocol.Conn]uint64 // value: arrival order, newest highest
 	arrivals       uint64
+	dialled        map[*protocol.Conn]bool // channels this Mitosis opened, against those it accepted
 	failed, closed bool
 	boot           string
 	changes        chan struct{}
@@ -155,7 +156,7 @@ func Open(store document.Document, create bool) (*Mitosis, error) {
 	if store == nil {
 		return nil, errors.New("mitosis requires explicit storage")
 	}
-	b := &Mitosis{changes: make(chan struct{}, 1), classes: map[string]Class{}, sealed: map[string]sealed{}, vaults: map[string][]byte{}, store: store, active: map[string]registration{}, channels: map[string]map[*protocol.Conn]uint64{}, boot: protocol.NewID()}
+	b := &Mitosis{changes: make(chan struct{}, 1), classes: map[string]Class{}, sealed: map[string]sealed{}, vaults: map[string][]byte{}, store: store, active: map[string]registration{}, channels: map[string]map[*protocol.Conn]uint64{}, dialled: map[*protocol.Conn]bool{}, boot: protocol.NewID()}
 	raw, err := store.Read(context.Background())
 	if err != nil {
 		return nil, err

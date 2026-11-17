@@ -31,9 +31,8 @@ type Peers struct {
 	// Forget drops what this machine keeps of a peer the owner blocked.
 	Forget func(ctx context.Context, peer string) error
 
-	ctx   context.Context
-	mu    sync.Mutex
-	peers map[string]*protocol.Conn
+	ctx context.Context
+	mu  sync.Mutex
 	// joining: inviters this Mitosis claimed an invitation from, kept as known peers only once
 	// trusted, so one that never approves is not dialled at every start.
 	joining map[string]string
@@ -41,22 +40,12 @@ type Peers struct {
 
 // NewPeers serves b's peers until ctx ends.
 func NewPeers(ctx context.Context, b *Mitosis) *Peers {
-	return &Peers{Mitosis: b, ctx: ctx, peers: map[string]*protocol.Conn{}, joining: map[string]string{}}
+	return &Peers{Mitosis: b, ctx: ctx, joining: map[string]string{}}
 }
 
 func (ps *Peers) Peer(ctx context.Context, id, locator string) (*protocol.Conn, error) {
 	if c := ps.Mitosis.Connection(id); c != nil {
 		return c, nil
-	}
-	ps.mu.Lock()
-	c := ps.peers[id]
-	ps.mu.Unlock()
-	if c != nil {
-		select {
-		case <-c.Done():
-		default:
-			return c, nil
-		}
 	}
 	if locator == "" {
 		ps.mu.Lock()
@@ -84,9 +73,11 @@ func (ps *Peers) Peer(ctx context.Context, id, locator string) (*protocol.Conn, 
 			if err != nil {
 				return nil, err
 			}
-			ps.mu.Lock()
-			defer ps.mu.Unlock()
-			return ps.peers[id], nil
+			// The channel dialled may have given way to one the peer dialled at the same time.
+			if c := ps.Mitosis.Connection(id); c != nil {
+				return c, nil
+			}
+			return nil, Fail("unavailable")
 		case <-tick.C:
 			if c := ps.Mitosis.Connection(id); c != nil {
 				return c, nil
@@ -106,14 +97,7 @@ func (ps *Peers) dial(ctx context.Context, id, locator string) error {
 	if err != nil {
 		return err
 	}
-	ps.mu.Lock()
-	old := ps.peers[id]
-	ps.peers[id] = c
-	ps.mu.Unlock()
 	go Keepalive(ps.ctx, c, 4*time.Second)
-	if old != nil {
-		_ = old.Close()
-	}
 	return nil
 }
 func (ps *Peers) Remote(ctx context.Context, id, method string, p any) (json.RawMessage, error) {
