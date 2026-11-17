@@ -37,6 +37,8 @@ homebrew_casks:
     license: MIT
 checksum:
   name_template: checksums.txt
+  extra_files:
+    - glob: .tools/orb_*_browser.tar.gz # make browser-dist, outside dist/, which --clean empties
 # checksums.txt.sig: raw Ed25519 over checksums.txt, which `orb update` checks against the key built
 # into the binary (releaseKey in platforms/native/selfupdate).
 signs:
@@ -45,5 +47,7 @@ signs:
     args: ["pkeyutl", "-sign", "-rawin", "-inkey", "{{ .Env.ORB_SIGNING_KEY }}", "-in", "${artifact}", "-out", "${signature}"]
 release:
   prerelease: auto
+  extra_files:
+    - glob: .tools/orb_*_browser.tar.gz
 changelog:
   disable: true

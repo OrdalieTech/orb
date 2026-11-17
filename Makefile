@@ -15,14 +15,26 @@ check: build lint test portability
 include platforms/worker/worker.mk
 
 BROWSER_PORT ?= 8787
-.PHONY: browser-build browser-serve
+.PHONY: browser-build browser-serve browser-dist
 browser-build:
-	mkdir -p .tools/browser
+	rm -rf .tools/browser && mkdir -p .tools/browser
 	$(GO_ENV) CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -o .tools/browser/orb.wasm ./cmd/orb-wasm
 	# The tab as a full Mitosis peer (peer.js) runs the Worker runtime.
 	$(GO_ENV) CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -trimpath -ldflags=-s -o .tools/browser/peer.wasm ./cmd/orb-worker
 	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" platforms/worker/deploy/helpers.js .tools/browser/
 	cp platforms/browser/web/* .tools/browser/
+	# Gzipped, as the page fetches them: peer.wasm is over the 25 MiB a static host such as Cloudflare Pages takes.
+	gzip -9n .tools/browser/*.wasm
+
+# The page a release ships (orb_<version>_browser.tar.gz, in the signed checksums.txt): its files sit
+# in a directory named by version and digest, so a cache never mixes two releases' JavaScript and
+# wasm, and only index.html, which points there, changes in place.
+VERSION ?= $(shell git describe --tags --always)
+browser-dist: browser-build
+	cd .tools && dir="$(VERSION)-$$(cat browser/* | shasum -a 256 | cut -c1-12)" && rm -rf browser-dist && \
+	mkdir -p "browser-dist/$$dir" && cp browser/* "browser-dist/$$dir/" && \
+	sed "s|<head>|&<base href=\"$$dir/\">|" browser/index.html > browser-dist/index.html && \
+	tar -czf "orb_$(VERSION)_browser.tar.gz" -C browser-dist .
 
 browser-serve: browser-build
 	python3 -m http.server $(BROWSER_PORT) --bind 127.0.0.1 --directory .tools/browser

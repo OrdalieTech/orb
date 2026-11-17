@@ -308,12 +308,12 @@ async function openTab() {
   if (!held) throw new Error("Your Orb is already open in another tab of this page.");
   await import("./wasm_exec.js");
   await import("./helpers.js");
-  const response = await fetch("peer.wasm");
+  const response = await fetch("peer.wasm.gz");
   if (!response.ok) throw new Error(`Wasm download failed: ${response.status}`);
   const replies = new Map(), decoder = new TextDecoder();
   let next = 0;
   const peer = await openPeer({
-    wasm: await response.arrayBuffer(), storage: indexedStorage("orb-tab"),
+    wasm: await new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(), storage: indexedStorage("orb-tab"),
     env: { ORB_SETTINGS: JSON.stringify({ plugins: { memory: true } }) },
     emit: (array, length) => {
       const frame = JSON.parse(decoder.decode(array.slice(0, length)));
