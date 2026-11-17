@@ -301,7 +301,16 @@ func TestSyncOwnersLiveWithoutEachOther(t *testing.T) {
 	// With c away, a hands ownership to b; c, back, learns it from a alone.
 	_ = admin(a, `{"promote":"`+b.PeerID()+`"}`)
 	round(a, b)
+	// b deletes what a's set holds, then demotes a: a's set is no member's hand-in, and the
+	// deletion stands.
+	_ = document.Replace(ctx, stores[a], []byte(`{"openai":{"type":"api_key","key":"k0"}}`))
+	round(a, b)
+	_ = document.Replace(ctx, stores[b], []byte(`{}`))
 	_ = admin(b, `{"demote":"`+a.PeerID()+`"}`)
+	round(b)
+	if key(b) != "" {
+		t.Fatal("a demoted owner's set came back as a hand-in")
+	}
 	round(a, b)
 	round(a, c)
 	if !slices.Equal(c.state.Owners, []string{b.PeerID()}) {

@@ -355,7 +355,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 				if !ok || v.Seq > w.vault.Seq || v.Seq == w.vault.Seq && v.Digest < w.vault.Digest {
 					best[class] = sent{peer, v}
 				}
-			case owner && b.state.Merged[peer+" "+class] != v.Digest:
+			case owner && v.Seq == 0 && b.state.Merged[peer+" "+class] != v.Digest: // a former owner's set is no hand-in
 				handins[class] = append(handins[class], sent{peer, v})
 			}
 		}
