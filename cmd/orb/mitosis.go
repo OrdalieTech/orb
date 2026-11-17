@@ -59,7 +59,7 @@ Advanced:
 orb mitosis sync [add|remove|promote|demote <peer-id> | join <peer-id>]   (the sync group, which any of its owners changes; remove yourself to leave; a peer-id may be an unambiguous prefix)
 orb mitosis run [--web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 --web-url wss://host/mitosis]
 orb mitosis pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>
-orb mitosis trust <peer-id> | grant|revoke|scope|group|assign|takeover|publish < request.json
+orb mitosis trust <peer-id> | grant|revoke|scope|takeover|publish < request.json
 orb mitosis remote <peer-id> <method> < params.json | view <peer-id> <instance-id> | shell <peer-id> [folder]
 orb mitosis instances|peers|grants|groups|scopes|prune|pipe`)
 		return 0
@@ -212,7 +212,7 @@ orb mitosis instances|peers|grants|groups|scopes|prune|pipe`)
 		default:
 			err = errors.New("unknown pairing command")
 		}
-	case "grant", "revoke", "scope", "group", "assign", "takeover", "publish":
+	case "grant", "revoke", "scope", "takeover", "publish":
 		err = read()
 	case "trust":
 		if len(args) != 2 {
@@ -247,7 +247,7 @@ orb mitosis instances|peers|grants|groups|scopes|prune|pipe`)
 		}
 	case "prune":
 		method = "retire"
-	case "status", "instances", "peers", "grants", "groups", "scopes", "stop":
+	case "status", "instances", "peers", "grants", "scopes", "stop":
 	default:
 		err = errors.New("unknown mitosis command")
 	}
@@ -466,7 +466,7 @@ func trustMitosisPeer(ctx context.Context, client *protocol.Conn, profile, peer 
 		return err
 	}
 	for _, old := range status.Grants {
-		if old.Principal == g.Principal && old.GroupID == "*" && old.IncludeFuture && old.Destination == "" && slices.Equal(old.Permissions, g.Permissions) {
+		if old.Principal == g.Principal && old.Destination == "" && slices.Equal(old.Permissions, g.Permissions) {
 			return nil
 		}
 	}

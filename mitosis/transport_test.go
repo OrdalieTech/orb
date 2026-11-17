@@ -155,7 +155,7 @@ func TestPeerConnectionStateDoesNotPersistAcrossRestart(t *testing.T) {
 	state(server, "blocked")
 }
 
-func TestHostCallsNeedAMachineWideLaunchGrant(t *testing.T) {
+func TestHostCallsNeedAControllerLaunchGrant(t *testing.T) {
 	b := newMitosis(t)
 	defer func() { _ = b.Close() }()
 	peer := newMitosis(t)
@@ -166,15 +166,15 @@ func TestHostCallsNeedAMachineWideLaunchGrant(t *testing.T) {
 		return JSON(struct{}{}), nil
 	})
 	controller := Principal{PeerID: peer.PeerID(), Subject: Subject{Kind: "controller"}}
-	manage := Grant{Principal: controller, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.prompt"}}
+	manage := Grant{Principal: controller, Permissions: []string{"agent.list", "agent.prompt"}}
 	if err := b.AddGrant(manage); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.Handle(t.Context(), peer.PeerID(), "host.sessions", JSON(struct{}{})); Code(err) != "unauthorized" || called != "" {
 		t.Fatalf("host call without host.launch: %v %q", err, called)
 	}
-	if err := b.AddGrant(Grant{Principal: controller, GroupID: b.PersonalGroup(), IncludeFuture: true, Permissions: []string{"host.launch"}}); Code(err) != "unauthorized" {
-		t.Fatalf("host.launch on one group accepted: %v", err)
+	if err := b.AddGrant(Grant{Principal: Principal{PeerID: peer.PeerID(), Subject: Subject{Kind: "agent"}}, Permissions: []string{"host.launch"}}); Code(err) != "unauthorized" {
+		t.Fatalf("host.launch granted to an agent: %v", err)
 	}
 	manage.Permissions = append(manage.Permissions, "host.launch")
 	if err := b.AddGrant(manage); err != nil {
@@ -205,7 +205,7 @@ func TestAPeerLearnsTheNameOnlyOnceGranted(t *testing.T) {
 	if got := name(b); got != "Studio Mac" {
 		t.Fatalf("the owner learned %q", got)
 	}
-	if err := b.AddGrant(Grant{Principal: Principal{PeerID: peer.PeerID(), Subject: Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list"}}); err != nil {
+	if err := b.AddGrant(Grant{Principal: Principal{PeerID: peer.PeerID(), Subject: Subject{Kind: "controller"}}, Permissions: []string{"agent.list"}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := name(peer); got != "Studio Mac" {

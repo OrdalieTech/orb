@@ -1,4 +1,4 @@
-import { RemoteMitosis, randomID } from "./mitosis.js";
+import { RemoteMitosis } from "./mitosis.js";
 import { indexedStorage, openPeer } from "./peer.js";
 const $ = id => document.getElementById(id);
 let worker, loaded = false, running = false, connected = false, pending = null;
@@ -206,7 +206,7 @@ $("export").onclick = () => {
 function browserIdentity() {
   const saved = localStorage.getItem("orb.mitosis.identity");
   if (saved) return JSON.parse(saved);
-  const identity = { seed: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replaceAll("=", ""), agentID: randomID() };
+  const identity = { seed: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replaceAll("=", "") };
   localStorage.setItem("orb.mitosis.identity", JSON.stringify(identity));
   return identity;
 }
@@ -288,8 +288,8 @@ $("mitosis-connect").onclick = async () => {
     const result = await remote.connect(invitation, identity);
     localStorage.setItem("orb.mitosis.remote", JSON.stringify({ locator: invitation.locator, peer_id: invitation.peer_id }));
     $("mitosis-invitation").value = "";
-    $("mitosis-identity").textContent = `Browser identity: ${result.peer_id}\nLocal agent: ${result.agent_id}`;
-    $("mitosis-grant").textContent = JSON.stringify({ principal: { peer_id: result.peer_id, subject: { kind: "instance", instance_id: result.agent_id } }, group_id: "*", include_future: true, permissions: ["instance.inspect", "instance.prompt"] }, null, 2);
+    $("mitosis-identity").textContent = `Browser agent: ${result.peer_id}`;
+    $("mitosis-grant").textContent = JSON.stringify({ principal: { peer_id: result.peer_id, subject: { kind: "agent" } }, permissions: ["agent.inspect", "agent.prompt"] }, null, 2);
     $("mitosis-status").textContent = "Awaiting approval";
     $("mitosis-notice").textContent = "Approve this browser identity on the remote Mitosis, then click Refresh.";
     $("remote-controls").hidden = false;

@@ -116,7 +116,7 @@ async function scenario(base, token, restart) {
   // Each side grants the object's own instance subject: the laptop lets it
   // inspect and prompt the laptop Orb, the object lets its agent call there.
   const subject = { peer_id: self.peer_id, subject: { kind: "instance", instance_id: self.instance_id } };
-  const permissions = ["instance.inspect", "instance.prompt"];
+  const permissions = ["agent.inspect", "agent.prompt"];
   await mitosisCLI(["grant"], { principal: subject, instances: [laptopID], permissions });
   await objectAdmin(base, token, "grant", { principal: subject, destination: laptopPeer, instances: [laptopID], permissions });
   report.pairing = { object: self.peer_id, instance: self.instance_id, laptop: laptopPeer, laptopInstance: laptopID, locator: invitation.locator };

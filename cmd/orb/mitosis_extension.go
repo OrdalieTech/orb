@@ -176,7 +176,6 @@ func setMitosisStatus(ui extensions.UI, on bool) {
 type mitosisSettingsStatus struct {
 	PeerStates map[string]string    `json:"peer_states"`
 	PeerID     string               `json:"peer_id"`
-	Groups     map[string]string    `json:"groups"`
 	Pending    []mitosis.Invitation `json:"pending"`
 	Peers      []string             `json:"peers"`
 	Grants     []mitosis.Grant      `json:"grants"`
@@ -535,7 +534,7 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 			return e
 		}
 
-		return shareMitosisInvitation(ctx, ui, client, inv, status.Groups)
+		return shareMitosisInvitation(ctx, ui, client, inv)
 	case "Join device":
 		text, e := input("Connect to a device · paste its invitation")
 		if e != nil {
@@ -598,7 +597,7 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 		if e != nil || !ok {
 			return e
 		}
-		return approveMitosisPairing(ctx, ui, client, claims[choice], status.Groups)
+		return approveMitosisPairing(ctx, ui, client, claims[choice])
 	case "Peers":
 		if status.PeerStates[peer] == "blocked" {
 			return fmt.Errorf("this device is blocked.\nIts access has been revoked")
@@ -790,7 +789,7 @@ func openSharedMitosisConversation(ctx context.Context, ui extensions.UI, profil
 	return ctx.Err()
 }
 
-func shareMitosisInvitation(ctx context.Context, ui extensions.UI, client *protocol.Conn, inv mitosis.Invitation, groups map[string]string) error {
+func shareMitosisInvitation(ctx context.Context, ui extensions.UI, client *protocol.Conn, inv mitosis.Invitation) error {
 	claimed, err := waitMitosisPairing(ctx, ui, "Create invitation", "Paste in Mitosis → Add device → Paste an invitation on the other Orb.", inv, mitosis.InvitationCode(inv), func(ctx context.Context) (mitosis.Invitation, error) {
 		var status mitosisSettingsStatus
 		if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
@@ -806,21 +805,17 @@ func shareMitosisInvitation(ctx context.Context, ui extensions.UI, client *proto
 	if err != nil {
 		return err
 	}
-	return approveMitosisPairing(ctx, ui, client, claimed, groups)
+	return approveMitosisPairing(ctx, ui, client, claimed)
 }
 
-func approveMitosisPairing(ctx context.Context, ui extensions.UI, client *protocol.Conn, claimed mitosis.Invitation, groups map[string]string) error {
+func approveMitosisPairing(ctx context.Context, ui extensions.UI, client *protocol.Conn, claimed mitosis.Invitation) error {
 	details := "Verify this fingerprint on the joining device:\n" + claimed.Claimant
 	for _, g := range claimed.Grants {
-		if g.GroupID == "*" && g.IncludeFuture && slices.Equal(g.Permissions, mitosis.FullGrant("").Permissions) {
-			details += "\nAllow full control of all current and future conversations,\nand starting Orb in any folder on this machine."
+		if slices.Equal(g.Permissions, mitosis.FullGrant("").Permissions) {
+			details += "\nAllow full control of this agent's conversations,\nand starting Orb in any folder on this machine."
 			continue
 		}
-		scope := "current instances only"
-		if g.IncludeFuture {
-			scope = "current and future instances"
-		}
-		details += "\n" + groups[g.GroupID] + " · " + scope + "\n" + strings.Join(g.Permissions, ", ")
+		details += "\n" + strings.Join(g.Permissions, ", ")
 	}
 	yes, err := ui.Confirm(ctx, "Trust this Orb?", details, nil)
 	if err != nil || !yes {

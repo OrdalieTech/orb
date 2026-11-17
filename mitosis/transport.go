@@ -387,7 +387,7 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 			return nil, err
 		}
 		if p.Subject != nil {
-			if p.Subject.Kind != "instance" || !protocol.ValidID(p.Subject.InstanceID) {
+			if p.Subject.Kind != "agent" {
 				return nil, Fail("unauthorized")
 			}
 			principal.Subject = *p.Subject
@@ -432,7 +432,7 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 			return JSON(map[string]any{"items": result.Items, "snapshot_id": snapshot, "offset": result.Cursor, "cursor": cursor}), nil
 		}
 		b.mu.Lock()
-		if !b.allowed(principal, p.InstanceID, "instance.inspect", "") {
+		if !b.allowed(principal, p.InstanceID, "agent.inspect", "") {
 			b.mu.Unlock()
 			return nil, Fail("not_found")
 		}

@@ -120,7 +120,7 @@ func orbWith(t *testing.T, plugin extensions.Factory, speed float64, steps ...fa
 		host.Session().BindExtensionUI(extensions.NoopUI{}, extensions.ModeRPC)
 	}
 	t.Cleanup(func() { host.Dispose(context.Background()) })
-	enrolled, token, err := b.Enroll("test", b.PersonalGroup())
+	enrolled, token, err := b.Enroll("test")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -22,19 +22,17 @@ import (
 	"github.com/OrdalieTech/orb/mitosis/protocol"
 )
 
+// Grant is what a principal may do with this agent: its conversations, every one of them, as the
+// agent is the unit of access. Destination, on an agent principal, is the peer this agent may call.
 type Grant struct {
-	ID            string    `json:"grant_id,omitempty"`
-	Principal     Principal `json:"principal"`
-	GroupID       string    `json:"group_id,omitempty"`
-	IncludeFuture bool      `json:"include_future"`
-	Instances     []string  `json:"instances,omitempty"`
-	Permissions   []string  `json:"permissions"`
-	Destination   string    `json:"destination,omitempty"`
+	ID          string    `json:"grant_id,omitempty"`
+	Principal   Principal `json:"principal"`
+	Permissions []string  `json:"permissions"`
+	Destination string    `json:"destination,omitempty"`
 }
 type Instance struct {
 	ID         string `json:"instance_id"`
 	Alias      string `json:"alias"`
-	Group      string `json:"group_id"`
 	Generation string `json:"registration_generation"`
 	Credential string `json:"credential_hash,omitempty"`
 	BootID     string `json:"boot_id,omitempty"`
@@ -60,8 +58,6 @@ type invitationState struct {
 type state struct {
 	Version      int                          `json:"version"`
 	Key          []byte                       `json:"key"`
-	Personal     string                       `json:"personal_group"`
-	Groups       map[string]string            `json:"groups"`
 	Instances    map[string]Instance          `json:"instances"`
 	Grants       []Grant                      `json:"grants"`
 	Blocked      map[string]bool              `json:"blocked"`
@@ -127,7 +123,7 @@ func (b *Mitosis) owner(p Principal) bool {
 	return p.Subject.Kind == "controller" && p.PeerID == b.PeerID()
 }
 
-// hostAllowed: only a controller grant over every instance, current and future, reaches the machine.
+// hostAllowed: only a controller granted host.launch reaches the machine.
 func (b *Mitosis) hostAllowed(p Principal) bool {
 	if b.failed || b.closed || b.state.Blocked[p.PeerID] || p.Subject.Kind != "controller" {
 		return false
@@ -136,7 +132,7 @@ func (b *Mitosis) hostAllowed(p Principal) bool {
 		return true
 	}
 	for _, g := range b.state.Grants {
-		if g.Principal == p && g.Destination == "" && g.GroupID == "*" && g.IncludeFuture && slices.Contains(g.Permissions, "host.launch") {
+		if g.Principal == p && g.Destination == "" && slices.Contains(g.Permissions, "host.launch") {
 			return true
 		}
 	}
@@ -174,8 +170,7 @@ func Open(store document.Document, create bool) (*Mitosis, error) {
 		if err != nil {
 			return nil, err
 		}
-		group := protocol.NewID()
-		b.state = state{Version: 1, Key: key, Personal: group, Groups: map[string]string{group: "personal"}, Instances: map[string]Instance{}, Blocked: map[string]bool{}, Invitations: map[string]invitationState{}, Scopes: map[string][]string{}, Records: map[string]Record{}, Peers: map[string]string{}}
+		b.state = state{Version: 1, Key: key, Instances: map[string]Instance{}, Blocked: map[string]bool{}, Invitations: map[string]invitationState{}, Scopes: map[string][]string{}, Records: map[string]Record{}, Peers: map[string]string{}}
 		if err = b.save(); err != nil {
 			return nil, err
 		}
@@ -187,7 +182,7 @@ func Open(store document.Document, create bool) (*Mitosis, error) {
 		if s.Version != 1 {
 			return nil, Fail("unsupported_version")
 		}
-		if len(s.Key) != ed25519.PrivateKeySize || s.Groups == nil || s.Instances == nil || s.Blocked == nil || s.Invitations == nil || s.Scopes == nil || s.Records == nil || s.Peers == nil || s.Groups[s.Personal] == "" {
+		if len(s.Key) != ed25519.PrivateKeySize || s.Instances == nil || s.Blocked == nil || s.Invitations == nil || s.Scopes == nil || s.Records == nil || s.Peers == nil {
 			return nil, errors.New("corrupt mitosis profile")
 		}
 		key := ed25519.NewKeyFromSeed(s.Key[:ed25519.SeedSize])
@@ -195,7 +190,7 @@ func Open(store document.Document, create bool) (*Mitosis, error) {
 			return nil, errors.New("corrupt mitosis identity")
 		}
 		for id, r := range s.Instances {
-			if id != r.ID || !protocol.ValidID(id) || !validSecret(r.Credential) || s.Groups[r.Group] == "" {
+			if id != r.ID || !protocol.ValidID(id) || !validSecret(r.Credential) {
 				return nil, errors.New("corrupt registration")
 			}
 			if _, err = protocol.Counter(r.Generation); err != nil {
@@ -222,7 +217,6 @@ func (b *Mitosis) PeerID() string {
 func (b *Mitosis) Principal() Principal {
 	return Principal{PeerID: b.PeerID(), Subject: Subject{Kind: "controller"}}
 }
-func (b *Mitosis) PersonalGroup() string { return b.state.Personal }
 func (b *Mitosis) save() error {
 	if b.failed || b.closed {
 		return Fail("unavailable")
@@ -266,29 +260,14 @@ func validateGrant(g Grant) error {
 	if _, err := ParsePeerID(g.Principal.PeerID); err != nil {
 		return err
 	}
-	if g.Principal.Subject.Kind != "controller" && g.Principal.Subject.Kind != "instance" {
+	if g.Principal.Subject.Kind != "controller" && g.Principal.Subject.Kind != "agent" {
 		return Fail("unauthorized")
-	}
-	if g.Principal.Subject.Kind == "instance" && !protocol.ValidID(g.Principal.Subject.InstanceID) {
-		return Fail("unauthorized")
-	}
-	if g.Principal.Subject.Kind == "controller" && g.Principal.Subject.InstanceID != "" {
-		return Fail("unauthorized")
-	}
-	if g.IncludeFuture && g.GroupID == "" {
-		return Fail("unauthorized")
-	}
-	for _, id := range g.Instances {
-		if !protocol.ValidID(id) {
-			return Fail("not_found")
-		}
 	}
 	for _, p := range g.Permissions {
 		switch p {
-		case "instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage":
+		case "agent.list", "agent.inspect", "agent.prompt", "agent.steer", "agent.follow_up", "agent.input.reply", "agent.cancel", "agent.session.manage":
 		case "host.launch":
-			// Starting Orb on the machine is machine-wide: it only comes with access to every instance.
-			if g.GroupID != "*" || !g.IncludeFuture || g.Principal.Subject.Kind != "controller" {
+			if g.Principal.Subject.Kind != "controller" {
 				return Fail("unauthorized")
 			}
 		default:
@@ -299,34 +278,11 @@ func validateGrant(g Grant) error {
 		if _, err := ParsePeerID(g.Destination); err != nil {
 			return err
 		}
-		if g.Principal.Subject.Kind != "instance" {
+		if g.Principal.Subject.Kind != "agent" {
 			return Fail("unauthorized")
 		}
 	}
 	return nil
-}
-func (b *Mitosis) prepareGrant(g Grant) (Grant, error) {
-	g.Instances = slices.Clone(g.Instances)
-	g.Permissions = slices.Clone(g.Permissions)
-	if err := validateGrant(g); err != nil {
-		return g, err
-	}
-	if g.GroupID != "" {
-		if g.GroupID != "*" && b.state.Groups[g.GroupID] == "" {
-			return g, Fail("not_found")
-		}
-		if !g.IncludeFuture {
-			g.Instances = nil
-			for id, r := range b.state.Instances {
-				if g.GroupID == "*" || r.Group == g.GroupID {
-					g.Instances = append(g.Instances, id)
-				}
-			}
-			slices.Sort(g.Instances)
-			g.GroupID = ""
-		}
-	}
-	return g, nil
 }
 func (b *Mitosis) AddGrant(g Grant) error {
 	b.mu.Lock()
@@ -334,8 +290,8 @@ func (b *Mitosis) AddGrant(g Grant) error {
 	if len(b.state.Grants) >= 1024 {
 		return Fail("resource_exhausted")
 	}
-	g, err := b.prepareGrant(g)
-	if err != nil {
+	g.Permissions = slices.Clone(g.Permissions)
+	if err := validateGrant(g); err != nil {
 		return err
 	}
 	if g.ID == "" {
@@ -353,19 +309,13 @@ func (b *Mitosis) allowed(p Principal, id, permission, destination string) bool 
 	if b.failed || b.closed || b.state.Blocked[p.PeerID] {
 		return false
 	}
-	r, ok := b.state.Instances[id]
+	_, ok := b.state.Instances[id]
 	if destination == "" && (!ok || b.owner(p)) {
 		return ok
 	}
-	for _, g := range b.state.Grants {
-		if g.Principal != p || g.Destination != destination || !slices.Contains(g.Permissions, permission) {
-			continue
-		}
-		if slices.Contains(g.Instances, id) || (destination == "" && g.IncludeFuture && (g.GroupID == "*" || g.GroupID == r.Group)) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(b.state.Grants, func(g Grant) bool {
+		return g.Principal == p && g.Destination == destination && slices.Contains(g.Permissions, permission)
+	})
 }
 func (b *Mitosis) Allowed(p Principal, id, permission string) bool {
 	b.mu.Lock()
@@ -377,7 +327,7 @@ func (b *Mitosis) Catalog(p Principal) []Instance {
 	defer b.mu.Unlock()
 	out := []Instance{}
 	for id, r := range b.state.Instances {
-		if b.allowed(p, id, "instance.list", "") {
+		if b.allowed(p, id, "agent.list", "") {
 			r.Credential = ""
 			_, r.Available = b.active[id]
 			out = append(out, r)
@@ -392,8 +342,8 @@ func (b *Mitosis) Catalog(p Principal) []Instance {
 var autoAlias = lazyregexp.New(`^instance-[a-z0-9_-]{8}$`)
 
 // Retire removes the named instances or, with none named, every throwaway
-// instance whose Orb has gone: one that attached once, is not attached now, and
-// no grant names. It returns how many it removed.
+// instance whose Orb has gone: one that attached once and is not attached now. It returns how
+// many it removed.
 func (b *Mitosis) Retire(ids []string) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -401,17 +351,10 @@ func (b *Mitosis) Retire(ids []string) (int, error) {
 }
 
 func (b *Mitosis) retireLocked(ids []string) (int, error) {
-	granted := map[string]bool{}
-	for _, g := range b.state.Grants {
-		granted[g.Principal.Subject.InstanceID] = true
-		for _, id := range g.Instances {
-			granted[id] = true
-		}
-	}
 	removed := 0
 	for id, r := range b.state.Instances {
 		_, active := b.active[id]
-		if slices.Contains(ids, id) || len(ids) == 0 && !active && !granted[id] && r.BootID != "" && autoAlias().MatchString(r.Alias) {
+		if slices.Contains(ids, id) || len(ids) == 0 && !active && r.BootID != "" && autoAlias().MatchString(r.Alias) {
 			delete(b.state.Instances, id)
 			removed++
 		}
@@ -422,7 +365,7 @@ func (b *Mitosis) retireLocked(ids []string) (int, error) {
 	return removed, b.save()
 }
 
-func (b *Mitosis) Enroll(alias, group string) (Instance, string, error) {
+func (b *Mitosis) Enroll(alias string) (Instance, string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if len(b.state.Instances) >= 4096 {
@@ -433,9 +376,6 @@ func (b *Mitosis) Enroll(alias, group string) (Instance, string, error) {
 	if len(alias) > 128 || len(b.state.Instances) >= 4096 {
 		return Instance{}, "", Fail("resource_exhausted")
 	}
-	if b.state.Groups[group] == "" {
-		return Instance{}, "", Fail("not_found")
-	}
 	if alias != "" {
 		for _, r := range b.state.Instances {
 			if r.Alias == alias {
@@ -444,7 +384,7 @@ func (b *Mitosis) Enroll(alias, group string) (Instance, string, error) {
 		}
 	}
 	token := secret()
-	r := Instance{ID: protocol.NewID(), Alias: alias, Group: group, Credential: hash(token), Generation: "0"}
+	r := Instance{ID: protocol.NewID(), Alias: alias, Credential: hash(token), Generation: "0"}
 	b.state.Instances[r.ID] = r
 	if err := b.save(); err != nil {
 		return Instance{}, "", err
@@ -515,14 +455,11 @@ func (b *Mitosis) Invite(grants []Grant) (Invitation, error) {
 	if open >= 128 {
 		return Invitation{}, Fail("resource_exhausted")
 	}
-	// Proposed selectors are committed at approval, so fixed selectors snapshot
-	// the owner's approved instance set, never a claimant-controlled list.
 	grants = append([]Grant(nil), grants...)
 	for i := range grants {
-		grants[i].Instances = slices.Clone(grants[i].Instances)
 		grants[i].Permissions = slices.Clone(grants[i].Permissions)
 		grants[i].Principal = b.Principal()
-		if _, err := b.prepareGrant(grants[i]); err != nil {
+		if err := validateGrant(grants[i]); err != nil {
 			return Invitation{}, err
 		}
 	}
@@ -599,8 +536,8 @@ func (b *Mitosis) Approve(id, claimant string) error {
 	approved := make([]Grant, 0, len(i.Grants))
 	for _, g := range i.Grants {
 		g.Principal = Principal{PeerID: claimant, Subject: Subject{Kind: "controller"}}
-		g, err := b.prepareGrant(g)
-		if err != nil {
+		g.Permissions = slices.Clone(g.Permissions)
+		if err := validateGrant(g); err != nil {
 			return err
 		}
 		g.ID = protocol.NewID()
@@ -671,13 +608,13 @@ func (b *Mitosis) Close() error {
 func permission(method string) string {
 	switch method {
 	case "inspect", "image": // an image the conversation carried is part of what inspection reads
-		return "instance.inspect"
+		return "agent.inspect"
 	case "session.list", "session.new", "session.switch", "session.fork", "session.model", "session.name", "session.compact":
-		return "instance.session.manage"
+		return "agent.session.manage"
 	case "shell", "complete": // a command in its shell, or the files `@` lists, is what a prompt can already reach
-		return "instance.prompt"
+		return "agent.prompt"
 	default:
-		return "instance." + method
+		return "agent." + method
 	}
 }
 func (b *Mitosis) Call(ctx context.Context, p Principal, call Call) (json.RawMessage, error) {
@@ -700,7 +637,6 @@ func (b *Mitosis) Call(ctx context.Context, p Principal, call Call) (json.RawMes
 func cloneInvitation(i Invitation) Invitation {
 	i.Grants = slices.Clone(i.Grants)
 	for n := range i.Grants {
-		i.Grants[n].Instances = slices.Clone(i.Grants[n].Instances)
 		i.Grants[n].Permissions = slices.Clone(i.Grants[n].Permissions)
 	}
 	return i

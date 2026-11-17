@@ -625,5 +625,5 @@ func ParseInvitation(text string) (Invitation, error) {
 // ConversationGrant is control of every conversation without the machine: what a joining
 // Orb gives back to the Orb it joined, which never asked for more.
 func ConversationGrant(peer string) Grant {
-	return Grant{Principal: Principal{PeerID: peer, Subject: Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage"}}
+	return Grant{Principal: Principal{PeerID: peer, Subject: Subject{Kind: "controller"}}, Permissions: []string{"agent.list", "agent.inspect", "agent.prompt", "agent.steer", "agent.follow_up", "agent.input.reply", "agent.cancel", "agent.session.manage"}}
 }

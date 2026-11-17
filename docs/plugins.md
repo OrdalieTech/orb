@@ -364,7 +364,7 @@ unchanged; the remote device needs neither Node nor Claude credentials. A pendin
 question appears in the remote view. Questions use the shared panel; `/reply <choice or text>`
 answers ordinary approvals, and `/cancel` cancels the execution. `/models` lists the executing host's models and effort levels; `/model <provider/id>
 [effort]` changes the model while idle, under the existing session-management grant and revision
-fence. Answers require the explicit `instance.input.reply` grant (included in newly created
+fence. Answers require the explicit `agent.input.reply` grant (included in newly created
 full-access peer grants). Existing grants are not silently expanded. Closing a view leaves execution
 and pending permission decisions on the host. Local TUI approvals use Orb's native dialogs.
 Clarifying questions retain their descriptions and

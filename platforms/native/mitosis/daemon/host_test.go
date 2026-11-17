@@ -211,7 +211,7 @@ func TestAThreadHeldOffMitosisJoinsItsHolder(t *testing.T) {
 		if method != "mitosis" {
 			return nil, mitosis.Fail("not_found")
 		}
-		enrolled, token, err := b.Enroll("terminal", b.PersonalGroup())
+		enrolled, token, err := b.Enroll("terminal")
 		if err != nil {
 			return nil, err
 		}

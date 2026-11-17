@@ -59,7 +59,7 @@ func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 	if err = c.Call(ctx, "instances.list", struct{}{}, nil); err == nil {
 		t.Fatal("unpaired client has access")
 	}
-	inv, err := b.Invite([]mitosis.Grant{{GroupID: b.PersonalGroup(), IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect"}}})
+	inv, err := b.Invite([]mitosis.Grant{{Permissions: []string{"agent.list", "agent.inspect"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 		t.Fatal("remote admin exposed")
 	}
 	// A controller grant must not authorize an agent subject on the same key.
-	instance, token, err := b.Enroll("test", b.PersonalGroup())
+	instance, token, err := b.Enroll("test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestClientPairingAuthorizationAndReconnect(t *testing.T) {
 	if err = c.Call(ctx, "instances.call", struct {
 		mitosis.Call
 		Subject mitosis.Subject `json:"subject"`
-	}{call, mitosis.Subject{Kind: "instance", InstanceID: protocol.NewID()}}, nil); err == nil {
+	}{call, mitosis.Subject{Kind: "agent"}}, nil); err == nil {
 		t.Fatal("controller grant leaked to agent")
 	}
 	// No runtime or listener exists on the client side. The server registers

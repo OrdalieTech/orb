@@ -835,8 +835,8 @@ func TestSDKLiveMitosisToolsAndFork(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = client.Close() }()
-	permissions := []string{"instance.list", "instance.inspect", "instance.prompt", "instance.input.reply", "instance.cancel", "instance.session.manage"}
-	invite, err := server.Invite([]mitosis.Grant{{GroupID: server.PersonalGroup(), IncludeFuture: true, Permissions: permissions}})
+	permissions := []string{"agent.list", "agent.inspect", "agent.prompt", "agent.input.reply", "agent.cancel", "agent.session.manage"}
+	invite, err := server.Invite([]mitosis.Grant{{Permissions: permissions}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -846,7 +846,7 @@ func TestSDKLiveMitosisToolsAndFork(t *testing.T) {
 	if err = server.Approve(invite.ID, client.PeerID()); err != nil {
 		t.Fatal(err)
 	}
-	instance, token, err := server.Enroll("claude-live", server.PersonalGroup())
+	instance, token, err := server.Enroll("claude-live")
 	if err != nil {
 		t.Fatal(err)
 	}

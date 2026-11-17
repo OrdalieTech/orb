@@ -173,7 +173,7 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 	// Object → laptop: mitosis_call under the object's own instance grant.
 	var received []mitosis.Request
 	var mu sync.Mutex
-	registration, credential, err := laptop.Enroll("laptop", laptop.PersonalGroup())
+	registration, credential, err := laptop.Enroll("laptop")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,8 +190,8 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 	if _, err = laptop.Attach(registration.ID, credential, protocol.NewID(), endpoint); err != nil {
 		t.Fatal(err)
 	}
-	subject := mitosis.Principal{PeerID: self.PeerID(), Subject: mitosis.Subject{Kind: "instance", InstanceID: self.InstanceID()}}
-	if err = laptop.AddGrant(mitosis.Grant{Principal: subject, Instances: []string{registration.ID}, Permissions: []string{"instance.inspect"}}); err != nil {
+	subject := mitosis.Principal{PeerID: self.PeerID(), Subject: mitosis.Subject{Kind: "agent"}}
+	if err = laptop.AddGrant(mitosis.Grant{Principal: subject, Permissions: []string{"agent.inspect"}}); err != nil {
 		t.Fatal(err)
 	}
 	arguments := map[string]any{"peer_id": laptop.PeerID(), "call": map[string]any{"instance_id": registration.ID, "service": protocol.Service, "method": "inspect", "args": map[string]any{}}}
@@ -206,7 +206,7 @@ func TestPeerPairsAndCallsBothWays(t *testing.T) {
 	if err = instance.Session().Prompt(ctx, "Inspect the laptop."); err != nil {
 		t.Fatal(err)
 	}
-	admin(t, self, "grant", mitosis.Grant{Principal: subject, Destination: laptop.PeerID(), Instances: []string{registration.ID}, Permissions: []string{"instance.inspect"}})
+	admin(t, self, "grant", mitosis.Grant{Principal: subject, Destination: laptop.PeerID(), Permissions: []string{"agent.inspect"}})
 	if err = instance.Session().Prompt(ctx, "Inspect the laptop again."); err != nil {
 		t.Fatal(err)
 	}

@@ -427,7 +427,7 @@ user's own Claude ask rule forces.
 unguessable, single-use ID, bounded title and choices, and a cancellation context. The owning TUI
 and authorized controllers race to provide the first valid answer. Mitosis describes pending input
 and routes `input.reply` through the existing durable operation ledger and session/execution fences;
-its new `instance.input.reply` grant is explicit. Native model discovery uses the official SDK's
+its new `agent.input.reply` grant is explicit. Native model discovery uses the official SDK's
 `supportedModels()` control without a prompt or persisted session. The plugin adapts names, resolved
 IDs and effort capabilities into an ordinary extension provider, so Claude's models and accounts sit
 in the existing pickers; an account is a Claude Code configuration directory, resolved through the
@@ -893,12 +893,12 @@ IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain 
 
 `expected` contains `registration_generation` and `session_revision`. Prompt arguments are
 `{text}`; steer/follow-up are `{text, execution_id}`; cancel is `{execution_id}`; input replies
-are `{execution_id, id, value}` and require `instance.input.reply`; session new
+are `{execution_id, id, value}` and require `agent.input.reply`; session new
 is `{}`, switch is `{session_id}`, fork is `{entry_id}`, and model selection is
 `{provider, model, thinking?}`. Session list accepts an optional
 `offset`; completion is `{query}` (the text after `@`) → `items` of `{text, label, detail}`, the
-session's skills then the files fd finds, under `instance.prompt`; an image is `{ref, size}` →
-`{data, mime_type}`, fitted within `size` pixels and half a frame, under `instance.inspect`.
+session's skills then the files fd finds, under `agent.prompt`; an image is `{ref, size}` →
+`{data, mime_type}`, fitted within `size` pixels and half a frame, under `agent.inspect`.
 Read-only inspection needs no operation ID. An optional `subject` on remote calls
 is restricted to an instance subject and comes from the source mitosis's credential-bound
 outbound route; administrative methods never appear in this routing table.

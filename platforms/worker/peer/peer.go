@@ -80,7 +80,7 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 	}
 	var self identity
 	if len(raw) == 0 {
-		registration, credential, err := b.Enroll(Alias(alias), b.PersonalGroup())
+		registration, credential, err := b.Enroll(Alias(alias))
 		if err != nil {
 			return nil, err
 		}
@@ -257,7 +257,7 @@ func (p *Peer) Admin(ctx context.Context, method string, params json.RawMessage,
 			return nil, err
 		}
 		for _, old := range status.Grants {
-			if old.Principal == grant.Principal && old.GroupID == "*" && old.IncludeFuture && old.Destination == "" && slices.Equal(old.Permissions, grant.Permissions) {
+			if old.Principal == grant.Principal && old.Destination == "" && slices.Equal(old.Permissions, grant.Permissions) {
 				return mitosis.JSON(struct{}{}), nil
 			}
 		}

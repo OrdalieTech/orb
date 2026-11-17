@@ -72,7 +72,7 @@ func TestAPhoneCompletesAnAtToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer host.Dispose(ctx)
-	enrolled, token, err := b.Enroll("test", b.PersonalGroup())
+	enrolled, token, err := b.Enroll("test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestAPhoneCompletesAnAtToken(t *testing.T) {
 	if err = a.SetGeneration(gen); err != nil {
 		t.Fatal(err)
 	}
-	if err = b.AddGrant(mitosis.Grant{Principal: phone.Principal(), Instances: []string{enrolled.ID}, Permissions: []string{"instance.prompt"}}); err != nil {
+	if err = b.AddGrant(mitosis.Grant{Principal: phone.Principal(), Permissions: []string{"agent.prompt"}}); err != nil {
 		t.Fatal(err)
 	}
 	complete := func(query string) string {
@@ -132,7 +132,7 @@ func TestMitosisRuntimeReceiptReconnectAndSessionFence(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer host.Dispose(ctx)
-	enrolled, token, err := b.Enroll("test", b.PersonalGroup())
+	enrolled, token, err := b.Enroll("test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestMitosisRuntimeReceiptReconnectAndSessionFence(t *testing.T) {
 	if err = a.SetGeneration(gen); err != nil {
 		t.Fatal(err)
 	}
-	if err = b.AddGrant(mitosis.Grant{Principal: phone.Principal(), Instances: []string{enrolled.ID}, Permissions: []string{"instance.inspect", "instance.prompt", "instance.session.manage"}}); err != nil {
+	if err = b.AddGrant(mitosis.Grant{Principal: phone.Principal(), Permissions: []string{"agent.inspect", "agent.prompt", "agent.session.manage"}}); err != nil {
 		t.Fatal(err)
 	}
 	control, _ := host.EnableControl()
@@ -531,7 +531,7 @@ func TestGuidedShareWaitsForClaimAndRequiresApproval(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer func() { _ = other.Close() }()
-			inv, err := b.Invite([]mitosis.Grant{{GroupID: b.PersonalGroup(), Permissions: []string{"instance.inspect"}}})
+			inv, err := b.Invite([]mitosis.Grant{{Permissions: []string{"agent.inspect"}}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -556,7 +556,7 @@ func TestGuidedShareWaitsForClaimAndRequiresApproval(t *testing.T) {
 			}}
 			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 			defer cancel()
-			if err := shareMitosisInvitation(ctx, ui, client, inv, map[string]string{b.PersonalGroup(): "personal"}); err != nil {
+			if err := shareMitosisInvitation(ctx, ui, client, inv); err != nil {
 				t.Fatal(err)
 			}
 			status, err := b.PairStatus(other.PeerID(), inv.ID)
@@ -569,7 +569,7 @@ func TestGuidedShareWaitsForClaimAndRequiresApproval(t *testing.T) {
 			if !ui.qr {
 				t.Fatal("Show QR code drew no QR code")
 			}
-			if !strings.Contains(ui.confirmation, other.PeerID()) || !strings.Contains(ui.confirmation, "current instances only") || !strings.Contains(ui.confirmation, "instance.inspect") {
+			if !strings.Contains(ui.confirmation, other.PeerID()) || !strings.Contains(ui.confirmation, "agent.inspect") {
 				t.Fatal("approval omitted identity or authority")
 			}
 		})

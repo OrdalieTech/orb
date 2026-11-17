@@ -39,7 +39,7 @@ func TestBrowserWasmLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	instance, token, err := b.Enroll("wasm-test", b.PersonalGroup())
+	instance, token, err := b.Enroll("wasm-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestBrowserWasmLifecycle(t *testing.T) {
 	if _, err = b.Attach(instance.ID, token, protocol.NewID(), endpoint); err != nil {
 		t.Fatal(err)
 	}
-	if err = b.AddGrant(mitosis.Grant{Principal: mitosis.Principal{PeerID: mitosis.PeerID(pub), Subject: mitosis.Subject{Kind: "controller"}}, GroupID: b.PersonalGroup(), IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect"}}); err != nil {
+	if err = b.AddGrant(mitosis.Grant{Principal: mitosis.Principal{PeerID: mitosis.PeerID(pub), Subject: mitosis.Subject{Kind: "controller"}}, Permissions: []string{"agent.list", "agent.inspect"}}); err != nil {
 		t.Fatal(err)
 	}
 	handler, err := webtransport.Handler(t.Context(), b, nil)
@@ -58,7 +58,7 @@ func TestBrowserWasmLifecycle(t *testing.T) {
 	}
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	fixture := mitosis.JSON(map[string]string{"url": "ws" + strings.TrimPrefix(server.URL, "http"), "peer": b.PeerID(), "seed": base64.RawStdEncoding.EncodeToString(key.Seed()), "agentID": protocol.NewID(), "instance": instance.ID})
+	fixture := mitosis.JSON(map[string]string{"url": "ws" + strings.TrimPrefix(server.URL, "http"), "peer": b.PeerID(), "seed": base64.RawStdEncoding.EncodeToString(key.Seed()), "instance": instance.ID})
 	run := exec.CommandContext(t.Context(), "node", "testdata/smoke.cjs", filepath.Join(strings.TrimSpace(string(root)), "lib/wasm/wasm_exec.js"), binary)
 	run.Env = append(os.Environ(), "ORB_TEST_MITOSIS="+string(fixture))
 	if output, err := run.CombinedOutput(); err != nil {
