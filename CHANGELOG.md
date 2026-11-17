@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Mitosis no longer leaves a device relaying a WireGuard handshake every 5 s, for about 20 min, to each peer that dialled it and hung up: the dialler now acknowledges the close before its engine stops. At 64 devices, a sync group's owner relayed ~270 KiB/min this way after the members dialled it, and now relays nothing.
+
 ## [0.23.1] - 2026-11-17
 
 Orb runs in a browser tab at netapy.com/orb: each release now ships its browser page, signed with the release key, and the tab joins your devices with the code `orb mitosis` prints.
