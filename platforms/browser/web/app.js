@@ -302,6 +302,10 @@ $("mitosis-refresh").onclick = () => refreshInstances().then(refreshSessions).ca
 // The tab's own Orb (peer.wasm) over IndexedDB, which keeps its identity, received providers,
 // memory and conversation across reloads. Starting its Mitosis makes it dial its devices.
 async function openTab() {
+  // One runtime owns the tab's storage for the page's life: its journals are read once and
+  // appended in memory, so a second page writing the same database would overwrite them.
+  const held = await new Promise(resolve => navigator.locks.request("orb-tab", { ifAvailable: true }, lock => { resolve(!!lock); return lock && new Promise(() => {}); }));
+  if (!held) throw new Error("Your Orb is already open in another tab of this page.");
   await import("./wasm_exec.js");
   await import("./helpers.js");
   const response = await fetch("peer.wasm");
