@@ -347,8 +347,8 @@ func vaultDigest(blob []byte) string {
 }
 
 // fetch returns the vault v points at, from this device or over a channel already open, in either
-// direction, to its publisher first, then to any other peer: a Worker object or a browser cannot
-// dial, so it fetches over the stream it holds, and a device just added knows no member but the
+// direction, to its publisher first, then to any other peer: a Worker object cannot dial, so it
+// fetches over the streams its peers opened, and a device just added knows no member but the
 // owner yet. Holders serve only the vault's recipients, and it is checked against the digest its
 // publisher signed before anything opens it.
 func (b *Mitosis) fetch(ctx context.Context, v pointer, publisher string) ([]byte, error) {
