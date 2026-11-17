@@ -614,12 +614,16 @@ func (b *Mitosis) Approve(id, claimant string) error {
 	return b.save()
 }
 func (b *Mitosis) Block(peer string) error {
+	// A block waits for the round in flight, so a blocked owner's set changes nothing after it.
+	b.round.Lock()
+	defer b.round.Unlock()
 	b.mu.Lock()
-	members := b.state.Scopes[b.state.Group]
+	group, members := b.state.Group, b.state.Scopes[b.state.Group]
 	b.mu.Unlock()
-	if len(members) > 0 && members[0] == b.PeerID() && slices.Contains(members, peer) {
+	if len(members) > 0 && members[0] == b.PeerID() && slices.Contains(members, peer) && b.setGroup("", "", peer) == nil {
 		// Out of the owner's group first, while its channel still carries the news.
-		_, _ = b.SyncAdmin(context.Background(), JSON(map[string]string{"remove": peer}), nil)
+		_, _ = b.sync(context.Background(), nil)
+		b.tellRemoved(b.Connection(peer), group)
 	}
 	b.mu.Lock()
 	b.state.Blocked[peer] = true

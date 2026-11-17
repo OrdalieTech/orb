@@ -14,6 +14,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
@@ -147,13 +148,17 @@ func (p *Peer) Serve(ctx context.Context, stream net.Conn) error {
 // Close ends the peer: its channels and its attachment.
 func (p *Peer) Close() error { return p.mitosis.Close() }
 
-// Follow runs a sync round each time the records change (a peer published here), so a peer that
-// only accepts streams keeps up with its group over the ones its peers opened.
+// Follow runs a sync round each time the records change (a peer published here) and every 15 s,
+// as a native device does, so a peer that only accepts streams keeps up with its group over the
+// ones its peers opened, and a memory saved or a login refreshed here still reaches the group.
 func (p *Peer) Follow(ctx context.Context) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-ticker.C:
 		case <-p.mitosis.Changes():
 		}
 		_, _ = p.mitosis.Sync(ctx, nil)
