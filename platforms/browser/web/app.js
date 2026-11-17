@@ -165,7 +165,7 @@ async function refreshTab() {
       await tab.rpc("new_session");
       ({ model } = await tab.rpc("get_state"));
     }
-    show(models.length ? "chat" : "approve");
+    show(!owner ? "invite" : models.length ? "chat" : "approve");
     where = [status.peer_states?.[owner] === "connected" ? "online" : "offline", ...(model && model.provider !== "unknown" ? [`${model.provider}/${model.id}`] : [])].join(" · ");
     controls();
   } catch (error) { showError(error.message); }
