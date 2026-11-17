@@ -95,12 +95,14 @@ func (b *Mitosis) setGroup(join, add, remove string) error {
 		}
 		delete(b.state.Scopes, b.state.Group)
 		b.state.Group, b.state.Shared, b.state.Merged = groupID(join), nil, nil
+		clear(b.vaults)
 		b.state.Scopes[b.state.Group] = []string{join, self}
 	case remove != "" && len(members) == 0:
 		return Fail("not_found")
 	case remove != "" && members[0] == remove:
 		delete(b.state.Scopes, b.state.Group)
 		b.state.Group, b.state.Shared, b.state.Merged = "", nil, nil
+		clear(b.vaults)
 	case add != "" || remove != "":
 		if len(members) == 0 {
 			if len(b.state.Scopes) >= 128 {
@@ -194,6 +196,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	var handins []bundle
 	var ownerSet bundle
 	var ownerVault []byte
+	var ownerDigest string
 	var ownerRecipients []string
 	merged := map[string]string{}
 	for _, s := range pending {
@@ -212,7 +215,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			// owner removed from what it lacks.
 			return nil, Fail("unavailable")
 		case s.peer == owner:
-			ownerSet, ownerVault, ownerRecipients = in, blob, recipients
+			ownerSet, ownerVault, ownerDigest, ownerRecipients = in, blob, s.vault.Digest, recipients
 			if ownerSet == nil {
 				ownerSet = bundle{}
 			}
@@ -301,8 +304,9 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			if err != nil {
 				return nil, err
 			}
-			ext = map[string]json.RawMessage{"vault": JSON(pointer{vaultSchema, vaultDigest(blob), len(blob)})}
-			b.vaults[vaultDigest(blob)] = blob
+			digest := vaultDigest(blob)
+			ext = map[string]json.RawMessage{"vault": JSON(pointer{vaultSchema, digest, len(blob)})}
+			b.vaults[digest] = blob
 		}
 		if _, err := b.publishContact(group, b.name, endpoints, false, ext); err != nil {
 			return nil, err
@@ -316,8 +320,8 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			keep[v.Digest] = true
 		}
 	}
-	if ownerVault != nil && keep[vaultDigest(ownerVault)] {
-		b.vaults[vaultDigest(ownerVault)] = ownerVault
+	if ownerVault != nil && keep[ownerDigest] {
+		b.vaults[ownerDigest] = ownerVault
 	}
 	maps.DeleteFunc(b.vaults, func(digest string, _ []byte) bool { return !keep[digest] })
 	return JSON(map[string]any{"group_id": group, "owner": owner, "members": b.state.Scopes[group], "received": received}), nil
