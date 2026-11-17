@@ -176,7 +176,8 @@ func (n *Node) Dial(ctx context.Context, peer, locator string) (net.Conn, error)
 // it lives only while it carries a stream or a dial.
 type client struct {
 	*tc.Client
-	users int
+	users    int
+	releases int // the grace after a release counts from the last one
 }
 type clientStream struct {
 	net.Conn
@@ -191,13 +192,15 @@ func (s *clientStream) Close() error {
 func (n *Node) release(peer string, c *client) {
 	n.mu.Lock()
 	c.users--
+	c.releases++
+	release := c.releases
 	n.mu.Unlock()
 	// The engine outlives its last stream long enough to acknowledge the server's side of the
 	// close: a server left retransmitting to a client gone sends a WireGuard handshake through
 	// the relay every 5 s for about 20 min.
 	time.AfterFunc(5*time.Second, func() {
 		n.mu.Lock()
-		idle := c.users == 0
+		idle := c.users == 0 && c.releases == release
 		if idle && n.clients[peer] == c {
 			delete(n.clients, peer)
 		}
