@@ -132,7 +132,7 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 	delete(c.vaults, v.Digest)
 	c.mu.Unlock()
 	// b, asked first, serves a forged vault; the owner then serves the genuine one.
-	if blob, err := c.fetch(ctx, v, b.PeerID()); err != nil || !bytes.Equal(blob, genuine) {
+	if blob, err := c.fetch(ctx, v, b.PeerID(), true); err != nil || !bytes.Equal(blob, genuine) {
 		t.Fatal("a forged vault was accepted", err)
 	}
 	b.mu.Lock()
@@ -221,7 +221,7 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 	}
 	// Nor can it fetch what is sealed after, from the owner or a member.
 	v = owner.pointers(group, owner.PeerID())["credentials"]
-	if _, err := c.fetch(ctx, v, owner.PeerID()); err == nil {
+	if _, err := c.fetch(ctx, v, owner.PeerID(), true); err == nil {
 		t.Fatal("a removed device fetched a later vault")
 	}
 

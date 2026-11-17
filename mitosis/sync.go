@@ -220,7 +220,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	merged := map[string]string{}
 	stale := map[string]bool{}
 	for _, s := range pending {
-		blob, err := b.fetch(ctx, s.vault, s.peer)
+		blob, err := b.fetch(ctx, s.vault, s.peer, s.peer == owner)
 		var in map[string]json.RawMessage
 		var recipients []string
 		if err == nil {
@@ -494,11 +494,11 @@ func vaultDigest(blob []byte) string {
 }
 
 // fetch returns the vault v points at, from this device or over a channel already open, in either
-// direction, to its publisher first, then to any other peer: a Worker object cannot dial, so it
+// direction, to its publisher first, then (for the owner's, relayed) to any other peer: a Worker object cannot dial, so it
 // fetches over the streams its peers opened, and a device just added knows no member but the
 // owner yet. Holders serve only the vault's recipients, and it is checked against the digest its
 // publisher signed before anything opens it.
-func (b *Mitosis) fetch(ctx context.Context, v pointer, publisher string) ([]byte, error) {
+func (b *Mitosis) fetch(ctx context.Context, v pointer, publisher string, relayed bool) ([]byte, error) {
 	b.mu.Lock()
 	blob := b.vaults[v.Digest]
 	holders := slices.Collect(maps.Keys(b.channels)) // map order spreads a new device's fetches
@@ -508,6 +508,9 @@ func (b *Mitosis) fetch(ctx context.Context, v pointer, publisher string) ([]byt
 	}
 	if i := slices.Index(holders, publisher); i > 0 {
 		holders[0], holders[i] = holders[i], holders[0]
+	}
+	if !relayed { // a member's hand-in lives on its publisher alone: no channel, no round spent asking
+		holders = slices.DeleteFunc(holders, func(h string) bool { return h != publisher })
 	}
 	for _, holder := range holders {
 		c := b.Connection(holder)
