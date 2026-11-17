@@ -5,6 +5,10 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-11-17
+
+Orb runs in a browser tab at netapy.com/orb: each release now ships its browser page, signed with the release key, and the tab joins your devices with the code `orb mitosis` prints.
+
 - The browser page ships with each release (`orb_<version>_browser.tar.gz`, in the signed checksums), its wasm gzipped and its files under a directory named by version and digest, and netapy.com/orb serves the latest release's.
 
 ## [0.23.0] - 2026-11-17
