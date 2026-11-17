@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Mitosis no longer leaves a device relaying a WireGuard handshake every 5 s, for about 20 min, to each peer that dialled it and hung up: the dialler now acknowledges the close before its engine stops. At 64 devices, a sync group's owner relayed ~270 KiB/min this way after the members dialled it, and now relays nothing.
+
 ## [0.23.0] - 2026-11-17
 
 Bridge becomes Mitosis, with no alias, and replicates a profile: `orb mitosis` on one machine, `orb mitosis join <code>` on another and one yes, and the new machine holds the profile's logins and memory, sealed to each device, and keeps them when the others are off. A browser tab or a Worker object can join too, over a serverless network measured up to 256 devices. Peers paired before must be paired again.

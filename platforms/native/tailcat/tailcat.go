@@ -191,14 +191,21 @@ func (s *clientStream) Close() error {
 func (n *Node) release(peer string, c *client) {
 	n.mu.Lock()
 	c.users--
-	idle := c.users == 0
-	if idle && n.clients[peer] == c {
-		delete(n.clients, peer)
-	}
 	n.mu.Unlock()
-	if idle {
-		_ = c.Close()
-	}
+	// The engine outlives its last stream long enough to acknowledge the server's side of the
+	// close: a server left retransmitting to a client gone sends a WireGuard handshake through
+	// the relay every 5 s for about 20 min.
+	time.AfterFunc(5*time.Second, func() {
+		n.mu.Lock()
+		idle := c.users == 0
+		if idle && n.clients[peer] == c {
+			delete(n.clients, peer)
+		}
+		n.mu.Unlock()
+		if idle {
+			_ = c.Close()
+		}
+	})
 }
 func (n *Node) Close() error {
 	n.mu.Lock()
