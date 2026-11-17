@@ -72,8 +72,7 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		return auth[provider].Key
 	}
 	sealedTo := func(x *Mitosis) bool {
-		v, _, _ := owner.pointer(group, owner.PeerID())
-		envelopes, _, _ := split(owner.vaults[v.Digest])
+		envelopes, _, _ := split(owner.vaults[owner.pointers(group, owner.PeerID())["credentials"].Digest])
 		return envelopes[x.PeerID()] != nil
 	}
 	memorized := func(x *Mitosis) []string {
@@ -122,7 +121,7 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 	}
 
 	// A vault is checked against its signed digest before anything opens it.
-	v, _, _ := owner.pointer(group, owner.PeerID())
+	v := owner.pointers(group, owner.PeerID())["memory"]
 	b.mu.Lock()
 	genuine := b.vaults[v.Digest]
 	forged := slices.Clone(genuine)
@@ -146,7 +145,9 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		t.Fatal("an unchanged round published again")
 	}
 
-	// A token refreshed on a member replaces the stale copies, the owner's included.
+	// A token refreshed on a member replaces the stale copies, the owner's included, and reseals
+	// the credentials alone: the memory vault every member holds stays as it is.
+	memoryVault := owner.pointers(group, owner.PeerID())["memory"]
 	_ = document.Replace(ctx, stores[owner], []byte(`{"anthropic":{"type":"oauth","refresh":"r1","access":"a1","expires":1000},"openai":{"type":"api_key","key":"o1"}}`))
 	round()
 	_ = document.Replace(ctx, stores[b], []byte(`{"anthropic":{"type":"oauth","refresh":"r2","access":"a2","expires":2000},"openai":{"type":"api_key","key":"o1"}}`))
@@ -155,6 +156,9 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		if raw, _ := stores[x].Read(ctx); !strings.Contains(string(raw), `"r2"`) {
 			t.Fatalf("stale token kept: %s", raw)
 		}
+	}
+	if memoryVault.Digest == "" || owner.pointers(group, owner.PeerID())["memory"] != memoryVault {
+		t.Fatal("a credential change resealed the memory")
 	}
 
 	// A command key never leaves its device, and what the owner drops is dropped everywhere.
@@ -197,7 +201,7 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		t.Fatal("removal did not cut the removed device", key(b, "openai"), key(c, "openai"))
 	}
 	// Nor can it fetch what is sealed after, from the owner or a member.
-	v, _, _ = owner.pointer(group, owner.PeerID())
+	v = owner.pointers(group, owner.PeerID())["credentials"]
 	if _, err := c.fetch(ctx, v, owner.PeerID()); err == nil {
 		t.Fatal("a removed device fetched a later vault")
 	}

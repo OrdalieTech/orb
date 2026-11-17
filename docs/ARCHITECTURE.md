@@ -795,33 +795,36 @@ its owner's PeerID and whose first member is the owner. Membership is explicit a
 `sync add|remove` changes it on the owner (paired devices only: a saved peer or one holding a
 grant), `sync join <owner>` follows one, and a member leaves by removing the owner (to follow or
 start another group if the owner is gone); nothing rebuilds it from paired peers, so a removed
-device stays out. Each device's signed record in the group scope carries only a pointer to its
-vault (`extensions.vault`, `orb.mitosis-vault/2`: SHA-256 digest and size). The vault is fetched
-by digest with the `vault.get` peer method, in 512 KiB chunks, over any channel already open in
-either direction, its publisher first, then any other peer: a holder serves it only to a
-recipient that is a current, unblocked member of its group, and the fetcher checks it against the
-signed digest before opening it. A device holds in memory its own vault and, as a member, the
-owner's it opened, so any member relays the owner's while the owner is off; a restart reseals.
-A vault is the recipient count, one envelope per recipient (its Ed25519 key, an ephemeral X25519
-key, the bundle key sealed under ephemeral X25519, SHA-256 key derivation and AES-256-GCM), then
-the bundle sealed once with AES-256-GCM under a fresh 256-bit key, all stdlib, at most 64 MiB:
-every member holds it whole, a browser tab included. A peer's X25519 key is the Montgomery form
+device stays out. Each device's signed record in the group scope carries only pointers to its
+vaults, one per data class (`extensions.vaults`, class to `orb.mitosis-vault/2`: SHA-256 digest
+and size). A vault is fetched by digest with the `vault.get` peer method, in 512 KiB chunks, over
+any channel already open in either direction, its publisher first, then any other peer: a holder
+serves it only to a recipient that is a current, unblocked member of its group, and the fetcher
+checks it against the signed digest before opening it. A device holds in memory its own vaults
+and, as a member, the owner's it opened, so any member relays the owner's while the owner is off;
+a restart reseals. A vault is the recipient count, one envelope per recipient (its Ed25519 key,
+an ephemeral X25519 key, the vault key sealed under ephemeral X25519, SHA-256 key derivation and
+AES-256-GCM), then the class's entries sealed once with AES-256-GCM under a fresh 256-bit key, all
+stdlib. A class is resealed only when its entries or recipients change, so a refreshed token
+resends no memory, and the owner fetches a member's hand-in of a class only when its digest
+changes. A device's vaults together hold at most 64 MiB: every member holds them whole, a browser
+tab included. A peer's X25519 key is the Montgomery form
 of its Ed25519 identity (RFC 7748 §4.1), so sealing needs only a PeerID. Recipients are checked
 at seal time: the owner seals to every current, unblocked member; a member seals to the owner
 alone. Only the owner's vault reaches the group, and vaults are opened only from current,
 unblocked members.
 
-A round runs on every reconciliation of a native device (every 15 s and on each change), on
-every record change of a Worker object or browser tab, and on `orb mitosis sync` (the `sync`
-admin method on every host with a Mitosis). The core is format-blind: the bundle is one JSON
-object per data class, and a host registers each class with `SetClass(name, Class)`, a
+A round runs on every reconciliation of a native device or browser tab (every 15 s and on each
+change), on every record change of a Worker object, and on `orb mitosis sync` (the `sync` admin
+method on every host with a Mitosis). The core is format-blind: a host registers each data class
+with `SetClass(name, Class)`, a
 `Shareable`/`MergeShared` pair over its own store. `credentials` is `ai/auth`'s Store over
 auth.json; `memory` is `plugins/memory`'s `Shared` over the memory plugin's `Store`, merged by
 item ID (native storage's, else the agent directory's journal; a Worker object's or tab's
 `filestore.Journal` document). A round reads before it publishes: the owner merges in what
 members handed it, keeping its own; a member takes the owner's set over its own, drops what the
 owner stopped sharing, and hands the owner only what that set lacks or holds otherwise, and
-nothing while it cannot open the owner's current vault. Between two OAuth logins the one that
+nothing while it cannot open the owner's current vaults. Between two OAuth logins the one that
 expires later wins, so a token refreshed on any device replaces the copies its refresh made
 stale. An entry removed on the owner is removed everywhere; one removed on a member comes back
 from the owner's set. Only API keys and OAuth logins are shared, never one whose key is a command
