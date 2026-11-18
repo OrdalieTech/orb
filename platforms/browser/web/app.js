@@ -164,7 +164,7 @@ async function ask() {
   if (!input || document.querySelector(".interrupt")) return;
   const asked = input.presentation?.kind === "questions" ? input.presentation.data.questions : null, answers = [];
   const owner = input.presentation?.kind === "approval" ? "permissions" : "questions";
-  const done = reply => { document.querySelector(".interrupt")?.remove(); tab.input(input.id, reply).catch(error => showError(error.message)); };
+  const done = reply => { leave(); tab.input(input.id, reply).catch(error => showError(error.message)); };
   const step = () => {
     if (!asked) return { title: input.title, choices: input.choices || [], free: !input.choices?.length, answer: value => done(value ?? "") };
     const q = asked[answers.length], n = asked.length;
@@ -173,41 +173,55 @@ async function ask() {
       answer: value => {
         if (value === null) return done(JSON.stringify({ cancelled: true }));
         answers.push(q.options?.some(o => o.label === value) ? { id: q.id, selected: [value] } : { id: q.id, selected: [], custom: value });
-        answers.length < n ? interrupt(owner, input.id + answers.length, step()) : done(JSON.stringify({ answers }));
+        answers.length < n ? interrupt(owner, input.id, step()) : done(JSON.stringify({ answers }));
       },
     };
   };
   interrupt(owner, input.id, step());
 }
+// interrupt rises over the page, as Android's does; the next question of a series takes its place
+// in it, its word already there, its choices coming in one after the other. Keys answer once it
+// has been on screen a moment, so typing meant for the prompt cannot.
 function interrupt(owner, id, ask) {
   const [word, caption] = { permissions: ["APPROVAL", "approval required"] }[owner] || ["QUESTION", "a question for you"];
-  const [first, ...rest] = ask.title.split("\n"), detail = [...rest, ask.message || ""].join("\n").trim(), armed = Date.now() + 800;
+  const [first, ...rest] = ask.title.split("\n"), detail = [...rest, ask.message || ""].join("\n").trim();
   const keyed = ask.choices.map((choice, i) => {
     const own = /^([a-z]) (.+)/.exec(choice);
     return [own?.[1] ?? ({ allow: "y", deny: "n" }[choice] || (i < 9 ? String(i + 1) : "")), own?.[2] ?? choice, choice];
   });
-  const field = Object.assign(node("input"), { placeholder: "type an answer", autocomplete: "off" });
-  const answer = value => { removeEventListener("keydown", keys); box.remove(); ask.answer(value); };
+  let box = document.querySelector(".interrupt:not(.leaving)");
+  const again = box?.dataset.ask === id;
+  if (!again) {
+    box?.remove();
+    box = document.body.appendChild(Object.assign(node("div"), { className: "interrupt" }));
+    Object.assign(box.dataset, { ask: id, armed: Date.now() + 800 });
+  }
+  box.classList.toggle("again", again);
+  const field = Object.assign(node("input"), { placeholder: "type an answer", autocomplete: "off", enterKeyHint: "send" });
+  const answer = value => { removeEventListener("keydown", keys); ask.answer(value); };
   const keys = event => {
     if (event.key === "Escape") return answer(null);
-    const hit = event.target !== field && Date.now() > armed && keyed.find(([key]) => key === event.key);
+    const hit = event.target !== field && Date.now() > box.dataset.armed && keyed.find(([key]) => key === event.key);
     if (hit) { event.preventDefault(); answer(hit[2]); }
   };
-  const head = node("div", node("span", owner), node("span", "waiting on you"));
   const send = () => field.value.trim() && answer(field.value);
   field.onkeydown = event => event.key === "Enter" && send();
-  const box = node("div", node("i"), node("div", head, node("hr"),
+  box.replaceChildren(node("i"), node("div", node("div", node("span", owner), node("span", "waiting on you")), node("hr"),
     Object.assign(node("h2", word), { className: word.length > 5 ? "stretch word squeezed" : "stretch word" }), Object.assign(node("p", caption), { className: "caption" }),
     Object.assign(node("p", first), { className: "first" }), ...(detail ? [Object.assign(node("p", detail), { className: "detail" })] : []),
-    node("hr"), ...keyed.map(([key, text, choice]) => Object.assign(node("button", node("b", key), node("span", text)), { type: "button", className: choice === ask.choices[0] ? "choice first" : "choice", onclick: () => answer(choice) })),
+    node("hr"), ...keyed.map(([key, text, choice], n) => Object.assign(node("button", node("b", key), node("span", text)), {
+      type: "button", className: n ? "choice" : "choice first", style: `--n: ${n}`, onclick: () => answer(choice) })),
     ...(ask.free ? [node("div", field, button("send", send, "inverted"))] : []),
-    node("hr"), button("esc  ·  dismiss", () => answer(null))), node("i"));
-  box.className = "interrupt";
-  for (const old of document.querySelectorAll(".interrupt")) old.remove();
-  document.body.append(box);
+    node("hr"), button(matchMedia("(hover: hover)").matches ? "esc  ·  dismiss" : "dismiss", () => answer(null))), node("i"));
   addEventListener("keydown", keys);
   // The line takes the keys only when there is nothing to choose: a choice's key answers.
   if (ask.free && !keyed.length) field.focus();
+}
+// leave sinks the interrupt away, as Android's does.
+function leave() {
+  const box = document.querySelector(".interrupt:not(.leaving)");
+  box?.classList.add("leaving");
+  setTimeout(() => box?.remove(), 260);
 }
 $("prompt-form").onsubmit = event => {
   event.preventDefault();
@@ -293,9 +307,11 @@ const pages = {
   async general() {
     await readDeck();
     const { model, thinkingLevel } = deck.state;
-    return [node("h2", "General"), note("new conversations, keys"), label("new conversations"),
+    // A phone has no keys to list.
+    const keys = matchMedia("(hover: hover)").matches;
+    return [node("h2", "General"), note(keys ? "new conversations, keys" : "new conversations"), label("new conversations"),
       row("default model", model ? [model.id.split("/").at(-1), thinkingLevel].filter(Boolean).join(" · ") : "none yet", button("change ›", openModels, "plain")),
-      label("keys"), ...[["Enter", "send"], ["Shift+Enter", "new line"], ["Ctrl+,", "settings"], ["Esc", "back to the conversations"]].map(([key, what]) => row(key, what))];
+      ...(keys ? [label("keys"), ...[["Enter", "send"], ["Shift+Enter", "new line"], ["Ctrl+,", "settings"], ["Esc", "back to the conversations"]].map(([key, what]) => row(key, what))] : [])];
   },
   async providers() {
     const counts = new Map();
