@@ -158,10 +158,10 @@ gzipped (the page inflates it, and `peer.wasm` alone is over Cloudflare Pages' 2
 No agent process or model proxy runs on the server. Each release attaches `make browser-dist`'s
 `orb_<version>_browser.tar.gz`, listed in the signed `checksums.txt`: an `index.html` whose
 `<base>` points at a directory named by version and digest, so a cache never mixes two releases'
-files. netapy.com/orb serves the latest release's.
+files. GitHub Pages serves the latest release's at https://ordalietech.github.io/orb/.
 
-The page makes the tab one of the user's devices: the code `orb mitosis`
-shows opens `peer.js` over IndexedDB, which joins, trusts the inviting device and follows its sync
+The page makes the tab one of the user's devices: the link `orb mitosis --browser`
+opens `peer.js` over IndexedDB, which joins, trusts the inviting device and follows its sync
 group, and the page shows the fingerprint to confirm there, which approves the tab and adds it to
 the group. The first provider the group shares replaces the fingerprint with the conversation,
 which runs on the peer's Orb through its RPC `command` entry point, with the providers and memory
@@ -179,11 +179,22 @@ model's validation, hooks and permission checks. The page takes the apps' tokens
 palette in both appearances, their face, radii and type scale, the desktop's on a wide screen and
 the phone's on a narrow one.
 
-A device reaches the tab over an outbound WebSocket: the device runs `orb mitosis run --web-listen
-127.0.0.1:8789 --web-origin <page origin>`, and `--web-url wss://host/mitosis` advertises a
+A device reaches the tab over an outbound WebSocket: `orb mitosis --browser` turns on the device's
+loopback listener for the page (127.0.0.1:8789, origin https://ordalietech.github.io), which stays
+on across restarts, and opens the page at a link carrying the invitation after `#`, which the
+browser never sends to the page's host: the tab joins with it at once. `orb mitosis run --web-listen <addr> --web-origin
+<page origin>` sets another address or page, and `--web-url wss://host/mitosis` advertises a
 reverse-proxied endpoint in invitations. Remote browser URLs require WSS; loopback WS is allowed.
 The listener checks exact allowed origins, limits active connections, and exposes the existing peer
 protocol without the owner/admin API.
+
+A request the browser refuses, to an API that sends no CORS headers (chatgpt.com, opencode.ai,
+xAI's token endpoint), goes through an online device of the tab's group (`mitosis/relay`,
+`host.fetch`), which the machine grant the tab holds already covers. The device sends it to public
+HTTPS addresses only and streams the response back as a window the tab reads by offset, so a
+retried read loses nothing. The tab tries fetch first and relays an origin it refused for the rest
+of the page's life; a form POST also gets a header that makes the browser ask first, so a refusal
+sends nothing and a token refresh is never spent twice.
 
 `cmd/orb-wasm` is the headless Wasm assembly (`platforms/browser`) over `engine`, `ai` and the
 existing `agent/tools` operations, with no page of its own. It owns one engine and a bounded

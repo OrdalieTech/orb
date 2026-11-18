@@ -145,7 +145,7 @@ func (ps *Peers) Remote(ctx context.Context, id, method string, p any) (json.Raw
 	// this one; one retry reaches the peer's fresh channel or redials. Only calls safe to repeat
 	// are retried: reads, and agent.call, which the peer deduplicates by operation id.
 	retries := 1
-	if method == "host.launch" || method == "host.terminal.open" || method == "host.terminal.write" {
+	if method == "host.launch" || method == "host.terminal.open" || method == "host.terminal.write" || method == "host.fetch" {
 		retries = 0
 	}
 	if method == "agent.call" { // its operation id is fixed here, so the retry is the same operation

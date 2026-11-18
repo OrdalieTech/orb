@@ -6,6 +6,7 @@
 package daemon
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -15,18 +16,21 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/OrdalieTech/orb/internal/ctxsleep"
 	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
+	"github.com/OrdalieTech/orb/mitosis/relay"
 	"github.com/OrdalieTech/orb/platforms/native"
 	nativemitosis "github.com/OrdalieTech/orb/platforms/native/mitosis"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
@@ -166,6 +170,8 @@ type Service struct {
 	logins map[string]*hostLogin
 	// terminals: shells this machine runs for a peer (host.terminal.*).
 	terminals map[string]*hostTerminal
+	// relay sends HTTP for a peer that cannot, a browser tab refused by CORS (host.fetch).
+	relay *relay.Server
 	// restart ends the service so its process can exec the binary at path (host.update).
 	restart func(path string)
 	ctx     context.Context
@@ -203,8 +209,28 @@ func New(ctx context.Context, state *native.State, profile, version string, b *m
 		defer done()
 		return cache.Forget(ctx, peer)
 	}
-	return &Service{Peers: peers, state: state, profile: profile, version: version, loginExecutable: os.Executable, launched: map[string]*launched{}, logins: map[string]*hostLogin{}, terminals: map[string]*hostTerminal{}, ctx: ctx}
+	return &Service{Peers: peers, state: state, profile: profile, version: version, loginExecutable: os.Executable, launched: map[string]*launched{}, logins: map[string]*hostLogin{}, terminals: map[string]*hostTerminal{}, relay: &relay.Server{Client: publicClient()}, ctx: ctx}
 }
+
+// publicClient reaches public addresses only, whatever a name resolves to: what this machine
+// relays for its peers never reaches the machine itself or its networks.
+func publicClient() *http.Client {
+	dialer := &net.Dialer{Timeout: 30 * time.Second, Control: func(_, address string, _ syscall.RawConn) error {
+		host, _, err := net.SplitHostPort(address)
+		if ip, parseErr := netip.ParseAddr(host); err != nil || parseErr != nil || !relay.Public(ip) {
+			return mitosis.Fail("unauthorized")
+		}
+		return nil
+	}}
+	return &http.Client{Transport: &http.Transport{DialContext: dialer.DialContext, ForceAttemptHTTP2: true, TLSHandshakeTimeout: 10 * time.Second, IdleConnTimeout: 90 * time.Second}}
+}
+
+// A tab at the page (platforms/browser, on GitHub Pages) reaches this machine at browserListen once the owner
+// turns it on with `orb mitosis --browser` (DECISIONS.md P4: listening stays explicit).
+const (
+	browserListen = "127.0.0.1:8789"
+	browserOrigin = "https://ordalietech.github.io"
+)
 
 type Web struct {
 	Listen  string
@@ -248,7 +274,7 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 	defer func() { _ = node.Close() }()
 	serviceCtx, stop := context.WithCancel(ctx)
 	defer stop()
-	if web.Listen != "" {
+	listen := func(web Web) error {
 		handler, err := webtransport.Handler(serviceCtx, b, web.Origins)
 		if err != nil {
 			return err
@@ -258,9 +284,21 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 			return err
 		}
 		server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
-		defer func() { _ = server.Close() }()
+		go func() { <-serviceCtx.Done(); _ = server.Close() }()
 		go func() { _ = server.Serve(listener); stop() }()
+		return nil
 	}
+	// `orb mitosis --browser` turned on the listener a tab at the page reaches, which stays on.
+	browser := filepath.Join(dir, "browser")
+	if _, err := state.Read(ctx, browser); err == nil && web.Listen == "" {
+		web.Listen, web.Origins = browserListen, []string{browserOrigin}
+	}
+	if web.Listen != "" {
+		if err := listen(web); err != nil {
+			return err
+		}
+	}
+	var listening sync.Mutex // held while the browser method turns the listener on
 	service := New(serviceCtx, state, profile, version, b, node, web.URL)
 	// service.log (or the journal) says what runs; nothing about peers or what they share.
 	_, _ = fmt.Fprintf(os.Stderr, "%s mitosis %s, profile %s, running as %s\n", time.Now().Format(time.RFC3339), version, profile, b.PeerID())
@@ -306,6 +344,20 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 			}
 			time.AfterFunc(100*time.Millisecond, stop)
 			return mitosis.JSON(struct{}{}), nil
+		}
+		if method == "browser" { // `orb mitosis --browser`: the locator a tab at the page dials
+			listening.Lock()
+			defer listening.Unlock()
+			if web.Listen == "" {
+				if err := listen(Web{Listen: browserListen, Origins: []string{browserOrigin}}); err != nil {
+					return nil, err
+				}
+				web.Listen = browserListen
+			}
+			if err := state.Write(ctx, browser, []byte("on\n")); err != nil {
+				return nil, err
+			}
+			return mitosis.JSON(map[string]string{"locator": cmp.Or(web.URL, "ws://"+web.Listen)}), nil
 		}
 		return service.Admin(ctx, method, params)
 	}

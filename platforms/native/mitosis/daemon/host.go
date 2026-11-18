@@ -24,6 +24,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/lazyregexp"
 	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
+	"github.com/OrdalieTech/orb/mitosis/relay"
 	"github.com/OrdalieTech/orb/platforms/native/selfupdate"
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	"github.com/creack/pty"
@@ -244,6 +245,8 @@ func (s *Service) host(ctx context.Context, p mitosis.Principal, method string, 
 		return s.cli(ctx, method, params)
 	case "host.terminal.open", "host.terminal.read", "host.terminal.write", "host.terminal.resize", "host.terminal.close":
 		return s.terminal(ctx, method, params)
+	case relay.Open, relay.Read, relay.Close:
+		return s.relay.Handle(ctx, method, params)
 	}
 	return nil, mitosis.Fail("method_not_found")
 }

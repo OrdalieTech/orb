@@ -401,13 +401,15 @@ async function refreshTab() {
   } catch (error) { showError(error.message); }
   finally { setTimeout(refreshTab, 3000); }
 }
-$("join").onclick = async () => {
+$("join").onclick = () => join($("code").value);
+async function join(text) {
   $("join").disabled = true; showError("");
   try {
-    // The code orb mitosis shows (orb-mitosis:v1:<base64url JSON>), or the invitation JSON itself.
-    const value = $("code").value.trim(), code = value.split("orb-mitosis:v1:")[1]?.split(/\s/)[0];
+    // The code orb mitosis --browser shows (orb-mitosis:v1:<base64url JSON>), or the invitation JSON itself.
+    const value = text.trim(), code = value.split("orb-mitosis:v1:")[1]?.split(/\s/)[0];
     const invitation = JSON.parse(code ? atob(code.replace(/-/g, "+").replace(/_/g, "/")) : value || "{}");
-    if (!invitation.peer_id || !invitation.token) throw new Error("Paste the code orb mitosis shows.");
+    if (!invitation.peer_id || !invitation.token) throw new Error("Paste the code orb mitosis --browser shows.");
+    if (!/^wss?:\/\//.test(invitation.locator ?? "")) throw new Error("That code is for the apps. For this tab, run orb mitosis --browser.");
     if (!tab) await openTab();
     await tab.admin("join", invitation);
     await tab.admin("trust", { peer_id: invitation.peer_id });
@@ -415,11 +417,17 @@ $("join").onclick = async () => {
     show("approve");
   } catch (error) { showError(error.message); }
   finally { $("join").disabled = false; }
-};
+}
 // Forgetting the tab waits for the reload, when no runtime holds its database any more.
 if (localStorage.getItem("orb.tab.forget")) {
   for (const key of Object.keys(localStorage)) if (key.startsWith("orb.tab.")) localStorage.removeItem(key);
   await new Promise(resolve => Object.assign(indexedDB.deleteDatabase("orb-tab"), { onsuccess: resolve, onerror: resolve, onblocked: resolve }));
 }
+// The link orb mitosis --browser opens carries its code after #, which the browser never sends.
+const linked = decodeURIComponent(location.hash.slice(1));
+if (linked) history.replaceState(null, "", location.pathname + location.search);
 if (localStorage.getItem("orb.tab.owner")) openTab().catch(error => showError(error.message));
-else show("invite");
+else {
+  show("invite");
+  if (linked.startsWith("orb-mitosis:v1:")) join($("code").value = linked);
+}

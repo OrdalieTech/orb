@@ -159,6 +159,9 @@ func open(object js.Value) js.Value {
 		mitosis.name = name.String()
 	}
 	mitosis.register(set)
+	if mitosis.dial { // a tab's model calls the browser refuses go through a device of its group
+		http.DefaultTransport = peer.Relay(worker.FetchTransport(), mitosis.open)
+	}
 	return promise(func() (any, error) {
 		ctx := context.Background()
 		instance, err := worker.Open(ctx, worker.Options{

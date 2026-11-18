@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/internal/qr"
 	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
@@ -26,7 +27,10 @@ import (
 // then one yes for the exact fingerprint that claimed it, and the device joins this Orb's sync
 // group, which this Orb owns if it is in none. Nothing is trusted before the yes; with auto (an
 // agent running it, say) the first device to claim the code gets it.
-func runMitosisPair(ctx context.Context, profile string, auto bool, streams cliStreams) int {
+//
+// With browser, the code is for a tab at browserPage: this Mitosis listens for it from now on,
+// and serves the tab's requests its browser refuses (host.fetch).
+func runMitosisPair(ctx context.Context, profile string, auto, browser bool, streams cliStreams) int {
 	client, err := startedMitosisAdmin(ctx, profile)
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
@@ -35,6 +39,15 @@ func runMitosisPair(ctx context.Context, profile string, auto bool, streams cliS
 	var inv mitosis.Invitation
 	if err = client.Call(ctx, "invite", map[string]any{"grants": []mitosis.Grant{mitosis.FullGrant("")}}, &inv); err != nil {
 		return reportCLIError(streams.Stderr, err)
+	}
+	if browser {
+		var web struct {
+			Locator string `json:"locator"`
+		}
+		if err = client.Call(ctx, "browser", struct{}{}, &web); err != nil {
+			return reportCLIError(streams.Stderr, err)
+		}
+		inv.Locator = web.Locator
 	}
 	// Interrupted, the invitation is withdrawn: its full code, printed below, must not stay usable.
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
@@ -45,24 +58,33 @@ func runMitosisPair(ctx context.Context, profile string, auto bool, streams cliS
 		_ = client.Call(done, "uninvite", map[string]string{"invitation_id": inv.ID}, nil) // an approved one stays
 	}()
 	code := mitosis.InvitationCode(inv)
-	// The code, fingerprint and expiry below must stay on screen: the QR shows only on a terminal
-	// it fits.
-	scan := ""
-	if q, err := qr.Encode([]byte(code)); err == nil {
-		f, _ := streams.Stdout.(*os.File)
-		if cols, rows, err := term.GetSize(int(f.Fd())); err == nil && cols >= len(q)+2 && rows >= (len(q)+3)/2+8 {
-			_, _ = fmt.Fprint(streams.Stdout, q.Terminal())
-			scan = "scan the QR code or "
+	if browser {
+		// The code rides after #, which a browser never sends to the page's server.
+		link := browserPage + "#" + code
+		_, _ = fmt.Fprintf(streams.Stdout, "\nOpen in a browser on this machine:\n%s\n\nThis Orb   %s\nExpires in 10 minutes · Ctrl-C cancels\n", link, inv.PeerID)
+		if streams.StdoutTTY {
+			agent.OpenBrowser(link)
 		}
+	} else {
+		// The code, fingerprint and expiry below must stay on screen: the QR shows only on a terminal
+		// it fits.
+		scan := ""
+		if q, err := qr.Encode([]byte(code)); err == nil {
+			f, _ := streams.Stdout.(*os.File)
+			if cols, rows, err := term.GetSize(int(f.Fd())); err == nil && cols >= len(q)+2 && rows >= (len(q)+3)/2+8 {
+				_, _ = fmt.Fprint(streams.Stdout, q.Terminal())
+				scan = "scan the QR code or "
+			}
+		}
+		// A short code for a terminal, when the relay can carry it; apps take the full one.
+		join := code
+		if short, stop, err := offerShortCode(ctx, code); err == nil {
+			defer stop()
+			join = short
+			_, _ = fmt.Fprintf(streams.Stdout, "\nIn an app, %spaste:\n%s\n", scan, code)
+		}
+		_, _ = fmt.Fprintf(streams.Stdout, "\nOn the other machine run:\n  orb mitosis join %s\n\nThis Orb   %s\nExpires in 10 minutes · Ctrl-C cancels\n", join, inv.PeerID)
 	}
-	// A short code for a terminal, when the relay can carry it; apps take the full one.
-	join := code
-	if short, stop, err := offerShortCode(ctx, code); err == nil {
-		defer stop()
-		join = short
-		_, _ = fmt.Fprintf(streams.Stdout, "\nIn an app or a browser tab, %spaste:\n%s\n", scan, code)
-	}
-	_, _ = fmt.Fprintf(streams.Stdout, "\nOn the other machine run:\n  orb mitosis join %s\n\nThis Orb   %s\nExpires in 10 minutes · Ctrl-C cancels\n", join, inv.PeerID)
 	claimed, err := pollMitosisPairing(ctx, inv.Expires, func(ctx context.Context) (mitosis.Invitation, bool, error) {
 		var status mitosisSettingsStatus
 		if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
@@ -96,6 +118,8 @@ func runMitosisPair(ctx context.Context, profile string, auto bool, streams cliS
 	shareOrbsOnMitosis(ctx, profile)
 	return reportInSync(ctx, client, streams, claimed.Claimant, client.Call(ctx, "sync", map[string]string{"add": claimed.Claimant}, nil))
 }
+
+const browserPage = "https://ordalietech.github.io/orb/"
 
 // reportInSync waits up to a minute for this Orb and peer to share the sync group, then says so
 // in one line. added is how adding peer to the group went, nil from the device that joins.
