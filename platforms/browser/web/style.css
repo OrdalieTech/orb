@@ -41,8 +41,17 @@ button.inverted { color: var(--bg); background: var(--fg); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mute); animation: blink 1.4s steps(1) infinite; }
 @keyframes blink { 50% { opacity: .25; } }
 
+/* The NERV look, after Evangelion's interfaces, as the apps spend it: where it carries meaning (a
+   title card, a gauge, a plugin stopping the world), never on every row. A title card is the face
+   in bold, stretched 1.9 tall; it wipes in from the left the first time it shows. */
+.stretch { display: block; flex-shrink: 0; font-weight: 700; white-space: nowrap; transform: scale(var(--squeeze, 1), 1.9); transform-origin: 0 50%; }
+@keyframes wipe { from { clip-path: inset(0 100% 0 0); } }
+@keyframes appear { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { * { animation-duration: 0s !important; } }
+
 /* The conversation: what the person said sits at right on a soft ground; Orb just speaks, full
-   width, its blocks 8 apart; an empty one shows the maker's mark, small and faint. */
+   width, its blocks 8 apart; an empty one is the desktop's Home: its title card, the rupture's
+   square beside it. */
 /* The desktop's bar: 48 high over a drawn rule, chips 30 high on the raised ground when shown. */
 #bar { display: flex; align-items: center; gap: 4px; height: 48px; flex-shrink: 0; padding: 0 var(--margin); border-bottom: 1px solid var(--rule); }
 #tabs { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
@@ -54,6 +63,15 @@ button.inverted { color: var(--bg); background: var(--fg); }
 #tabs span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; }
 #tabs b { display: grid; place-items: center; width: 18px; height: 18px; flex-shrink: 0; border-radius: 4px; font-size: 14px; font-weight: 400; color: var(--meta); visibility: hidden; }
 #tabs .on b { visibility: visible; }
+#orb { margin: 0 8px 0 2px; font-size: 11.3px; line-height: 15px; color: var(--fg); }
+/* How full the context is: ten segments, as the desktop's strip and an EVA's sync rate, red past 80 %. */
+#context { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12px; color: var(--meta); }
+#gauge { display: flex; gap: 2px; }
+#gauge i { width: 3px; height: 10px; background: color-mix(in srgb, var(--rule) 60%, transparent); }
+#gauge i.lit { background: var(--mute); }
+#context.alarm, #context.alarm i.lit { color: var(--rupture); background-color: var(--rupture); }
+#context.alarm { background: none; }
+#context:not([hidden]) + #menu { margin-left: 8px; }
 #new { width: 28px; height: 28px; flex-shrink: 0; padding: 0; border-radius: 6px; font-size: 18px; }
 /* Three hairlines at the bar's end, as the apps' menu. */
 #menu { display: grid; place-items: center; width: 36px; height: 30px; flex-shrink: 0; margin-left: auto; padding: 0; border-radius: 7px; }
@@ -66,7 +84,9 @@ button.inverted { color: var(--bg); background: var(--fg); }
 #transcript > * { max-width: 720px; margin-inline: auto; }
 #transcript { flex: 1; min-height: 0; padding: 12px var(--margin) 0; overflow-y: auto; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
 #transcript:focus-visible { outline: 0; }
-#messages:empty { height: 100%; background: var(--rule); mask: url(ordalie.svg) center / 26px no-repeat; }
+#messages:empty { display: flex; align-items: center; justify-content: center; gap: 10px; height: 100%; }
+#messages:empty::before { content: "NEW SESSION"; height: 46px; font-size: 34.6px; font-weight: 700; line-height: 46px; transform: scaleY(1.9); animation: wipe 260ms 60ms var(--ease) backwards; }
+#messages:empty::after { content: ""; width: 9px; height: 9px; margin-top: 30px; background: var(--rupture); }
 .user { width: fit-content; max-width: calc(100% - 48px); margin: 28px 0 16px auto; padding: 8px 12px; white-space: pre-wrap; border-radius: var(--pane); background: color-mix(in srgb, var(--fg) 7%, transparent); }
 .user:first-child { margin-top: 0; }
 .assistant { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 8px; }
@@ -91,9 +111,6 @@ button.inverted { color: var(--bg); background: var(--fg); }
 .action span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .action em { font-style: normal; color: var(--rupture); }
 .action pre { margin: 6px 0 0 16px; }
-.question { flex-flow: row wrap; align-items: center; }
-.question > p { flex-basis: 100%; }
-.question textarea { flex-basis: 100%; padding: 8px 12px; border: 1px solid var(--rule); border-radius: var(--soft); background: var(--raised); resize: vertical; }
 #stream::after { content: ""; width: .55em; height: 1.1em; background: var(--rupture); animation: blink 1.06s steps(1) infinite; }
 
 /* The prompt box, as on the desktop: raised and outlined, the draft above, under it where it
@@ -159,3 +176,28 @@ button.inverted { color: var(--bg); background: var(--fg); }
 
 #error { margin: 12px auto 0; color: var(--rupture); font-size: var(--small); white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 600px) { #prompt { font-size: 16px; } }
+
+/* A plugin stopping the world, as the apps' interrupt: the only place red fills space, framed in
+   warning stripes; the word wipes in, then its caption; the first choice is inverted. */
+.interrupt { --ink: #2A2D2B; position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; overflow-y: auto; color: var(--ink); background: var(--rupture); }
+.interrupt > i { flex-shrink: 0; height: 14px; background: repeating-linear-gradient(45deg, var(--ink) 0 6px, transparent 6px 12px); }
+.interrupt > div { display: flex; flex: 1 0 auto; flex-direction: column; width: 100%; max-width: 900px; margin: 0 auto; }
+.interrupt > div > * { flex-shrink: 0; }
+.interrupt hr { flex-shrink: 0; width: 100%; height: 1px; margin: 0; border: 0; background: var(--ink); }
+.interrupt hr:nth-of-type(2) { margin-top: auto; }
+.interrupt > div > div:first-child { display: flex; padding: 16px var(--margin); font-size: var(--label); }
+.interrupt > div > div:first-child span:first-child, .interrupt .caption { flex: 1; font-size: 11px; font-weight: 500; letter-spacing: .09em; text-transform: uppercase; }
+.interrupt .word { height: 150px; margin: 22px var(--margin) 24px; font-size: 112.8px; line-height: 150px; animation: wipe 260ms var(--ease) backwards; }
+.interrupt .word.squeezed { --squeeze: .6; }
+.interrupt .caption { margin: 0 var(--margin) 16px; animation: appear 260ms 140ms var(--ease) backwards; }
+.interrupt .first { padding: 0 var(--margin); font-size: 20px; }
+.interrupt .detail { max-height: 220px; overflow-y: auto; padding: 10px var(--margin); font-size: 14px; font-weight: 500; white-space: pre-wrap; }
+.interrupt .choice { display: flex; width: 100%; padding: 14px 20px; border: 0; border-radius: 0; text-align: left; font-size: var(--body); font-weight: 400; color: var(--ink); }
+.interrupt .choice b { width: 36px; flex-shrink: 0; font-weight: 700; }
+.interrupt .choice.first { color: var(--rupture); background: var(--ink); }
+@media (hover: hover) { .interrupt .choice:not(.first):hover { background: color-mix(in srgb, var(--ink) 12%, transparent); } }
+.interrupt > div > div:has(input) { display: flex; gap: 8px; padding: 16px; }
+.interrupt input { flex: 1; min-width: 0; padding: 12px 18px; font: inherit; color: var(--ink); border: 1px solid var(--ink); border-radius: var(--soft); background: none; outline: 0; }
+.interrupt input::placeholder { color: color-mix(in srgb, var(--ink) 60%, transparent); }
+.interrupt button.inverted { color: var(--rupture); border-color: var(--ink); background: var(--ink); }
+.interrupt > div > button:last-child { padding: 16px; border: 0; border-radius: 0; text-align: left; font-size: var(--label); font-weight: 400; letter-spacing: .09em; color: var(--ink); }

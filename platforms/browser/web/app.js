@@ -136,7 +136,7 @@ function action(call, result) {
 function idle() {
   running = false; word = "";
   $("stream").hidden = true;
-  for (const question of document.querySelectorAll(".question")) question.remove();
+  for (const question of document.querySelectorAll(".interrupt")) question.remove();
   controls();
 }
 // RPC frames carry message_update as deltas (agent/rpc).
@@ -155,39 +155,59 @@ function onEvent(event) {
   }
   controls();
 }
-// A question the agent waits on shows under the conversation, as in the apps: the questions
-// plugin's, each with its options and a line of its own, or a plain one, answered by a choice or a
-// line. The answer goes to the session, which checks it.
+// A question the agent waits on stops the world, as in the apps (platforms/desktop's interrupt,
+// Android's Interrupt, mitosis/view's walk): the red fills the page between warning stripes, the
+// word wipes in, and each choice has its key. The questions plugin's series goes one question at
+// a time and answers as one result, which the session checks.
 async function ask() {
   const input = await tab.input().catch(() => null);
-  if (!input || document.querySelector(".question")) return;
-  const reply = value => tab.input(input.id, value).then(() => box.remove(), error => showError(error.message));
-  const box = Object.assign(node("div"), { className: "assistant question" });
-  const field = () => Object.assign(node("textarea"), { rows: 1, placeholder: "your answer" });
-  const asked = input.presentation?.kind === "questions" ? input.presentation.data.questions : null;
-  if (asked) {
-    const answers = asked.map(q => {
-      const picked = new Set(), own = field();
-      box.append(node("p", q.question), ...(q.options || []).map(o => {
-        const choice = button(o.label, () => {
-          if (!q.multi_select) { picked.clear(); for (const b of choice.parentNode.querySelectorAll(`[data-q="${CSS.escape(q.id)}"]`)) b.className = ""; }
-          picked.has(o.label) ? picked.delete(o.label) : picked.add(o.label);
-          choice.className = picked.has(o.label) ? "inverted" : "";
-        });
-        choice.dataset.q = q.id;
-        return choice;
-      }), own);
-      return () => ({ id: q.id, selected: own.value.trim() && !q.multi_select ? [] : [...picked], custom: own.value.trim() });
-    });
-    box.append(button("answer", () => reply(JSON.stringify({ answers: answers.map(a => a()) })), "inverted"),
-      button("skip", () => reply(JSON.stringify({ cancelled: true }))));
-  } else if (input.choices?.length) box.append(node("p", input.title), ...input.choices.map(c => button(c, () => reply(c))));
-  else {
-    const own = field();
-    box.append(node("p", input.title), own, button("answer", () => reply(own.value), "inverted"));
-  }
-  $("transcript").append(box);
-  box.scrollIntoView({ block: "nearest" });
+  if (!input || document.querySelector(".interrupt")) return;
+  const asked = input.presentation?.kind === "questions" ? input.presentation.data.questions : null, answers = [];
+  const owner = input.presentation?.kind === "approval" ? "permissions" : "questions";
+  const done = reply => { document.querySelector(".interrupt")?.remove(); tab.input(input.id, reply).catch(error => showError(error.message)); };
+  const step = () => {
+    if (!asked) return { title: input.title, choices: input.choices || [], free: !input.choices?.length, answer: value => done(value ?? "") };
+    const q = asked[answers.length], n = asked.length;
+    return {
+      title: q.question, message: [q.header, n > 1 && `${answers.length + 1} / ${n}`].filter(Boolean).join("  "), choices: (q.options || []).map(o => o.label), free: true,
+      answer: value => {
+        if (value === null) return done(JSON.stringify({ cancelled: true }));
+        answers.push(q.options?.some(o => o.label === value) ? { id: q.id, selected: [value] } : { id: q.id, selected: [], custom: value });
+        answers.length < n ? interrupt(owner, input.id + answers.length, step()) : done(JSON.stringify({ answers }));
+      },
+    };
+  };
+  interrupt(owner, input.id, step());
+}
+function interrupt(owner, id, ask) {
+  const [word, caption] = { permissions: ["APPROVAL", "approval required"] }[owner] || ["QUESTION", "a question for you"];
+  const [first, ...rest] = ask.title.split("\n"), detail = [...rest, ask.message || ""].join("\n").trim(), armed = Date.now() + 800;
+  const keyed = ask.choices.map((choice, i) => {
+    const own = /^([a-z]) (.+)/.exec(choice);
+    return [own?.[1] ?? ({ allow: "y", deny: "n" }[choice] || (i < 9 ? String(i + 1) : "")), own?.[2] ?? choice, choice];
+  });
+  const field = Object.assign(node("input"), { placeholder: "type an answer", autocomplete: "off" });
+  const answer = value => { removeEventListener("keydown", keys); box.remove(); ask.answer(value); };
+  const keys = event => {
+    if (event.key === "Escape") return answer(null);
+    const hit = event.target !== field && Date.now() > armed && keyed.find(([key]) => key === event.key);
+    if (hit) { event.preventDefault(); answer(hit[2]); }
+  };
+  const head = node("div", node("span", owner), node("span", "waiting on you"));
+  const send = () => field.value.trim() && answer(field.value);
+  field.onkeydown = event => event.key === "Enter" && send();
+  const box = node("div", node("i"), node("div", head, node("hr"),
+    Object.assign(node("h2", word), { className: word.length > 5 ? "stretch word squeezed" : "stretch word" }), Object.assign(node("p", caption), { className: "caption" }),
+    Object.assign(node("p", first), { className: "first" }), ...(detail ? [Object.assign(node("p", detail), { className: "detail" })] : []),
+    node("hr"), ...keyed.map(([key, text, choice]) => Object.assign(node("button", node("b", key), node("span", text)), { type: "button", className: choice === ask.choices[0] ? "choice first" : "choice", onclick: () => answer(choice) })),
+    ...(ask.free ? [node("div", field, button("send", send, "inverted"))] : []),
+    node("hr"), button("esc  ·  dismiss", () => answer(null))), node("i"));
+  box.className = "interrupt";
+  for (const old of document.querySelectorAll(".interrupt")) old.remove();
+  document.body.append(box);
+  addEventListener("keydown", keys);
+  // The line takes the keys only when there is nothing to choose: a choice's key answers.
+  if (ask.free && !keyed.length) field.focus();
 }
 $("prompt-form").onsubmit = event => {
   event.preventDefault();
@@ -423,6 +443,16 @@ async function settle() {
   const last = messages.at(-1);
   showError(last?.role === "assistant" && last.stopReason === "error" ? last.errorMessage : "");
   renderMessages(messages); idle();
+  readContext().catch(() => {});
+}
+// How full the conversation's context is, as the desktop's strip reads it: ten segments, red past
+// 80 %.
+async function readContext() {
+  const share = ((await tab.rpc("get_session_stats")).contextUsage?.percent ?? 0) / 100;
+  $("context").hidden = !(share > 0);
+  $("context").classList.toggle("alarm", share > .8);
+  $("gauge").replaceChildren(...Array.from({ length: 10 }, (_, i) => Object.assign(node("i"), { className: i < Math.round(share * 10) ? "lit" : "" })));
+  $("context").lastChild.textContent = `${Math.round(share * 100)}%`;
 }
 // Provider names only: credentials never leave the tab's Orb. The first provider the device
 // shares is its approval: the conversation replaces the fingerprint. Until then the tab asks to
