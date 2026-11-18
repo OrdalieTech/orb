@@ -3,13 +3,13 @@
    screen, the phone's on a narrow one. */
 @font-face { font-family: "Ubuntu Sans Mono"; src: url(ubuntu_sans_mono.ttf); font-weight: 100 900; }
 :root {
-  --bg: #E3E7E0; --fg: #2A2D2B; --mute: #444A45; --meta: #646A65; --rule: #9EA49F; --raised: #ECEFE9; --shade: #00000012;
+  --bg: #E3E7E0; --fg: #2A2D2B; --mute: #444A45; --meta: #646A65; --rule: #9EA49F; --raised: #ECEFE9; --hover: #D6DAD3; --shade: #00000012;
   --rupture: #C94A3D; --title: 18px; --body: 15px; --small: 13px; --label: 10px; --round: 30px;
   --soft: 6px; --pane: 10px; --margin: 16px; --ease: cubic-bezier(.23, 1, .32, 1);
   color-scheme: light dark; font: 400 var(--body)/1.45 "Ubuntu Sans Mono", monospace; color: var(--fg); background: var(--bg);
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #1C201E; --fg: #DADFD8; --mute: #A8AEA9; --meta: #8A918C; --rule: #4E5550; --raised: #242927; --shade: #00000059; }
+  :root { --bg: #1C201E; --fg: #DADFD8; --mute: #A8AEA9; --meta: #8A918C; --rule: #4E5550; --raised: #242927; --hover: #2F3331; --shade: #00000059; }
 }
 @media (max-width: 600px) { :root { --title: 19px; --label: 11px; --round: 36px; } }
 * { box-sizing: border-box; }
@@ -43,6 +43,21 @@ button.inverted { color: var(--bg); background: var(--fg); }
 
 /* The conversation: what the person said sits at right on a soft ground; Orb just speaks, full
    width, its blocks 8 apart; an empty one shows the maker's mark, small and faint. */
+/* The desktop's bar: 48 high over a drawn rule, chips 30 high on the raised ground when shown. */
+#bar { display: flex; align-items: center; gap: 4px; height: 48px; flex-shrink: 0; padding: 0 var(--margin); border-bottom: 1px solid var(--rule); }
+#tabs { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+#bar button { border: 0; font-weight: 400; color: var(--mute); }
+#tabs button { display: flex; align-items: center; gap: 7px; flex-shrink: 1; min-width: 72px; max-width: 220px; height: 30px; padding: 0 6px 0 10px; border-radius: 7px; }
+#tabs .on { color: var(--fg); font-weight: 600; background: var(--raised); }
+#tabs i { width: 7px; height: 7px; flex-shrink: 0; background: currentColor; }
+#tabs .live i { animation: blink 1.4s steps(1) infinite; }
+#tabs span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; }
+#tabs b { display: grid; place-items: center; width: 18px; height: 18px; flex-shrink: 0; border-radius: 4px; font-size: 14px; font-weight: 400; color: var(--meta); visibility: hidden; }
+#tabs .on b { visibility: visible; }
+#new { width: 28px; height: 28px; flex-shrink: 0; padding: 0; border-radius: 6px; font-size: 18px; }
+@media (hover: hover) { #tabs button:hover:not(.on), #tabs b:hover, #new:hover:enabled { background: var(--hover); } #tabs button:hover b { visibility: visible; } }
+#tabs button:disabled { opacity: 1; color: var(--meta); }
+
 /* The conversation spans the window, so its scrollbar sits at the edge; what it holds keeps the reading column. */
 #chat { max-width: none; padding: 0; }
 #transcript > * { max-width: 720px; margin-inline: auto; }
@@ -75,10 +90,12 @@ button.inverted { color: var(--bg); background: var(--fg); }
 #prompt:focus-visible { outline: 0; }
 #prompt-form > div { display: flex; align-items: center; gap: 12px; padding-left: 14px; }
 #status { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--small); font-weight: 500; color: var(--mute); }
-#reset { padding: 2px 6px; border: 0; color: var(--meta); font-weight: 500; }
-.round { width: var(--round); height: var(--round); padding: 0; flex-shrink: 0; border: 0; border-radius: 50%; color: var(--bg); background: var(--fg); font-size: 15px; }
+/* Its marks are drawn, square-cut and heavy as the EVA cards: an arrow to send, a block to stop. */
+.round { display: grid; place-items: center; width: var(--round); height: var(--round); padding: 0; flex-shrink: 0; border: 0; border-radius: 50%; color: var(--bg); background: var(--fg); }
+.round::before { content: ""; width: 62%; height: 62%; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 13.5V3.5M2.75 8.25 8 3l5.25 5.25' fill='none' stroke='black' stroke-width='3.2' stroke-miterlimit='8'/%3E%3C/svg%3E") center / contain no-repeat; }
+.round.stop::before { width: 34%; height: 34%; mask: none; }
 .round:disabled { opacity: 1; background: var(--rule); }
 .round.stop { background: var(--rupture); }
 
-#error { margin: 12px 0 0; color: var(--rupture); font-size: var(--small); white-space: pre-wrap; overflow-wrap: anywhere; }
+#error { margin: 12px auto 0; color: var(--rupture); font-size: var(--small); white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 600px) { #prompt { font-size: 16px; } }

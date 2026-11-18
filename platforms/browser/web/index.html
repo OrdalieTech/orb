@@ -27,13 +27,14 @@
     </div>
   </section>
   <section id="chat" hidden>
+    <nav id="bar"><div id="tabs"></div><button id="new" type="button" aria-label="New conversation">+</button></nav>
     <div id="transcript" tabindex="0" aria-label="Messages">
       <div id="messages"></div>
       <div id="stream" class="assistant" hidden></div>
     </div>
     <form id="prompt-form">
       <textarea id="prompt" rows="2" maxlength="16384" placeholder="What next?" aria-label="Message"></textarea>
-      <div><output id="status"></output><button id="reset" type="button">new</button><button id="send" class="round" aria-label="Send">↑</button></div>
+      <div><output id="status"></output><button id="send" class="round" aria-label="Send"></button></div>
     </form>
   </section>
   <p id="error" role="alert" hidden></p>

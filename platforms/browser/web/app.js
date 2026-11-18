@@ -2,6 +2,8 @@ import { indexedStorage, openPeer } from "./peer.js";
 const $ = id => document.getElementById(id);
 // tab: this tab's own Orb (peer.wasm), one of the user's devices; word: what it does now; where: its model.
 let tab = null, me = "", running = false, messages = [], streamed = "", word = "", where = "";
+// tabs: the conversations the bar shows, by session file, with their titles; current: the one shown.
+let tabs = JSON.parse(localStorage.getItem("orb.tab.tabs") || "[]"), current = "";
 
 function showError(message) {
   $("error").textContent = message || "";
@@ -21,10 +23,39 @@ function show(screen) {
 }
 function controls() {
   $("status").textContent = word || where;
-  $("send").textContent = running ? "■" : "↑";
+  $("send").ariaLabel = running ? "Stop" : "Send";
   $("send").classList.toggle("stop", running);
   $("send").disabled = !running && !$("prompt").value.trim();
-  $("reset").disabled = running;
+  $("new").disabled = running;
+  renderTabs();
+}
+// The desktop's tab bar: a chip per conversation, its square pulsing while it works, its × on it
+// when shown or under the pointer; one conversation runs at a time, so the others wait for it.
+function renderTabs() {
+  $("tabs").replaceChildren(...tabs.map(t => {
+    const close = node("b", "×"), chip = node("button", node("i"), node("span", t.title || "new session"), close);
+    chip.type = "button";
+    chip.className = t.file === current ? (running ? "on live" : "on") : "";
+    chip.disabled = running && t.file !== current;
+    chip.onclick = () => t.file === current || running || go("switch_session", { sessionPath: t.file });
+    close.onclick = event => {
+      event.stopPropagation();
+      if (running && t.file === current) return;
+      const at = tabs.indexOf(t);
+      tabs.splice(at, 1);
+      if (t.file !== current) return save();
+      if (tabs.length) go("switch_session", { sessionPath: tabs[Math.min(at, tabs.length - 1)].file });
+      else go("new_session");
+    };
+    return chip;
+  }));
+}
+function save() {
+  localStorage.setItem("orb.tab.tabs", JSON.stringify(tabs));
+  renderTabs();
+}
+function go(command, params) {
+  tab.rpc(command, params).then(settle).catch(error => showError(error.message));
 }
 function text(content) {
   return typeof content === "string" ? content : (content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
@@ -113,6 +144,8 @@ $("prompt-form").onsubmit = event => {
   const value = $("prompt").value;
   if (!value.trim()) return;
   running = true; word = "waiting"; showError("");
+  const shown = tabs.find(t => t.file === current);
+  if (shown && !shown.title) shown.title = value.trim().split("\n")[0];
   $("prompt").value = "";
   controls();
   renderMessages([...messages, { role: "user", content: value }]);
@@ -125,7 +158,7 @@ $("prompt").onkeydown = event => {
     if (!running) $("prompt-form").requestSubmit();
   }
 };
-$("reset").onclick = () => tab.rpc("new_session").then(settle, error => showError(error.message));
+$("new").onclick = () => go("new_session");
 // The tab's Orb over IndexedDB, which keeps its identity, received providers, memory and
 // conversation across reloads. Starting its Mitosis makes it dial its devices.
 async function openTab() {
@@ -165,8 +198,17 @@ async function openTab() {
   await settle();
   refreshTab();
 }
+// settle shows the conversation the tab's Orb holds, and gives its chip the first thing said in it;
+// a chip left with nothing said goes.
 async function settle() {
   ({ messages } = await tab.rpc("get_messages"));
+  current = (await tab.rpc("get_state")).sessionFile;
+  const title = text(messages.find(m => m.role === "user")?.content).trim().split("\n")[0];
+  tabs = tabs.filter(t => t.title || t.file === current);
+  const shown = tabs.find(t => t.file === current);
+  if (shown) shown.title = title;
+  else tabs.push({ file: current, title });
+  save();
   const last = messages.at(-1);
   showError(last?.role === "assistant" && last.stopReason === "error" ? last.errorMessage : "");
   renderMessages(messages); idle();
@@ -183,6 +225,7 @@ async function refreshTab() {
     // A session started before any provider arrived has no model; a new one takes the preferred one.
     if (models.length && (!model || model.provider === "unknown") && !running && !messages.length) {
       await tab.rpc("new_session");
+      await settle();
       ({ model } = await tab.rpc("get_state"));
     }
     show(!owner ? "invite" : models.length ? "chat" : "approve");
