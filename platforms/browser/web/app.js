@@ -295,7 +295,8 @@ $("prompt-form").onsubmit = event => {
   $("prompt").value = "";
   controls();
   renderMessages([...messages, { role: "user", content: value }]);
-  tab.rpc("prompt", { message: value }).catch(error => { idle(); showError(error.message); renderMessages(messages); });
+  // A command a plugin handles (/tasks) runs no turn, so no agent_end comes to settle the page.
+  tab.rpc("prompt", { message: value }).then(answer => answer?.disposition === "handled" && settle(), error => { idle(); showError(error.message); renderMessages(messages); });
 };
 $("prompt").oninput = controls;
 $("prompt").onkeydown = event => {
