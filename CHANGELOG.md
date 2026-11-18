@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- `orb mitosis join` starts Mitosis before it reads a short code, so a daemon that can't start no longer uses up the code.
+
 ## [0.24.0] - 2026-11-17
 
 Mitosis's unit is the agent, and a sync group lives on without any one device: several owners each admit devices and merge and seal the group's logins and memory, entry by entry, so turning one off stops nothing. Agents reach each other by name, and a message to an agent with no conversation named goes to its default one. The protocol changed: devices paired before must be paired again.
