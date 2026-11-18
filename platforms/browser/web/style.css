@@ -87,7 +87,7 @@ button.inverted { color: var(--bg); background: var(--fg); }
    raised, outlined pane with what it was given and what came back. */
 .action summary { display: flex; gap: 10px; min-width: 0; cursor: pointer; list-style: none; font-size: var(--small); color: var(--mute); }
 .action summary::-webkit-details-marker { display: none; }
-.action b { font-weight: 600; color: var(--fg); }
+.action b { flex-shrink: 0; font-weight: 600; color: var(--fg); }
 .action span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .action em { font-style: normal; color: var(--rupture); }
 .action pre { margin: 6px 0 0 16px; }

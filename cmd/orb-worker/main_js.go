@@ -13,11 +13,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"syscall/js"
@@ -270,19 +272,22 @@ func portable(settings *config.SettingsManager) map[string]extensions.Factory {
 	}
 }
 
-// tools adds code mode to calls where the host runs code: run(code) resolves to the run as JSON,
-// {out, value, error}, as a browser tab's sandboxed worker answers it (platforms/browser/web).
+// tools adds code mode to calls where the host runs code: run(code, names, call) resolves to the
+// run as JSON, {out, value, error}, as a browser tab's sandboxed worker answers it
+// (platforms/browser/web). The code reaches the session's other tools, named in names, through
+// call(name, args), which runs one as a nested call and resolves to {text, failed}.
 func tools(calls worker.ToolsFunc, run js.Value) worker.ToolsFunc {
 	if run.Type() != js.TypeFunction {
 		return calls
 	}
 	code := extensions.ToolDefinition{
 		Name: "js", Label: "js", PromptSnippet: "Run JavaScript in a sandboxed worker",
-		Description: "Run JavaScript in a sandboxed worker of this browser tab, for computing, transforming data or trying code. " +
+		Description: "Run JavaScript in a sandboxed worker of this browser tab, for computing, transforming data, trying code, or calling several tools in one go. " +
 			"The code is the body of an async function: return a value, await promises, console.log to print. " +
-			"It has no DOM and no access to the page, its storage or the files; fetch obeys the browser's CORS rules. A run stops after 30 s.",
+			"`await tools.<name>(args)` calls your other tools with the arguments you would give them and resolves to their text output (a failed call throws). " +
+			"It has no DOM and no access to the page or its storage; fetch obeys the browser's CORS rules. A run stops after 2 min.",
 		Parameters: ai.JSONSchema(`{"type":"object","properties":{"code":{"type":"string","description":"The body of an async function."}},"required":["code"]}`),
-		Execute: func(_ context.Context, _ string, args any, _ engine.AgentToolUpdateCallback, _ extensions.Context) (engine.AgentToolResult, error) {
+		Execute: func(ctx context.Context, _ string, args any, _ engine.AgentToolUpdateCallback, session extensions.Context) (engine.AgentToolResult, error) {
 			var input struct {
 				Code string `json:"code"`
 			}
@@ -290,7 +295,39 @@ func tools(calls worker.ToolsFunc, run js.Value) worker.ToolsFunc {
 			if err := json.Unmarshal(raw, &input); err != nil || strings.TrimSpace(input.Code) == "" {
 				return engine.AgentToolResult{}, errors.New("code must not be empty")
 			}
-			answer, err := worker.Await(run.Invoke(input.Code))
+			nested, _ := session.(extensions.ToolContext)
+			names := []string{}
+			if nested != nil {
+				for _, tool := range nested.Tools() {
+					if tool.Name != "js" {
+						names = append(names, tool.Name)
+					}
+				}
+			}
+			call := js.FuncOf(func(_ js.Value, args []js.Value) any {
+				name, raw := args[0].String(), args[1].String()
+				return promise(func() (any, error) {
+					var params any
+					if !slices.Contains(names, name) {
+						return nil, fmt.Errorf("no tool %q here", name)
+					}
+					if err := json.Unmarshal([]byte(raw), &params); err != nil {
+						return nil, err
+					}
+					outcome := nested.ExecuteTool(ctx, name, params, nil)
+					var text []string
+					for _, part := range outcome.Result.Content {
+						if t, ok := part.(*ai.TextContent); ok {
+							text = append(text, t.Text)
+						}
+					}
+					answer, err := json.Marshal(map[string]any{"text": strings.Join(text, "\n"), "failed": outcome.IsError})
+					return string(answer), err
+				})
+			})
+			defer call.Release()
+			listed, _ := json.Marshal(names)
+			answer, err := worker.Await(run.Invoke(input.Code, string(listed), call))
 			if err != nil {
 				return engine.AgentToolResult{}, err
 			}

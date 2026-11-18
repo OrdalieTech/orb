@@ -267,36 +267,63 @@ async function openPage(name) {
 }
 // Code mode's runtime: a frame of opaque origin (sandboxed without same-origin), so what runs reaches
 // neither this page, its storage nor the synced credentials. Each run is a worker in it, ended when it
-// settles or after 30 s, and answers {out, value, error}.
-const sandbox = `<script>onmessage = ({ data: { id, code } }) => {
-  const source = "const out = [], show = v => typeof v === 'string' ? v : JSON.stringify(v, null, 2) ?? String(v);" +
-    "for (const k of ['log', 'info', 'warn', 'error']) console[k] = (...a) => out.push(a.map(show).join(' '));" +
-    "onmessage = async ({ data }) => { try { const v = await (0, eval)('(async () => {' + data + String.fromCharCode(10) + '})()'); postMessage({ out, value: v === undefined ? undefined : show(v) }); }" +
-    " catch (e) { postMessage({ out, error: String(e && e.stack || e) }); } };";
-  const worker = new Worker(URL.createObjectURL(new Blob([source])));
-  const end = reply => { clearTimeout(timer); worker.terminate(); parent.postMessage({ id, ...reply }, "*"); };
-  const timer = setTimeout(() => end({ error: "stopped after 30 s" }), 30000);
-  worker.onmessage = ({ data }) => end(data);
-  worker.onerror = event => { event.preventDefault(); end({ error: event.message }); };
-  worker.postMessage(code);
-};<\/script>`;
-let frame, framed, runs = new Map(), nextRun = 0;
-function run(code) {
+// settles or after 2 min; its code gets tools.<name>(args), the session's other tools, each call
+// relayed out to the tab's Orb and its text back. These two functions run there, not here.
+function sandboxWorker() {
+  const out = [], show = v => (typeof v === "string" ? v : JSON.stringify(v, null, 2) ?? String(v)), waiting = new Map();
+  for (const k of ["log", "info", "warn", "error"]) console[k] = (...a) => out.push(a.map(show).join(" "));
+  let next = 0;
+  const call = (name, args) => new Promise((ok, no) => { waiting.set(++next, { ok, no }); postMessage({ call: { k: next, name, args } }); });
+  onmessage = async ({ data }) => {
+    if (data.reply) {
+      const { ok, no } = waiting.get(data.reply.k);
+      waiting.delete(data.reply.k);
+      return data.reply.failed ? no(new Error(data.reply.text)) : ok(data.reply.text);
+    }
+    const tools = Object.fromEntries(data.names.map(name => [name, args => call(name, args ?? {})]));
+    try {
+      const value = await (0, eval)("(async tools => {" + data.code + "\n})")(tools);
+      postMessage({ out, value: value === undefined ? undefined : show(value) });
+    } catch (error) { postMessage({ out, error: String(error?.stack || error) }); }
+  };
+}
+function sandboxFrame(source) {
+  const runs = new Map();
+  onmessage = ({ data }) => {
+    if (data.reply) return runs.get(data.id)?.postMessage({ reply: data.reply });
+    const worker = new Worker(URL.createObjectURL(new Blob([source])));
+    const end = reply => { clearTimeout(timer); worker.terminate(); runs.delete(data.id); parent.postMessage({ id: data.id, ...reply }, "*"); };
+    const timer = setTimeout(() => end({ error: "stopped after 2 min" }), 120000);
+    runs.set(data.id, worker);
+    worker.onmessage = event => (event.data.call ? parent.postMessage({ id: data.id, call: event.data.call }, "*") : end(event.data));
+    worker.onerror = event => { event.preventDefault(); end({ error: event.message }); };
+    worker.postMessage({ code: data.code, names: data.names });
+  };
+}
+let frame, framed, nextRun = 0;
+const runs = new Map();
+function run(code, names, call) {
   if (!frame) {
-    frame = Object.assign(document.createElement("iframe"), { srcdoc: sandbox, hidden: true });
+    frame = Object.assign(document.createElement("iframe"), { hidden: true, srcdoc: `<script>(${sandboxFrame})(${JSON.stringify(`(${sandboxWorker})()`)})<\/script>` });
     frame.setAttribute("sandbox", "allow-scripts");
     framed = new Promise(resolve => (frame.onload = resolve));
     document.body.append(frame);
   }
   return framed.then(() => new Promise(resolve => {
     const id = ++nextRun;
-    runs.set(id, resolve);
-    frame.contentWindow.postMessage({ id, code }, "*");
+    runs.set(id, { resolve, call });
+    frame.contentWindow.postMessage({ id, code, names: JSON.parse(names) }, "*");
   }));
 }
 addEventListener("message", ({ source, data }) => {
-  if (source !== frame?.contentWindow || !runs.has(data?.id)) return;
-  runs.get(data.id)(JSON.stringify({ out: data.out || [], value: data.value, error: data.error }));
+  const ongoing = source === frame?.contentWindow && runs.get(data?.id);
+  if (!ongoing) return;
+  if (data.call) {
+    const reply = answer => frame.contentWindow.postMessage({ id: data.id, reply: { k: data.call.k, ...answer } }, "*");
+    ongoing.call(data.call.name, JSON.stringify(data.call.args)).then(answer => JSON.parse(answer), error => ({ text: error.message, failed: true })).then(reply);
+    return;
+  }
+  ongoing.resolve(JSON.stringify({ out: data.out || [], value: data.value, error: data.error }));
   runs.delete(data.id);
 });
 // The tab's Orb over IndexedDB, which keeps its identity, received providers, memory and

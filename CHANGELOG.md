@@ -5,7 +5,7 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
-- The browser page at netapy.com/orb takes the desktop and Android apps' look and parts: their paper and ink in light and dark, Ubuntu Sans Mono, the tab bar, the prompt box with its model deck, inline tool lines, and Settings (General, Providers, Plugins, Mitosis). Pairing is the code `orb mitosis` shows and the fingerprint, and no longer stalls when the device admits the tab late. Code mode gives the tab's agent a `js` tool, run in a sandboxed worker that can't reach the page or its credentials. The bring-your-own-key agent, the remote-control panel and the debug panel are gone.
+- The browser page at netapy.com/orb takes the desktop and Android apps' look and parts: their paper and ink in light and dark, Ubuntu Sans Mono, the tab bar, the prompt box with its model deck, inline tool lines, and Settings (General, Providers, Plugins, Mitosis). Pairing is the code `orb mitosis` shows and the fingerprint, and no longer stalls when the device admits the tab late. Code mode gives the tab's agent a `js` tool, run in a sandboxed worker that can't reach the page or its credentials, whose code calls the agent's other tools (`await tools.remember({…})`). The bring-your-own-key agent, the remote-control panel and the debug panel are gone.
 
 - `orb mitosis join` starts Mitosis before it reads a short code, so a daemon that can't start no longer uses up the code.
 

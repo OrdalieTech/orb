@@ -173,7 +173,9 @@ accounts the group shares), Plugins (those an object runs, set through the Worke
 entry point for the sessions started after) and Mitosis (the group's devices, forgetting the tab).
 Code mode gives the tab's agent a `js` tool: `openPeer`'s `run` hands its code to a worker inside
 a frame sandboxed without same-origin, so it reaches neither the page, its storage nor the synced
-credentials, and a run stops after 30 s. The page takes the apps' tokens (`platforms/desktop/theme.go`, Android's `ui/Theme.kt`): their
+credentials, and a run stops after 2 min. Its code calls the session's other tools as
+`tools.<name>(args)`, relayed out as nested calls (`ToolContext.ExecuteTool`), so they keep the
+model's validation, hooks and permission checks. The page takes the apps' tokens (`platforms/desktop/theme.go`, Android's `ui/Theme.kt`): their
 palette in both appearances, their face, radii and type scale, the desktop's on a wide screen and
 the phone's on a narrow one.
 
