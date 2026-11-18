@@ -51,7 +51,8 @@ func Public(ip netip.Addr) bool {
 }
 
 // Server answers the host calls. Client must dial only Public addresses, whatever a name
-// resolves to: the host builds it, as the core dials nothing. Server takes https URLs only.
+// resolves to: the host builds it, as the core dials nothing. Server takes https URLs only and
+// follows redirects to https only.
 type Server struct {
 	Client  *http.Client
 	mu      sync.Mutex
@@ -176,7 +177,7 @@ func (s *Server) open(method, raw string, header http.Header, body []byte, lengt
 	f.start = func(body []byte) {
 		request, _ := http.NewRequestWithContext(ctx, cmp.Or(method, http.MethodGet), u.String(), bytes.NewReader(body))
 		request.Header = header.Clone()
-		f.run(s.Client, request)
+		f.run(httpsOnly(s.Client), request)
 	}
 	f.idle = time.AfterFunc(idle, func() { s.end(id) })
 	s.fetches[id] = f
@@ -204,6 +205,24 @@ func (f *fetch) write(offset int64, data []byte) error {
 		f.start, f.body = nil, nil
 	}
 	return nil
+}
+
+// httpsOnly is client following redirects to https only: one to http would send the body and the
+// credentials again in the clear.
+func httpsOnly(client *http.Client) *http.Client {
+	only := *client
+	only.CheckRedirect = func(request *http.Request, via []*http.Request) error {
+		switch {
+		case request.URL.Scheme != "https":
+			return errors.New("relay: a redirect leaves https")
+		case client.CheckRedirect != nil:
+			return client.CheckRedirect(request, via)
+		case len(via) >= 10:
+			return errors.New("relay: stopped after 10 redirects")
+		}
+		return nil
+	}
+	return &only
 }
 
 func (f *fetch) run(client *http.Client, request *http.Request) {

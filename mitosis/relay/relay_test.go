@@ -81,3 +81,26 @@ func TestTransportStreamsThroughAGrantingDevice(t *testing.T) {
 		t.Fatalf("plain http relayed: %v", err)
 	}
 }
+
+// A redirect off https is not followed: the body and its credentials would go out in the clear.
+func TestServerFollowsNoRedirectOffHTTPS(t *testing.T) {
+	var sent []string
+	server := &Server{Client: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		sent = append(sent, r.URL.String())
+		return &http.Response{StatusCode: http.StatusTemporaryRedirect, Header: http.Header{"Location": {"http://api.example/v1"}}, Body: http.NoBody}, nil
+	})}}
+	transport := &Transport{
+		Devices: func(context.Context) []string { return []string{"laptop"} },
+		Call: func(ctx context.Context, _, method string, params, result any) error {
+			raw, err := server.Handle(ctx, method, mitosis.JSON(params))
+			if err == nil && result != nil {
+				err = json.Unmarshal(raw, result)
+			}
+			return err
+		},
+	}
+	request, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://api.example/v1", strings.NewReader("secret"))
+	if _, err := transport.RoundTrip(request); err == nil || !strings.Contains(err.Error(), "leaves https") || len(sent) != 1 {
+		t.Fatalf("relayed %v: %v", sent, err)
+	}
+}
