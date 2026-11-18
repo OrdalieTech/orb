@@ -24,7 +24,9 @@ vet_packages() {
 
 for target in $native_targets; do
 	echo "portability: $target"
-	GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 go build ./...
+	# vet compiles or type-checks every package for the target, so linking the shipped binary is
+	# all a build adds: the examples' and generators' links would cost 25 s of CPU per target.
+	GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 go build -o /dev/null ./cmd/orb
 	GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 go vet $(GOOS=${target%/*} GOARCH=${target#*/} vet_packages)
 done
 
@@ -83,5 +85,9 @@ suites=$(go list $wasm_suites | grep -v -x -F "$wasm_suite_skip")
 echo "portability: js/wasm suites (Node)"
 GOOS=js GOARCH=wasm CGO_ENABLED=0 go test -count=1 -exec="$wasm_exec/go_js_wasm_exec" $suites
 echo "portability: wasip1/wasm suites (wazero)"
-# Go's WASI wrapper caches Wazero under TMPDIR; the bundle's EXIT trap removes it.
-TMPDIR="$bundle" GOWASIRUNTIME=wazero GOOS=wasip1 GOARCH=wasm CGO_ENABLED=0 go test -count=1 -exec="$wasm_exec/go_wasip1_wasm_exec" $suites
+# Wazero's compiled modules persist across runs, so unchanged test binaries skip that compilation
+# (75 s -> 23 s); the cache is reset past 3 GiB, as each change adds some. The wrapper's own
+# -cachedir (under TMPDIR) comes first, so this one wins.
+wazero_cache=$PWD/.tools/wazero-cache
+if [ -d "$wazero_cache" ] && [ "$(du -sm "$wazero_cache" | cut -f1)" -gt 3072 ]; then rm -rf "$wazero_cache"; fi
+GOWASIRUNTIMEARGS="-cachedir $wazero_cache" GOWASIRUNTIME=wazero GOOS=wasip1 GOARCH=wasm CGO_ENABLED=0 go test -count=1 -exec="$wasm_exec/go_wasip1_wasm_exec" $suites

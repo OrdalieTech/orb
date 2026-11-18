@@ -11,16 +11,23 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"runtime"
 	"runtime/debug"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"syscall/js"
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/platforms/worker"
 	"github.com/OrdalieTech/orb/platforms/worker/peer"
@@ -87,6 +94,7 @@ func open(object js.Value) js.Value {
 		api.Set(name, funcs[len(funcs)-1])
 	}
 	var stopped, disposed atomic.Bool
+	var opened atomic.Pointer[worker.Instance]
 	set("command", func(_ js.Value, args []js.Value) any {
 		if stopped.Load() || disposed.Load() {
 			return "the object's Orb has stopped"
@@ -100,6 +108,51 @@ func open(object js.Value) js.Value {
 		default:
 			return "command queue is full"
 		}
+	})
+	// plugins resolves to which of the plugins an object can run are on, as JSON; given a name and a
+	// state, it sets that one first, for the sessions started after.
+	set("plugins", func(_ js.Value, args []js.Value) any {
+		return promise(func() (any, error) {
+			instance := opened.Load()
+			if instance == nil {
+				return nil, errors.New("the object's Orb is not open")
+			}
+			settings, err := instance.Settings()
+			if err != nil {
+				return nil, err
+			}
+			names := portable(settings)
+			if len(args) == 2 {
+				if _, ok := names[args[0].String()]; !ok {
+					return nil, errors.New("no such plugin here")
+				}
+				settings.SetPluginEnabled(args[0].String(), args[1].Bool())
+				if errs := settings.DrainErrors(); len(errs) > 0 {
+					return nil, errs[0].Err
+				}
+			}
+			on, state := settings.GetPlugins(), map[string]bool{}
+			for name := range names {
+				state[name] = on[name]
+			}
+			raw, err := json.Marshal(state)
+			return string(raw), err
+		})
+	})
+	// input resolves to the question the agent waits on, as JSON (null when none), with what its
+	// controller draws (the questions plugin's questions); given its id and an answer, it replies.
+	set("input", func(_ js.Value, args []js.Value) any {
+		return promise(func() (any, error) {
+			instance := opened.Load()
+			if instance == nil {
+				return nil, errors.New("the object's Orb is not open")
+			}
+			if len(args) == 2 {
+				return "null", instance.Session().ReplyInput(args[0].String(), args[1].String())
+			}
+			raw, err := json.Marshal(instance.Session().PendingInput())
+			return string(raw), err
+		})
 	})
 	set("stats", func(js.Value, []js.Value) any {
 		var memory runtime.MemStats
@@ -121,20 +174,18 @@ func open(object js.Value) js.Value {
 		mitosis.name = name.String()
 	}
 	mitosis.register(set)
+	if mitosis.dial { // a tab's model calls the browser refuses go through a device of its group
+		http.DefaultTransport = peer.Relay(worker.FetchTransport(), mitosis.open)
+	}
 	return promise(func() (any, error) {
 		ctx := context.Background()
 		instance, err := worker.Open(ctx, worker.Options{
 			KV: worker.NewDurableKV(object.Get("storage")), Env: lookup,
 			Settings: document("ORB_SETTINGS"), Models: document("ORB_MODELS"),
-			Tools: peer.AgentCalls(mitosis.open),
+			Tools: tools(peer.AgentCalls(mitosis.open), object.Get("run")),
 			Extensions: func(settings *config.SettingsManager, store host.Store) map[string]extensions.Factory {
-				// The bundled plugins an object runs, as its settings enable them: those that need no
-				// processes, files of their own or terminal (docs/plugins.md, where plugins run).
-				portable := map[string]extensions.Factory{
-					"titles": titles.Extension(), "tasks": tasks.Extension(tasks.Draw{}), "questions": questions.Extension(questions.Draw{}),
-					"memtree": memtree.Extension(memtree.OptionsFrom(settings.GetPluginSettings("memtree"))),
-					"memory":  memoryextension.Extension(peer.Memory(store)),
-				}
+				portable := portable(settings)
+				portable["memory"] = memoryextension.Extension(peer.Memory(store))
 				chosen := map[string]extensions.Factory{}
 				for name, on := range settings.GetPlugins() {
 					if on && portable[name] != nil {
@@ -150,6 +201,7 @@ func open(object js.Value) js.Value {
 			}
 			return nil, err
 		}
+		opened.Store(instance)
 		mitosis.mu.Lock()
 		mitosis.instance = instance
 		mitosis.mu.Unlock()
@@ -224,5 +276,105 @@ func (writer *frameWriter) Write(data []byte) (int, error) {
 		}
 		writer.emitFrame(writer.partial[:end+1])
 		writer.partial = writer.partial[end+1:]
+	}
+}
+
+// portable is the bundled plugins an object runs, as its settings enable them: those that need no
+// processes, files of their own or terminal (docs/plugins.md, where plugins run). Memory, over the
+// object's store, is wired where the store is known; its name is here so it can be listed and set.
+func portable(settings *config.SettingsManager) map[string]extensions.Factory {
+	return map[string]extensions.Factory{
+		"titles": titles.Extension(), "tasks": tasks.Extension(tasks.Draw{}), "questions": questions.Extension(questions.Draw{}),
+		"memtree": memtree.Extension(memtree.OptionsFrom(settings.GetPluginSettings("memtree"))),
+		"memory":  nil,
+	}
+}
+
+// tools adds code mode to calls where the host runs code: run(code, names, call) resolves to the
+// run as JSON, {out, value, error}, as a browser tab's sandboxed worker answers it
+// (platforms/browser/web). The code reaches the session's other tools, named in names, through
+// call(name, args), which runs one as a nested call and resolves to {text, failed}.
+func tools(calls worker.ToolsFunc, run js.Value) worker.ToolsFunc {
+	if run.Type() != js.TypeFunction {
+		return calls
+	}
+	code := extensions.ToolDefinition{
+		Name: "js", Label: "js", PromptSnippet: "Run JavaScript in a sandboxed worker",
+		Description: "Run JavaScript in a sandboxed worker of this browser tab, for computing, transforming data, trying code, or calling several tools in one go. " +
+			"The code is the body of an async function: return a value, await promises, console.log to print. " +
+			"`await tools.<name>(args)` calls your other tools with the arguments you would give them and resolves to their text output (a failed call throws). " +
+			"It has no DOM and no access to the page or its storage; fetch obeys the browser's CORS rules. A run stops after 2 min.",
+		Parameters: ai.JSONSchema(`{"type":"object","properties":{"code":{"type":"string","description":"The body of an async function."}},"required":["code"]}`),
+		Execute: func(ctx context.Context, _ string, args any, _ engine.AgentToolUpdateCallback, session extensions.Context) (engine.AgentToolResult, error) {
+			var input struct {
+				Code string `json:"code"`
+			}
+			raw, _ := json.Marshal(args)
+			if err := json.Unmarshal(raw, &input); err != nil || strings.TrimSpace(input.Code) == "" {
+				return engine.AgentToolResult{}, errors.New("code must not be empty")
+			}
+			nested, _ := session.(extensions.ToolContext)
+			names := []string{}
+			if nested != nil {
+				for _, tool := range nested.Tools() {
+					if tool.Name != "js" {
+						names = append(names, tool.Name)
+					}
+				}
+			}
+			call := js.FuncOf(func(_ js.Value, args []js.Value) any {
+				name, raw := args[0].String(), args[1].String()
+				return promise(func() (any, error) {
+					var params any
+					if !slices.Contains(names, name) {
+						return nil, fmt.Errorf("no tool %q here", name)
+					}
+					if err := json.Unmarshal([]byte(raw), &params); err != nil {
+						return nil, err
+					}
+					outcome := nested.ExecuteTool(ctx, name, params, nil)
+					var text []string
+					for _, part := range outcome.Result.Content {
+						if t, ok := part.(*ai.TextContent); ok {
+							text = append(text, t.Text)
+						}
+					}
+					answer, err := json.Marshal(map[string]any{"text": strings.Join(text, "\n"), "failed": outcome.IsError})
+					return string(answer), err
+				})
+			})
+			defer call.Release()
+			listed, _ := json.Marshal(names)
+			answer, err := worker.Await(run.Invoke(input.Code, string(listed), call))
+			if err != nil {
+				return engine.AgentToolResult{}, err
+			}
+			var result struct {
+				Out   []string `json:"out"`
+				Value *string  `json:"value"`
+				Error string   `json:"error"`
+			}
+			if err := json.Unmarshal([]byte(answer.String()), &result); err != nil {
+				return engine.AgentToolResult{}, err
+			}
+			lines := result.Out
+			if result.Value != nil {
+				lines = append(lines, "→ "+*result.Value)
+			}
+			if result.Error != "" {
+				lines = append(lines, result.Error)
+			}
+			text := strings.Join(lines, "\n")
+			if text == "" {
+				text = "(no output)"
+			}
+			if len(text) > 50_000 {
+				text = text[:50_000] + "\n… (cut at 50 KB)"
+			}
+			return engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: text}}, IsError: result.Error != ""}, nil
+		},
+	}
+	return func(settings *config.SettingsManager) []extensions.ToolDefinition {
+		return append(calls(settings), code)
 	}
 }

@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net"
+	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -282,5 +286,48 @@ func TestPeerIdentitySurvivesRestart(t *testing.T) {
 	}
 	if _, err = again.Admin(ctx, "invite", nil, "https://not-a-stream"); err == nil {
 		t.Fatal("invite accepted a non-WebSocket locator")
+	}
+}
+
+type roundTrip func(*http.Request) (*http.Response, error)
+
+func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// An origin the browser refuses is relayed, at once and from then on; a token refresh's form
+// POST makes the browser ask first, so the refusal sends nothing; other failures stay failures.
+func TestRelayTakesWhatTheBrowserRefuses(t *testing.T) {
+	var direct, relayed []string
+	f := &fallback{relayed: map[string]bool{},
+		direct: roundTrip(func(r *http.Request) (*http.Response, error) {
+			direct = append(direct, r.URL.Host+" "+r.Header.Get("X-Orb"))
+			if r.URL.Host == "offline.example" {
+				return nil, errors.New("net/http: fetch() failed: AbortError")
+			}
+			if r.URL.Host != "open.example" {
+				return nil, errors.New("net/http: fetch() failed: TypeError: Failed to fetch")
+			}
+			return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+		}),
+		relay: roundTrip(func(r *http.Request) (*http.Response, error) {
+			body, _ := io.ReadAll(r.Body)
+			relayed = append(relayed, r.URL.Host+" "+string(body))
+			return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+		}),
+	}
+	send := func(host, contentType string) error {
+		r, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://"+host+"/", strings.NewReader("grant"))
+		r.Header.Set("Content-Type", contentType)
+		_, err := f.RoundTrip(r)
+		return err
+	}
+	if send("open.example", "application/json") != nil || send("auth.example", "application/x-www-form-urlencoded") != nil ||
+		send("auth.example", "application/x-www-form-urlencoded") != nil || send("offline.example", "application/json") == nil {
+		t.Fatal("a request failed or a failure was relayed")
+	}
+	if want := []string{"open.example ", "auth.example 1", "offline.example "}; !slices.Equal(direct, want) {
+		t.Fatalf("direct %q, want %q", direct, want)
+	}
+	if want := []string{"auth.example grant", "auth.example grant"}; !slices.Equal(relayed, want) {
+		t.Fatalf("relayed %q, want %q", relayed, want)
 	}
 }

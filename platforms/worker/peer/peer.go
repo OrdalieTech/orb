@@ -6,14 +6,19 @@
 package peer
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
 	"net"
+	"net/http"
 	"path"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/OrdalieTech/orb/agent"
@@ -27,6 +32,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
+	"github.com/OrdalieTech/orb/mitosis/relay"
 	"github.com/OrdalieTech/orb/platforms/worker"
 	"github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/OrdalieTech/orb/plugins/memory/filestore"
@@ -204,6 +210,100 @@ func (p *Peer) remote(ctx context.Context, peer, method string, params, result a
 		return fmt.Errorf("peer %s has no open connection to this object: %w", peer, mitosis.Fail("unavailable"))
 	}
 	return channel.Call(ctx, method, params, result)
+}
+
+// Relay is a browser tab's HTTP: direct, except for an origin the browser refused (an API that
+// sends no CORS headers), whose requests go through an online device of the tab's group from then
+// on. open returns the tab's peer when a request needs it.
+func Relay(direct http.RoundTripper, open func(context.Context) (*Peer, error)) http.RoundTripper {
+	return &fallback{direct: direct, relayed: map[string]bool{}, relay: &relay.Transport{
+		Devices: func(ctx context.Context) []string {
+			p, err := open(ctx)
+			if err != nil {
+				return nil
+			}
+			raw, err := p.mitosis.Admin(ctx, "status", mitosis.JSON(struct{}{}))
+			var status struct {
+				Peers  []string          `json:"peers"`
+				States map[string]string `json:"peer_states"`
+			}
+			if err != nil || json.Unmarshal(raw, &status) != nil {
+				return nil
+			}
+			return slices.DeleteFunc(status.Peers, func(peer string) bool { return status.States[peer] != "connected" })
+		},
+		Call: func(ctx context.Context, device, method string, params, result any) error {
+			p, err := open(ctx)
+			if err != nil {
+				return err
+			}
+			return p.remote(ctx, device, method, params, result)
+		},
+	}}
+}
+
+type fallback struct {
+	direct, relay http.RoundTripper
+	mu            sync.Mutex
+	relayed       map[string]bool // origins the browser refused
+}
+
+func (f *fallback) RoundTrip(request *http.Request) (*http.Response, error) {
+	origin := request.URL.Scheme + "://" + request.URL.Host
+	f.mu.Lock()
+	relayed := f.relayed[origin]
+	f.mu.Unlock()
+	if relayed {
+		return f.relay.RoundTrip(request)
+	}
+	var body []byte
+	if request.Body != nil {
+		var err error
+		body, err = io.ReadAll(request.Body)
+		_ = request.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	again := func() *http.Request {
+		r := request.Clone(request.Context())
+		if request.Body != nil {
+			r.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		return r
+	}
+	direct := again()
+	// A POST the browser sends without asking first (a form, as a token refresh is) reaches the
+	// server even when the browser then hides the answer, which would spend a refresh token. One
+	// more header makes the browser ask first, so a refusal sends nothing.
+	if request.Method == http.MethodPost && !preflighted(request.Header) {
+		direct.Header.Set("X-Orb", "1")
+	}
+	response, err := f.direct.RoundTrip(direct)
+	if err == nil || request.Context().Err() != nil || !strings.Contains(err.Error(), "fetch() failed: TypeError") {
+		return response, err
+	}
+	f.mu.Lock()
+	f.relayed[origin] = true
+	f.mu.Unlock()
+	return f.relay.RoundTrip(again())
+}
+
+// preflighted reports whether a browser asks the server before sending a request with these
+// headers: one is outside the CORS-safelisted ones.
+func preflighted(header http.Header) bool {
+	for name, values := range header {
+		switch name {
+		case "Accept", "Accept-Language", "Content-Language":
+			continue
+		case "Content-Type":
+			if t, _, _ := mime.ParseMediaType(strings.Join(values, ",")); t == "application/x-www-form-urlencoded" || t == "multipart/form-data" || t == "text/plain" {
+				continue
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // FullGrant is the invitation grant `orb mitosis pair invite` proposes: full

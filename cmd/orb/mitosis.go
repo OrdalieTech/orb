@@ -46,11 +46,13 @@ func runMitosisCommand(ctx context.Context, args []string, streams cliStreams) i
 		}
 	}
 	args = filtered
-	if len(args) == 0 || len(args) == 1 && args[0] == "--yes" {
-		return runMitosisPair(ctx, profile, len(args) == 1, streams)
+	pair := slices.DeleteFunc(slices.Clone(args), func(a string) bool { return a == "--yes" || a == "--browser" })
+	if len(pair) == 0 && len(args) <= 2 {
+		return runMitosisPair(ctx, profile, slices.Contains(args, "--yes"), slices.Contains(args, "--browser"), streams)
 	}
 	if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
 		_, _ = fmt.Fprintln(streams.Stdout, `orb mitosis [--yes]   (show a code; the machine that joins with it, once you confirm its fingerprint, gets this Orb's conversations, logins and memory; --yes takes the first that claims it, for agents)
+orb mitosis --browser [--yes]   (the same for a browser tab, at the link it opens; this Mitosis listens for the page from now on)
 orb mitosis join <code>   (join the Orb that showed the code)
 orb mitosis ssh <user@host> [--remote-profile personal] [--remote-orb orb]   (the same for a server, over SSH; installs Orb there)
 orb mitosis status|stop|start|block <peer-id>|service install|remove   [--profile personal]

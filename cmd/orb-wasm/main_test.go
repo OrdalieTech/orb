@@ -65,10 +65,3 @@ func TestBrowserWasmLifecycle(t *testing.T) {
 		t.Fatalf("Wasm lifecycle: %v\n%s", err, output)
 	}
 }
-
-func TestBrowserMitosisController(t *testing.T) {
-	run := exec.CommandContext(t.Context(), "node", "testdata/mitosis-ui.mjs")
-	if output, err := run.CombinedOutput(); err != nil {
-		t.Fatalf("browser controller: %v\n%s", err, output)
-	}
-}

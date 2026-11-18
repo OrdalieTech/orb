@@ -5,6 +5,14 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Memory's journal no longer grows forever: every remember, replace and forget appended a line, so churn grew the file while what it held stayed under the tools' limits. Past 256 KiB, once it is four times what is live, a write rewrites it to the live items, in the file store and in the document a Worker or browser tab keeps.
+- The browser page takes the desktop and Android apps' look and parts: their paper and ink in light and dark, Ubuntu Sans Mono, the tab bar, the prompt box with its model deck, inline tool lines, Settings (General, Providers, Plugins, Mitosis), and their Evangelion moments: the NEW SESSION title card, the context gauge, and the red interrupt in warning stripes where the questions plugin asks, one question at a time, each choice on its key. Pairing is the code `orb mitosis` shows and the fingerprint, and no longer stalls when the device admits the tab late. Code mode gives the tab's agent a `js` tool, run in a sandboxed worker that can't reach the page or its credentials, whose code calls the agent's other tools (`await tools.remember({…})`). The bring-your-own-key agent, the remote-control panel and the debug panel are gone.
+
+- A browser tab uses every account its devices share: the requests the browser refuses, to APIs that send no CORS headers (ChatGPT, opencode, xAI's sign-in), go through an online device of the tab's group, to public HTTPS addresses only. `orb mitosis --browser` opens the page, now on GitHub Pages at https://ordalietech.github.io/orb/ with each release, at a link that pairs the tab by itself (the code rides after `#`, which never leaves the browser), and turns on, for good, the loopback listener the page reaches.
+
+- An Orb's Mitosis stream no longer marshals the whole reply at every delta of it: a 330 KB reply in 41,000 deltas made 13 GB of JSON for its followers (134 s in a browser tab, 4 s now). The message streaming in goes out at most every 50 ms; its end carries it whole.
+- The browser tab stays responsive under load: its Orb runs in a Web Worker, the reply streaming in is drawn once a frame and only its end, a long conversation reuses what it drew and lays out only what is on screen, a tool's input and output are drawn when opened (64 KiB at most), Stop stops within 0.1 s, and a reader scrolled up stays put.
+
 - `orb mitosis join` starts Mitosis before it reads a short code, so a daemon that can't start no longer uses up the code.
 
 ## [0.24.0] - 2026-11-17

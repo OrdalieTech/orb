@@ -1,401 +1,588 @@
-import { RemoteMitosis } from "./mitosis.js";
-import { indexedStorage, openPeer } from "./peer.js";
+import { spawnPeer } from "./peer.js";
 const $ = id => document.getElementById(id);
-let worker, loaded = false, running = false, connected = false, pending = null;
-let state = { messages: [], files: {} };
-let events = [], count = 0;
-const remote = new RemoteMitosis(message => worker.postMessage(message));
-let selected = "", remoteReady = false, remoteBusy = false, receipt = null, selection = 0;
-let localDraft = "";
-let renderedMessages = null, renderedCount = 0;
-// tab: this tab as one of the user's devices (peer.js); its agent then runs there, not in worker.js.
-let tab = null, streamed = "";
+// notice: the one error line, moved to the screen it concerns, so pages that redraw keep hold of it.
+const notice = document.getElementById("error");
+// tab: this tab's own Orb (peer.wasm), one of the user's devices; word: what it does now; where: its model.
+let tab = null, me = "", running = false, switching = false, stopping = false, messages = [], streamed = "", word = "", where = "";
+// tabs: the conversations the bar shows, by session file, with their titles; current: the one shown.
+let tabs = JSON.parse(localStorage.getItem("orb.tab.tabs") || "[]"), current = "";
 
 function showError(message) {
-  $("error").textContent = message || "";
-  $("error").hidden = !message;
-  if (message) $("status").textContent = "Needs attention";
+  notice.textContent = message || "";
+  notice.hidden = !message;
+}
+// show picks the one screen: the invitation, its approval, the conversation or Settings; an error
+// reads at the end of what it concerns, as the apps note one.
+function show(screen) {
+  const opening = screen === "chat" && $("chat").hidden;
+  $({ chat: "transcript", settings: "page" }[screen] || screen).append(notice);
+  $("pair").hidden = screen === "chat" || screen === "settings";
+  $("chat").hidden = screen !== "chat";
+  $("settings").hidden = screen !== "settings";
+  $("invite").hidden = screen !== "invite";
+  $("approve").hidden = screen !== "approve";
+  // A hidden transcript has no height to scroll: it opens at its end once shown.
+  if (opening) $("transcript").scrollTop = $("transcript").scrollHeight;
 }
 function controls() {
-  $("mitosis-connect").disabled = !loaded || remoteBusy;
-  $("mitosis-join").disabled = remoteBusy || !!localStorage.getItem("orb.tab.owner");
-  $("mitosis-disconnect").disabled = !remote.connection;
-  $("location").disabled = running || remoteBusy;
-  $("mitosis-agent").disabled = running;
-  $("reset").disabled = selected ? !remoteReady || remoteBusy : false;
-  $("send").disabled = !loaded || running || (selected && (!remoteReady || remoteBusy || ((!!receipt || !!remote.view?.info.target.execution_id) && !remote.view?.info.input)));
-  $("prompt").disabled = !loaded;
-  $("configuration").disabled = !loaded || running;
-  $("cancel").hidden = selected ? !remoteReady || !remote.view?.info.target.execution_id : !running;
-  $("export").disabled = running || !(selected ? remote.view?.messages.length : state.messages.length);
+  $("status").textContent = word || where;
+  $("send").ariaLabel = running ? "Stop" : "Send";
+  $("send").classList.toggle("stop", running);
+  $("send").disabled = switching || !running && !$("prompt").value.trim();
+  $("new").disabled = $("model").disabled = running || switching;
+  renderTabs();
+}
+// The desktop's tab bar: a chip per conversation, its square pulsing while it works, its × on it
+// when shown or under the pointer; one conversation runs at a time, so the others wait for it.
+function renderTabs() {
+  $("tabs").replaceChildren(...tabs.map(t => {
+    const close = node("b", "×"), chip = node("button", node("i"), node("span", t.title || "new session"), close);
+    chip.type = "button";
+    chip.className = t.file === current ? (running ? "on live" : "on") : "";
+    chip.disabled = (running || switching) && t.file !== current;
+    chip.onclick = () => t.file === current || running || switching || go("switch_session", { sessionPath: t.file });
+    close.onclick = event => {
+      event.stopPropagation();
+      if (running && t.file === current) return;
+      const at = tabs.indexOf(t);
+      tabs.splice(at, 1);
+      if (t.file !== current) return save();
+      if (tabs.length) go("switch_session", { sessionPath: tabs[Math.min(at, tabs.length - 1)].file });
+      else go("new_session");
+    };
+    return chip;
+  }));
+}
+function save() {
+  localStorage.setItem("orb.tab.tabs", JSON.stringify(tabs));
+  renderTabs();
+}
+// go changes the conversation; no prompt goes in until the change settles, which would end it.
+function go(command, params) {
+  return transition(() => tab.rpc(command, params).then(settle)).catch(error => showError(error.message));
+}
+async function transition(change) {
+  switching = true; controls();
+  try { await change(); } finally { switching = false; controls(); }
 }
 function text(content) {
   return typeof content === "string" ? content : (content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
 }
-function renderMessages(messages, follow = true) {
-  if (messages === renderedMessages && messages.length === renderedCount) return;
-  renderedMessages = messages; renderedCount = messages.length;
-  const transcript = $("transcript"), scroll = transcript.scrollTop;
-  const following = transcript.scrollHeight - scroll - transcript.clientHeight < 80;
-  const rows = messages.filter(m => ["user", "assistant"].includes(m.role) && text(m.content)).map(message => {
-    const row = document.createElement("article");
-    row.className = message.role;
-    const label = document.createElement("strong");
-    label.textContent = message.role === "user" ? "You" : "Orb";
-    const body = document.createElement("pre");
-    body.textContent = text(message.content);
-    row.append(label, body);
-    return row;
+function node(tag, ...children) {
+  const element = document.createElement(tag);
+  element.append(...children);
+  return element;
+}
+// markdown draws what the apps draw of a reply (headings, lists, tables, code blocks, inline
+// code, bold, italic, links) as elements, never as HTML.
+function markdown(source) {
+  const blocks = [];
+  let list = null, paragraph = null;
+  const lines = source.split("\n"), cells = line => line.trim().replace(/^\||\|$/g, "").split("|").map(cell => node("td", ...inline(cell.trim())));
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i], item = /^\s*([-*+]|\d+[.)])\s+(.*)/.exec(line), heading = /^#{1,6}\s+(.*)/.exec(line), fence = line.startsWith("```");
+    const table = line.trim().startsWith("|") && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1] || "") && lines[i + 1].includes("-");
+    // A list goes on across blank lines, as models write numbered steps apart.
+    if (!item && line.trim()) list = null;
+    if (item || heading || fence || table || !line.trim()) paragraph = null;
+    if (fence) {
+      const code = [];
+      while (++i < lines.length && !lines[i].startsWith("```")) code.push(lines[i]);
+      blocks.push(node("pre", code.join("\n")));
+    } else if (table) {
+      const rows = [node("tr", ...cells(line).map(cell => node("th", ...cell.childNodes)))];
+      for (i += 2; i < lines.length && lines[i].trim().startsWith("|"); i++) rows.push(node("tr", ...cells(lines[i])));
+      i--;
+      blocks.push(node("div", node("table", ...rows)));
+    } else if (item) {
+      const tag = /\d/.test(item[1]) ? "OL" : "UL";
+      if (list?.tagName !== tag) blocks.push(list = Object.assign(node(tag), tag === "OL" ? { start: parseInt(item[1]) } : {}));
+      list.append(node("li", ...inline(item[2])));
+    } else if (heading) blocks.push(node("h3", ...inline(heading[1])));
+    else if (paragraph) paragraph.append("\n", ...inline(line));
+    else if (line.trim()) blocks.push(paragraph = node("p", ...inline(line)));
+  }
+  return blocks;
+}
+function inline(text) {
+  return text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*\s][^*]*\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/).map((part, i) => {
+    if (i % 2 === 0) return part;
+    if (part[0] === "[") {
+      const [, label, href] = /^\[(.+)\]\((.+)\)$/.exec(part);
+      return Object.assign(node("a", label), { href, target: "_blank", rel: "noreferrer" });
+    }
+    return part[0] === "`" ? node("code", part.slice(1, -1)) : part[1] === "*" ? node("strong", part.slice(2, -2)) : node("em", part.slice(1, -1));
   });
-  $("messages").replaceChildren(...rows);
-  if (!rows.length) { const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = "What would you like to try?"; $("messages").append(empty); }
-  transcript.scrollTop = follow || following ? transcript.scrollHeight : scroll;
 }
-function render(snapshot, local = true) {
-  const display = { messages: snapshot.messages || [], files: snapshot.files || {} };
-  if (local) state = display;
-  renderMessages(display.messages, local);
-  $("files").replaceChildren(...Object.entries(display.files).sort().map(([path, content]) => {
-    const row = document.createElement("details"), label = document.createElement("summary"), body = document.createElement("pre");
-    label.textContent = path;
-    body.textContent = content;
-    row.append(label, body);
-    return row;
+// What the person said sits at right on a soft ground; Orb just speaks, full width, its actions
+// inline: a line per tool call (what ran, on what; failed in the rupture), which opens on what it
+// was given and what came back.
+// A message is drawn once: a conversation's later turns reuse what its earlier ones drew, so a
+// long one costs only its new messages, and the browser lays out only what is on screen (CSS).
+let drawn = new Map();
+function renderMessages(list) {
+  const transcript = $("transcript"), results = new Map(list.filter(m => m.role === "toolResult").map(m => [m.toolCallId, m])), next = new Map();
+  $("messages").replaceChildren(...list.flatMap((message, i) => {
+    const calls = Array.isArray(message.content) ? message.content.filter(b => b.type === "toolCall") : [];
+    const key = `${i} ${message.role} ${message.timestamp} ${calls.filter(c => results.has(c.id)).length}`;
+    const nodes = drawn.get(key) ?? draw(message, results);
+    next.set(key, nodes);
+    return nodes;
   }));
-  if (!Object.keys(display.files).length) $("files").textContent = "No files yet.";
-  $("stream").hidden = true;
+  drawn = next;
+  // The messages coming into view take their size as they are drawn: the end is held for two frames.
+  const end = () => (transcript.scrollTop = transcript.scrollHeight);
+  pinned = true;
+  end();
+  requestAnimationFrame(() => { end(); requestAnimationFrame(end); });
 }
-function clearEvents() {
-  events = []; count = 0;
-  $("count").textContent = "0 events";
-  $("events").textContent = "No events yet.";
+function draw(message, results) {
+  if (message.role === "user") return text(message.content) ? [Object.assign(node("p", text(message.content)), { className: "user" })] : [];
+  if (message.role !== "assistant") return [];
+  const blocks = (typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content || []).flatMap(block =>
+    block.type === "text" ? markdown(block.text) : block.type === "toolCall" ? [action(block, results.get(block.id))] : []);
+  return blocks.length ? [Object.assign(node("div", ...blocks), { className: "assistant" })] : [];
+}
+// What a tool was given and gave back is drawn when its line opens, and past 64 KiB says how much
+// more there is: a call can carry megabytes the conversation need not hold on screen.
+function action(call, result) {
+  const args = call.arguments || {}, given = String(args.code ?? args.command ?? args.path ?? JSON.stringify(args));
+  const line = node("summary", node("b", call.name), node("span", given.slice(0, 200).split("\n")[0]), ...(result?.isError ? [node("em", "failed")] : []));
+  const clip = text => text.length > 65536 ? `${text.slice(0, 65536)}\n… ${Math.round((text.length - 65536) / 1024)} KiB more` : text;
+  const details = Object.assign(node("details", line), { className: "action" });
+  details.ontoggle = () => details.open && details.childElementCount === 1 && details.append(node("pre", clip(given)), ...(result ? [node("pre", clip(text(result.content)))] : []));
+  return details;
 }
 function idle() {
-  running = false;
-  $("status").textContent = "Ready";
+  cancelAnimationFrame(painting); painting = 0;
+  running = stopping = false; word = "";
+  $("stream").hidden = true;
+  for (const question of document.querySelectorAll(".interrupt")) question.remove();
   controls();
 }
-function prompt(value) {
-  pending = null;
-  $("prompt").value = "";
-  $("settings-panel").open = false;
-  renderMessages([...state.messages, { role: "user", content: value }]);
-  $("stream").hidden = true;
-  $("status").textContent = "Waiting for reply…";
-  worker.postMessage({ type: "prompt", text: value, agentCalls: $("mitosis-agent").checked });
-}
-function boot() {
-  remote.reset(); selected = ""; remoteReady = false; selection++; receipt = null;
-  $("location").value = ""; $("remote-controls").hidden = true; $("mitosis-status").textContent = "Disconnected";
-  worker?.terminate();
-  loaded = running = connected = false; pending = null;
-  $("status").textContent = "Loading…";
-  controls(); showError(""); render({}); clearEvents();
-  const current = worker = new Worker("worker.js");
-  current.onerror = event => { loaded = running = false; controls(); showError(`${event.message}. Click New chat to restart.`); };
-  current.onmessage = ({ data }) => {
-    if (worker !== current) return;
-    const message = JSON.parse(data);
-    if (message.type.startsWith("mitosis.")) {
-      remote.receive(message);
-      if (!remote.connection && message.type === "mitosis.closed") {
-        remoteReady = false; $("mitosis-status").textContent = "Disconnected"; controls();
-        if (selected) showError("Mitosis disconnected. Reconnect to continue; remote execution is unaffected.");
-      }
-      return;
-    }
-    switch (message.type) {
-      case "boot": loaded = true; idle(); break;
-      case "ready":
-        connected = true;
-        render(message); clearEvents();
-        if (pending !== null) prompt(pending);
-        else idle();
-        break;
-      case "event": onEvent(message.event); break;
-      case "settled": render(message); idle(); showError(message.error); $("prompt").focus(); break;
-      case "error":
-        if (pending !== null) { $("settings-panel").open = true; pending = null; }
-        idle(); showError(message.error); break;
-      case "fatal": loaded = running = false; controls(); showError(`${message.error}. Click New chat to restart.`); break;
-    }
-  };
-}
-// RPC frames carry message_update as deltas (agent/rpc), the worker as whole messages.
+// RPC frames carry message_update as deltas (agent/rpc).
 function onEvent(event) {
-  count++; events.push(event); if (events.length > 100) events.shift();
-  $("count").textContent = `${count} events`;
-  if ($("event-panel").open) renderEvents();
-  if (event.type === "tool_execution_start") $("status").textContent = `Using ${event.toolName}…`;
-  if (event.type === "message_start") streamed = "";
   if (event.type === "message_update") {
-    const transcript = $("transcript");
-    const following = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 80;
+    if (stopping) return;
     const delta = event.assistantMessageEvent;
-    const reply = event.message ? text(event.message.content) : (streamed += delta?.type === "text_delta" ? delta.delta : "");
-    $("stream").textContent = reply;
-    $("stream").hidden = !reply;
-    if (following) transcript.scrollTop = transcript.scrollHeight;
-    if (reply) $("status").textContent = "Replying…";
+    if (event.message) { streamed = text(event.message.content); kept = 0; $("final").replaceChildren(); }
+    else if (delta?.type === "text_delta") streamed += delta.delta;
+    painting ||= requestAnimationFrame(drawStream);
+    return;
   }
+  if (event.type === "tool_execution_start") word = `using ${event.toolName}`;
+  if (event.type === "message_start") { streamed = ""; kept = 0; $("final").replaceChildren(); }
+  controls();
 }
-function config() {
-  return { api: $("provider").value, model: $("model").value.trim(), baseURL: $("endpoint").value.trim(), apiKey: $("key").value.trim() };
+// The reply streaming in is drawn at most once a frame, and only its end: what is above its last
+// blank line outside a code fence is final, drawn once and kept, so a long reply streams as fast
+// as a short one. The conversation draws it whole once it ends.
+let painting = 0, kept = 0, tailAt = 0, pinned = true;
+// The reply is followed while the reader stays at its end: scrolling up (wheel, touch, keys) lets
+// go, and coming back to the end takes hold again.
+$("transcript").addEventListener("wheel", event => { if (event.deltaY < 0) pinned = false; }, { passive: true });
+$("transcript").addEventListener("touchmove", () => (pinned = false), { passive: true });
+$("transcript").addEventListener("keydown", event => { if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pinned = false; });
+let lastTop = 0;
+$("transcript").addEventListener("scroll", ({ target: t }) => {
+  if (t.scrollTop > lastTop && t.scrollHeight - t.scrollTop - t.clientHeight < 4) pinned = true;
+  lastTop = t.scrollTop;
+}, { passive: true });
+function drawStream(whole) {
+  painting = 0;
+  const transcript = $("transcript");
+  let open = false, from = kept;
+  for (let at = streamed.indexOf("\n\n", from); at !== -1; at = streamed.indexOf("\n\n", from)) {
+    if ((streamed.slice(from, at).match(/^```/gm) || []).length % 2) open = !open;
+    from = at + 2;
+    if (!open) { $("final").append(...markdown(streamed.slice(kept, from))); kept = from; }
+  }
+  // A long block still coming in (a big table, a long code block) is drawn again 4 times a second.
+  const tail = streamed.slice(kept), now = performance.now();
+  if (whole === true || tail.length < 16384 || now - tailAt > 250) { $("tail").replaceChildren(...markdown(tail)); tailAt = now; }
+  else painting ||= requestAnimationFrame(drawStream);
+  $("stream").hidden = !streamed;
+  if (pinned) transcript.scrollTop = transcript.scrollHeight;
+  if (streamed && word !== "replying") { word = "replying"; controls(); }
 }
-function configure() {
-  connected = false;
-  const value = config();
-  $("model-label").textContent = value.model || "Configure a provider";
+// A question the agent waits on stops the world, as in the apps (platforms/desktop's interrupt,
+// Android's Interrupt, mitosis/view's walk): the red fills the page between warning stripes, the
+// word wipes in, and each choice has its key. The questions plugin's series goes one question at
+// a time and answers as one result, which the session checks.
+async function ask() {
+  const input = await tab.input().catch(() => null);
+  // One sinking away is done with: the next question rises over it.
+  if (!input || document.querySelector(".interrupt:not(.leaving)")) return;
+  const asked = input.presentation?.kind === "questions" ? input.presentation.data.questions : null, answers = [];
+  const owner = input.presentation?.kind === "approval" ? "permissions" : "questions";
+  const done = reply => { leave(); tab.input(input.id, reply).catch(error => showError(error.message)); };
+  const step = () => {
+    if (!asked) return { title: input.title, choices: input.choices || [], free: !input.choices?.length, answer: value => done(value ?? "") };
+    const q = asked[answers.length], n = asked.length;
+    return {
+      title: q.question, message: [q.header, n > 1 && `${answers.length + 1} / ${n}`].filter(Boolean).join("  "), choices: (q.options || []).map(o => o.label), free: true, multi: q.multi_select,
+      // A choice, a line, or with multi_select the choices ticked and a line.
+      answer: value => {
+        if (value === null) return done(JSON.stringify({ cancelled: true }));
+        const given = [value].flat(), labels = (q.options || []).map(o => o.label);
+        answers.push({ id: q.id, selected: given.filter(v => labels.includes(v)), ...(given.some(v => !labels.includes(v)) && { custom: given.filter(v => !labels.includes(v)).join("\n") }) });
+        answers.length < n ? interrupt(owner, input.id, step()) : done(JSON.stringify({ answers }));
+      },
+    };
+  };
+  interrupt(owner, input.id, step());
 }
-$("settings").oninput = configure;
-$("settings").onsubmit = event => event.preventDefault();
-$("provider").onchange = () => {
-  const api = $("provider").value;
-  $("endpoint").value = api === "openrouter" ? "https://openrouter.ai/api/v1" : api === "anthropic-messages" ? "https://api.anthropic.com" : "https://api.openai.com/v1";
-  $("model").value = api === "openrouter" ? "openai/gpt-5.6-luna" : "";
-  $("key").value = "";
-  $("hint").textContent = "Enter your model and API key, then send. Keys stay in this tab. The endpoint must allow browser requests (CORS). Changing settings starts a new conversation.";
-  configure();
-};
+// interrupt rises over the page, as Android's does; the next question of a series takes its place
+// in it, its word already there, its choices coming in one after the other. Keys answer once it
+// has been on screen a moment, so typing meant for the prompt cannot.
+function interrupt(owner, id, ask) {
+  const [word, caption] = { permissions: ["APPROVAL", "approval required"] }[owner] || ["QUESTION", "a question for you"];
+  const [first, ...rest] = ask.title.split("\n"), detail = [...rest, ask.message || ""].join("\n").trim();
+  const keyed = ask.choices.map((choice, i) => {
+    const own = /^([a-z]) (.+)/.exec(choice);
+    return [own?.[1] ?? ({ allow: "y", deny: "n" }[choice] || (i < 9 ? String(i + 1) : "")), own?.[2] ?? choice, choice];
+  });
+  let box = document.querySelector(".interrupt:not(.leaving)");
+  const again = box?.dataset.ask === id;
+  if (!again) {
+    box?.remove();
+    box = document.body.appendChild(Object.assign(node("div"), { className: "interrupt" }));
+    Object.assign(box.dataset, { ask: id, armed: Date.now() + 800 });
+  }
+  box.classList.toggle("again", again);
+  const field = Object.assign(node("input"), { placeholder: "type an answer", autocomplete: "off", enterKeyHint: "send" });
+  const answer = value => { removeEventListener("keydown", keys); ask.answer(value); };
+  // With several to choose, a choice ticks; send answers with what is ticked.
+  const ticked = new Set(), choose = (choice, row) => {
+    if (!ask.multi) return answer(choice);
+    ticked.has(choice) ? ticked.delete(choice) : ticked.add(choice);
+    row.classList.toggle("ticked", ticked.has(choice));
+  };
+  const keys = event => {
+    if (event.key === "Escape") return answer(null);
+    const hit = event.target !== field && Date.now() > box.dataset.armed && keyed.find(([key]) => key === event.key);
+    if (hit) { event.preventDefault(); choose(hit[2], box.querySelectorAll(".choice")[keyed.indexOf(hit)]); }
+  };
+  const send = () => ask.multi ? (ticked.size || field.value.trim()) && answer([...ticked, field.value.trim()].filter(Boolean)) : field.value.trim() && answer(field.value);
+  field.onkeydown = event => event.key === "Enter" && send();
+  box.replaceChildren(node("i"), node("div", node("div", node("span", owner), node("span", "waiting on you")), node("hr"),
+    Object.assign(node("h2", word), { className: word.length > 5 ? "stretch word squeezed" : "stretch word" }), Object.assign(node("p", caption), { className: "caption" }),
+    Object.assign(node("p", first), { className: "first" }), ...(detail ? [Object.assign(node("p", detail), { className: "detail" })] : []),
+    node("hr"), ...keyed.map(([key, text, choice], n) => Object.assign(node("button", node("b", key), node("span", text)), {
+      type: "button", className: n || ask.multi ? "choice" : "choice first", style: `--n: ${n}`, onclick: event => choose(choice, event.currentTarget) })),
+    ...(ask.free ? [node("div", field, button("send", send, "inverted"))] : []),
+    node("hr"), button(matchMedia("(hover: hover)").matches ? "esc  ·  dismiss" : "dismiss", () => answer(null))), node("i"));
+  addEventListener("keydown", keys);
+  // The line takes the keys only when there is nothing to choose: a choice's key answers.
+  if (ask.free && !keyed.length) field.focus();
+}
+// leave sinks the interrupt away, as Android's does.
+function leave() {
+  const box = document.querySelector(".interrupt:not(.leaving)");
+  box?.classList.add("leaving");
+  setTimeout(() => box?.remove(), 260);
+}
 $("prompt-form").onsubmit = event => {
   event.preventDefault();
-  if (!loaded || running) return;
+  if (!tab || switching) return;
+  // Stopped, the reply stops on screen at once, though what was already on its way still arrives.
+  if (running) { stopping = true; tab.rpc("abort").catch(error => showError(error.message)); return; }
   const value = $("prompt").value;
-  if (!value.trim() || new TextEncoder().encode(value).length > 16384) { showError("Enter a message of at most 16 KiB."); return; }
-  if (selected) {
-    const input = remote.view?.info.input;
-    const args = input ? { id: input.id, execution_id: remote.view.info.target.execution_id, value } : { text: value };
-    remoteCommand(input ? "input.reply" : "prompt", args).then(ok => { if (ok) $("prompt").value = ""; });
-    return;
-  }
-  if (tab) {
-    running = true; controls(); showError(""); pending = null;
-    $("prompt").value = "";
-    renderMessages([...state.messages, { role: "user", content: value }]);
-    $("status").textContent = "Waiting for reply…";
-    tab.rpc("prompt", { message: value }).catch(error => { idle(); showError(error.message); renderMessages(state.messages); });
-    return;
-  }
-  const settings = config();
-  if (!connected) {
-    for (const [id, message] of [["model", "Enter a model ID in Model settings."], ["key", "Enter an API key in Model settings. Your terminal login isn't available in the browser."], ["endpoint", "Enter an HTTP(S) API base URL."]]) {
-      if (!$(id).value.trim() || (id === "endpoint" && !/^https?:\/\//.test(settings.baseURL))) {
-        $("settings-panel").open = true; showError(message); $(id).focus(); return;
-      }
-    }
-  }
-  running = true; controls(); showError("");
-  if (!connected) { pending = value; $("status").textContent = "Starting…"; worker.postMessage({ type: "start", config: settings }); }
-  else prompt(value);
+  if (!value.trim()) return;
+  running = true; word = "waiting"; showError("");
+  const shown = tabs.find(t => t.file === current);
+  if (shown && !shown.title) shown.title = value.trim().split("\n")[0];
+  $("prompt").value = "";
+  controls();
+  renderMessages([...messages, { role: "user", content: value }]);
+  // A command a plugin handles (/tasks) runs no turn, so no agent_end comes to settle the page.
+  tab.rpc("prompt", { message: value }).then(answer => answer?.disposition === "handled" && settle(), error => { idle(); showError(error.message); renderMessages(messages); });
 };
+$("prompt").oninput = controls;
 $("prompt").onkeydown = event => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
-    if (!running) $("prompt-form").requestSubmit();
+    if (!running && !switching) $("prompt-form").requestSubmit();
   }
 };
-function renderEvents() { $("events").textContent = events.map(event => JSON.stringify(event)).join("\n"); }
-$("event-panel").addEventListener("toggle", renderEvents);
-$("cancel").onclick = () => { if (selected) { remoteCommand("cancel", { execution_id: remote.view?.info.target.execution_id }); return; } if (tab) tab.rpc("abort"); else worker.postMessage({ type: "cancel" }); $("status").textContent = "Stopping…"; };
-$("reset").onclick = () => selected ? remoteCommand("session.new") : tab ? tab.rpc("new_session").then(settle, error => showError(error.message)) : boot();
-$("export").onclick = () => {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(selected ? { messages: remote.view?.messages || [] } : state, null, 2)], { type: "application/json" }));
-  const link = document.createElement("a"); link.href = url; link.download = "orb-browser-debug.json"; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+$("new").onclick = () => go("new_session");
+$("menu").onclick = () => openPage("general");
+$("back").onclick = () => show("chat");
+for (const button of $("pages").querySelectorAll("[data-page]")) button.onclick = () => openPage(button.dataset.page);
+$("model").onclick = openModels;
+$("filter").oninput = renderModels;
+document.onkeydown = event => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "," && tab) { event.preventDefault(); openPage("general"); }
+  else if (event.key === "Escape" && !$("settings").hidden) show("chat");
 };
-function browserIdentity() {
-  const saved = localStorage.getItem("orb.mitosis.identity");
-  if (saved) return JSON.parse(saved);
-  const identity = { seed: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replaceAll("=", "") };
-  localStorage.setItem("orb.mitosis.identity", JSON.stringify(identity));
-  return identity;
-}
-async function refreshInstances() {
-  const items = await remote.conversations();
-  $("location").replaceChildren(new Option("Local · this browser", ""), ...items.map(i => new Option(i.title || i.cwd || i.session_id, i.session_id)));
-  if (selected && !items.some(i => i.session_id === selected)) { selectConversation(""); showError("Remote conversation is no longer available"); }
-  $("location").value = selected;
-  $("remote-controls").hidden = false;
-  $("mitosis-status").textContent = "Connected";
-  $("mitosis-notice").textContent = "Connected. Choose a remote conversation, or keep working locally.";
-}
-async function refreshSessions() {
-  const instance = selected, version = selection;
-  if (!instance || !remoteReady || !remote.view.info.methods.includes("session.list")) return;
-  try {
-    const items = await remote.sessions(instance);
-    if (version !== selection) return;
-    $("remote-sessions").replaceChildren(...items.map(i => new Option(i.name || i.session_id, i.session_id)));
-    $("remote-sessions").value = remote.view.info.target.session_id;
-  } catch (error) { if (version === selection) showError(error.message); }
-}
-function selectConversation(instance) {
-  if (!selected) localDraft = $("prompt").value;
-  if (instance) { $("settings-panel").open = false; $("mitosis-panel").open = false; }
-  selected = instance; selection++; receipt = null; remoteReady = false; remote.view = null;
-  $("location").value = instance;
-  $("remote-sessions-label").hidden = !instance;
-  $("prompt").value = instance ? "" : localDraft;
-  $("remote-question").hidden = true;
-  showError(""); clearEvents();
-  render(instance ? {} : state, false);
-  $("status").textContent = instance ? "Loading remote session…" : "Ready";
+// deck: what the model deck shows, as the desktop's: the models the tab's accounts give, by
+// provider, and the reasoning levels the one in use takes.
+let deck = { models: [], levels: [], state: {} };
+async function readDeck() {
+  const [{ models }, state, { levels }] = await Promise.all([tab.rpc("get_available_models"), tab.rpc("get_state"), tab.rpc("get_available_thinking_levels")]);
+  deck = { models, levels, state };
+  const at = levels.indexOf(state.thinkingLevel);
+  $("meter").replaceChildren(...levels.map((level, i) => Object.assign(node("i"), { className: i <= at && level !== "off" ? "lit" : "" })));
+  where = state.model && state.model.provider !== "unknown" ? state.model.id.split("/").at(-1) : "";
   controls();
 }
-async function remoteCommand(method, args = {}) {
-  if (!remoteReady || remoteBusy) return false;
-  const version = selection;
-  remoteBusy = true; controls(); showError("");
-  try {
-    const accepted = await remote.command(method, args);
-    if (version === selection) {
-      receipt = accepted; $("status").textContent = `Remote · ${accepted.status}`;
-      if (accepted.session_id && accepted.session_id !== selected) { // the conversation it left the Orb in
-        if (![...$("location").options].some(o => o.value === accepted.session_id)) $("location").add(new Option(accepted.session_id, accepted.session_id));
-        selected = accepted.session_id; selection++; remoteReady = false; remote.view = null; $("location").value = selected;
-      }
-    }
-    return true;
-  } catch (error) {
-    if (version === selection) showError(`${error.message}. The command was not retried automatically.`);
-    return false;
-  } finally { remoteBusy = false; controls(); }
+async function openModels() {
+  await readDeck();
+  $("filter").value = "";
+  renderModels();
+  $("models").showModal();
 }
-async function pollRemote() {
-  const instance = selected, version = selection;
-  try {
-    if (!instance || !remote.connection) return;
-    const previousSession = remote.view?.info.target.session_id;
-    const view = await remote.refresh(instance);
-    if (version !== selection) return;
-    const first = !remoteReady;
-    remoteReady = true; showError("");
-    render({ messages: view.messages }, false);
-    $("stream").textContent = text(view.partial?.content); $("stream").hidden = !$("stream").textContent;
-    $("remote-question").textContent = view.info.input ? JSON.stringify(view.info.input.presentation || view.info.input, null, 2) : "";
-    $("remote-question").hidden = !view.info.input;
-    $("status").textContent = view.info.input ? "Remote · reply to the pending question" : view.info.target.execution_id ? "Remote · running" : "Remote · ready";
-    if (receipt) {
-      const result = await remote.call("operations.get", { session_id: instance, operation_id: receipt.operation_id });
-      if (version !== selection) return;
-      if (["failed", "cancelled", "outcome_unknown"].includes(result.status)) showError(`Remote operation ${result.status}${result.error ? ": " + result.error : ""}`);
-      if (!["accepted", "running"].includes(result.status)) receipt = null;
-    }
-    if (first || previousSession !== view.info.target.session_id) await refreshSessions();
-  } catch (error) {
-    if (version === selection) { remoteReady = false; if (["unauthorized", "not_found"].includes(error.message)) { render({}, false); remote.view = null; } showError(error.message); }
-  } finally { controls(); setTimeout(pollRemote, 700); }
+function renderModels() {
+  const query = $("filter").value.trim().toLowerCase(), { model, thinkingLevel } = deck.state, rows = [];
+  const pick = (command, params) => tab.rpc(command, params).then(readDeck).then(renderModels).catch(error => showError(error.message));
+  $("levels").replaceChildren(...deck.levels.map(level => {
+    const chip = Object.assign(node("button", level), { type: "button", className: level === thinkingLevel ? "on" : "" });
+    chip.onclick = () => pick("set_thinking_level", { level });
+    return chip;
+  }));
+  let provider = "";
+  for (const m of deck.models.filter(m => `${m.provider} ${m.id} ${m.name || ""}`.toLowerCase().includes(query))) {
+    if (m.provider !== provider) rows.push(Object.assign(node("p", provider = m.provider), { className: "label" }));
+    const row = Object.assign(node("button", m.name || m.id), { type: "button", className: m.provider === model?.provider && m.id === model?.id ? "on" : "" });
+    row.onclick = () => pick("set_model", { provider: m.provider, modelId: m.id }).then(() => $("models").close());
+    rows.push(row);
+  }
+  $("list").replaceChildren(...rows);
 }
-$("mitosis-connect").onclick = async () => {
-  remoteBusy = true; controls();
-  try {
-    const invitation = JSON.parse($("mitosis-invitation").value || localStorage.getItem("orb.mitosis.remote") || "{}");
-    const identity = browserIdentity();
-    const result = await remote.connect(invitation, identity);
-    localStorage.setItem("orb.mitosis.remote", JSON.stringify({ locator: invitation.locator, peer_id: invitation.peer_id }));
-    $("mitosis-invitation").value = "";
-    $("mitosis-identity").textContent = `Browser agent: ${result.peer_id}`;
-    $("mitosis-grant").textContent = JSON.stringify({ principal: { peer_id: result.peer_id, subject: { kind: "agent" } }, permissions: ["agent.inspect", "agent.prompt"] }, null, 2);
-    $("mitosis-status").textContent = "Awaiting approval";
-    $("mitosis-notice").textContent = "Approve this browser identity on the remote Mitosis, then click Refresh.";
-    $("remote-controls").hidden = false;
-    try { await refreshInstances(); } catch (error) { if (error.message !== "unauthorized") throw error; }
-  } catch (error) { $("mitosis-notice").textContent = error.message; }
-  finally { remoteBusy = false; controls(); }
+// Settings, as the desktop's: its pages at left, the one shown at right.
+const label = text => Object.assign(node("p", text), { className: "label" });
+const note = text => Object.assign(node("p", text), { className: "meta" });
+function row(name, sub, action) {
+  return Object.assign(node("div", node("div", node("strong", name), note(sub)), ...(action ? [action] : [])), { className: "row" });
+}
+function button(text, onclick, className = "") {
+  return Object.assign(node("button", text), { type: "button", onclick, className });
+}
+// What each plugin does, as agent/assembly's catalog says it.
+const about = {
+  titles: "Name each session after its first exchange", tasks: "Live session task list and todo tool",
+  questions: "Ask the user questions with choices and custom answers", memory: "Bounded persistent remember, recall, replace, and forget tools",
+  memtree: "Experimental: zoomable summary tree of each session for lossless compaction or fresh turns",
 };
-$("mitosis-disconnect").onclick = async () => { try { await remote.disconnect(); selectConversation(""); $("remote-controls").hidden = true; $("mitosis-status").textContent = "Disconnected"; } catch (error) { showError(error.message); } controls(); };
-$("mitosis-refresh").onclick = () => refreshInstances().then(refreshSessions).catch(error => showError(error.message));
-// The tab's own Orb (peer.wasm) over IndexedDB, which keeps its identity, received providers,
-// memory and conversation across reloads. Starting its Mitosis makes it dial its devices.
+const pages = {
+  async general() {
+    await readDeck();
+    const { model, thinkingLevel } = deck.state;
+    // A phone has no keys to list.
+    const keys = matchMedia("(hover: hover)").matches;
+    return [node("h2", "General"), note(keys ? "new conversations, keys" : "new conversations"), label("new conversations"),
+      row("default model", model ? [model.id.split("/").at(-1), thinkingLevel].filter(Boolean).join(" · ") : "none yet", button("change ›", openModels, "plain")),
+      ...(keys ? [label("keys"), ...[["Enter", "send"], ["Shift+Enter", "new line"], ["Ctrl+,", "settings"], ["Esc", "back to the conversations"]].map(([key, what]) => row(key, what))] : [])];
+  },
+  async providers() {
+    const counts = new Map();
+    for (const m of (await tab.rpc("get_available_models")).models) counts.set(m.provider, (counts.get(m.provider) || 0) + 1);
+    return [node("h2", "Providers"), note("the accounts your devices share with this tab"), label("accounts"),
+      ...[...counts].map(([provider, n]) => row(provider, `${n} model${n === 1 ? "" : "s"}`)),
+      note("Sign in on one of your devices: its accounts reach this tab, sealed to it.")];
+  },
+  async plugins() {
+    const plugins = await tab.plugins();
+    return [node("h2", "Plugins"), note("what this tab's Orb runs, from its next conversation"), ...Object.keys(plugins).sort().map(name =>
+      row(name, about[name], button(plugins[name] ? "on" : "off", () => tab.plugins(name, !plugins[name]).then(() => openPage("plugins"), error => showError(error.message)), plugins[name] ? "inverted" : "")))];
+  },
+  async mitosis() {
+    const [status, group] = await Promise.all([tab.admin("status"), tab.admin("sync")]);
+    return [node("h2", "Mitosis"), note("peer to peer"), label("devices"),
+      ...(group.members || []).filter(id => id !== me).map(id => row(group.names?.[id] || id.split(":").at(-1).slice(0, 8),
+        [status.peer_states?.[id] === "connected" ? "connected" : "not connected", group.owners?.includes(id) && "owner"].filter(Boolean).join(" · "))),
+      label("this tab"), note(me),
+      note("Each device is approved by fingerprint on its own screen. Forgetting this tab clears it here; block it on a device to take it out of your group."),
+      button("forget this tab", () => { if (confirm("Forget this tab? Its conversations here go with it.")) { localStorage.setItem("orb.tab.forget", "1"); location.reload(); } })];
+  },
+};
+async function openPage(name) {
+  show("settings");
+  for (const item of $("pages").querySelectorAll("[data-page]")) item.className = item.dataset.page === name ? "on" : "";
+  try { $("page").replaceChildren(...await pages[name]()); } catch (error) { showError(error.message); }
+  $("page").append(notice);
+}
+// Code mode's runtime: a frame of opaque origin (sandboxed without same-origin), so what runs reaches
+// neither this page, its storage nor the synced credentials. Each run is a worker in it, ended when it
+// settles or after 2 min; its code gets tools.<name>(args), the session's other tools, each call
+// relayed out to the tab's Orb and its text back. These two functions run there, not here.
+function sandboxWorker() {
+  const out = [], show = v => (typeof v === "string" ? v : JSON.stringify(v, null, 2) ?? String(v)), waiting = new Map();
+  for (const k of ["log", "info", "warn", "error"]) console[k] = (...a) => out.push(a.map(show).join(" "));
+  let next = 0;
+  const call = (name, args) => new Promise((ok, no) => { waiting.set(++next, { ok, no }); postMessage({ call: { k: next, name, args } }); });
+  onmessage = async ({ data }) => {
+    if (data.reply) {
+      const { ok, no } = waiting.get(data.reply.k);
+      waiting.delete(data.reply.k);
+      return data.reply.failed ? no(new Error(data.reply.text)) : ok(data.reply.text);
+    }
+    const tools = Object.fromEntries(data.names.map(name => [name, args => call(name, args ?? {})]));
+    try {
+      const value = await (0, eval)("(async tools => {" + data.code + "\n})")(tools);
+      postMessage({ out, value: value === undefined ? undefined : show(value) });
+    } catch (error) { postMessage({ out, error: String(error?.stack || error) }); }
+  };
+}
+function sandboxFrame(source) {
+  const runs = new Map();
+  onmessage = ({ data }) => {
+    if (data.reply) return runs.get(data.id)?.postMessage({ reply: data.reply });
+    const worker = new Worker(URL.createObjectURL(new Blob([source])));
+    const end = reply => { clearTimeout(timer); worker.terminate(); runs.delete(data.id); parent.postMessage({ id: data.id, ...reply }, "*"); };
+    const timer = setTimeout(() => end({ error: "stopped after 2 min" }), 120000);
+    runs.set(data.id, worker);
+    worker.onmessage = event => (event.data.call ? parent.postMessage({ id: data.id, call: event.data.call }, "*") : end(event.data));
+    worker.onerror = event => { event.preventDefault(); end({ error: event.message }); };
+    worker.postMessage({ code: data.code, names: data.names });
+  };
+}
+let frame, framed, nextRun = 0;
+const runs = new Map();
+function run(code, names, call) {
+  if (!frame) {
+    frame = Object.assign(document.createElement("iframe"), { hidden: true, srcdoc: `<script>(${sandboxFrame})(${JSON.stringify(`(${sandboxWorker})()`)})<\/script>` });
+    frame.setAttribute("sandbox", "allow-scripts");
+    framed = new Promise(resolve => (frame.onload = resolve));
+    document.body.append(frame);
+  }
+  return framed.then(() => new Promise(resolve => {
+    const id = ++nextRun;
+    runs.set(id, { resolve, call });
+    frame.contentWindow.postMessage({ id, code, names: JSON.parse(names) }, "*");
+  }));
+}
+addEventListener("message", ({ source, data }) => {
+  const ongoing = source === frame?.contentWindow && runs.get(data?.id);
+  if (!ongoing) return;
+  if (data.call) {
+    const reply = answer => frame.contentWindow.postMessage({ id: data.id, reply: { k: data.call.k, ...answer } }, "*");
+    ongoing.call(data.call.name, JSON.stringify(data.call.args)).then(answer => JSON.parse(answer), error => ({ text: error.message, failed: true })).then(reply);
+    return;
+  }
+  ongoing.resolve(JSON.stringify({ out: data.out || [], value: data.value, error: data.error }));
+  runs.delete(data.id);
+});
+// The tab's Orb over IndexedDB, which keeps its identity, received providers, memory and
+// conversation across reloads. Starting its Mitosis makes it dial its devices.
 async function openTab() {
   // One runtime owns the tab's storage for the page's life: its journals are read once and
   // appended in memory, so a second page writing the same database would overwrite them.
   const held = await new Promise(resolve => navigator.locks.request("orb-tab", { ifAvailable: true }, lock => { resolve(!!lock); return lock && new Promise(() => {}); }));
   if (!held) throw new Error("Your Orb is already open in another tab of this page.");
-  await import("./wasm_exec.js");
-  await import("./helpers.js");
   const response = await fetch("peer.wasm.gz");
   if (!response.ok) throw new Error(`Wasm download failed: ${response.status}`);
-  const replies = new Map(), decoder = new TextDecoder();
+  const replies = new Map();
   let next = 0;
-  const peer = await openPeer({
-    wasm: await new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(), storage: indexedStorage("orb-tab"),
+  // In a worker, so the page stays responsive however much Orb computes.
+  const peer = spawnPeer({
+    wasm: await new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(), storage: "orb-tab",
     env: { ORB_SETTINGS: JSON.stringify({ plugins: { memory: true } }) },
-    emit: (array, length) => {
-      const frame = JSON.parse(decoder.decode(array.slice(0, length)));
+    emit: text => {
+      const frame = JSON.parse(text);
       if (frame.type === "response" && replies.has(frame.id)) { replies.get(frame.id)(frame); replies.delete(frame.id); return; }
-      if (frame.type !== "response") onEvent(frame);
+      if (frame.type === "extension_ui_request") ask();
+      else if (frame.type !== "response") onEvent(frame);
       if (frame.type === "agent_end") settle().catch(error => showError(error.message));
     },
-    exit: () => { tab = null; running = false; controls(); showError("This tab's Orb stopped. Reload the page."); },
+    exit: () => { tab = null; idle(); showError("This tab's Orb stopped. Reload the page."); }, run,
   });
   tab = {
     admin: async (method, params = {}) => JSON.parse(await peer.mitosisAdmin(method, JSON.stringify(params), "")),
+    input: async (...args) => JSON.parse(await peer.input(...args)),
+    plugins: async (...args) => JSON.parse(await peer.plugins(...args)),
     rpc: (type, params = {}) => new Promise((resolve, reject) => {
       const id = `tab-${++next}`;
       replies.set(id, frame => (frame.success ? resolve(frame.data) : reject(new Error(frame.error))));
-      const refused = peer.command(JSON.stringify({ id, type, ...params }));
-      if (refused) { replies.delete(id); reject(new Error(refused)); }
+      peer.command(JSON.stringify({ id, type, ...params })).then(refused => {
+        if (refused) { replies.delete(id); reject(new Error(refused)); }
+      }, reject);
     }),
   };
-  await tab.admin("self");
-  $("configuration").hidden = true;
-  $("hint").textContent = "This tab is one of your devices: it uses the providers and memory your profile shares with it.";
+  ({ peer_id: me } = await tab.admin("self"));
+  $("fingerprint").textContent = me.split(":").at(-1).slice(0, 8);
+  $("self").textContent = me;
   await settle();
   refreshTab();
 }
+// settle shows the conversation the tab's Orb holds, and gives its chip its name (the titles plugin
+// names it) or the first thing said in it; a chip left with nothing said goes.
 async function settle() {
-  const { messages } = await tab.rpc("get_messages");
-  render({ messages }); idle();
+  ({ messages } = await tab.rpc("get_messages"));
+  const { sessionFile, sessionName } = await tab.rpc("get_state");
+  current = sessionFile;
+  const title = sessionName || text(messages.find(m => m.role === "user")?.content).trim().split("\n")[0];
+  tabs = tabs.filter(t => t.title || t.file === current);
+  const shown = tabs.find(t => t.file === current);
+  if (shown) shown.title = title;
+  else tabs.push({ file: current, title });
+  save();
   const last = messages.at(-1);
   showError(last?.role === "assistant" && last.stopReason === "error" ? last.errorMessage : "");
+  // A reply that just streamed in keeps what the stream drew of it, rather than drawn again.
+  if (last?.role === "assistant" && streamed && Array.isArray(last.content) && last.content.every(b => b.type === "text") && text(last.content) === streamed) {
+    cancelAnimationFrame(painting);
+    drawStream(true);
+    drawn.set(`${messages.length - 1} assistant ${last.timestamp} 0`, [Object.assign(node("div", ...$("final").childNodes, ...$("tail").childNodes), { className: "assistant" })]);
+  }
+  streamed = "";
+  renderMessages(messages); idle();
+  readContext().catch(() => {});
 }
-// Provider names only: credentials never leave the tab's Orb.
+// How full the conversation's context is, as the desktop's strip reads it: ten segments, red past
+// 80 %.
+async function readContext() {
+  const share = ((await tab.rpc("get_session_stats")).contextUsage?.percent ?? 0) / 100;
+  $("context").hidden = !(share > 0);
+  $("context").classList.toggle("alarm", share > .8);
+  $("gauge").replaceChildren(...Array.from({ length: 10 }, (_, i) => Object.assign(node("i"), { className: i < Math.round(share * 10) ? "lit" : "" })));
+  $("context").lastChild.textContent = `${Math.round(share * 100)}%`;
+}
+// Provider names only: credentials never leave the tab's Orb. The first provider the device
+// shares is its approval: the conversation replaces the fingerprint. Until then the tab asks to
+// follow the device's sync group again, since the device may admit it after the tab first asked.
 async function refreshTab() {
   try {
     const owner = localStorage.getItem("orb.tab.owner");
-    const [status, { models }] = await Promise.all([tab.admin("status"), tab.rpc("get_available_models")]);
-    const providers = [...new Set(models.map(model => model.provider))];
-    let { model } = await tab.rpc("get_state");
+    const { models } = await tab.rpc("get_available_models");
+    if (owner && !models.length) await tab.admin("sync", { join: owner }).catch(() => {});
+    const { model } = await tab.rpc("get_state");
     // A session started before any provider arrived has no model; a new one takes the preferred one.
-    if (providers.length && (!model || model.provider === "unknown") && !running && !state.messages.length) {
-      await tab.rpc("new_session");
-      ({ model } = await tab.rpc("get_state"));
+    if (models.length && (!model || model.provider === "unknown") && !running && !messages.length) {
+      await transition(() => tab.rpc("new_session").then(settle));
     }
-    const online = status.peer_states?.[owner] === "connected" ? "online" : "offline";
-    // The panel's badge is the remote-control link; a member tab shows its own instead.
-    if (owner && !remote.connection) $("mitosis-status").textContent = `Member, ${online}`;
-    $("model-label").textContent = [
-      !owner ? "Not joined" : providers.length ? "Member" : "Waiting for your device",
-      online,
-      `providers: ${providers.join(", ") || "none yet"}`,
-      ...(model && model.provider !== "unknown" ? [`${model.provider}/${model.id}`] : []),
-    ].join(" · ");
-  } catch (error) { $("model-label").textContent = error.message; }
+    if ($("settings").hidden) show(!owner ? "invite" : models.length ? "chat" : "approve");
+    await readDeck();
+  } catch (error) { showError(error.message); }
   finally { setTimeout(refreshTab, 3000); }
 }
-$("mitosis-join").onclick = async () => {
-  remoteBusy = true; controls();
+$("join").onclick = () => join($("code").value);
+async function join(text) {
+  $("join").disabled = true; showError("");
   try {
-    // The code orb mitosis shows (orb-mitosis:v1:<base64url JSON>), or the invitation JSON itself.
-    const text = $("mitosis-invitation").value.trim(), code = text.split("orb-mitosis:v1:")[1]?.split(/\s/)[0];
-    const invitation = JSON.parse(code ? atob(code.replace(/-/g, "+").replace(/_/g, "/")) : text || "{}");
-    if (!invitation.peer_id || !invitation.token) throw new Error("Paste an invitation first.");
+    // The code orb mitosis --browser shows (orb-mitosis:v1:<base64url JSON>), or the invitation JSON itself.
+    const value = text.trim(), code = value.split("orb-mitosis:v1:")[1]?.split(/\s/)[0];
+    const invitation = JSON.parse(code ? atob(code.replace(/-/g, "+").replace(/_/g, "/")) : value || "{}");
+    if (!invitation.peer_id || !invitation.token) throw new Error("Paste the code orb mitosis --browser shows.");
+    if (!/^wss?:\/\//.test(invitation.locator ?? "")) throw new Error("That code is for the apps. For this tab, run orb mitosis --browser.");
     if (!tab) await openTab();
-    const { peer_id: self } = await tab.admin("self");
     await tab.admin("join", invitation);
     await tab.admin("trust", { peer_id: invitation.peer_id });
-    // Until the device admits the tab, the first round has nothing to open; later rounds retry.
-    await tab.admin("sync", { join: invitation.peer_id }).catch(() => {});
     localStorage.setItem("orb.tab.owner", invitation.peer_id);
-    $("mitosis-invitation").value = "";
-    $("mitosis-notice").textContent = `Joined. Confirm this fingerprint on your device:\n${self}`;
-  } catch (error) { $("mitosis-notice").textContent = error.message; }
-  finally { remoteBusy = false; controls(); }
-};
-$("location").onchange = () => selectConversation($("location").value);
-$("remote-sessions").onchange = () => remoteCommand("session.switch", { session_id: $("remote-sessions").value });
-configure();
-boot();
-pollRemote();
+    show("approve");
+  } catch (error) { showError(error.message); }
+  finally { $("join").disabled = false; }
+}
+// Forgetting the tab waits for the reload, when no runtime holds its database any more.
+if (localStorage.getItem("orb.tab.forget")) {
+  for (const key of Object.keys(localStorage)) if (key.startsWith("orb.tab.")) localStorage.removeItem(key);
+  await new Promise(resolve => Object.assign(indexedDB.deleteDatabase("orb-tab"), { onsuccess: resolve, onerror: resolve, onblocked: resolve }));
+}
+// The link orb mitosis --browser opens carries its code after #, which the browser never sends.
+const linked = decodeURIComponent(location.hash.slice(1));
+if (linked) history.replaceState(null, "", location.pathname + location.search);
 if (localStorage.getItem("orb.tab.owner")) openTab().catch(error => showError(error.message));
+else {
+  show("invite");
+  if (linked.startsWith("orb-mitosis:v1:")) join($("code").value = linked);
+}

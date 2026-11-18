@@ -150,7 +150,7 @@ type credentialStore struct {
 }
 
 func newCredentialStore(agentDir string) credentialStore {
-	return credentialStore{path: filepath.Join(agentDir, "mcp-auth.json")}
+	return credentialStore{path: AuthPath(agentDir)}
 }
 
 // normalizeServerURL is the server URL as pi keys it: bare origins end in /.
@@ -175,11 +175,9 @@ func credentialKeys(name, serverURL string) (key, legacy string) {
 // when it reports a change.
 func (store credentialStore) edit(change func(map[string]*oauthState) bool) error {
 	return filelock.File{Path: store.path, Perm: 0o600}.Update(context.Background(), func(data []byte) ([]byte, error) {
-		states := map[string]*oauthState{}
-		if len(bytes.TrimSpace(data)) > 0 {
-			if err := json.Unmarshal(data, &states); err != nil {
-				return nil, fmt.Errorf("%s: %w", store.path, err)
-			}
+		states, err := parseStates(data)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", store.path, err)
 		}
 		if !change(states) {
 			return data, nil
@@ -187,6 +185,20 @@ func (store credentialStore) edit(change func(map[string]*oauthState) bool) erro
 		encoded, err := json.MarshalIndent(states, "", "  ")
 		return append(encoded, '\n'), err
 	})
+}
+
+// parseStates reads mcp-auth.json, empty or null as no states.
+func parseStates(data []byte) (map[string]*oauthState, error) {
+	var states map[string]*oauthState
+	if len(bytes.TrimSpace(data)) > 0 {
+		if err := json.Unmarshal(data, &states); err != nil {
+			return nil, err
+		}
+	}
+	if states == nil {
+		states = map[string]*oauthState{}
+	}
+	return states, nil
 }
 
 // load returns a server's state, taking over pi's legacy entry keyed by URL
@@ -299,6 +311,7 @@ func (flow oauthFlow) update(change func(*oauthState)) error {
 // follow (authorized false). Rejected clients are registered again and
 // rejected grants dropped, once.
 func (flow oauthFlow) authorize(ctx context.Context, options flowOptions) (bool, error) {
+	before, _ := flow.store.load(flow.name, flow.serverURL)
 	authorized, err := flow.run(ctx, options)
 	var oauthErr *oauthError
 	if errors.As(err, &oauthErr) {
@@ -313,7 +326,15 @@ func (flow oauthFlow) authorize(ctx context.Context, options flowOptions) (bool,
 			})
 			return flow.run(ctx, options)
 		case "invalid_grant":
-			_ = flow.update(func(state *oauthState) { state.Tokens, state.TokensExpireAt = nil, nil })
+			// Only the rejected grant goes, not one another process or the sync group stored
+			// meanwhile, and its expiry stays: the group then holds the rejection as one dated state
+			// of the grant, which a later refresh or sign-in replaces, never as a removal that would
+			// drop the copy another device refreshed (SharedLogins).
+			_ = flow.update(func(state *oauthState) {
+				if state.Tokens != nil && before.Tokens != nil && state.Tokens.AccessToken == before.Tokens.AccessToken && state.Tokens.RefreshToken == before.Tokens.RefreshToken {
+					state.Tokens = nil
+				}
+			})
 			return flow.run(ctx, options)
 		}
 	}

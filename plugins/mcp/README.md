@@ -57,7 +57,10 @@ redirect URL can also be pasted when the browser runs elsewhere. A server that a
 the wrong authorization server. Credentials live in `mcp-auth.json` in the agent directory, keyed by
 server name and URL in the shape pi writes, so both share them; refreshes are serialized across
 processes, and sign-ins done in another process (say `orb mcp login` run by the agent) are picked
-up on the next turn. `/mcp logout` and `orb mcp logout` delete them.
+up on the next turn. `/mcp logout` and `orb mcp logout` delete them. A Mitosis sync group shares the
+global servers that cannot run a program or send a device's own secrets (https to a public host,
+literal headers and client secret, no `auth`) and their sign-ins; see DECISIONS.md. A server's
+redirects are followed within its origin only, since its headers and token go with every request.
 
 `"auth": {"provider": "<p>"}` sends the token of an `orb login` provider instead. Only the global
 `mcp.json` may use it, so a repository cannot pick where a credential goes, and the URL must be

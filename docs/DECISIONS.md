@@ -437,10 +437,18 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
   membership, signed into that owner's record; a version counts when its publisher owns the version
   it replaces, the highest wins, and of two of one version the smaller digest, so two owners
   removing each other at once leave one; a group never has no owner. A device follows a group with
-  `sync join <peer>` through any member, and nothing derives membership from pairing. v1 shares two data classes: credentials (auth.json's API keys and OAuth
-  logins, never a key that is a command, `!…`) and memory (the memory plugin's items, merged by ID
-  with the same rules); a class is a registered Shareable/MergeShared pair, so configuration can be
-  added later the same way, but none is built. Each class travels in a vault of its own: a device's
+  `sync join <peer>` through any member, and nothing derives membership from pairing. It shares four data classes: credentials (auth.json's API keys and OAuth
+  logins, never a key that is a command, `!…`), memory (the memory plugin's items, merged by ID
+  with the same rules), mcp (the global mcp.json's servers) and mcp-auth (mcp-auth.json's OAuth
+  states of those servers), these two on native devices until a Worker or tab runs MCP; a class is a registered Shareable/MergeShared pair. Only an MCP server
+  that makes no receiving device run a program or send its own secrets travels: a streamable HTTP
+  server on https to a public host, its headers and client secret literal, without `auth`; a
+  command, a `${NAME}` or `!…` value, a loopback, private or local-network host keep a server and
+  its sign-in on their device, where the group's never replace nor drop them. A sign-in travels as
+  its grant alone, never the values of one under way nor discovered endpoints, which each device
+  finds from the server it holds, and only with its expiry, which orders the copies; a refresh the
+  server rejects keeps its expiry, so it never reads as a removal that would drop the copy another
+  device just refreshed. Each class travels in a vault of its own: a device's
   signed peer record of the group scope (`orb-mitosis/1`) carries only each vault's digest and
   size, and any member holding a vault serves it by digest, in bounded chunks, only to its current,
   unblocked recipients; a vault is capped at 64 MiB, since every member, a browser tab included,
@@ -462,7 +470,7 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
   until a group exists. A device that boots unattended can decrypt its own vault, which is accepted
   as the cost of autonomy; a low-trust host belongs in a group of its own, with capped credentials.
   Owner, 2026-11-16; memory and vaults by digest added at the owner's request, 2026-11-17; several
-  owners, 2026-11-17.
+  owners, 2026-11-17; MCP servers and sign-ins at the owner's request, 2026-11-18.
 
 ## Divergence ledger
 

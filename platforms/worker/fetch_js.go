@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall/js"
+	"time"
 )
 
 // FetchTransport sends requests through the shim's fetch helpers (Bind).
@@ -138,10 +139,24 @@ type fetchBody struct {
 	pending    []byte
 	buffer     []byte
 	err        error // sticky
+	paused     time.Time
 }
 
 func (body *fetchBody) Read(buffer []byte) (int, error) {
-	for len(body.pending) == 0 {
+	// What already arrived goes out 16 ms at a time, the event loop turning between: Go yields to
+	// it only once every goroutine waits, so a fast stream would hold it, and a stop waiting
+	// there, until the whole chunk is read.
+	if len(body.pending) > 0 && body.err == nil && time.Since(body.paused) > 16*time.Millisecond && helpers.pause.Truthy() {
+		id, settled := wait()
+		helpers.pause.Invoke(id, settle)
+		<-settled
+		body.paused = time.Now()
+		if err := body.request.Context().Err(); err != nil {
+			body.controller.Call("abort")
+			body.err = err
+		}
+	}
+	for len(body.pending) == 0 || body.err != nil {
 		if body.err != nil {
 			return 0, body.err
 		}

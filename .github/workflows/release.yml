@@ -150,3 +150,22 @@ jobs:
         run: gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --notes-file /tmp/notes.md
       - name: Verify published source archive is deterministic
         run: sha256sum -c /tmp/orb-source.sha256
+      - name: Stage the browser page for GitHub Pages
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: .tools/browser-dist
+
+  # https://ordalietech.github.io/orb/ serves the page of the latest release, which `orb mitosis
+  # --browser` opens.
+  pages:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

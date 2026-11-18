@@ -252,7 +252,65 @@ func (store *FileStore) appendRecordsLocked(ctx context.Context, records []fileR
 	if closeErr := file.Close(); err == nil {
 		err = closeErr
 	}
+	if info, statErr := os.Stat(store.path); err != nil || statErr != nil || info.Size() < compactAt {
+		return err
+	}
+	raw, err := os.ReadFile(store.path)
+	if err != nil {
+		return err
+	}
+	live, err := compacted(raw)
+	if live == nil || err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(store.path), ".memory-*")
+	if err != nil {
+		return err
+	}
+	if _, err = temp.Write(live); err == nil {
+		err = temp.Sync()
+	}
+	if closeErr := temp.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Rename(temp.Name(), store.path)
+	}
+	if err != nil {
+		_ = os.Remove(temp.Name())
+	}
 	return err
+}
+
+// compactAt is the journal size from which a write rewrites it to its live items, once it is
+// several times what they take: every remember, replace and forget appends a line, while what is
+// live stays bounded by the memory tools.
+const compactAt = 256 << 10
+
+// compacted is the journal holding only its live items, in their order; nil while it is still
+// mostly live.
+func compacted(raw []byte) ([]byte, error) {
+	items, err := readJournal(bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	live := make([]storedItem, 0, len(items))
+	for _, item := range items {
+		live = append(live, item)
+	}
+	sort.Slice(live, func(i, j int) bool { return live[i].order < live[j].order })
+	out := []byte{}
+	for i := range live {
+		line, err := journalLine([]fileRecord{{Item: &live[i].Item}})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, line...)
+	}
+	if len(out)*4 > len(raw) {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // journalLine is records as one journal line, a batch when there are several.
@@ -441,6 +499,13 @@ func (j Journal) Transact(ctx context.Context, fn func(memory.Store) error) erro
 			return raw, err
 		}
 		line, err := journalLine(transaction.records)
-		return append(raw, line...), err
+		if raw = append(raw, line...); err != nil || len(raw) < compactAt {
+			return raw, err
+		}
+		live, err := compacted(raw)
+		if live == nil || err != nil {
+			return raw, err
+		}
+		return live, nil
 	})
 }

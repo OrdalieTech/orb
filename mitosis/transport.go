@@ -362,7 +362,7 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 		r, err := b.Claim(peer, p.ID, p.Token, p.Locator)
 		return JSON(r), err
 	case "host.sessions", "host.read", "host.launch", "host.dirs", "host.update", "host.providers", "host.accounts", "host.accounts.use", "host.models", "host.models.use", "host.plugins", "host.plugins.set", "host.logout", "host.login.start", "host.login.poll", "host.login.answer", "host.login.cancel", "host.attach",
-		"host.terminal.open", "host.terminal.read", "host.terminal.write", "host.terminal.resize", "host.terminal.close":
+		"host.terminal.open", "host.terminal.read", "host.terminal.write", "host.terminal.resize", "host.terminal.close", "host.fetch", "host.fetch.write", "host.fetch.read", "host.fetch.close":
 		b.mu.Lock()
 		allowed, host := b.hostAllowed(principal), b.host
 		b.mu.Unlock()

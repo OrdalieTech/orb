@@ -486,7 +486,7 @@ func defaultConnect(
 			return nil, err
 		}
 		base := headerRoundTripper{base: authenticated, headers: headers}
-		httpClient := &http.Client{Transport: progressRoundTripper{base: base, manager: tracker.manager}}
+		httpClient := &http.Client{Transport: progressRoundTripper{base: base, manager: tracker.manager}, CheckRedirect: sameOrigin}
 		return client.Connect(connectCtx, &mcpsdk.StreamableClientTransport{Endpoint: config.URL, HTTPClient: httpClient}, nil)
 	}
 	env := make(map[string]string, len(config.Env))
@@ -573,6 +573,18 @@ func (tracker progressTracker) wrapTransport(transport mcpsdk.Transport) mcpsdk.
 type headerRoundTripper struct {
 	base    http.RoundTripper
 	headers map[string]string
+}
+
+// sameOrigin follows a server's redirects within its origin only: the transports attach its
+// headers and token to every request, wherever it goes.
+func sameOrigin(request *http.Request, via []*http.Request) error {
+	if request.URL.Scheme != via[0].URL.Scheme || request.URL.Host != via[0].URL.Host {
+		return fmt.Errorf("MCP server redirected off its origin to %s", request.URL.Redacted())
+	}
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return nil
 }
 
 func (transport headerRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
