@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/mitosis"
+	"github.com/OrdalieTech/orb/mitosis/protocol"
 )
 
 type roundTrip func(*http.Request) (*http.Response, error)
@@ -29,16 +30,17 @@ func TestPublic(t *testing.T) {
 	}
 }
 
-// A streamed response reaches the peer whole, through the device that grants the call, while a
-// device that refuses it passes the request on.
+// A long body reaches the origin and a streamed response the peer whole, each call within a
+// frame, through the device that grants the call, while a device that refuses it passes it on.
 func TestTransportStreamsThroughAGrantingDevice(t *testing.T) {
 	stream, send := io.Pipe()
+	prompt := strings.Repeat("a long conversation ", 40<<10) // past what one call carries
 	server := &Server{Client: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
 		if r.URL.String() != "https://api.example/v1?q=1" || r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer k" {
 			t.Errorf("relayed %s %s %v", r.Method, r.URL, r.Header)
 		}
-		if body, _ := io.ReadAll(r.Body); string(body) != "prompt" {
-			t.Errorf("relayed body %q", body)
+		if body, _ := io.ReadAll(r.Body); string(body) != prompt || r.ContentLength != int64(len(prompt)) {
+			t.Errorf("relayed a %d-byte body, %d announced", len(body), r.ContentLength)
 		}
 		return &http.Response{StatusCode: 201, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: stream}, nil
 	})}}
@@ -47,6 +49,9 @@ func TestTransportStreamsThroughAGrantingDevice(t *testing.T) {
 		Call: func(ctx context.Context, device, method string, params, result any) error {
 			if device == "stranger" {
 				return mitosis.Fail("unauthorized")
+			}
+			if n := len(mitosis.JSON(params)); n > protocol.MaxFrame {
+				t.Errorf("a %s call takes %d bytes", method, n)
 			}
 			raw, err := server.Handle(ctx, method, mitosis.JSON(params))
 			if err == nil && result != nil {
@@ -61,7 +66,7 @@ func TestTransportStreamsThroughAGrantingDevice(t *testing.T) {
 		}
 		_ = send.Close()
 	}()
-	request, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://api.example/v1?q=1", strings.NewReader("prompt"))
+	request, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://api.example/v1?q=1", strings.NewReader(prompt))
 	request.Header.Set("Authorization", "Bearer k")
 	response, err := transport.RoundTrip(request)
 	if err != nil {
@@ -72,7 +77,7 @@ func TestTransportStreamsThroughAGrantingDevice(t *testing.T) {
 	if err != nil || response.StatusCode != 201 || response.Header.Get("Content-Type") != "text/event-stream" || string(body) != "data: one\n\n"+strings.Repeat("x", 600<<10)+"data: two\n\n" {
 		t.Fatalf("relayed %d %v, %d bytes, %v", response.StatusCode, response.Header, len(body), err)
 	}
-	if _, err := server.open(http.MethodGet, "http://api.example/", nil, nil); mitosis.Code(err) != "invalid_params" {
+	if _, err := server.open(http.MethodGet, "http://api.example/", nil, nil, 0); mitosis.Code(err) != "invalid_params" {
 		t.Fatalf("plain http relayed: %v", err)
 	}
 }

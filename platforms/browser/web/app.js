@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 // notice: the one error line, moved to the screen it concerns, so pages that redraw keep hold of it.
 const notice = document.getElementById("error");
 // tab: this tab's own Orb (peer.wasm), one of the user's devices; word: what it does now; where: its model.
-let tab = null, me = "", running = false, messages = [], streamed = "", word = "", where = "";
+let tab = null, me = "", running = false, switching = false, messages = [], streamed = "", word = "", where = "";
 // tabs: the conversations the bar shows, by session file, with their titles; current: the one shown.
 let tabs = JSON.parse(localStorage.getItem("orb.tab.tabs") || "[]"), current = "";
 
@@ -28,8 +28,8 @@ function controls() {
   $("status").textContent = word || where;
   $("send").ariaLabel = running ? "Stop" : "Send";
   $("send").classList.toggle("stop", running);
-  $("send").disabled = !running && !$("prompt").value.trim();
-  $("new").disabled = $("model").disabled = running;
+  $("send").disabled = switching || !running && !$("prompt").value.trim();
+  $("new").disabled = $("model").disabled = running || switching;
   renderTabs();
 }
 // The desktop's tab bar: a chip per conversation, its square pulsing while it works, its × on it
@@ -39,8 +39,8 @@ function renderTabs() {
     const close = node("b", "×"), chip = node("button", node("i"), node("span", t.title || "new session"), close);
     chip.type = "button";
     chip.className = t.file === current ? (running ? "on live" : "on") : "";
-    chip.disabled = running && t.file !== current;
-    chip.onclick = () => t.file === current || running || go("switch_session", { sessionPath: t.file });
+    chip.disabled = (running || switching) && t.file !== current;
+    chip.onclick = () => t.file === current || running || switching || go("switch_session", { sessionPath: t.file });
     close.onclick = event => {
       event.stopPropagation();
       if (running && t.file === current) return;
@@ -57,8 +57,13 @@ function save() {
   localStorage.setItem("orb.tab.tabs", JSON.stringify(tabs));
   renderTabs();
 }
+// go changes the conversation; no prompt goes in until the change settles, which would end it.
 function go(command, params) {
-  tab.rpc(command, params).then(settle).catch(error => showError(error.message));
+  return transition(() => tab.rpc(command, params).then(settle)).catch(error => showError(error.message));
+}
+async function transition(change) {
+  switching = true; controls();
+  try { await change(); } finally { switching = false; controls(); }
 }
 function text(content) {
   return typeof content === "string" ? content : (content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
@@ -131,6 +136,7 @@ function action(call, result) {
 function idle() {
   running = false; word = "";
   $("stream").hidden = true;
+  for (const question of document.querySelectorAll(".question")) question.remove();
   controls();
 }
 // RPC frames carry message_update as deltas (agent/rpc).
@@ -149,9 +155,43 @@ function onEvent(event) {
   }
   controls();
 }
+// A question the agent waits on shows under the conversation, as in the apps: the questions
+// plugin's, each with its options and a line of its own, or a plain one, answered by a choice or a
+// line. The answer goes to the session, which checks it.
+async function ask() {
+  const input = await tab.input().catch(() => null);
+  if (!input || document.querySelector(".question")) return;
+  const reply = value => tab.input(input.id, value).then(() => box.remove(), error => showError(error.message));
+  const box = Object.assign(node("div"), { className: "assistant question" });
+  const field = () => Object.assign(node("textarea"), { rows: 1, placeholder: "your answer" });
+  const asked = input.presentation?.kind === "questions" ? input.presentation.data.questions : null;
+  if (asked) {
+    const answers = asked.map(q => {
+      const picked = new Set(), own = field();
+      box.append(node("p", q.question), ...(q.options || []).map(o => {
+        const choice = button(o.label, () => {
+          if (!q.multi_select) { picked.clear(); for (const b of choice.parentNode.querySelectorAll(`[data-q="${CSS.escape(q.id)}"]`)) b.className = ""; }
+          picked.has(o.label) ? picked.delete(o.label) : picked.add(o.label);
+          choice.className = picked.has(o.label) ? "inverted" : "";
+        });
+        choice.dataset.q = q.id;
+        return choice;
+      }), own);
+      return () => ({ id: q.id, selected: own.value.trim() && !q.multi_select ? [] : [...picked], custom: own.value.trim() });
+    });
+    box.append(button("answer", () => reply(JSON.stringify({ answers: answers.map(a => a()) })), "inverted"),
+      button("skip", () => reply(JSON.stringify({ cancelled: true }))));
+  } else if (input.choices?.length) box.append(node("p", input.title), ...input.choices.map(c => button(c, () => reply(c))));
+  else {
+    const own = field();
+    box.append(node("p", input.title), own, button("answer", () => reply(own.value), "inverted"));
+  }
+  $("transcript").append(box);
+  box.scrollIntoView({ block: "nearest" });
+}
 $("prompt-form").onsubmit = event => {
   event.preventDefault();
-  if (!tab) return;
+  if (!tab || switching) return;
   if (running) { tab.rpc("abort").catch(error => showError(error.message)); return; }
   const value = $("prompt").value;
   if (!value.trim()) return;
@@ -167,7 +207,7 @@ $("prompt").oninput = controls;
 $("prompt").onkeydown = event => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
-    if (!running) $("prompt-form").requestSubmit();
+    if (!running && !switching) $("prompt-form").requestSubmit();
   }
 };
 $("new").onclick = () => go("new_session");
@@ -345,13 +385,15 @@ async function openTab() {
     emit: (array, length) => {
       const frame = JSON.parse(decoder.decode(array.slice(0, length)));
       if (frame.type === "response" && replies.has(frame.id)) { replies.get(frame.id)(frame); replies.delete(frame.id); return; }
-      if (frame.type !== "response") onEvent(frame);
+      if (frame.type === "extension_ui_request") ask();
+      else if (frame.type !== "response") onEvent(frame);
       if (frame.type === "agent_end") settle().catch(error => showError(error.message));
     },
     exit: () => { tab = null; idle(); showError("This tab's Orb stopped. Reload the page."); }, run,
   });
   tab = {
     admin: async (method, params = {}) => JSON.parse(await peer.mitosisAdmin(method, JSON.stringify(params), "")),
+    input: async (...args) => JSON.parse(await peer.input(...args)),
     plugins: async (...args) => JSON.parse(await peer.plugins(...args)),
     rpc: (type, params = {}) => new Promise((resolve, reject) => {
       const id = `tab-${++next}`;
@@ -393,8 +435,7 @@ async function refreshTab() {
     const { model } = await tab.rpc("get_state");
     // A session started before any provider arrived has no model; a new one takes the preferred one.
     if (models.length && (!model || model.provider === "unknown") && !running && !messages.length) {
-      await tab.rpc("new_session");
-      await settle();
+      await transition(() => tab.rpc("new_session").then(settle));
     }
     if ($("settings").hidden) show(!owner ? "invite" : models.length ? "chat" : "approve");
     await readDeck();

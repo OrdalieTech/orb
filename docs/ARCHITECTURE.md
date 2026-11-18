@@ -192,7 +192,7 @@ A request the browser refuses, to an API that sends no CORS headers (chatgpt.com
 xAI's token endpoint), goes through an online device of the tab's group (`mitosis/relay`,
 `host.fetch`), which the machine grant the tab holds already covers. The device sends it to public
 HTTPS addresses only and streams the response back as a window the tab reads by offset, so a
-retried read loses nothing. The tab tries fetch first and relays an origin it refused for the rest
+retried read loses nothing; a long body goes up the same way, in pieces a frame holds. The tab tries fetch first and relays an origin it refused for the rest
 of the page's life; a form POST also gets a header that makes the browser ask first, so a refusal
 sends nothing and a token refresh is never spent twice.
 

@@ -139,6 +139,21 @@ func open(object js.Value) js.Value {
 			return string(raw), err
 		})
 	})
+	// input resolves to the question the agent waits on, as JSON (null when none), with what its
+	// controller draws (the questions plugin's questions); given its id and an answer, it replies.
+	set("input", func(_ js.Value, args []js.Value) any {
+		return promise(func() (any, error) {
+			instance := opened.Load()
+			if instance == nil {
+				return nil, errors.New("the object's Orb is not open")
+			}
+			if len(args) == 2 {
+				return "null", instance.Session().ReplyInput(args[0].String(), args[1].String())
+			}
+			raw, err := json.Marshal(instance.Session().PendingInput())
+			return string(raw), err
+		})
+	})
 	set("stats", func(js.Value, []js.Value) any {
 		var memory runtime.MemStats
 		runtime.ReadMemStats(&memory)

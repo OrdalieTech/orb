@@ -91,6 +91,9 @@ button.inverted { color: var(--bg); background: var(--fg); }
 .action span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .action em { font-style: normal; color: var(--rupture); }
 .action pre { margin: 6px 0 0 16px; }
+.question { flex-flow: row wrap; align-items: center; }
+.question > p { flex-basis: 100%; }
+.question textarea { flex-basis: 100%; padding: 8px 12px; border: 1px solid var(--rule); border-radius: var(--soft); background: var(--raised); resize: vertical; }
 #stream::after { content: ""; width: .55em; height: 1.1em; background: var(--rupture); animation: blink 1.06s steps(1) infinite; }
 
 /* The prompt box, as on the desktop: raised and outlined, the draft above, under it where it

@@ -24,10 +24,12 @@ import (
 	"github.com/OrdalieTech/orb/mitosis/protocol"
 )
 
-// The host calls: Open starts a request and names it, Read returns what came from an offset on,
-// waiting up to poll for more, and Close ends it.
+// The host calls: Open names a request and carries the start of its body, Write the rest by
+// offset (a frame holds 1 MiB), and the request goes once its body is whole; Read returns what
+// came back from an offset on, waiting up to poll for more, and Close ends it.
 const (
 	Open  = "host.fetch"
+	Write = "host.fetch.write"
 	Read  = "host.fetch.read"
 	Close = "host.fetch.close"
 )
@@ -35,7 +37,8 @@ const (
 const (
 	maxFetches = 16
 	window     = 1 << 20   // what a device reads ahead of its peer
-	maxRead    = 256 << 10 // the most one read returns
+	maxChunk   = 256 << 10 // the most one call carries of a body
+	maxBody    = 64 << 20
 	poll       = 15 * time.Second
 	idle       = 2 * time.Minute // a request its peer stopped reading ends
 )
@@ -57,6 +60,9 @@ type Server struct {
 
 type fetch struct {
 	cancel context.CancelFunc
+	start  func(body []byte) // until the body is whole
+	body   []byte
+	length int64
 	idle   *time.Timer
 	mu     sync.Mutex
 	status int
@@ -82,13 +88,14 @@ func (s *Server) Handle(ctx context.Context, method string, params json.RawMessa
 		Method string      `json:"method,omitempty"`
 		Header http.Header `json:"header,omitempty"`
 		Body   []byte      `json:"body,omitempty"`
+		Length int64       `json:"length,omitempty"`
 		Offset int64       `json:"offset,omitempty"`
 	}
 	if err := protocol.Decode(params, &q); err != nil {
 		return nil, err
 	}
 	if method == Open {
-		return s.open(q.Method, q.URL, q.Header, q.Body)
+		return s.open(q.Method, q.URL, q.Header, q.Body, max(q.Length, int64(len(q.Body))))
 	}
 	s.mu.Lock()
 	f := s.fetches[q.ID]
@@ -101,6 +108,8 @@ func (s *Server) Handle(ctx context.Context, method string, params json.RawMessa
 	case Close:
 		s.end(q.ID)
 		return mitosis.JSON(struct{}{}), nil
+	case Write:
+		return mitosis.JSON(struct{}{}), f.write(q.Offset, q.Body)
 	case Read:
 	default:
 		return nil, mitosis.Fail("method_not_found")
@@ -118,7 +127,7 @@ func (s *Server) Handle(ctx context.Context, method string, params json.RawMessa
 			f.out = f.out[q.Offset-start:]
 			f.signal()
 		}
-		data := slices.Clone(f.out[:min(len(f.out), maxRead)])
+		data := slices.Clone(f.out[:min(len(f.out), maxChunk)])
 		c := chunk{Data: data, Done: f.done && len(data) == len(f.out), Error: f.failed}
 		if f.status != 0 {
 			c.Status, c.Header = f.status, f.header
@@ -140,18 +149,19 @@ func (s *Server) Handle(ctx context.Context, method string, params json.RawMessa
 	}
 }
 
-func (s *Server) open(method, raw string, header http.Header, body []byte) (json.RawMessage, error) {
+func (s *Server) open(method, raw string, header http.Header, body []byte, length int64) (json.RawMessage, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" || u.Host == "" || s.Client == nil {
 		return nil, mitosis.Fail("invalid_params")
 	}
+	if length > maxBody {
+		return nil, mitosis.Fail("resource_exhausted")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	request, err := http.NewRequestWithContext(ctx, cmp.Or(method, http.MethodGet), u.String(), bytes.NewReader(body))
-	if err != nil {
+	if _, err = http.NewRequestWithContext(ctx, cmp.Or(method, http.MethodGet), u.String(), nil); err != nil {
 		cancel()
 		return nil, mitosis.Fail("invalid_params")
 	}
-	request.Header = header.Clone()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.fetches) >= maxFetches {
@@ -162,11 +172,38 @@ func (s *Server) open(method, raw string, header http.Header, body []byte) (json
 		s.fetches = map[string]*fetch{}
 	}
 	id := protocol.NewID()
-	f := &fetch{cancel: cancel, wake: make(chan struct{})}
+	f := &fetch{cancel: cancel, length: length, wake: make(chan struct{})}
+	f.start = func(body []byte) {
+		request, _ := http.NewRequestWithContext(ctx, cmp.Or(method, http.MethodGet), u.String(), bytes.NewReader(body))
+		request.Header = header.Clone()
+		f.run(s.Client, request)
+	}
 	f.idle = time.AfterFunc(idle, func() { s.end(id) })
 	s.fetches[id] = f
-	go f.run(s.Client, request)
+	if err = f.write(0, body); err != nil {
+		return nil, err
+	}
 	return mitosis.JSON(map[string]string{"fetch_id": id}), nil
+}
+
+// write adds the body's bytes at offset, once: a retried write that brings what f has is done.
+// The request goes when the body is whole.
+func (f *fetch) write(offset int64, data []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	have := int64(len(f.body))
+	switch {
+	case f.start == nil || offset+int64(len(data)) <= have:
+	case offset != have || have+int64(len(data)) > f.length:
+		return mitosis.Fail("invalid_params")
+	default:
+		f.body = append(f.body, data...)
+	}
+	if f.start != nil && int64(len(f.body)) == f.length {
+		go f.start(f.body)
+		f.start, f.body = nil, nil
+	}
+	return nil
 }
 
 func (f *fetch) run(client *http.Client, request *http.Request) {
@@ -252,11 +289,15 @@ func (t *Transport) RoundTrip(request *http.Request) (*http.Response, error) {
 		}
 	}
 	ctx := request.Context()
-	device, id, err := t.open(ctx, map[string]any{"url": request.URL.String(), "method": request.Method, "header": request.Header, "body": body})
+	first := body[:min(len(body), maxChunk)]
+	device, id, err := t.open(ctx, map[string]any{"url": request.URL.String(), "method": request.Method, "header": request.Header, "body": first, "length": len(body)})
 	if err != nil {
 		return nil, err
 	}
 	b := &reader{ctx: ctx, t: t, device: device, id: id}
+	for at := len(first); at < len(body) && err == nil; at += maxChunk {
+		err = t.Call(ctx, device, Write, map[string]any{"fetch_id": id, "offset": at, "body": body[at:min(at+maxChunk, len(body))]}, nil)
+	}
 	var c chunk
 	for err == nil && c.Status == 0 {
 		c, err = b.next()
