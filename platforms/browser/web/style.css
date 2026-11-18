@@ -82,7 +82,9 @@ button.inverted { color: var(--bg); background: var(--fg); }
 /* The conversation spans the window, so its scrollbar sits at the edge; what it holds keeps the reading column. */
 #chat { max-width: none; padding: 0; }
 #transcript > * { max-width: 720px; margin-inline: auto; }
-#transcript { flex: 1; min-height: 0; padding: 12px var(--margin) 0; overflow-y: auto; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+/* The page follows a reply itself (drawStream), only while the end is in view: the browser's own
+   anchoring would carry a reader scrolled up along with the reply. */
+#transcript { overflow-anchor: none; flex: 1; min-height: 0; padding: 12px var(--margin) 0; overflow-y: auto; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
 #transcript:focus-visible { outline: 0; }
 #messages:empty { display: flex; align-items: center; justify-content: center; gap: 10px; height: 100%; }
 #messages:empty::before { content: "NEW SESSION"; height: 46px; font-size: 34.6px; font-weight: 700; line-height: 46px; transform: scaleY(1.9); animation: wipe 260ms 60ms var(--ease) backwards; }
@@ -90,6 +92,9 @@ button.inverted { color: var(--bg); background: var(--fg); }
 .user { width: fit-content; max-width: calc(100% - 48px); margin: 28px 0 16px auto; padding: 8px 12px; white-space: pre-wrap; border-radius: var(--pane); background: color-mix(in srgb, var(--fg) 7%, transparent); }
 .user:first-child { margin-top: 0; }
 .assistant { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 8px; }
+#final, #tail { display: contents; }
+/* Only the messages on screen are laid out and painted, however long the conversation. */
+#messages > * { content-visibility: auto; contain-intrinsic-size: auto 80px; }
 .assistant :is(p, h3, ul, ol, pre) { margin: 0; }
 .assistant p { white-space: pre-wrap; }
 .assistant h3 { margin-top: 4px; font-size: var(--title); font-weight: 600; letter-spacing: -.02em; }
@@ -205,7 +210,7 @@ button.inverted { color: var(--bg); background: var(--fg); }
 .interrupt .choice { display: flex; width: 100%; padding: 14px 20px; border: 0; border-radius: 0; text-align: left; font-size: var(--body); font-weight: 400; color: var(--ink); animation: enter 300ms calc(40ms + var(--n) * 25ms) var(--ease) backwards; }
 @keyframes enter { from { opacity: 0; transform: translateY(50%); } }
 .interrupt .choice b { width: 36px; flex-shrink: 0; font-weight: 700; }
-.interrupt .choice.first { color: var(--rupture); background: var(--ink); }
+.interrupt .choice:is(.first, .ticked) { color: var(--rupture); background: var(--ink); }
 @media (hover: hover) { .interrupt .choice:not(.first):hover { background: color-mix(in srgb, var(--ink) 12%, transparent); } }
 .interrupt > div > div:has(input) { display: flex; gap: 8px; padding: 16px; }
 .interrupt input { flex: 1; min-width: 0; padding: 12px 18px; font: inherit; color: var(--ink); border: 1px solid var(--ink); border-radius: var(--soft); background: none; outline: 0; }

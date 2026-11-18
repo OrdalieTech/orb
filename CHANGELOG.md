@@ -10,6 +10,9 @@ shown by `/changelog`.
 
 - A browser tab uses every account its devices share: the requests the browser refuses, to APIs that send no CORS headers (ChatGPT, opencode, xAI's sign-in), go through an online device of the tab's group, to public HTTPS addresses only. `orb mitosis --browser` opens the page, now on GitHub Pages at https://ordalietech.github.io/orb/ with each release, at a link that pairs the tab by itself (the code rides after `#`, which never leaves the browser), and turns on, for good, the loopback listener the page reaches.
 
+- An Orb's Mitosis stream no longer marshals the whole reply at every delta of it: a 330 KB reply in 41,000 deltas made 13 GB of JSON for its followers (134 s in a browser tab, 4 s now). The message streaming in goes out at most every 50 ms; its end carries it whole.
+- The browser tab stays responsive under load: its Orb runs in a Web Worker, the reply streaming in is drawn once a frame and only its end, a long conversation reuses what it drew and lays out only what is on screen, a tool's input and output are drawn when opened (64 KiB at most), Stop stops within 0.1 s, and a reader scrolled up stays put.
+
 - `orb mitosis join` starts Mitosis before it reads a short code, so a daemon that can't start no longer uses up the code.
 
 ## [0.24.0] - 2026-11-17

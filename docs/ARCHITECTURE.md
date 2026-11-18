@@ -160,7 +160,11 @@ No agent process or model proxy runs on the server. Each release attaches `make 
 `<base>` points at a directory named by version and digest, so a cache never mixes two releases'
 files. GitHub Pages serves the latest release's at https://ordalietech.github.io/orb/.
 
-The page makes the tab one of the user's devices: the link `orb mitosis --browser`
+The tab's Orb runs in a Web Worker (`peer.js` is also the worker's script), so what it computes
+never holds up the page; its RPC frames cross at most every 16 ms, and a fetch body already
+received is read 16 ms at a time, the event loop turning between, so a stop is never stuck behind
+a fast stream. The page draws a reply streaming in once a frame, only its end, and draws each
+message once. The page makes the tab one of the user's devices: the link `orb mitosis --browser`
 opens `peer.js` over IndexedDB, which joins, trusts the inviting device and follows its sync
 group, and the page shows the fingerprint to confirm there, which approves the tab and adds it to
 the group. The first provider the group shares replaces the fingerprint with the conversation,

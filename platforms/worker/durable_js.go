@@ -30,12 +30,12 @@ type durableKV struct{ storage js.Value }
 
 // helpers are the shim's (deploy/worker.mjs). Each settles a wait on
 // JavaScript by calling settle once with the wait's id and its results.
-var helpers struct{ await, fetch, read, release js.Value }
+var helpers struct{ await, fetch, pause, read, release js.Value }
 
 // Bind hands the package the shim's helpers, through which the Durable Object
 // storage and FetchTransport wait on JavaScript.
 func Bind(shim js.Value) {
-	helpers.await, helpers.fetch, helpers.read, helpers.release = shim.Get("await"), shim.Get("fetch"), shim.Get("read"), shim.Get("release")
+	helpers.await, helpers.fetch, helpers.pause, helpers.read, helpers.release = shim.Get("await"), shim.Get("fetch"), shim.Get("pause"), shim.Get("read"), shim.Get("release")
 }
 
 // settlements are the waits in flight. One callback settles them all: a pair

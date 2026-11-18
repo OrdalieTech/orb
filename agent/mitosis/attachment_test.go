@@ -371,7 +371,8 @@ func TestADescribeLeavesOutTheCatalogItHolds(t *testing.T) {
 }
 
 // A follower that polls after a streamed turn receives the finished message, not every update
-// it replaced, and no update repeats its message.
+// it replaced, and no update repeats its message; the stream carried the message streaming in
+// every updateEvery, not at each of its ~750 deltas.
 func TestAFollowerGetsTheLatestOfWhatStreamed(t *testing.T) {
 	a, host := attachedWith(t, Options{}, faux.AssistantMessage(strings.Repeat("streamed words ", 200)))
 	raw, _ := a.observe("", "", "", 0)
@@ -401,7 +402,7 @@ func TestAFollowerGetsTheLatestOfWhatStreamed(t *testing.T) {
 			t.Fatalf("sent a replaced update (%d of %d events)", len(got.Events), len(all))
 		}
 	}
-	if updates < 2 || !bytes.Contains(got.Events[len(got.Events)-1].Data, []byte("agent_end")) {
+	if updates < 1 || updates > 20 || !bytes.Contains(got.Events[len(got.Events)-1].Data, []byte("agent_end")) {
 		t.Fatalf("%d updates streamed, page ends %s", updates, got.Events[len(got.Events)-1].Data)
 	}
 }

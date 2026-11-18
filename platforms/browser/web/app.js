@@ -1,9 +1,9 @@
-import { indexedStorage, openPeer } from "./peer.js";
+import { spawnPeer } from "./peer.js";
 const $ = id => document.getElementById(id);
 // notice: the one error line, moved to the screen it concerns, so pages that redraw keep hold of it.
 const notice = document.getElementById("error");
 // tab: this tab's own Orb (peer.wasm), one of the user's devices; word: what it does now; where: its model.
-let tab = null, me = "", running = false, switching = false, messages = [], streamed = "", word = "", where = "";
+let tab = null, me = "", running = false, switching = false, stopping = false, messages = [], streamed = "", word = "", where = "";
 // tabs: the conversations the bar shows, by session file, with their titles; current: the one shown.
 let tabs = JSON.parse(localStorage.getItem("orb.tab.tabs") || "[]"), current = "";
 
@@ -117,43 +117,93 @@ function inline(text) {
 // What the person said sits at right on a soft ground; Orb just speaks, full width, its actions
 // inline: a line per tool call (what ran, on what; failed in the rupture), which opens on what it
 // was given and what came back.
+// A message is drawn once: a conversation's later turns reuse what its earlier ones drew, so a
+// long one costs only its new messages, and the browser lays out only what is on screen (CSS).
+let drawn = new Map();
 function renderMessages(list) {
-  const transcript = $("transcript"), results = new Map(list.filter(m => m.role === "toolResult").map(m => [m.toolCallId, m]));
-  $("messages").replaceChildren(...list.flatMap(message => {
-    if (message.role === "user") return text(message.content) ? [Object.assign(node("p", text(message.content)), { className: "user" })] : [];
-    if (message.role !== "assistant") return [];
-    const blocks = (typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content || []).flatMap(block =>
-      block.type === "text" ? markdown(block.text) : block.type === "toolCall" ? [action(block, results.get(block.id))] : []);
-    return blocks.length ? [Object.assign(node("div", ...blocks), { className: "assistant" })] : [];
+  const transcript = $("transcript"), results = new Map(list.filter(m => m.role === "toolResult").map(m => [m.toolCallId, m])), next = new Map();
+  $("messages").replaceChildren(...list.flatMap((message, i) => {
+    const calls = Array.isArray(message.content) ? message.content.filter(b => b.type === "toolCall") : [];
+    const key = `${i} ${message.role} ${message.timestamp} ${calls.filter(c => results.has(c.id)).length}`;
+    const nodes = drawn.get(key) ?? draw(message, results);
+    next.set(key, nodes);
+    return nodes;
   }));
-  transcript.scrollTop = transcript.scrollHeight;
+  drawn = next;
+  // The messages coming into view take their size as they are drawn: the end is held for two frames.
+  const end = () => (transcript.scrollTop = transcript.scrollHeight);
+  pinned = true;
+  end();
+  requestAnimationFrame(() => { end(); requestAnimationFrame(end); });
 }
+function draw(message, results) {
+  if (message.role === "user") return text(message.content) ? [Object.assign(node("p", text(message.content)), { className: "user" })] : [];
+  if (message.role !== "assistant") return [];
+  const blocks = (typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content || []).flatMap(block =>
+    block.type === "text" ? markdown(block.text) : block.type === "toolCall" ? [action(block, results.get(block.id))] : []);
+  return blocks.length ? [Object.assign(node("div", ...blocks), { className: "assistant" })] : [];
+}
+// What a tool was given and gave back is drawn when its line opens, and past 64 KiB says how much
+// more there is: a call can carry megabytes the conversation need not hold on screen.
 function action(call, result) {
   const args = call.arguments || {}, given = String(args.code ?? args.command ?? args.path ?? JSON.stringify(args));
-  const line = node("summary", node("b", call.name), node("span", given.split("\n")[0]), ...(result?.isError ? [node("em", "failed")] : []));
-  return Object.assign(node("details", line, node("pre", given), ...(result ? [node("pre", text(result.content))] : [])), { className: "action" });
+  const line = node("summary", node("b", call.name), node("span", given.slice(0, 200).split("\n")[0]), ...(result?.isError ? [node("em", "failed")] : []));
+  const clip = text => text.length > 65536 ? `${text.slice(0, 65536)}\n… ${Math.round((text.length - 65536) / 1024)} KiB more` : text;
+  const details = Object.assign(node("details", line), { className: "action" });
+  details.ontoggle = () => details.open && details.childElementCount === 1 && details.append(node("pre", clip(given)), ...(result ? [node("pre", clip(text(result.content)))] : []));
+  return details;
 }
 function idle() {
-  running = false; word = "";
+  cancelAnimationFrame(painting); painting = 0;
+  running = stopping = false; word = "";
   $("stream").hidden = true;
   for (const question of document.querySelectorAll(".interrupt")) question.remove();
   controls();
 }
 // RPC frames carry message_update as deltas (agent/rpc).
 function onEvent(event) {
-  if (event.type === "tool_execution_start") word = `using ${event.toolName}`;
-  if (event.type === "message_start") streamed = "";
   if (event.type === "message_update") {
-    const transcript = $("transcript");
-    const following = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 80;
+    if (stopping) return;
     const delta = event.assistantMessageEvent;
-    const reply = event.message ? text(event.message.content) : (streamed += delta?.type === "text_delta" ? delta.delta : "");
-    $("stream").replaceChildren(...markdown(reply));
-    $("stream").hidden = !reply;
-    if (following) transcript.scrollTop = transcript.scrollHeight;
-    if (reply) word = "replying";
+    if (event.message) { streamed = text(event.message.content); kept = 0; $("final").replaceChildren(); }
+    else if (delta?.type === "text_delta") streamed += delta.delta;
+    painting ||= requestAnimationFrame(drawStream);
+    return;
   }
+  if (event.type === "tool_execution_start") word = `using ${event.toolName}`;
+  if (event.type === "message_start") { streamed = ""; kept = 0; $("final").replaceChildren(); }
   controls();
+}
+// The reply streaming in is drawn at most once a frame, and only its end: what is above its last
+// blank line outside a code fence is final, drawn once and kept, so a long reply streams as fast
+// as a short one. The conversation draws it whole once it ends.
+let painting = 0, kept = 0, tailAt = 0, pinned = true;
+// The reply is followed while the reader stays at its end: scrolling up (wheel, touch, keys) lets
+// go, and coming back to the end takes hold again.
+$("transcript").addEventListener("wheel", event => { if (event.deltaY < 0) pinned = false; }, { passive: true });
+$("transcript").addEventListener("touchmove", () => (pinned = false), { passive: true });
+$("transcript").addEventListener("keydown", event => { if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pinned = false; });
+let lastTop = 0;
+$("transcript").addEventListener("scroll", ({ target: t }) => {
+  if (t.scrollTop > lastTop && t.scrollHeight - t.scrollTop - t.clientHeight < 4) pinned = true;
+  lastTop = t.scrollTop;
+}, { passive: true });
+function drawStream(whole) {
+  painting = 0;
+  const transcript = $("transcript");
+  let open = false, from = kept;
+  for (let at = streamed.indexOf("\n\n", from); at !== -1; at = streamed.indexOf("\n\n", from)) {
+    if ((streamed.slice(from, at).match(/^```/gm) || []).length % 2) open = !open;
+    from = at + 2;
+    if (!open) { $("final").append(...markdown(streamed.slice(kept, from))); kept = from; }
+  }
+  // A long block still coming in (a big table, a long code block) is drawn again 4 times a second.
+  const tail = streamed.slice(kept), now = performance.now();
+  if (whole === true || tail.length < 16384 || now - tailAt > 250) { $("tail").replaceChildren(...markdown(tail)); tailAt = now; }
+  else painting ||= requestAnimationFrame(drawStream);
+  $("stream").hidden = !streamed;
+  if (pinned) transcript.scrollTop = transcript.scrollHeight;
+  if (streamed && word !== "replying") { word = "replying"; controls(); }
 }
 // A question the agent waits on stops the world, as in the apps (platforms/desktop's interrupt,
 // Android's Interrupt, mitosis/view's walk): the red fills the page between warning stripes, the
@@ -169,10 +219,12 @@ async function ask() {
     if (!asked) return { title: input.title, choices: input.choices || [], free: !input.choices?.length, answer: value => done(value ?? "") };
     const q = asked[answers.length], n = asked.length;
     return {
-      title: q.question, message: [q.header, n > 1 && `${answers.length + 1} / ${n}`].filter(Boolean).join("  "), choices: (q.options || []).map(o => o.label), free: true,
+      title: q.question, message: [q.header, n > 1 && `${answers.length + 1} / ${n}`].filter(Boolean).join("  "), choices: (q.options || []).map(o => o.label), free: true, multi: q.multi_select,
+      // A choice, a line, or with multi_select the choices ticked and a line.
       answer: value => {
         if (value === null) return done(JSON.stringify({ cancelled: true }));
-        answers.push(q.options?.some(o => o.label === value) ? { id: q.id, selected: [value] } : { id: q.id, selected: [], custom: value });
+        const given = [value].flat(), labels = (q.options || []).map(o => o.label);
+        answers.push({ id: q.id, selected: given.filter(v => labels.includes(v)), ...(given.some(v => !labels.includes(v)) && { custom: given.filter(v => !labels.includes(v)).join("\n") }) });
         answers.length < n ? interrupt(owner, input.id, step()) : done(JSON.stringify({ answers }));
       },
     };
@@ -199,18 +251,24 @@ function interrupt(owner, id, ask) {
   box.classList.toggle("again", again);
   const field = Object.assign(node("input"), { placeholder: "type an answer", autocomplete: "off", enterKeyHint: "send" });
   const answer = value => { removeEventListener("keydown", keys); ask.answer(value); };
+  // With several to choose, a choice ticks; send answers with what is ticked.
+  const ticked = new Set(), choose = (choice, row) => {
+    if (!ask.multi) return answer(choice);
+    ticked.has(choice) ? ticked.delete(choice) : ticked.add(choice);
+    row.classList.toggle("ticked", ticked.has(choice));
+  };
   const keys = event => {
     if (event.key === "Escape") return answer(null);
     const hit = event.target !== field && Date.now() > box.dataset.armed && keyed.find(([key]) => key === event.key);
-    if (hit) { event.preventDefault(); answer(hit[2]); }
+    if (hit) { event.preventDefault(); choose(hit[2], box.querySelectorAll(".choice")[keyed.indexOf(hit)]); }
   };
-  const send = () => field.value.trim() && answer(field.value);
+  const send = () => ask.multi ? (ticked.size || field.value.trim()) && answer([...ticked, field.value.trim()].filter(Boolean)) : field.value.trim() && answer(field.value);
   field.onkeydown = event => event.key === "Enter" && send();
   box.replaceChildren(node("i"), node("div", node("div", node("span", owner), node("span", "waiting on you")), node("hr"),
     Object.assign(node("h2", word), { className: word.length > 5 ? "stretch word squeezed" : "stretch word" }), Object.assign(node("p", caption), { className: "caption" }),
     Object.assign(node("p", first), { className: "first" }), ...(detail ? [Object.assign(node("p", detail), { className: "detail" })] : []),
     node("hr"), ...keyed.map(([key, text, choice], n) => Object.assign(node("button", node("b", key), node("span", text)), {
-      type: "button", className: n ? "choice" : "choice first", style: `--n: ${n}`, onclick: () => answer(choice) })),
+      type: "button", className: n || ask.multi ? "choice" : "choice first", style: `--n: ${n}`, onclick: event => choose(choice, event.currentTarget) })),
     ...(ask.free ? [node("div", field, button("send", send, "inverted"))] : []),
     node("hr"), button(matchMedia("(hover: hover)").matches ? "esc  ·  dismiss" : "dismiss", () => answer(null))), node("i"));
   addEventListener("keydown", keys);
@@ -226,7 +284,8 @@ function leave() {
 $("prompt-form").onsubmit = event => {
   event.preventDefault();
   if (!tab || switching) return;
-  if (running) { tab.rpc("abort").catch(error => showError(error.message)); return; }
+  // Stopped, the reply stops on screen at once, though what was already on its way still arrives.
+  if (running) { stopping = true; tab.rpc("abort").catch(error => showError(error.message)); return; }
   const value = $("prompt").value;
   if (!value.trim()) return;
   running = true; word = "waiting"; showError("");
@@ -409,17 +468,16 @@ async function openTab() {
   // appended in memory, so a second page writing the same database would overwrite them.
   const held = await new Promise(resolve => navigator.locks.request("orb-tab", { ifAvailable: true }, lock => { resolve(!!lock); return lock && new Promise(() => {}); }));
   if (!held) throw new Error("Your Orb is already open in another tab of this page.");
-  await import("./wasm_exec.js");
-  await import("./helpers.js");
   const response = await fetch("peer.wasm.gz");
   if (!response.ok) throw new Error(`Wasm download failed: ${response.status}`);
-  const replies = new Map(), decoder = new TextDecoder();
+  const replies = new Map();
   let next = 0;
-  const peer = await openPeer({
-    wasm: await new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(), storage: indexedStorage("orb-tab"),
+  // In a worker, so the page stays responsive however much Orb computes.
+  const peer = spawnPeer({
+    wasm: await new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(), storage: "orb-tab",
     env: { ORB_SETTINGS: JSON.stringify({ plugins: { memory: true } }) },
-    emit: (array, length) => {
-      const frame = JSON.parse(decoder.decode(array.slice(0, length)));
+    emit: text => {
+      const frame = JSON.parse(text);
       if (frame.type === "response" && replies.has(frame.id)) { replies.get(frame.id)(frame); replies.delete(frame.id); return; }
       if (frame.type === "extension_ui_request") ask();
       else if (frame.type !== "response") onEvent(frame);
@@ -434,8 +492,9 @@ async function openTab() {
     rpc: (type, params = {}) => new Promise((resolve, reject) => {
       const id = `tab-${++next}`;
       replies.set(id, frame => (frame.success ? resolve(frame.data) : reject(new Error(frame.error))));
-      const refused = peer.command(JSON.stringify({ id, type, ...params }));
-      if (refused) { replies.delete(id); reject(new Error(refused)); }
+      peer.command(JSON.stringify({ id, type, ...params })).then(refused => {
+        if (refused) { replies.delete(id); reject(new Error(refused)); }
+      }, reject);
     }),
   };
   ({ peer_id: me } = await tab.admin("self"));
@@ -458,6 +517,13 @@ async function settle() {
   save();
   const last = messages.at(-1);
   showError(last?.role === "assistant" && last.stopReason === "error" ? last.errorMessage : "");
+  // A reply that just streamed in keeps what the stream drew of it, rather than drawn again.
+  if (last?.role === "assistant" && streamed && Array.isArray(last.content) && last.content.every(b => b.type === "text") && text(last.content) === streamed) {
+    cancelAnimationFrame(painting);
+    drawStream(true);
+    drawn.set(`${messages.length - 1} assistant ${last.timestamp} 0`, [Object.assign(node("div", ...$("final").childNodes, ...$("tail").childNodes), { className: "assistant" })]);
+  }
+  streamed = "";
   renderMessages(messages); idle();
   readContext().catch(() => {});
 }
