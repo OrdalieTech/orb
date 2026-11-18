@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/plugins/memory"
 )
 
@@ -201,5 +204,48 @@ func TestFileStoreTransactionKeepsCompoundWritesAtomic(t *testing.T) {
 	items, err = store.Query(context.Background(), memory.Filter{Contains: "rolled back"})
 	if err != nil || len(items) != 0 {
 		t.Fatalf("rolled-back items = %#v, error = %v", items, err)
+	}
+}
+
+// Churn appends forever while what is live stays small; both stores compact back to the live items.
+func TestJournalCompactsChurn(t *testing.T) {
+	dir := t.TempDir()
+	files, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := &document.Memory{}
+	ctx := context.Background()
+	for _, store := range []memory.TransactionalStore{files, Journal{Document: doc}} {
+		kept, err := store.Append(ctx, memory.Item{Time: time.Now(), Content: "kept"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for round := range 50 {
+			err := store.Transact(ctx, func(tx memory.Store) error {
+				for i := range 40 {
+					id, err := tx.Append(ctx, memory.Item{Time: time.Now(), Content: strings.Repeat("churn ", 20) + strconv.Itoa(round*40+i)})
+					if err != nil {
+						return err
+					}
+					if err := tx.Delete(ctx, id); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		items, err := store.Query(ctx, memory.Filter{Limit: -1})
+		if err != nil || len(items) != 1 || items[0].ID != kept {
+			t.Fatalf("live items = %#v, %v", items, err)
+		}
+	}
+	info, err := os.Stat(filepath.Join(dir, "memory.jsonl"))
+	raw, _ := doc.Read(ctx)
+	if err != nil || info.Size() >= compactAt || len(raw) >= compactAt {
+		t.Fatalf("journals grew to %d and %d bytes (%v), past %d", info.Size(), len(raw), err, compactAt)
 	}
 }
