@@ -16,6 +16,8 @@
 body { height: 100dvh; margin: 0; display: flex; flex-direction: column; }
 section { flex: 1; min-height: 0; display: flex; flex-direction: column; width: 100%; max-width: calc(720px + 2 * var(--margin)); margin: 0 auto; padding: 0 var(--margin); }
 [hidden] { display: none !important; }
+/* While the tab's Orb opens, no screen yet: the maker's mark, faint. */
+body:not(:has(> section:not([hidden])))::before { content: ""; flex: 1; background: var(--rule); mask: url(ordalie.svg) center / 26px no-repeat; }
 h1 { margin: 0 0 10px; font-size: var(--title); font-weight: 600; letter-spacing: -.02em; }
 p { margin: 0; }
 .meta { font-size: var(--small); color: var(--meta); overflow-wrap: anywhere; }
@@ -41,7 +43,10 @@ button.inverted { color: var(--bg); background: var(--fg); }
 
 /* The conversation: what the person said sits at right on a soft ground; Orb just speaks, full
    width, its blocks 8 apart; an empty one shows the maker's mark, small and faint. */
-#transcript { flex: 1; min-height: 0; padding-top: 12px; overflow-y: auto; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+/* The conversation spans the window, so its scrollbar sits at the edge; what it holds keeps the reading column. */
+#chat { max-width: none; padding: 0; }
+#transcript > * { max-width: 720px; margin-inline: auto; }
+#transcript { flex: 1; min-height: 0; padding: 12px var(--margin) 0; overflow-y: auto; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
 #transcript:focus-visible { outline: 0; }
 #messages:empty { height: 100%; background: var(--rule); mask: url(ordalie.svg) center / 26px no-repeat; }
 .user { width: fit-content; max-width: calc(100% - 48px); margin: 28px 0 16px auto; padding: 8px 12px; white-space: pre-wrap; border-radius: var(--pane); background: color-mix(in srgb, var(--fg) 7%, transparent); }
@@ -55,11 +60,16 @@ button.inverted { color: var(--bg); background: var(--fg); }
 .assistant li::marker { color: var(--meta); }
 .assistant code { padding: 0 4px; border-radius: 4px; background: color-mix(in srgb, var(--fg) 7%, transparent); }
 .assistant pre { overflow-x: auto; padding: 12px; font: inherit; font-size: var(--small); border: 1px solid var(--rule); border-radius: var(--pane); background: var(--raised); }
+.assistant div { overflow-x: auto; }
+.assistant table { border-collapse: collapse; font-size: var(--small); }
+.assistant :is(th, td) { padding: 6px 10px; text-align: left; vertical-align: top; border: 1px solid var(--rule); }
+.assistant th { font-weight: 600; background: var(--raised); }
+.assistant a { color: inherit; text-underline-offset: 2px; }
 #stream::after { content: ""; width: .55em; height: 1.1em; background: var(--rupture); animation: blink 1.06s steps(1) infinite; }
 
 /* The prompt box, as on the desktop: raised and outlined, the draft above, under it where it
    runs and the one action, round. */
-#prompt-form { flex-shrink: 0; margin: 8px -8px max(16px, env(safe-area-inset-bottom)); padding: 14px 10px 10px; border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent); border-radius: 16px; background: var(--raised); box-shadow: 0 6px 24px var(--shade); }
+#prompt-form { flex-shrink: 0; width: calc(100% - 2 * var(--margin) + 16px); max-width: 736px; margin: 8px auto max(16px, env(safe-area-inset-bottom)); padding: 14px 10px 10px; border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent); border-radius: 16px; background: var(--raised); box-shadow: 0 6px 24px var(--shade); }
 #prompt { display: block; width: 100%; min-height: 2.9em; max-height: min(14lh, 30dvh); field-sizing: content; padding: 0 14px 4px; border: 0; resize: none; background: none; }
 #prompt::placeholder { color: var(--meta); }
 #prompt:focus-visible { outline: 0; }
@@ -70,5 +80,5 @@ button.inverted { color: var(--bg); background: var(--fg); }
 .round:disabled { opacity: 1; background: var(--rule); }
 .round.stop { background: var(--rupture); }
 
-#error { position: fixed; top: 12px; left: 50%; translate: -50%; width: min(720px, calc(100% - 2 * var(--margin))); max-height: 30vh; overflow: auto; padding: 8px 12px; border: 1px solid var(--rupture); border-radius: var(--pane); background: var(--raised); color: var(--rupture); font-size: var(--small); white-space: pre-wrap; overflow-wrap: anywhere; }
+#error { margin: 12px 0 0; color: var(--rupture); font-size: var(--small); white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 600px) { #prompt { font-size: 16px; } }

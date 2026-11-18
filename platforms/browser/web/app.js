@@ -1,18 +1,23 @@
 import { indexedStorage, openPeer } from "./peer.js";
 const $ = id => document.getElementById(id);
-// tab: this tab's own Orb (peer.wasm), one of the user's devices; word: what it does now; where: its link and model.
+// tab: this tab's own Orb (peer.wasm), one of the user's devices; word: what it does now; where: its model.
 let tab = null, me = "", running = false, messages = [], streamed = "", word = "", where = "";
 
 function showError(message) {
   $("error").textContent = message || "";
   $("error").hidden = !message;
 }
-// show picks the one screen: the invitation, its approval, or the conversation.
+// show picks the one screen: the invitation, its approval, or the conversation; an error reads
+// at the end of what it concerns, as the apps note one.
 function show(screen) {
+  const opening = screen === "chat" && $("chat").hidden;
+  $(screen === "chat" ? "transcript" : screen).append($("error"));
   $("pair").hidden = screen === "chat";
   $("chat").hidden = screen !== "chat";
   $("invite").hidden = screen !== "invite";
   $("approve").hidden = screen !== "approve";
+  // A hidden transcript has no height to scroll: it opens at its end once shown.
+  if (opening) $("transcript").scrollTop = $("transcript").scrollHeight;
 }
 function controls() {
   $("status").textContent = word || where;
@@ -29,23 +34,30 @@ function node(tag, ...children) {
   element.append(...children);
   return element;
 }
-// markdown draws what the apps draw of a reply (headings, lists, code blocks, inline code, bold,
-// italic) as elements, never as HTML.
+// markdown draws what the apps draw of a reply (headings, lists, tables, code blocks, inline
+// code, bold, italic, links) as elements, never as HTML.
 function markdown(source) {
   const blocks = [];
   let list = null, paragraph = null;
-  const lines = source.split("\n");
+  const lines = source.split("\n"), cells = line => line.trim().replace(/^\||\|$/g, "").split("|").map(cell => node("td", ...inline(cell.trim())));
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i], item = /^\s*([-*+]|\d+[.)])\s+(.*)/.exec(line), heading = /^#{1,6}\s+(.*)/.exec(line), fence = line.startsWith("```");
-    if (!item) list = null;
-    if (item || heading || fence || !line.trim()) paragraph = null;
+    const table = line.trim().startsWith("|") && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1] || "") && lines[i + 1].includes("-");
+    // A list goes on across blank lines, as models write numbered steps apart.
+    if (!item && line.trim()) list = null;
+    if (item || heading || fence || table || !line.trim()) paragraph = null;
     if (fence) {
       const code = [];
       while (++i < lines.length && !lines[i].startsWith("```")) code.push(lines[i]);
       blocks.push(node("pre", code.join("\n")));
+    } else if (table) {
+      const rows = [node("tr", ...cells(line).map(cell => node("th", ...cell.childNodes)))];
+      for (i += 2; i < lines.length && lines[i].trim().startsWith("|"); i++) rows.push(node("tr", ...cells(lines[i])));
+      i--;
+      blocks.push(node("div", node("table", ...rows)));
     } else if (item) {
       const tag = /\d/.test(item[1]) ? "OL" : "UL";
-      if (list?.tagName !== tag) blocks.push(list = node(tag));
+      if (list?.tagName !== tag) blocks.push(list = Object.assign(node(tag), tag === "OL" ? { start: parseInt(item[1]) } : {}));
       list.append(node("li", ...inline(item[2])));
     } else if (heading) blocks.push(node("h3", ...inline(heading[1])));
     else if (paragraph) paragraph.append("\n", ...inline(line));
@@ -54,8 +66,14 @@ function markdown(source) {
   return blocks;
 }
 function inline(text) {
-  return text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*\s][^*]*\*)/).map((part, i) => i % 2 === 0 ? part
-    : part[0] === "`" ? node("code", part.slice(1, -1)) : part[1] === "*" ? node("strong", part.slice(2, -2)) : node("em", part.slice(1, -1)));
+  return text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*\s][^*]*\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/).map((part, i) => {
+    if (i % 2 === 0) return part;
+    if (part[0] === "[") {
+      const [, label, href] = /^\[(.+)\]\((.+)\)$/.exec(part);
+      return Object.assign(node("a", label), { href, target: "_blank", rel: "noreferrer" });
+    }
+    return part[0] === "`" ? node("code", part.slice(1, -1)) : part[1] === "*" ? node("strong", part.slice(2, -2)) : node("em", part.slice(1, -1));
+  });
 }
 // What the person said sits at right on a soft ground; Orb just speaks, full width.
 function renderMessages(list) {
@@ -149,16 +167,18 @@ async function openTab() {
 }
 async function settle() {
   ({ messages } = await tab.rpc("get_messages"));
-  renderMessages(messages); idle();
   const last = messages.at(-1);
   showError(last?.role === "assistant" && last.stopReason === "error" ? last.errorMessage : "");
+  renderMessages(messages); idle();
 }
 // Provider names only: credentials never leave the tab's Orb. The first provider the device
-// shares is its approval: the conversation replaces the fingerprint.
+// shares is its approval: the conversation replaces the fingerprint. Until then the tab asks to
+// follow the device's sync group again, since the device may admit it after the tab first asked.
 async function refreshTab() {
   try {
     const owner = localStorage.getItem("orb.tab.owner");
-    const [status, { models }] = await Promise.all([tab.admin("status"), tab.rpc("get_available_models")]);
+    const { models } = await tab.rpc("get_available_models");
+    if (owner && !models.length) await tab.admin("sync", { join: owner }).catch(() => {});
     let { model } = await tab.rpc("get_state");
     // A session started before any provider arrived has no model; a new one takes the preferred one.
     if (models.length && (!model || model.provider === "unknown") && !running && !messages.length) {
@@ -166,7 +186,7 @@ async function refreshTab() {
       ({ model } = await tab.rpc("get_state"));
     }
     show(!owner ? "invite" : models.length ? "chat" : "approve");
-    where = [status.peer_states?.[owner] === "connected" ? "online" : "offline", ...(model && model.provider !== "unknown" ? [`${model.provider}/${model.id}`] : [])].join(" · ");
+    where = model && model.provider !== "unknown" ? model.id.split("/").at(-1) : "";
     controls();
   } catch (error) { showError(error.message); }
   finally { setTimeout(refreshTab, 3000); }
@@ -181,8 +201,6 @@ $("join").onclick = async () => {
     if (!tab) await openTab();
     await tab.admin("join", invitation);
     await tab.admin("trust", { peer_id: invitation.peer_id });
-    // Until the device admits the tab, the first round has nothing to open; later rounds retry.
-    await tab.admin("sync", { join: invitation.peer_id }).catch(() => {});
     localStorage.setItem("orb.tab.owner", invitation.peer_id);
     show("approve");
   } catch (error) { showError(error.message); }
