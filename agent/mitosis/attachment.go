@@ -374,8 +374,10 @@ func (a *Attachment) Invoke(ctx context.Context, method string, params json.RawM
 	if p.Params.InstanceID != a.options.InstanceID {
 		return nil, mitosis.Fail("not_found")
 	}
+	// A receipt is the caller's own (the ledger is keyed by principal), so reading one takes no
+	// inspection: a peer that may only switch sessions still learns where its switch led.
 	r := mitosis.Request{Principal: p.Principal, Call: mitosis.Call{InstanceID: p.Params.InstanceID, Method: "inspect"}}
-	if !a.options.Authorize(r) {
+	if method != "operations.get" && !a.options.Authorize(r) {
 		return nil, mitosis.Fail("not_found")
 	}
 	switch method {

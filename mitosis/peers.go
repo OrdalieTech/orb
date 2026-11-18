@@ -143,10 +143,21 @@ func (ps *Peers) Remote(ctx context.Context, id, method string, p any) (json.Raw
 	}
 	// A dead connection fails, or is superseded by the channel a restarted peer opens to greet
 	// this one; one retry reaches the peer's fresh channel or redials. Only calls safe to repeat
-	// are retried: reads, and instances.call, which the peer deduplicates by operation id.
+	// are retried: reads, and agent.call, which the peer deduplicates by operation id.
 	retries := 1
 	if method == "host.launch" || method == "host.terminal.open" || method == "host.terminal.write" {
 		retries = 0
+	}
+	if method == "agent.call" { // its operation id is fixed here, so the retry is the same operation
+		raw, err := json.Marshal(p)
+		var call map[string]json.RawMessage
+		if err != nil || json.Unmarshal(raw, &call) != nil {
+			return nil, Fail("invalid_params")
+		}
+		if len(call["operation_id"]) == 0 || string(call["operation_id"]) == `""` {
+			call["operation_id"] = JSON(protocol.NewID())
+		}
+		p = call
 	}
 	ps.used.Store(id, time.Now())
 	for attempt := 0; ; attempt++ {
@@ -301,6 +312,12 @@ func (ps *Peers) Admin(ctx context.Context, method string, params json.RawMessag
 		}
 		return ps.Remote(ctx, p.PeerID, p.Method, p.Params)
 	case "sync":
+		var p struct {
+			Join string `json:"join"`
+		}
+		if json.Unmarshal(params, &p) == nil && p.Join != "" {
+			_, _ = ps.Peer(ctx, p.Join, "") // a channel to ask it the group
+		}
 		return ps.Mitosis.SyncAdmin(ctx, params, ps.endpoints())
 	case "publish":
 		var p struct {
@@ -443,9 +460,6 @@ func (ps *Peers) Reconcile() {
 					if err == nil {
 						err = ps.exchange(ctx, c, scope, peer, versions)
 					}
-					if Code(err) == "unauthorized" {
-						ps.Mitosis.Refused(scope)
-					}
 					m := mark{string(JSON(versions)), ps.Mitosis.Connection(peer), time.Now().Add(time.Minute)}
 					if after, e := ps.Mitosis.Versions(peer, scope); err == nil && e == nil {
 						m = mark{string(JSON(after)), c, time.Now().Add(5 * time.Minute)}
@@ -478,10 +492,10 @@ func (ps *Peers) Reconcile() {
 }
 
 // dials is who this device dials to reconcile a scope: the members a power of two ahead of it on
-// the ring of members by PeerID, and a sync group's owner only while this member has something to
-// hand it (the owner fetches a hand-in from its publisher, and no one dials a browser tab). A
+// the ring of members by PeerID, and a sync group's owners only while this member has something
+// to hand them (an owner fetches a hand-in from its publisher, and no one dials a browser tab). A
 // change then crosses n members in about log2(n) hops with about log2(n) dialled channels a
-// device, the owner included, where dialling every member would take n-1.
+// device, owners included, where dialling every member would take n-1.
 func (ps *Peers) dials(members []string) []string {
 	self := ps.Mitosis.PeerID()
 	ring := slices.Compact(slices.Sorted(slices.Values(members)))
@@ -496,8 +510,10 @@ func (ps *Peers) dials(members []string) []string {
 		}
 	}
 	ps.Mitosis.mu.Lock()
-	if group := ps.Mitosis.state.Scopes[ps.Mitosis.state.Group]; ps.Mitosis.handing && len(group) > 0 && len(members) > 0 && members[0] == group[0] {
-		add(members[0])
+	if ps.Mitosis.handing && slices.Equal(members, ps.Mitosis.state.Scopes[ps.Mitosis.state.Group]) {
+		for _, o := range ps.Mitosis.state.Owners {
+			add(o)
+		}
 	}
 	ps.Mitosis.mu.Unlock()
 	for d := 1; d < len(ring); d *= 2 {
@@ -620,5 +636,5 @@ func ParseInvitation(text string) (Invitation, error) {
 // ConversationGrant is control of every conversation without the machine: what a joining
 // Orb gives back to the Orb it joined, which never asked for more.
 func ConversationGrant(peer string) Grant {
-	return Grant{Principal: Principal{PeerID: peer, Subject: Subject{Kind: "controller"}}, GroupID: "*", IncludeFuture: true, Permissions: []string{"instance.list", "instance.inspect", "instance.prompt", "instance.steer", "instance.follow_up", "instance.input.reply", "instance.cancel", "instance.session.manage"}}
+	return Grant{Principal: Principal{PeerID: peer, Subject: Subject{Kind: "controller"}}, Permissions: []string{"agent.list", "agent.inspect", "agent.prompt", "agent.steer", "agent.follow_up", "agent.input.reply", "agent.cancel", "agent.session.manage"}}
 }

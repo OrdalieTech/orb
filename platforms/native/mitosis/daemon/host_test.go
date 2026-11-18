@@ -91,6 +91,10 @@ func TestHostListsAndReadsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testi
 	if _, err := s.host(t.Context(), p, "host.launch", mitosis.JSON(map[string]string{"session_id": "11111111-2222-4333-8444-555555555555"})); mitosis.Code(err) != "busy" {
 		t.Fatalf("launched a thread open elsewhere: %v", err)
 	}
+	// With neither folder nor thread, the agent's default conversation: the thread written in last.
+	if _, err := s.host(t.Context(), p, "host.launch", mitosis.JSON(struct{}{})); mitosis.Code(err) != "busy" {
+		t.Fatalf("the default conversation: %v", err)
+	}
 	_ = lock.Close()
 	// At the cap an Orb between turns gives way; Orbs all in a turn refuse the next.
 	for i := range maxLaunched {
@@ -157,7 +161,7 @@ func TestHostListsAndReadsThisMachinesThreadsAndLaunchesOnlyIntoFolders(t *testi
 }
 
 // An app opening a thread a terminal Orb holds off Mitosis joins that Orb: asked, it comes on
-// Mitosis, and host.launch answers its instance instead of busy.
+// Mitosis, and host.launch answers the thread it holds instead of busy.
 func TestAThreadHeldOffMitosisJoinsItsHolder(t *testing.T) {
 	root, err := os.MkdirTemp(map[bool]string{true: "", false: "/tmp"}[runtime.GOOS == "windows"], "orb-join-")
 	if err != nil {
@@ -206,12 +210,11 @@ func TestAThreadHeldOffMitosisJoinsItsHolder(t *testing.T) {
 	if _, err = launch(); mitosis.Code(err) != "busy" {
 		t.Fatalf("a holder that does not answer: %v", err)
 	}
-	var instance string
 	stop, err := holderState.ServeHeld(ctx, stored.Metadata().ID, func(ctx context.Context, method string, _ json.RawMessage) (json.RawMessage, error) {
 		if method != "mitosis" {
 			return nil, mitosis.Fail("not_found")
 		}
-		enrolled, token, err := b.Enroll("terminal", b.PersonalGroup())
+		enrolled, token, err := b.Enroll("terminal")
 		if err != nil {
 			return nil, err
 		}
@@ -222,7 +225,7 @@ func TestAThreadHeldOffMitosisJoinsItsHolder(t *testing.T) {
 		t.Cleanup(func() { _ = a.Close() })
 		generation, err := b.Attach(enrolled.ID, token, protocol.NewID(), mitosis.NewLocal(a.Invoke))
 		if err == nil {
-			instance, err = enrolled.ID, a.SetGeneration(generation)
+			err = a.SetGeneration(generation)
 		}
 		return mitosis.JSON(struct{}{}), err
 	})
@@ -232,10 +235,10 @@ func TestAThreadHeldOffMitosisJoinsItsHolder(t *testing.T) {
 	defer stop()
 	raw, err := launch()
 	var joined struct {
-		InstanceID string `json:"instance_id"`
+		SessionID string `json:"session_id"`
 	}
-	if err != nil || json.Unmarshal(raw, &joined) != nil || joined.InstanceID == "" || joined.InstanceID != instance {
-		t.Fatalf("launch = %s %v, want the holder's instance %q", raw, err, instance)
+	if err != nil || json.Unmarshal(raw, &joined) != nil || joined.SessionID != stored.Metadata().ID {
+		t.Fatalf("launch = %s %v, want the holder's thread %q", raw, err, stored.Metadata().ID)
 	}
 	if len(s.launched) != 0 {
 		t.Fatal("a second Orb was started on the held thread")

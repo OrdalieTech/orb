@@ -312,6 +312,17 @@ func (b *Mitosis) Known(peer string) bool {
 	return false
 }
 
+// nameFor is what this agent is called, for its owner and the peers it granted anything; a
+// stranger learns nothing.
+func (b *Mitosis) nameFor(p Principal) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.state.Blocked[p.PeerID] || !b.owner(p) && !slices.ContainsFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == p.PeerID }) {
+		return ""
+	}
+	return b.name
+}
+
 func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.RawMessage) (json.RawMessage, error) {
 	b.mu.Lock()
 	blocked := b.state.Blocked[peer] || b.closed || b.failed
@@ -371,44 +382,46 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 		}
 		r, err := b.PairStatus(peer, p.ID)
 		return JSON(r), err
-	case "instances.list":
-		var p pageRequest
+	case "agent.describe":
+		var p struct {
+			Cursor string `json:"cursor,omitempty"`
+		}
 		if err := protocol.Decode(params, &p); err != nil {
 			return nil, err
 		}
-		r, err := page(b.Catalog(principal), p.Cursor, protocol.PageLimit(ctx))
-		return JSON(r), err
-	case "instances.call":
+		items := []Conversation{}
+		if b.permits(principal, "agent.list") {
+			items = b.conversations(ctx)
+		}
+		r, err := page(items, p.Cursor, protocol.PageLimit(ctx))
+		return JSON(struct {
+			Name string `json:"name,omitempty"`
+			pageResult[Conversation]
+		}{b.nameFor(principal), r}), err
+	case "agent.call":
 		var p struct {
-			Call
+			AgentCall
 			Subject *Subject `json:"subject,omitempty"`
 		}
 		if err := protocol.Decode(params, &p); err != nil {
 			return nil, err
 		}
 		if p.Subject != nil {
-			if p.Subject.Kind != "instance" || !protocol.ValidID(p.Subject.InstanceID) {
+			if p.Subject.Kind != "agent" {
 				return nil, Fail("unauthorized")
 			}
 			principal.Subject = *p.Subject
 		}
-		return b.Call(ctx, principal, p.Call)
-	case "instances.describe", "operations.get", "events.subscribe", "events.unsubscribe":
+		return b.agentCall(ctx, principal, p.AgentCall)
+	case "conversation.describe", "operations.get", "events.subscribe", "events.unsubscribe":
 		var p struct {
-			InstanceID  string `json:"instance_id"`
-			OperationID string `json:"operation_id,omitempty"`
-			Cursor      string `json:"cursor,omitempty"`
-			SnapshotID  string `json:"snapshot_id,omitempty"`
-			Offset      string `json:"offset,omitempty"`
-			Wait        bool   `json:"wait,omitempty"`
-			State       string `json:"state,omitempty"`
-			Tail        int    `json:"tail,omitempty"`
-			Catalog     string `json:"catalog,omitempty"`
+			SessionID string `json:"session_id,omitempty"`
+			observation
 		}
 		if err := protocol.Decode(params, &p); err != nil {
 			return nil, err
 		}
-		if p.InstanceID == "" && (method == "events.subscribe" || method == "events.unsubscribe") {
+		if p.SessionID == "" && (method == "events.subscribe" || method == "events.unsubscribe") {
 			if method == "events.unsubscribe" {
 				return JSON(struct{}{}), nil
 			}
@@ -431,53 +444,55 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 			}
 			return JSON(map[string]any{"items": result.Items, "snapshot_id": snapshot, "offset": result.Cursor, "cursor": cursor}), nil
 		}
-		b.mu.Lock()
-		if !b.allowed(principal, p.InstanceID, "instance.inspect", "") {
-			b.mu.Unlock()
+		gate := "agent.inspect"
+		if method == "operations.get" {
+			gate = "" // a receipt is the caller's own: whoever holds a grant here reads its operations
+		}
+		if !b.permits(principal, gate) {
 			return nil, Fail("not_found")
 		}
-		r, ok := b.active[p.InstanceID]
-		b.mu.Unlock()
-		if !ok {
-			return nil, Fail("unavailable")
+		var catalog *string
+		if method == "conversation.describe" {
+			catalog = &p.Catalog
 		}
-		result, err := r.endpoint.Invoke(ctx, method, JSON(struct {
-			Principal Principal `json:"principal"`
-			Limit     int       `json:"page_limit"`
-			Params    any       `json:"params"`
-		}{principal, protocol.PageLimit(ctx), p}))
-		if err != nil || method != "instances.describe" {
-			return result, err
+		h, err := b.holder(ctx, p.SessionID, catalog)
+		if err != nil {
+			return nil, err
 		}
-		var descriptor map[string]json.RawMessage
-		if json.Unmarshal(result, &descriptor) != nil {
-			return nil, Fail("unavailable")
+		if method != "conversation.describe" {
+			result, err := b.observe(ctx, principal, h.endpoint, method, h.id, p.observation)
+			if err != nil || method != "operations.get" {
+				return result, err
+			}
+			var receipt map[string]json.RawMessage
+			if json.Unmarshal(result, &receipt) != nil {
+				return nil, Fail("unavailable")
+			}
+			delete(receipt, "instance_id")
+			return JSON(receipt), nil
 		}
 		var methods []string
-		_ = json.Unmarshal(descriptor["methods"], &methods)
+		_ = json.Unmarshal(h.descriptor["methods"], &methods)
 		allowed := []string{}
 		for _, m := range methods {
-			if b.Allowed(principal, p.InstanceID, permission(m)) {
+			if b.Allowed(principal, h.id, permission(m)) {
 				allowed = append(allowed, m)
 			}
 		}
-		descriptor["methods"] = JSON(allowed)
-		return JSON(descriptor), nil
+		h.descriptor["methods"] = JSON(allowed)
+		return JSON(h.descriptor), nil
 
-	case "sync.removed": // the owner left this device out of its group
-		var p struct {
-			Group string `json:"group_id"`
-		}
-		if err := protocol.Decode(params, &p); err != nil {
-			return nil, err
-		}
+	case "sync.group": // a paired device joining this one's group, which a first add creates
 		b.mu.Lock()
-		owner := len(b.state.Scopes[p.Group]) > 0 && b.state.Scopes[p.Group][0] == peer
-		b.mu.Unlock()
-		if owner {
-			b.Refused(p.Group)
+		defer b.mu.Unlock()
+		// Paired: a saved peer, or one holding a grant, as a browser tab with no address is.
+		if b.state.Peers[peer] == "" && !slices.ContainsFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == peer }) || b.state.Blocked[peer] {
+			return nil, Fail("unauthorized")
 		}
-		return JSON(struct{}{}), nil
+		if self := b.PeerID(); b.state.Group == "" {
+			return JSON(map[string]any{"group_id": groupID(self), "owners": []string{self}}), nil
+		}
+		return JSON(map[string]any{"group_id": b.state.Group, "owners": b.state.Owners}), nil
 	case "vault.get":
 		return b.serveVault(peer, params)
 	case "peers.list":

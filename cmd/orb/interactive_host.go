@@ -122,7 +122,7 @@ func (host *interactiveSessionHost) SwitchSession(ctx context.Context, sessionPa
 	if !errors.As(err, &held) || runner == nil {
 		return result, err
 	}
-	if err = openMitosisView(ctx, runner.UI(), remoteLink{instance: held.ID, held: host.args.native}); err != nil || host.args.native.Held(held.ID) {
+	if err = openMitosisView(ctx, runner.UI(), remoteLink{session: held.ID, held: host.args.native}); err != nil || host.args.native.Held(held.ID) {
 		return extensions.SessionReplacementResult{Cancelled: true}, err
 	}
 	return host.SwitchSession(ctx, sessionPath, cwdOverride, options)
@@ -669,10 +669,10 @@ func (host *interactiveSessionHost) PlanLimits() *usage.Snapshot {
 
 // WatchOthers polls Mitosis every 5 s, off the render path: Mitosis offers no feed of its Orbs' states.
 func (host *interactiveSessionHost) WatchOthers(ctx context.Context, changed func(string)) {
-	catalogs, last := map[string]string{}, ""
+	last := ""
 	for {
 		poll, cancel := context.WithTimeout(ctx, 5*time.Second)
-		now := ownerMitosis{host.args, host.currentInputs().Settings}.others(poll, catalogs)
+		now := ownerMitosis{host.args, host.currentInputs().Settings}.others(poll)
 		cancel()
 		if ctx.Err() != nil {
 			return

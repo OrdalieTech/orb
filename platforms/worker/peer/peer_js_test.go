@@ -90,11 +90,11 @@ func TestPeerOverDurableObjectPorts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = channel.Close() }()
-	var catalog struct {
-		Items []mitosis.Instance `json:"items"`
+	var agent struct {
+		Items []mitosis.Conversation `json:"items"`
 	}
-	if err = channel.Call(ctx, "instances.list", struct{}{}, &catalog); err != nil || len(catalog.Items) != 1 || catalog.Items[0].ID != self.InstanceID() || !catalog.Items[0].Available {
-		raw, _ := json.Marshal(catalog)
-		t.Fatalf("catalog over the Worker socket = %s, %v", raw, err)
+	if err = channel.Call(ctx, "agent.describe", struct{}{}, &agent); err != nil || len(agent.Items) != 1 || agent.Items[0].SessionID == "" {
+		raw, _ := json.Marshal(agent)
+		t.Fatalf("the agent over the Worker socket = %s, %v", raw, err)
 	}
 }

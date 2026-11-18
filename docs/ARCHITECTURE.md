@@ -409,7 +409,7 @@ user's own Claude ask rule forces.
 unguessable, single-use ID, bounded title and choices, and a cancellation context. The owning TUI
 and authorized controllers race to provide the first valid answer. Mitosis describes pending input
 and routes `input.reply` through the existing durable operation ledger and session/execution fences;
-its new `instance.input.reply` grant is explicit. Native model discovery uses the official SDK's
+its new `agent.input.reply` grant is explicit. Native model discovery uses the official SDK's
 `supportedModels()` control without a prompt or persisted session. The plugin adapts names, resolved
 IDs and effort capabilities into an ordinary extension provider, so Claude's models and accounts sit
 in the existing pickers; an account is a Claude Code configuration directory, resolved through the
@@ -689,21 +689,25 @@ separate, pending slices of the active plan.
 ## Orb Mitosis v1 — implementation contract
 
 The owner-approved native delivery is one `orb` executable: `orb mitosis` administers an
-explicit profile, while `orb --mitosis <profile> --instance <alias>` attaches a runtime.
+explicit profile, while `orb --mitosis <profile> --instance <alias>` attaches a runtime. The unit
+peers see is the agent: an agent directory with its identity, memory and tools, one Mitosis
+identity. A conversation is an address under its agent, `(peer, session_id)`; the runtimes (one per
+running Orb, each holding one conversation at a time) register as instances, an internal detail
+that never crosses the wire.
 Mitosis management is built into Settings, Ctrl+P, and `/mitosis`; opening it starts no service.
 Its home page contains the service switch, Add device, pending approvals, and a live device list.
 Add device offers SSH setup or invitation exchange; selecting a device opens its live conversations
-directly. Advanced contains only agent access and the local fingerprint. Groups, grants,
-scopes, and receipts remain CLI administration. Mitosis has no duplicate toggles in Plugins.
+directly. Advanced contains only agent access and the local fingerprint. Grants, scopes, and
+receipts remain CLI administration. Mitosis has no duplicate toggles in Plugins.
 Pairing explicitly activates the service when needed. Invitations are bounded,
 versioned copy/paste codes; each owner confirms trust in the other identity. New TUI/SSH pairings
-grant full controller access to all current and future conversations in both directions, including
-new groups; existing restricted grants are unchanged. The reserved grant selector `group_id: "*"` means all groups, with `include_future`
-retaining its existing snapshot-versus-future meaning. Trust does not grant remote administration,
+grant full controller access to the agent, every conversation it runs now or later, in both
+directions: a grant names a principal, its permissions and, for an agent principal, a destination,
+and always covers the whole agent. Trust does not grant remote administration,
 discovery scopes, or agent-subject authority. Saved pairings survive service restarts; connection badges derive from
 live streams, and stopping waits for the admin connection to close. Open panels refresh bounded
 reads once per second, preserve selection by identity, and cancel work on close. The conversation
-picker reads bounded catalog pages, excludes disconnected instances, and reconnects after daemon
+picker reads bounded pages of the agent's open conversations and reconnects after daemon
 restarts without replaying any commands. A previously deliberate Stop remains effective until
 explicit activation.
 Networking remains explicitly enabled, and its focused remote conversation view requires no local model credentials.
@@ -734,18 +738,22 @@ Neither `ai`, `engine`, nor the `agent` root package imports Mitosis, Tailcat, o
 dependencies; `agent/mitosis` adapts runtimes to Mitosis. Closing an
 attachment, view, or Mitosis service never disposes a runtime. Stores, credentials, transports,
 and lifetimes are explicit; imports create no files or network activity. Multiple independent
-Mitosis instances and runtimes can coexist in one process. Only interchangeable attachment and persistence
+Mitosis identities and runtimes can coexist in one process. Only interchangeable attachment and persistence
 boundaries need interfaces. Native storage stays outside Pi-managed files and keeps mitosis
 metadata, instance attachment credentials, and operation ledgers separately owned.
 
 Native IPC separates local-owner administration from scoped instance attachment, checks OS peer
 credentials, fences registrations with persistent generations, and refuses simultaneous writers.
-Mitosis loss marks instances unavailable while their local work continues. Pairing pins Ed25519
+Mitosis loss marks runtimes unavailable while their local work continues. Pairing pins Ed25519
 PeerIDs and requires a recoverable one-use invitation claim plus local-owner approval of exact
-grants. Group membership is administrative; fixed selectors snapshot InstanceIDs, while future
-membership requires explicit selection. Discovery scopes grant no execution authority. Agent
-calls require source and destination grants, derive subjects from attachment credentials, and
-never transparently forward execution through a third peer.
+grants. Discovery scopes grant no execution authority. Agent calls require source and
+destination grants, derive the agent subject from attachment credentials, and never
+transparently forward execution through a third peer. A call addressed to a conversation goes
+to the runtime holding it; one no runtime holds is launched where the host launches Orbs
+(`host.launch`, native), and a call with no conversation goes to the agent's default one: native,
+its stored conversation written in last, resumed, or a new one in `~` when it has none; a Worker
+object or browser tab, its one running runtime. A session change answers with the conversation
+the runtime holds after it, the address that follows.
 
 The transport is pinned TLS 1.3 with ALPN `orb-mitosis/1` over Tailcat streams, without TLS
 resumption or Tailcat shell/file/proxy/exit-node services. Persist transport keys and PSKs.
@@ -785,28 +793,34 @@ Mitosis protocol tests are Orb-owned checks, separate from Pi conformance famili
 ### Profile sync
 
 A profile has at most one sync group (`mitosis/sync.go`): a discovery scope whose ID derives from
-its owner's PeerID and whose first member is the owner. Membership is explicit and the owner's:
-`sync add|remove` changes it on the owner (paired devices only: a saved peer or one holding a
-grant), `sync join <owner>` follows one, and a member leaves by removing the owner (to follow or
-start another group if the owner is gone); nothing rebuilds it from paired peers, so a removed
-device stays out. Each device's signed record in the group scope carries only pointers to its
-vaults, one per data class (`extensions.vaults`, class to `orb.mitosis-vault/2`: SHA-256 digest
+its founder's PeerID, with a set of owners among its members. Membership is explicit and the
+owners': `sync add|remove|promote|demote` changes it on any owner (add takes paired devices only:
+a saved peer or one holding a grant), `sync join <peer>` follows the group of a paired member
+(the `sync.group` peer method gives its ID and owners), and a device leaves by removing itself;
+nothing rebuilds it from paired peers, so a removed device stays out. A change is a new version
+`{version, owners, members}` in the owner's record (`extensions.group`). A device takes, every
+round, the newest valid version its owners published: one is valid when its publisher owns the
+version it replaces, the highest wins, and of two of one version the smaller SHA-256 digest; an
+owner whose change lost makes it once more on top. A device the version leaves out leaves the
+group, and one with no owner is refused. Members take owners' records, and those of the owners
+before, from anyone. Each device's signed record in the group scope carries pointers to its
+vaults, one per data class (`extensions.vaults`, class to `orb.mitosis-vault/3`: SHA-256 digest,
 and size). A vault is fetched by digest with the `vault.get` peer method, in 512 KiB chunks, over
 any channel already open in either direction, its publisher first, then any other peer: a holder
 serves it only to a recipient that is a current, unblocked member of its group, and the fetcher
 checks it against the signed digest before opening it. A device holds in memory its own vaults
-and, as a member, the owner's it opened, so any member relays the owner's while the owner is off;
+and the owners' it opened, so any member relays them while the owners are off;
 a restart reseals. A vault is the recipient count, one envelope per recipient (its Ed25519 key,
 an ephemeral X25519 key, the vault key sealed under ephemeral X25519, SHA-256 key derivation and
 AES-256-GCM), then the class's entries sealed once with AES-256-GCM under a fresh 256-bit key, all
 stdlib. A class is resealed only when its entries or recipients change, so a refreshed token
-resends no memory, and the owner fetches a member's hand-in of a class only when its digest
-changes. A device's vaults together hold at most 64 MiB: every member holds them whole, a browser
+resends no memory, and an owner fetches a member's hand-in, or another owner's set, of a class
+only when its digest changes. A device's vaults together hold at most 64 MiB: every member holds them whole, a browser
 tab included. A peer's X25519 key is the Montgomery form
 of its Ed25519 identity (RFC 7748 §4.1), so sealing needs only a PeerID. Recipients are checked
-at seal time: the owner seals to every current, unblocked member; a member seals to the owner
-alone. Only the owner's vault reaches the group, and vaults are opened only from current,
-unblocked members.
+at seal time: an owner seals to every current, unblocked member; a member seals to the owners
+alone. Only owners' vaults reach the group, and vaults are opened only from current, unblocked
+members.
 
 A round runs on every reconciliation of a native device or browser tab (every 15 s and on each
 change), on every record change of a Worker object, and on `orb mitosis sync` (the `sync` admin
@@ -815,14 +829,20 @@ with `SetClass(name, Class)`, a
 `Shareable`/`MergeShared` pair over its own store. `credentials` is `ai/auth`'s Store over
 auth.json; `memory` is `plugins/memory`'s `Shared` over the memory plugin's `Store`, merged by
 item ID (native storage's, else the agent directory's journal; a Worker object's or tab's
-`filestore.Journal` document). A round reads before it publishes: the owner merges in what
-members handed it, keeping its own; a member takes the owner's set over its own, drops what the
-owner stopped sharing, and hands the owner only what that set lacks or holds otherwise, and
-leaves a class as it was while it cannot open the owner's current vault of it, so a large memory
-vault still on its way holds back no credential. Between two OAuth logins the one that
+`filestore.Journal` document). A round reads before it publishes. An owner's vault of a class
+holds its entries with each one's version, `{v, by, d}` (a Lamport counter, the owner that set
+it, and the value's digest, empty once deleted), and the hand-in it folded in per member; a
+member's holds only its hand-in. A device merges every owner's vault it opens entry by entry,
+the higher `(v, by)` winning, so all converge whatever order vaults arrive in and an absence
+deletes nothing. A member takes the merged set over its own and hands the owners only what it
+lacks or holds otherwise; an owner takes what is newer than what it holds, folds in members'
+hand-ins (none another owner already folded in), keeping its own, versions anew what it holds
+otherwise than its versions say, and seals the result unless another owner's vault already says
+it to everyone. A member leaves a class as it was while it cannot open an owner's vault of it,
+so a large memory vault still on its way holds back no credential. Between two OAuth logins the one that
 expires later wins, so a token refreshed on any device replaces the copies its refresh made
-stale. An entry removed on the owner is removed everywhere; one removed on a member comes back
-from the owner's set. Only API keys and OAuth logins are shared, never one whose key is a command
+stale. An entry removed on an owner is removed everywhere; one removed on a member comes back
+from the group's set. Only API keys and OAuth logins are shared, never one whose key is a command
 (`!…`, which would run on every device), invalid entries are ignored, auth.json keeps pi's format
 and is written only when an entry changes, and a vault is republished only when what it seals
 does. A running session offers a provider as soon as its credential arrives. memtree's
@@ -848,33 +868,33 @@ Every request is one JSON-RPC 2.0 object with a string ID; batches and notificat
 unsupported. `mitosis.hello` exchanges `peer_id`, `mitosis_boot_id`, `protocol`, `max_frame`,
 and `max_page` before application methods. Frame limits are the smaller advertised limit
 (minimum 1 KiB); oversized results fail explicitly, and pages respect the smaller item limit.
-Counters use canonical unsigned decimal strings; operation, instance, group, scope, and boot
+Counters use canonical unsigned decimal strings; operation, instance, scope, and boot
 IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain Orb session IDs.
 
 | Method | Parameters and result |
 |---|---|
-| `mitosis.ping` | `{}` → optional `name`, what the machine is called, for a peer granted anything there |
+| `mitosis.ping` | `{}` → optional `name`, what the agent is called, for a peer granted anything there |
 | `pair.claim` | `invitation_id`, secret `token`, optional claimant `locator` → recoverable invitation status |
 | `pair.status` | `invitation_id` → status for its authenticated claimant |
-| `instances.list` | optional `cursor` → authorized `items`, optional continuation `cursor` |
-| `instances.describe` | `instance_id`, optional `catalog` → current generation, session/revision/execution target, optional name/workspace/input request and provider plan limits (`usage`), permitted methods, and models and commands with their `catalog` digest, left out when the request's matches |
-| `instances.call` | `instance_id`, `service`, `method`, `args`; mutations additionally require `session_id`, `expected`, `operation_id` → inspection/list result or durable receipt |
-| `operations.get` | `instance_id`, `operation_id` → caller-scoped receipt |
-| `events.subscribe` | optional `instance_id` (absent means catalog); either replay `cursor`, or optional `snapshot_id` and page `offset` → replay events or frozen transcript page plus cursor and partial message |
-| `events.unsubscribe` | `instance_id`, `snapshot_id` → release retained snapshot |
+| `agent.describe` | optional `cursor` → optional `name` and the open conversations under `agent.list` as `items` of `{session_id, title, cwd, state}` (`idle`, `running`, `asking`), optional continuation `cursor` |
+| `conversation.describe` | `session_id`, optional `catalog` → the holding runtime's generation, session/revision/execution target, optional name/workspace/input request and provider plan limits (`usage`), permitted methods, and models and commands with their `catalog` digest, left out when the request's matches |
+| `agent.call` | optional `session_id` (absent: the default conversation), `method`, `args`, optional `expected` and `operation_id` (filled from the holding runtime when absent) → inspection/list result or durable receipt, with the `session_id` the runtime holds after the call |
+| `operations.get` | `session_id`, `operation_id` → caller-scoped receipt |
+| `events.subscribe` | optional `session_id` (absent means catalog); either replay `cursor`, or optional `snapshot_id` and page `offset` → replay events or frozen transcript page plus cursor and partial message |
+| `events.unsubscribe` | `session_id`, `snapshot_id` → release retained snapshot |
 | `peers.list` | `scope_id`, `have` (the caller's revision by record peer), optional `cursor` → the scoped signed records newer than `have`, and `behind`, the record peers the caller holds newer or alone |
 | `peers.publish` | bounded `records` array → validated, durably merged revisions |
 
 `expected` contains `registration_generation` and `session_revision`. Prompt arguments are
 `{text}`; steer/follow-up are `{text, execution_id}`; cancel is `{execution_id}`; input replies
-are `{execution_id, id, value}` and require `instance.input.reply`; session new
+are `{execution_id, id, value}` and require `agent.input.reply`; session new
 is `{}`, switch is `{session_id}`, fork is `{entry_id}`, and model selection is
 `{provider, model, thinking?}`. Session list accepts an optional
 `offset`; completion is `{query}` (the text after `@`) → `items` of `{text, label, detail}`, the
-session's skills then the files fd finds, under `instance.prompt`; an image is `{ref, size}` →
-`{data, mime_type}`, fitted within `size` pixels and half a frame, under `instance.inspect`.
+session's skills then the files fd finds, under `agent.prompt`; an image is `{ref, size}` →
+`{data, mime_type}`, fitted within `size` pixels and half a frame, under `agent.inspect`.
 Read-only inspection needs no operation ID. An optional `subject` on remote calls
-is restricted to an instance subject and comes from the source mitosis's credential-bound
+is restricted to the agent subject and comes from the source mitosis's credential-bound
 outbound route; administrative methods never appear in this routing table.
 
 The CLI caches visited remote session summaries and visible message excerpts through
@@ -909,9 +929,9 @@ every 4 s by whichever end heard nothing in that time. A pairing device holds on
 stranger places only until it is approved. Every change triggers reconciliation, with a
 15-second sweep. A device reconciles a scope with the members a power of two ahead of it on the
 ring of members by PeerID and any member it has a channel to, so a change crosses n members in
-about log2(n) hops over about log2(n) dialled channels a device, the owner included. A member
-dials its group's owner only while it has something to hand it, since a vault is fetched over a
-channel that exists. `peers.list` carries the caller's revisions and returns only what it lacks;
+about log2(n) hops over about log2(n) dialled channels a device, owners included. A member
+dials its group's owners only while it has something to hand them, since a vault is fetched over
+a channel that exists. `peers.list` carries the caller's revisions and returns only what it lacks;
 a link whose records and channel are unchanged since its last exchange waits five minutes, and
 one that failed a minute. A device hangs up, after a minute without a call, the channels it
 dialled to group members off its ring and to scope members it never paired with, and a paired

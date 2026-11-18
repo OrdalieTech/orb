@@ -7235,9 +7235,13 @@
               "send"
             ]
           },
-          "id": {
+          "agent": {
             "type": "string",
-            "description": "An id from list."
+            "description": "An agent's id from list, or an unambiguous start of it."
+          },
+          "conversation": {
+            "type": "string",
+            "description": "A conversation's id from list. Without one, the agent's default conversation."
           },
           "text": {
             "type": "string",
@@ -7245,10 +7249,10 @@
           }
         }
       },
-      "arguments": "{\"action\":\"send\",\"id\":\"x\",\"text\":\"hi\"}",
+      "arguments": "{\"action\":\"send\",\"agent\":\"x\",\"text\":\"hi\"}",
       "value": {
         "action": "send",
-        "id": "x",
+        "agent": "x",
         "text": "hi"
       }
     },
@@ -7269,9 +7273,13 @@
               "send"
             ]
           },
-          "id": {
+          "agent": {
             "type": "string",
-            "description": "An id from list."
+            "description": "An agent's id from list, or an unambiguous start of it."
+          },
+          "conversation": {
+            "type": "string",
+            "description": "A conversation's id from list. Without one, the agent's default conversation."
           },
           "text": {
             "type": "string",
@@ -7329,16 +7337,12 @@
           "peer_id": {
             "type": "string"
           },
+          "session_id": {
+            "type": "string"
+          },
           "call": {
             "type": "object",
             "properties": {
-              "instance_id": {
-                "type": "string"
-              },
-              "service": {
-                "type": "string",
-                "const": "orb.instance/1"
-              },
               "method": {
                 "type": "string",
                 "enum": [
@@ -7354,9 +7358,6 @@
                   "session.name"
                 ]
               },
-              "session_id": {
-                "type": "string"
-              },
               "expected": {
                 "type": "object",
                 "properties": {
@@ -7367,10 +7368,6 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "registration_generation",
-                  "session_revision"
-                ],
                 "additionalProperties": false
               },
               "operation_id": {
@@ -7381,8 +7378,6 @@
               }
             },
             "required": [
-              "instance_id",
-              "service",
               "method",
               "args"
             ],
@@ -7395,12 +7390,11 @@
         ],
         "additionalProperties": false
       },
-      "arguments": "{\"peer_id\":\"p\",\"call\":{\"instance_id\":\"i\",\"service\":\"orb.instance/1\",\"method\":\"inspect\",\"args\":{}}}",
+      "arguments": "{\"peer_id\":\"p\",\"session_id\":\"s\",\"call\":{\"method\":\"inspect\",\"args\":{}}}",
       "value": {
         "peer_id": "p",
+        "session_id": "s",
         "call": {
-          "instance_id": "i",
-          "service": "orb.instance/1",
           "method": "inspect",
           "args": {}
         }
@@ -7415,16 +7409,12 @@
           "peer_id": {
             "type": "string"
           },
+          "session_id": {
+            "type": "string"
+          },
           "call": {
             "type": "object",
             "properties": {
-              "instance_id": {
-                "type": "string"
-              },
-              "service": {
-                "type": "string",
-                "const": "orb.instance/1"
-              },
               "method": {
                 "type": "string",
                 "enum": [
@@ -7440,9 +7430,6 @@
                   "session.name"
                 ]
               },
-              "session_id": {
-                "type": "string"
-              },
               "expected": {
                 "type": "object",
                 "properties": {
@@ -7453,10 +7440,6 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "registration_generation",
-                  "session_revision"
-                ],
                 "additionalProperties": false
               },
               "operation_id": {
@@ -7467,8 +7450,6 @@
               }
             },
             "required": [
-              "instance_id",
-              "service",
               "method",
               "args"
             ],
@@ -7481,8 +7462,8 @@
         ],
         "additionalProperties": false
       },
-      "arguments": "{\"peer_id\":\"p\",\"call\":{\"instance_id\":\"i\",\"service\":\"orb.instance/2\",\"method\":\"Prompt\",\"expected\":{\"registration_generation\":\"1\"},\"extra\":1}}",
-      "error": "Validation failed for tool \"mitosis_call\":\n  - call.args: missing\n  - call.service: expected \"orb.instance/1\"\n  - call.method: expected one of [\"inspect\",\"prompt\",\"steer\",\"follow_up\",\"cancel\",\"session.list\",\"session.new\",\"session.switch\",\"session.fork\",\"session.name\"]\n  - call.expected.session_revision: missing\n  - call.extra: unknown field\n\nReceived arguments:\n{\n  \"peer_id\": \"p\",\n  \"call\": {\n    \"instance_id\": \"i\",\n    \"service\": \"orb.instance/2\",\n    \"method\": \"Prompt\",\n    \"expected\": {\n      \"registration_generation\": \"1\"\n    },\n    \"extra\": 1\n  }\n}"
+      "arguments": "{\"peer_id\":\"p\",\"call\":{\"method\":\"Prompt\",\"expected\":{\"registration_generation\":\"1\"},\"extra\":1}}",
+      "error": "Validation failed for tool \"mitosis_call\":\n  - call.args: missing\n  - call.method: expected one of [\"inspect\",\"prompt\",\"steer\",\"follow_up\",\"cancel\",\"session.list\",\"session.new\",\"session.switch\",\"session.fork\",\"session.name\"]\n  - call.extra: unknown field\n\nReceived arguments:\n{\n  \"peer_id\": \"p\",\n  \"call\": {\n    \"method\": \"Prompt\",\n    \"expected\": {\n      \"registration_generation\": \"1\"\n    },\n    \"extra\": 1\n  }\n}"
     },
     {
       "name": "tool-search-limit-string",

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"reflect"
 	"slices"
 	"strings"
@@ -109,10 +110,9 @@ func (b ownerMitosis) Call(ctx context.Context, peer, method string, params, res
 
 func (b ownerMitosis) Self() string { return b.args.mitosisLink.self() }
 
-// others is what this machine's other Orbs on Mitosis are doing, counted as the apps' summary
-// counts them: "1 asks · 2 working", "" when they are quiet or this Orb is not on Mitosis. catalogs
-// keeps each one's describe digest, so their models and commands are not sent again.
-func (b ownerMitosis) others(ctx context.Context, catalogs map[string]string) string {
+// others is what this agent's other conversations on Mitosis are doing, counted as the apps'
+// summary counts them: "1 asks · 2 working", "" when they are quiet or this Orb is not on Mitosis.
+func (b ownerMitosis) others(ctx context.Context) string {
 	self := b.Self()
 	if self == "" {
 		return ""
@@ -123,33 +123,21 @@ func (b ownerMitosis) others(ctx context.Context, catalogs map[string]string) st
 	}
 	defer func() { _ = admin.Close() }()
 	var status struct {
-		PeerID    string             `json:"peer_id"`
-		Instances []mitosis.Instance `json:"instances"`
+		PeerID string `json:"peer_id"`
 	}
-	if admin.Call(ctx, "status", struct{}{}, &status) != nil {
+	var agent struct {
+		Items []mitosis.Conversation `json:"items"`
+	}
+	if admin.Call(ctx, "status", struct{}{}, &status) != nil || admin.Call(ctx, "remote", map[string]any{"peer_id": status.PeerID, "method": "agent.describe", "params": struct{}{}}, &agent) != nil {
 		return ""
 	}
 	asks, working := 0, 0
-	for _, instance := range status.Instances {
-		if !instance.Available || instance.ID == self {
-			continue
-		}
-		var d struct {
-			Catalog string    `json:"catalog"`
-			Input   *struct{} `json:"input"`
-			Target  struct {
-				Execution string `json:"execution_id"`
-			} `json:"target"`
-		}
-		params := map[string]string{"instance_id": instance.ID, "catalog": catalogs[instance.ID]}
-		if admin.Call(ctx, "remote", map[string]any{"peer_id": status.PeerID, "method": "instances.describe", "params": params}, &d) != nil {
-			continue
-		}
-		catalogs[instance.ID] = d.Catalog
+	for _, c := range agent.Items {
 		switch {
-		case d.Input != nil:
+		case c.SessionID == self:
+		case c.State == "asking":
 			asks++
-		case d.Target.Execution != "":
+		case c.State == "running":
 			working++
 		}
 	}
@@ -176,7 +164,6 @@ func setMitosisStatus(ui extensions.UI, on bool) {
 type mitosisSettingsStatus struct {
 	PeerStates map[string]string    `json:"peer_states"`
 	PeerID     string               `json:"peer_id"`
-	Groups     map[string]string    `json:"groups"`
 	Pending    []mitosis.Invitation `json:"pending"`
 	Peers      []string             `json:"peers"`
 	Grants     []mitosis.Grant      `json:"grants"`
@@ -535,7 +522,7 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 			return e
 		}
 
-		return shareMitosisInvitation(ctx, ui, client, inv, status.Groups)
+		return shareMitosisInvitation(ctx, ui, client, inv)
 	case "Join device":
 		text, e := input("Connect to a device · paste its invitation")
 		if e != nil {
@@ -598,7 +585,7 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 		if e != nil || !ok {
 			return e
 		}
-		return approveMitosisPairing(ctx, ui, client, claims[choice], status.Groups)
+		return approveMitosisPairing(ctx, ui, client, claims[choice])
 	case "Peers":
 		if status.PeerStates[peer] == "blocked" {
 			return fmt.Errorf("this device is blocked.\nIts access has been revoked")
@@ -613,25 +600,22 @@ func mitosisConversationRows(ctx context.Context, client *protocol.Conn, peer st
 	cursor, count := "", 0
 	for count < 4096 {
 		var catalog struct {
-			Items  []mitosis.Instance `json:"items"`
-			Cursor string             `json:"cursor"`
+			Items  []mitosis.Conversation `json:"items"`
+			Cursor string                 `json:"cursor"`
 		}
-		if err := client.Call(ctx, "remote", map[string]any{"peer_id": peer, "method": "instances.list", "params": map[string]string{"cursor": cursor}}, &catalog); err != nil {
+		if err := client.Call(ctx, "remote", map[string]any{"peer_id": peer, "method": "agent.describe", "params": map[string]string{"cursor": cursor}}, &catalog); err != nil {
 			return nil, err
 		}
 		count += len(catalog.Items)
 		if count > 4096 || len(catalog.Items) == 0 && catalog.Cursor != "" {
 			return nil, mitosis.Fail("resource_exhausted")
 		}
-		for _, instance := range catalog.Items {
-			if !instance.Available {
-				continue
-			}
-			label := peerText(instance.Alias, false)
-			if label == "" {
+		for _, c := range catalog.Items {
+			label := peerText(cmp.Or(c.Title, path.Base(c.CWD)), false)
+			if c.Title == "" && c.CWD == "" {
 				label = "Conversation"
 			}
-			rows = append(rows, tui.GridRow{Value: instance.ID, Cells: []string{th.FG("text", label)}, Detail: []string{"Open conversation"}})
+			rows = append(rows, tui.GridRow{Value: c.SessionID, Cells: []string{th.FG("text", label)}, Detail: []string{"Open conversation"}})
 		}
 		if catalog.Cursor == "" {
 			if len(rows) == 0 {
@@ -754,11 +738,11 @@ func openSharedMitosisConversation(ctx context.Context, ui extensions.UI, profil
 			return err
 		}
 		if selected == "folder" {
-			instance, err := openMitosisFolder(ctx, ui, profile, peer)
+			session, err := openMitosisFolder(ctx, ui, profile, peer)
 			if err != nil {
 				ui.Notify(err.Error(), extensions.NotifyError)
-			} else if instance != "" {
-				if err := openMitosisView(ctx, ui, remoteLink{profile: profile, peer: peer, instance: instance}); err != nil {
+			} else if session != "" {
+				if err := openMitosisView(ctx, ui, remoteLink{profile: profile, peer: peer, session: session}); err != nil {
 					return err
 				}
 			}
@@ -772,7 +756,7 @@ func openSharedMitosisConversation(ctx context.Context, ui extensions.UI, profil
 				}
 				for _, entry := range entries {
 					if string(mitosis.JSON([2]string{entry.Namespace, entry.ID})) == id {
-						if err := openMitosisView(ctx, ui, remoteLink{profile: profile, peer: peer, instance: entry.Instance}, entry); err != nil {
+						if err := openMitosisView(ctx, ui, remoteLink{profile: profile, peer: peer, session: entry.Instance}, entry); err != nil {
 							return err
 						}
 						break
@@ -782,7 +766,7 @@ func openSharedMitosisConversation(ctx context.Context, ui extensions.UI, profil
 			continue
 		}
 		if selected != "" {
-			if err := openMitosisView(ctx, ui, remoteLink{profile: profile, peer: peer, instance: selected}); err != nil {
+			if err := openMitosisView(ctx, ui, remoteLink{profile: profile, peer: peer, session: selected}); err != nil {
 				return err
 			}
 		}
@@ -790,7 +774,7 @@ func openSharedMitosisConversation(ctx context.Context, ui extensions.UI, profil
 	return ctx.Err()
 }
 
-func shareMitosisInvitation(ctx context.Context, ui extensions.UI, client *protocol.Conn, inv mitosis.Invitation, groups map[string]string) error {
+func shareMitosisInvitation(ctx context.Context, ui extensions.UI, client *protocol.Conn, inv mitosis.Invitation) error {
 	claimed, err := waitMitosisPairing(ctx, ui, "Create invitation", "Paste in Mitosis → Add device → Paste an invitation on the other Orb.", inv, mitosis.InvitationCode(inv), func(ctx context.Context) (mitosis.Invitation, error) {
 		var status mitosisSettingsStatus
 		if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
@@ -806,21 +790,17 @@ func shareMitosisInvitation(ctx context.Context, ui extensions.UI, client *proto
 	if err != nil {
 		return err
 	}
-	return approveMitosisPairing(ctx, ui, client, claimed, groups)
+	return approveMitosisPairing(ctx, ui, client, claimed)
 }
 
-func approveMitosisPairing(ctx context.Context, ui extensions.UI, client *protocol.Conn, claimed mitosis.Invitation, groups map[string]string) error {
+func approveMitosisPairing(ctx context.Context, ui extensions.UI, client *protocol.Conn, claimed mitosis.Invitation) error {
 	details := "Verify this fingerprint on the joining device:\n" + claimed.Claimant
 	for _, g := range claimed.Grants {
-		if g.GroupID == "*" && g.IncludeFuture && slices.Equal(g.Permissions, mitosis.FullGrant("").Permissions) {
-			details += "\nAllow full control of all current and future conversations,\nand starting Orb in any folder on this machine."
+		if slices.Equal(g.Permissions, mitosis.FullGrant("").Permissions) {
+			details += "\nAllow full control of this agent's conversations,\nand starting Orb in any folder on this machine."
 			continue
 		}
-		scope := "current instances only"
-		if g.IncludeFuture {
-			scope = "current and future instances"
-		}
-		details += "\n" + groups[g.GroupID] + " · " + scope + "\n" + strings.Join(g.Permissions, ", ")
+		details += "\n" + strings.Join(g.Permissions, ", ")
 	}
 	yes, err := ui.Confirm(ctx, "Trust this Orb?", details, nil)
 	if err != nil || !yes {
@@ -941,7 +921,7 @@ func (p *qrPanel) Render(width int) []string {
 }
 
 // openMitosisFolder picks a folder on the peer — one its threads live in, or any other — then a
-// new thread or a past one there, and starts Orb on it (host.launch). It returns that instance.
+// new thread or a past one there, and starts Orb on it (host.launch). It returns that thread.
 func openMitosisFolder(ctx context.Context, ui extensions.UI, profile, peer string) (string, error) {
 	client, err := mitosisAdmin(ctx, profile)
 	if err != nil {
@@ -1026,10 +1006,10 @@ func openMitosisFolder(ctx context.Context, ui extensions.UI, profile, peer stri
 	}
 	ui.Notify("Starting Orb in "+peerText(folder, false)+"…", extensions.NotifyInfo)
 	var launched struct {
-		InstanceID string `json:"instance_id"`
+		SessionID string `json:"session_id"`
 	}
 	if err := remote("host.launch", params, &launched); err != nil {
 		return "", err
 	}
-	return launched.InstanceID, nil
+	return launched.SessionID, nil
 }

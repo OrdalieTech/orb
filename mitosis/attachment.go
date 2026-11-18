@@ -32,9 +32,9 @@ type Endpoint interface {
 	Close() error
 }
 
+// Subject is who acts for a peer: "controller", a person, or "agent", the peer's agent itself.
 type Subject struct {
-	Kind       string `json:"kind"`
-	InstanceID string `json:"instance_id,omitempty"`
+	Kind string `json:"kind"`
 }
 type Principal struct {
 	PeerID  string  `json:"peer_id"`
@@ -157,7 +157,7 @@ func OpenLedger(store document.Document, quota int) (*Ledger, error) {
 	return l, nil
 }
 func ledgerKey(p Principal, instance, op string) string {
-	return string(JSON([]string{p.PeerID, p.Subject.Kind, p.Subject.InstanceID, instance, op}))
+	return string(JSON([]string{p.PeerID, p.Subject.Kind, "", instance, op}))
 }
 func digestRequest(r Request) (string, error) {
 	b, err := protocol.Canonical(JSON(struct {

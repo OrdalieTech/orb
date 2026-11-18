@@ -13,7 +13,7 @@ import (
 // only after local-owner authentication.
 func (b *Mitosis) Admin(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	switch method {
-	case "status", "peers", "grants", "groups", "scopes", "instances":
+	case "status", "peers", "grants", "scopes", "instances":
 		var p struct{}
 		if err := protocol.Decode(params, &p); err != nil {
 			return nil, err
@@ -55,25 +55,20 @@ func (b *Mitosis) Admin(ctx context.Context, method string, params json.RawMessa
 			PeerStates map[string]string   `json:"peer_states"`
 			PeerID     string              `json:"peer_id"`
 			BootID     string              `json:"mitosis_boot_id"`
-			Groups     map[string]string   `json:"groups"`
 			Scopes     map[string][]string `json:"scopes"`
 			Grants     []Grant             `json:"grants"`
 			Instances  []Instance          `json:"instances"`
 			Pending    []Invitation        `json:"pending"`
 			Peers      []string            `json:"peers"`
-		}{states, b.PeerID(), b.boot, b.state.Groups, b.state.Scopes, b.state.Grants, instances, pending, peers}), nil
+		}{states, b.PeerID(), b.boot, b.state.Scopes, b.state.Grants, instances, pending, peers}), nil
 	case "enroll":
 		var p struct {
 			Alias string `json:"alias"`
-			Group string `json:"group_id,omitempty"`
 		}
 		if err := protocol.Decode(params, &p); err != nil {
 			return nil, err
 		}
-		if p.Group == "" {
-			p.Group = b.PersonalGroup()
-		}
-		r, token, err := b.Enroll(p.Alias, p.Group)
+		r, token, err := b.Enroll(p.Alias)
 		return JSON(struct {
 			Instance   Instance `json:"instance"`
 			Credential string   `json:"credential"`
@@ -159,44 +154,6 @@ func (b *Mitosis) Admin(ctx context.Context, method string, params json.RawMessa
 			return nil, err
 		}
 		return JSON(struct{}{}), b.SetScope(p.ID, p.Peers)
-	case "group":
-		var p struct {
-			ID   string `json:"group_id,omitempty"`
-			Name string `json:"name"`
-		}
-		if err := protocol.Decode(params, &p); err != nil {
-			return nil, err
-		}
-		if p.ID == "" {
-			p.ID = protocol.NewID()
-		}
-		if !protocol.ValidID(p.ID) || len(p.Name) > 128 || p.Name == "" {
-			return nil, Fail("not_found")
-		}
-		b.mu.Lock()
-		defer b.mu.Unlock()
-		if len(b.state.Groups) >= 128 {
-			return nil, Fail("resource_exhausted")
-		}
-		b.state.Groups[p.ID] = p.Name
-		return JSON(p), b.save()
-	case "assign":
-		var p struct {
-			Instance string `json:"instance_id"`
-			Group    string `json:"group_id"`
-		}
-		if err := protocol.Decode(params, &p); err != nil {
-			return nil, err
-		}
-		b.mu.Lock()
-		defer b.mu.Unlock()
-		r, ok := b.state.Instances[p.Instance]
-		if !ok || b.state.Groups[p.Group] == "" {
-			return nil, Fail("not_found")
-		}
-		r.Group = p.Group
-		b.state.Instances[p.Instance] = r
-		return JSON(struct{}{}), b.save()
 	case "sync":
 		return b.SyncAdmin(ctx, params, nil)
 	case "takeover":
@@ -273,11 +230,14 @@ func (b *Mitosis) PeerLocator(peer string) (string, error) {
 	}
 	return locator, nil
 }
-func (b *Mitosis) Outbound(instance, peer string, call Call) (Subject, error) {
+
+// Outbound is the subject a call this agent's runtime instance makes to peer carries: the agent
+// itself, when granted the call there.
+func (b *Mitosis) Outbound(instance, peer, method string) (Subject, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	p := Principal{PeerID: b.PeerID(), Subject: Subject{Kind: "instance", InstanceID: instance}}
-	if !b.allowed(p, call.InstanceID, permission(call.Method), peer) {
+	p := Principal{PeerID: b.PeerID(), Subject: Subject{Kind: "agent"}}
+	if !b.allowed(p, "", permission(method), peer) {
 		return Subject{}, Fail("unauthorized")
 	}
 	if _, ok := b.active[instance]; !ok {

@@ -92,7 +92,7 @@ func TestIPCSeparatesOwnerAndAttachmentCredentials(t *testing.T) {
 		closeOther()
 		t.Fatal("replaced live endpoint")
 	}
-	instance, credential, err := b.Enroll("test", b.PersonalGroup())
+	instance, credential, err := b.Enroll("test")
 	if err != nil {
 		t.Fatal(err)
 	}

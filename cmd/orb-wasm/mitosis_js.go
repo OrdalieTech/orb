@@ -25,17 +25,16 @@ type mitosisRequest struct {
 	URL        string          `json:"url"`
 	Peer       string          `json:"peer"`
 	Seed       string          `json:"seed"`
-	AgentID    string          `json:"agentID"`
 	Method     string          `json:"method"`
 	Params     json.RawMessage `json:"params"`
 }
 
 type browserMitosis struct {
-	mu                        sync.Mutex
-	conn                      *protocol.Conn
-	connection, peer, agentID string
-	cancel                    context.CancelFunc
-	slots                     chan struct{}
+	mu               sync.Mutex
+	conn             *protocol.Conn
+	connection, peer string
+	cancel           context.CancelFunc
+	slots            chan struct{}
 }
 
 func (b *browserMitosis) dispatch(raw string) string {
@@ -69,7 +68,7 @@ func (b *browserMitosis) execute(r mitosisRequest) (any, error) {
 	switch r.Type {
 	case "mitosis.connect":
 		seed, err := base64.RawStdEncoding.DecodeString(r.Seed)
-		if err != nil || len(seed) != ed25519.SeedSize || !protocol.ValidID(r.AgentID) {
+		if err != nil || len(seed) != ed25519.SeedSize {
 			return nil, errors.New("invalid browser Mitosis identity")
 		}
 		if _, err = mitosis.ParsePeerID(r.Peer); err != nil {
@@ -108,11 +107,10 @@ func (b *browserMitosis) execute(r mitosisRequest) (any, error) {
 		}
 		b.conn = c
 		b.peer = r.Peer
-		b.agentID = r.AgentID
 		b.cancel = nil
 		b.mu.Unlock()
 		go func() { <-c.Done(); post(map[string]string{"type": "mitosis.closed", "connection": id}) }()
-		return map[string]string{"connection": id, "peer_id": mitosis.PeerID(key.Public().(ed25519.PublicKey)), "agent_id": r.AgentID}, nil
+		return map[string]string{"connection": id, "peer_id": mitosis.PeerID(key.Public().(ed25519.PublicKey))}, nil
 	case "mitosis.disconnect":
 		b.mu.Lock()
 		if r.Connection != "" && r.Connection != b.connection {
@@ -148,22 +146,22 @@ func (b *browserMitosis) execute(r mitosisRequest) (any, error) {
 
 func (b *browserMitosis) tool() (engine.AgentTool, error) {
 	b.mu.Lock()
-	c, peer, agentID := b.conn, b.peer, b.agentID
+	c, peer := b.conn, b.peer
 	b.mu.Unlock()
 	if c == nil {
 		return nil, errors.New("connect a Mitosis before enabling agent calls")
 	}
-	return mitosistool.NewTool(func(ctx context.Context, target string, call mitosis.Call) (json.RawMessage, error) {
+	return mitosistool.NewTool(func(ctx context.Context, target string, call mitosis.AgentCall) (json.RawMessage, error) {
 		if target != peer {
 			return nil, mitosis.Fail("unauthorized")
 		}
 		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
 		var result json.RawMessage
-		err := c.Call(ctx, "instances.call", struct {
-			mitosis.Call
+		err := c.Call(ctx, "agent.call", struct {
+			mitosis.AgentCall
 			Subject mitosis.Subject `json:"subject"`
-		}{call, mitosis.Subject{Kind: "instance", InstanceID: agentID}}, &result)
+		}{call, mitosis.Subject{Kind: "agent"}}, &result)
 		return result, err
 	})
 }

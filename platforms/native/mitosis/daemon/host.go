@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -50,8 +51,9 @@ type launched struct {
 }
 
 // host serves a peer's machine-level calls. host.sessions pages the threads stored on this
-// machine across folders, newest created first; host.launch starts Orb in a folder, on a new thread or resuming one,
-// and answers once that Orb is on Mitosis.
+// machine across folders, newest created first; host.launch starts Orb in a folder, on a new thread or resuming one
+// (with neither, the agent's default conversation: the thread written in last, else a new one in the home folder),
+// and answers once that Orb is on Mitosis, with the thread it holds.
 func (s *Service) host(ctx context.Context, p mitosis.Principal, method string, params json.RawMessage) (json.RawMessage, error) {
 	if s.state == nil {
 		return nil, mitosis.Fail("unavailable")
@@ -133,10 +135,18 @@ func (s *Service) host(ctx context.Context, p mitosis.Principal, method string, 
 		if err := protocol.Decode(params, &q); err != nil {
 			return nil, err
 		}
-		if q.SessionID != "" {
+		switch {
+		case q.SessionID != "":
 			var err error
 			if q.CWD, err = s.state.Sessions().CWD(ctx, q.SessionID); err != nil {
 				return nil, mitosis.Fail("not_found")
+			}
+		case q.CWD == "":
+			var err error
+			if q.SessionID, q.CWD, err = s.state.Sessions().Latest(ctx); errors.Is(err, sql.ErrNoRows) {
+				q.CWD = "~"
+			} else if err != nil {
+				return nil, err
 			}
 		}
 		cwd, err := launchFolder(q.CWD)
@@ -735,7 +745,7 @@ func (s *Service) launch(ctx context.Context, p mitosis.Principal, cwd, session 
 	// peer joins that Orb, which comes on Mitosis for it as an Orb launched here would.
 	if session != "" && s.state != nil && s.state.Held(session) {
 		release()
-		if open := s.holding(ctx, p, session); open != nil {
+		if open := s.holding(ctx, session); open != nil {
 			return open, nil
 		}
 		if holder, err := s.state.Holder(ctx, session); err == nil {
@@ -744,7 +754,7 @@ func (s *Service) launch(ctx context.Context, p mitosis.Principal, cwd, session 
 			cancel()
 			_ = holder.Close()
 			for wait := 0; err == nil && wait < 50; wait++ {
-				if open := s.holding(ctx, p, session); open != nil {
+				if open := s.holding(ctx, session); open != nil {
 					return open, nil
 				}
 				time.Sleep(100 * time.Millisecond)
@@ -793,20 +803,11 @@ func (s *Service) launch(ctx context.Context, p mitosis.Principal, cwd, session 
 	return result, err
 }
 
-// holding is the Orb on Mitosis that has the thread open, as host.launch answers it, or nil.
-func (s *Service) holding(ctx context.Context, p mitosis.Principal, session string) json.RawMessage {
-	for _, i := range s.Mitosis.Catalog(p) {
-		if !i.Available {
-			continue
-		}
-		raw, err := s.Mitosis.Handle(ctx, p.PeerID, "instances.describe", mitosis.JSON(map[string]string{"instance_id": i.ID}))
-		var d struct {
-			Target struct {
-				SessionID string `json:"session_id"`
-			} `json:"target"`
-		}
-		if err == nil && json.Unmarshal(raw, &d) == nil && d.Target.SessionID == session {
-			return mitosis.JSON(map[string]string{"instance_id": i.ID, "alias": i.Alias})
+// holding is host.launch's answer when an Orb on Mitosis has the thread open, else nil.
+func (s *Service) holding(ctx context.Context, session string) json.RawMessage {
+	for _, held := range s.Mitosis.Held(ctx) {
+		if held == session {
+			return mitosis.JSON(map[string]string{"session_id": session})
 		}
 	}
 	return nil
@@ -852,8 +853,8 @@ func idle(events io.Reader, l *launched, limit time.Duration) {
 	}
 }
 
-// launchedInstance waits until the Orb with alias is on Mitosis and names it: a minute at most,
-// and not past the process, whose exit releases its slot.
+// launchedInstance waits until the Orb with alias is on Mitosis with a thread open, and names the
+// thread: a minute at most, and not past the process, whose exit releases its slot.
 func (s *Service) launchedInstance(ctx context.Context, p mitosis.Principal, alias string) (json.RawMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
@@ -865,13 +866,16 @@ func (s *Service) launchedInstance(ctx context.Context, p mitosis.Principal, ali
 			return nil, mitosis.Fail("unavailable")
 		}
 		for _, i := range s.Mitosis.Catalog(p) {
-			if i.Alias == alias && i.Available {
-				s.mu.Lock()
-				if l := s.launched[alias]; l != nil {
-					l.id = i.ID
-				}
-				s.mu.Unlock()
-				return mitosis.JSON(map[string]string{"instance_id": i.ID, "alias": alias}), nil
+			if i.Alias != alias || !i.Available {
+				continue
+			}
+			s.mu.Lock()
+			if l := s.launched[alias]; l != nil {
+				l.id = i.ID
+			}
+			s.mu.Unlock()
+			if session := s.Mitosis.Held(ctx)[i.ID]; session != "" {
+				return mitosis.JSON(map[string]string{"session_id": session}), nil
 			}
 		}
 		select {

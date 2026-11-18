@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -183,18 +184,20 @@ func (v *remoteConversation) SetFocused(f bool) {
 }
 func (v *remoteConversation) Dispose() { v.cancel() }
 
-// remoteLink is what a remote view follows: a peer's instance, through this machine's Mitosis, or
-// with held the conversation (instance is its id) another Orb on this machine holds open.
+// remoteLink is what a remote view follows: a peer's conversation, through this machine's
+// Mitosis, or with held the conversation another Orb on this machine holds open.
 type remoteLink struct {
-	profile, peer, instance string
-	held                    *native.State
+	profile, peer, session string
+	held                   *native.State
 }
 
 // heldRemote calls the Orb that holds conversation id open (holdOpen) as a remote view calls a
-// peer; once that Orb has let the conversation go, it calls released. close ends its connection.
+// peer, its calls put as that Orb's attachment takes them; once that Orb has let the conversation
+// go, it calls released. close ends its connection.
 func heldRemote(ctx context.Context, state *native.State, id string, released func()) (remote func(string, any, any) error, close func()) {
 	var c *protocol.Conn
 	owner := mitosis.Principal{PeerID: "local", Subject: mitosis.Subject{Kind: "controller"}}
+	instance := heldInstance(id)
 	released = sync.OnceFunc(released)
 	remote = func(method string, p any, result any) error {
 		if c != nil {
@@ -216,10 +219,17 @@ func heldRemote(ctx context.Context, state *native.State, id string, released fu
 		}
 		callCtx, stop := context.WithTimeout(ctx, 20*time.Second)
 		defer stop()
-		if call, ok := p.(mitosis.Call); ok {
-			return c.Call(callCtx, "call", mitosis.Request{Principal: owner, Generation: call.Expected.Generation, Call: call}, result)
+		if call, ok := p.(mitosis.AgentCall); ok {
+			r := mitosis.Request{Principal: owner, Generation: call.Expected.Generation, Call: mitosis.Call{InstanceID: instance, Service: protocol.Service, Method: call.Method, SessionID: call.SessionID, Expected: call.Expected, OperationID: call.OperationID, Args: call.Args}}
+			return c.Call(callCtx, "call", r, result)
 		}
-		return c.Call(callCtx, method, map[string]any{"principal": owner, "params": p}, result)
+		params := maps.Clone(p.(map[string]string))
+		delete(params, "session_id")
+		params["instance_id"] = instance
+		if method == "conversation.describe" {
+			method = "instances.describe"
+		}
+		return c.Call(callCtx, method, map[string]any{"principal": owner, "params": params}, result)
 	}
 	return remote, func() {
 		if c != nil {
@@ -229,7 +239,7 @@ func heldRemote(ctx context.Context, state *native.State, id string, released fu
 }
 
 func newRemoteConversation(parent context.Context, link remoteLink, invalidate func(), height func() int, done func(), theme extensions.Theme, initial ...sqlite.ForeignSession) *remoteConversation {
-	profile, peer, instance := link.profile, link.peer, link.instance
+	profile, peer, session := link.profile, link.peer, link.session
 	ctx, cancel := context.WithCancel(parent)
 	v := &remoteConversation{body: &remoteTranscript{}, status: &remoteTranscript{}, input: tui.NewInput(), cancel: cancel, height: height, invalidate: invalidate}
 	requests := make(chan remoteRequest, 1)
@@ -272,10 +282,10 @@ func newRemoteConversation(parent context.Context, link remoteLink, invalidate f
 	}
 	if link.held != nil {
 		// Once its holder lets the conversation go, the view closes and the caller opens it here.
-		remote, closeRemote := heldRemote(ctx, link.held, instance, func() { cancel(); done() })
+		remote, closeRemote := heldRemote(ctx, link.held, session, func() { cancel(); done() })
 		go func() {
 			defer closeRemote()
-			runRemoteConversation(ctx, heldInstance(instance), remote, requests, v.body, v.status, invalidate, nil, "", instance, showInput)
+			runRemoteConversation(ctx, session, remote, requests, v.body, v.status, invalidate, nil, "", session, showInput)
 		}()
 		return v
 	}
@@ -316,7 +326,7 @@ func newRemoteConversation(parent context.Context, link remoteLink, invalidate f
 			rows, err := cache.List(ctx, peer)
 			if err == nil {
 				for _, row := range rows {
-					if row.Instance == instance {
+					if row.Instance == session {
 						saved = &row
 						break
 					}
@@ -332,7 +342,7 @@ func newRemoteConversation(parent context.Context, link remoteLink, invalidate f
 		if len(initial) > 0 {
 			expected = initial[0].ID
 		}
-		runRemoteConversation(ctx, instance, remote, requests, v.body, v.status, invalidate, cache, peer, expected, showInput)
+		runRemoteConversation(ctx, session, remote, requests, v.body, v.status, invalidate, cache, peer, expected, showInput)
 	}()
 	return v
 }
@@ -440,7 +450,9 @@ func runMitosisShell(parent context.Context, profile, peer, cwd string, streams 
 	return 0
 }
 
-func runRemoteConversation(ctx context.Context, instance string, remote func(string, any, any) error, requests <-chan remoteRequest, body, status *remoteTranscript, invalidate func(), cache *sqlite.Foreign, peer, expected string, showInput ...func(*agent.InputRequest)) {
+// runRemoteConversation follows a conversation by its session; a call that leaves its Orb on
+// another (a new, switched or forked one) moves the view there.
+func runRemoteConversation(ctx context.Context, session string, remote func(string, any, any) error, requests <-chan remoteRequest, body, status *remoteTranscript, invalidate func(), cache *sqlite.Foreign, peer, expected string, showInput ...func(*agent.InputRequest)) {
 	updateInput := func(input *agent.InputRequest) {
 		if len(showInput) > 0 {
 			showInput[0](input)
@@ -517,7 +529,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 						Modified int64   `json:"modified"`
 					} `json:"items"`
 				}
-				err = remote("instances.call", mitosis.Call{InstanceID: instance, Service: protocol.Service, Method: "session.list", Args: mitosis.JSON(struct{}{})}, &result)
+				err = remote("agent.call", mitosis.AgentCall{SessionID: session, Method: "session.list", Args: mitosis.JSON(struct{}{})}, &result)
 				if err != nil {
 					status.set(err.Error())
 				} else {
@@ -599,9 +611,9 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 				invalidate()
 				continue
 			}
-			call := mitosis.Call{InstanceID: instance, Service: protocol.Service, Method: method, SessionID: info.Target.SessionID, Expected: mitosis.Expected{Generation: info.Generation, Revision: info.Target.Revision}, OperationID: protocol.NewID(), Args: mitosis.JSON(arguments)}
+			call := mitosis.AgentCall{SessionID: session, Method: method, Expected: mitosis.Expected{Generation: info.Generation, Revision: info.Target.Revision}, OperationID: protocol.NewID(), Args: mitosis.JSON(arguments)}
 			var receipt mitosis.Receipt
-			if err = remote("instances.call", call, &receipt); err != nil {
+			if err = remote("agent.call", call, &receipt); err != nil {
 				if request.inputID != "" {
 					updateInput(nil)
 				}
@@ -611,12 +623,15 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			} else {
 				pending = receipt.OperationID
 				status.set(receipt.Status + " · " + pending)
+				if receipt.SessionID != "" && receipt.SessionID != session {
+					session, expected = receipt.SessionID, ""
+				}
 			}
 			invalidate()
 		case <-tick.C:
 			previous := info.Target.SessionID
 			var next attach.Descriptor
-			if err = remote("instances.describe", map[string]string{"instance_id": instance}, &next); err != nil {
+			if err = remote("conversation.describe", map[string]string{"session_id": session}, &next); err != nil {
 				connected = false
 				updateInput(nil)
 				if !deny(err) {
@@ -641,7 +656,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			}
 			if pending != "" {
 				var receipt mitosis.Receipt
-				if remote("operations.get", map[string]string{"instance_id": instance, "operation_id": pending}, &receipt) == nil {
+				if remote("operations.get", map[string]string{"session_id": session, "operation_id": pending}, &receipt) == nil {
 					status.set(strings.Join(slices.DeleteFunc([]string{receipt.Status, receipt.Error, "Esc closes view"}, func(part string) bool { return part == "" }), " · "))
 				}
 			}
@@ -654,7 +669,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 					}
 				}
 				snapshot, offset := "", ""
-				preview = sqlite.ForeignSession{Peer: peer, Namespace: protocol.Service + "/" + instance, ID: info.Target.SessionID, Instance: instance, Name: info.Name, CWD: info.CWD}
+				preview = sqlite.ForeignSession{Peer: peer, Namespace: protocol.Service, ID: info.Target.SessionID, Instance: session, Name: info.Name, CWD: info.CWD}
 				transcript.Reset()
 				for pages := 0; ; pages++ {
 					if pages >= 128 {
@@ -668,7 +683,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 						Cursor     string            `json:"cursor"`
 						Offset     string            `json:"offset"`
 					}
-					err = remote("events.subscribe", map[string]string{"instance_id": instance, "snapshot_id": snapshot, "offset": offset}, &page)
+					err = remote("events.subscribe", map[string]string{"session_id": session, "snapshot_id": snapshot, "offset": offset}, &page)
 					if err != nil {
 						break
 					}
@@ -684,7 +699,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 					snapshot, offset = page.SnapshotID, page.Offset
 					if offset == "" {
 						cursor = page.Cursor
-						_ = remote("events.unsubscribe", map[string]string{"instance_id": instance, "snapshot_id": snapshot}, nil)
+						_ = remote("events.unsubscribe", map[string]string{"session_id": session, "snapshot_id": snapshot}, nil)
 						break
 					}
 				}
@@ -693,7 +708,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 					Events []mitosis.Event `json:"events"`
 					Cursor string          `json:"cursor"`
 				}
-				err = remote("events.subscribe", map[string]string{"instance_id": instance, "cursor": cursor}, &page)
+				err = remote("events.subscribe", map[string]string{"session_id": session, "cursor": cursor}, &page)
 				if err != nil {
 					cursor = ""
 				} else {
@@ -731,7 +746,7 @@ func runRemoteConversation(ctx context.Context, instance string, remote func(str
 			// A session transition during snapshot paging must never label the
 			// new conversation with the previous session's identity.
 			var current attach.Descriptor
-			if err = remote("instances.describe", map[string]string{"instance_id": instance}, &current); err != nil || current.Target.SessionID != info.Target.SessionID || current.Target.Revision != info.Target.Revision || current.Generation != info.Generation {
+			if err = remote("conversation.describe", map[string]string{"session_id": session}, &current); err != nil || current.Target.SessionID != info.Target.SessionID || current.Target.Revision != info.Target.Revision || current.Generation != info.Generation {
 				cursor = ""
 				updateInput(nil)
 				if !deny(err) {
