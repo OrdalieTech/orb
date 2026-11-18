@@ -7,6 +7,8 @@ shown by `/changelog`.
 
 - The browser page at netapy.com/orb takes the desktop and Android apps' look (their paper and ink in light and dark, Ubuntu Sans Mono, their prompt box) and keeps only what a tab needs: paste the code `orb mitosis` shows, confirm the fingerprint, then talk. The bring-your-own-key agent, the remote-control panel and the debug panel are gone from it.
 
+- `orb mitosis join` starts Mitosis before it reads a short code, so a daemon that can't start no longer uses up the code.
+
 ## [0.24.0] - 2026-11-17
 
 Mitosis's unit is the agent, and a sync group lives on without any one device: several owners each admit devices and merge and seal the group's logins and memory, entry by entry, so turning one off stops nothing. Agents reach each other by name, and a message to an agent with no conversation named goes to its default one. The protocol changed: devices paired before must be paired again.
