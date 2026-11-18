@@ -211,7 +211,8 @@ function drawStream(whole) {
 // a time and answers as one result, which the session checks.
 async function ask() {
   const input = await tab.input().catch(() => null);
-  if (!input || document.querySelector(".interrupt")) return;
+  // One sinking away is done with: the next question rises over it.
+  if (!input || document.querySelector(".interrupt:not(.leaving)")) return;
   const asked = input.presentation?.kind === "questions" ? input.presentation.data.questions : null, answers = [];
   const owner = input.presentation?.kind === "approval" ? "permissions" : "questions";
   const done = reply => { leave(); tab.input(input.id, reply).catch(error => showError(error.message)); };
