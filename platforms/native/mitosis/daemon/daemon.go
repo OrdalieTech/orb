@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
 	"github.com/OrdalieTech/orb/platforms/native"
@@ -31,6 +32,7 @@ import (
 	"github.com/OrdalieTech/orb/platforms/native/sqlite"
 	transport "github.com/OrdalieTech/orb/platforms/native/tailcat"
 	webtransport "github.com/OrdalieTech/orb/platforms/websocket"
+	"github.com/OrdalieTech/orb/plugins/mcp"
 	"github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/OrdalieTech/orb/plugins/memory/filestore"
 )
@@ -271,6 +273,12 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 	}
 	if credentials, err := state.Auth(agentDir); err == nil && agentDir != "" {
 		b.SetClass("credentials", credentials)
+	}
+	// The MCP plugin reads its files from the agent directory on every host, so these stay files.
+	if agentDir != "" {
+		servers := filelock.File{Path: mcp.GlobalPath(agentDir), Perm: 0o600, Atomic: true}
+		b.SetClass("mcp", mcp.SharedServers{Document: servers})
+		b.SetClass("mcp-auth", mcp.SharedLogins{Servers: servers, Logins: filelock.File{Path: mcp.AuthPath(agentDir), Perm: 0o600}})
 	}
 	// The memory the agent's memory plugin keeps: native storage's, else the agent directory's journal.
 	if memories := state.Memory(); memories != nil {

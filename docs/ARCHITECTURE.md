@@ -837,7 +837,11 @@ with `SetClass(name, Class)`, a
 `Shareable`/`MergeShared` pair over its own store. `credentials` is `ai/auth`'s Store over
 auth.json; `memory` is `plugins/memory`'s `Shared` over the memory plugin's `Store`, merged by
 item ID (native storage's, else the agent directory's journal; a Worker object's or tab's
-`filestore.Journal` document). A round reads before it publishes. An owner's vault of a class
+`filestore.Journal` document); `mcp` and `mcp-auth` are `plugins/mcp`'s `SharedServers` and
+`SharedLogins` over the agent directory's mcp.json and mcp-auth.json files, which the MCP plugin
+reads, on native devices only: the plugin's MCP client would take a fifth of a Worker's 10 MiB
+compressed budget, so a Worker object or tab registers them once it runs MCP. A round reads before
+it publishes. An owner's vault of a class
 holds its entries with each one's version, `{v, by, d}` (a Lamport counter, the owner that set
 it, and the value's digest, empty once deleted), and the hand-in it folded in per member; a
 member's holds only its hand-in. A device merges every owner's vault it opens entry by entry,

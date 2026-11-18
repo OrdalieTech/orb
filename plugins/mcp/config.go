@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"strings"
 
 	configpkg "github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/internal/filelock"
 )
 
 // Servers are read from mcp.json in the agent directory and, for trusted
@@ -296,6 +298,9 @@ func validateOAuth(oauth *OAuthConfig) error {
 	return nil
 }
 
+// bom starts the files Windows editors write.
+var bom = []byte("\xef\xbb\xbf")
+
 // Load reads the global and, when trusted, the project mcp.json. Disabled
 // servers are included so they can be enabled again; problems come back as
 // messages while the valid entries still load.
@@ -311,7 +316,7 @@ func Load(agentDir, cwd string, projectTrusted bool) ([]Entry, []string) {
 			problems = append(problems, fmt.Sprintf("%s: %v", path, err))
 			return
 		}
-		servers, err := serverMembers(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))) // Windows editors write a BOM
+		servers, err := serverMembers(bytes.TrimPrefix(data, bom))
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %v", path, err))
 			return
@@ -352,8 +357,10 @@ func Load(agentDir, cwd string, projectTrusted bool) ([]Entry, []string) {
 	return entries, problems
 }
 
-// GlobalPath and ProjectPath are the mcp.json files.
+// GlobalPath and ProjectPath are the mcp.json files, AuthPath mcp-auth.json.
 func GlobalPath(agentDir string) string { return filepath.Join(agentDir, "mcp.json") }
+
+func AuthPath(agentDir string) string { return filepath.Join(agentDir, "mcp-auth.json") }
 
 func ProjectPath(cwd string) string { return filepath.Join(cwd, configpkg.ConfigDirName, "mcp.json") }
 
@@ -398,25 +405,37 @@ type member struct {
 
 // editServers reads an mcp.json (empty when missing), lets edit change its
 // mcpServers and writes it back with its indentation; other content is kept.
+// It takes the lock a sync group's merge takes, and readers, which take none, see the old file or
+// the new one.
 func editServers(path string, edit func([]member) ([]member, bool)) error {
-	data, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if len(bytes.TrimSpace(data)) == 0 {
+	return filelock.File{Path: path, Perm: 0o600, Atomic: true}.Update(context.Background(), func(data []byte) ([]byte, error) {
+		next, err := editServerData(data, edit)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		if next == nil {
+			return data, nil
+		}
+		return next, nil
+	})
+}
+
+// editServerData is editServers on an mcp.json's content; nil means unchanged.
+func editServerData(data []byte, edit func([]member) ([]member, bool)) ([]byte, error) {
+	if data = bytes.TrimPrefix(data, bom); len(bytes.TrimSpace(data)) == 0 {
 		data = []byte("{}")
 	}
 	root, err := orderedMembers(data)
 	if err != nil {
-		return fmt.Errorf("%s: expected an object with an \"mcpServers\" object", path)
+		return nil, errors.New(`expected an object with an "mcpServers" object`)
 	}
 	servers, err := serverMembers(data)
 	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+		return nil, err
 	}
 	servers, changed := edit(servers)
 	if !changed {
-		return nil
+		return nil, nil
 	}
 	encoded := encodeMembers(servers)
 	if index := slices.IndexFunc(root, func(entry member) bool { return entry.name == "mcpServers" }); index >= 0 {
@@ -430,16 +449,17 @@ func editServers(path string, edit func([]member) ([]member, bool)) error {
 	}
 	var output bytes.Buffer
 	if err := json.Indent(&output, encodeMembers(root), "", indent); err != nil {
-		return err
+		return nil, err
 	}
 	output.WriteByte('\n')
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, output.Bytes(), 0o600)
+	return output.Bytes(), nil
 }
 
 func serverMembers(data []byte) ([]member, error) {
+	// A file cut short mid-write would otherwise read as fewer servers.
+	if !json.Valid(data) {
+		return nil, errors.New("not valid JSON")
+	}
 	root, err := orderedMembers(data)
 	if err != nil {
 		return nil, errors.New(`expected an object with an "mcpServers" object`)
