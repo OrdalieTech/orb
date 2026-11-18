@@ -5,6 +5,12 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-11-18
+
+Orb runs in a browser tab as one of your devices, with every account they share: `orb mitosis --browser` opens the page at https://ordalietech.github.io/orb/ already paired but for the fingerprint, and the requests a browser refuses go through your devices. The page takes the apps' look, their Evangelion moments included, and holds heavy loads; an Orb's followers no longer cost its reply's length squared; MCP servers and their sign-ins travel with the sync group.
+
+- MCP servers travel with the sync group, with their sign-ins: native devices share the global mcp.json's https servers and mcp-auth.json's OAuth grants for them, so one sign-in serves every device. Stdio servers, servers whose headers or client secret read `${VAR}` or `!command`, those signed in with an `orb login` account and those only one device can reach (http, localhost, a LAN or a Tailscale 100.x address) stay on their device; a grant travels without the endpoints it discovered, which each device finds again from the server's URL.
+
 - Memory's journal no longer grows forever: every remember, replace and forget appended a line, so churn grew the file while what it held stayed under the tools' limits. Past 256 KiB, once it is four times what is live, a write rewrites it to the live items, in the file store and in the document a Worker or browser tab keeps.
 - The browser page takes the desktop and Android apps' look and parts: their paper and ink in light and dark, Ubuntu Sans Mono, the tab bar, the prompt box with its model deck, inline tool lines, Settings (General, Providers, Plugins, Mitosis), and their Evangelion moments: the NEW SESSION title card, the context gauge, and the red interrupt in warning stripes where the questions plugin asks, one question at a time, each choice on its key. Pairing is the code `orb mitosis` shows and the fingerprint, and no longer stalls when the device admits the tab late. Code mode gives the tab's agent a `js` tool, run in a sandboxed worker that can't reach the page or its credentials, whose code calls the agent's other tools (`await tools.remember({…})`). The bring-your-own-key agent, the remote-control panel and the debug panel are gone.
 
