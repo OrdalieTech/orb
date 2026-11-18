@@ -145,15 +145,17 @@ func runMitosisJoin(ctx context.Context, profile string, args []string, streams 
 		}
 		text = string(raw)
 	}
-	inv, err := parseMitosisCode(ctx, text)
-	if err != nil {
-		return reportCLIError(streams.Stderr, err)
-	}
+	// Mitosis starts before the code is read: a short code serves one fetch, so a daemon that
+	// cannot start must not burn it.
 	client, err := startedMitosisAdmin(ctx, profile)
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
 	defer func() { _ = client.Close() }()
+	inv, err := parseMitosisCode(ctx, text)
+	if err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
 	var status mitosisSettingsStatus
 	if err = client.Call(ctx, "status", struct{}{}, &status); err != nil {
 		return reportCLIError(streams.Stderr, err)
