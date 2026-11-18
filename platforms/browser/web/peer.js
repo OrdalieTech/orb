@@ -64,9 +64,10 @@ export function indexedStorage(name) {
 
 // openPeer boots peer.wasm (its bytes) and opens this tab's Orb over storage: env holds
 // ORB_SETTINGS and ORB_MODELS defaults, emit(array, length) receives its RPC frames and exit(code)
-// its end. The entry points are the Worker's: command(frame), stats(), dispose(), and
+// its end; run(code), when given, is code mode: its agent's js tool, resolving to the run as JSON.
+// The entry points are the Worker's: command(frame), stats(), dispose(), plugins([name, on]), and
 // mitosisAdmin(method, paramsJSON, "") for the owner's calls (self, join, trust, sync, remote, …).
-export async function openPeer({ wasm, storage, name = "browser", env = {}, emit = () => {}, exit = () => {} }) {
+export async function openPeer({ wasm, storage, name = "browser", env = {}, emit = () => {}, exit = () => {}, run }) {
   const go = new Go();
   const ready = new Promise((resolve, reject) => {
     globalThis.__orbPeerBoot = { helpers: globalThis.orbHelpers, resolve, reject: message => reject(new Error(message)) };
@@ -82,5 +83,5 @@ export async function openPeer({ wasm, storage, name = "browser", env = {}, emit
   });
   stopped.catch(() => {});
   const orb = await Promise.race([ready, stopped]);
-  return orb.open({ storage, env, name, emit, exit, dial: true });
+  return orb.open({ storage, env, name, emit, exit, run, dial: true });
 }

@@ -1,21 +1,24 @@
 import { indexedStorage, openPeer } from "./peer.js";
 const $ = id => document.getElementById(id);
+// notice: the one error line, moved to the screen it concerns, so pages that redraw keep hold of it.
+const notice = document.getElementById("error");
 // tab: this tab's own Orb (peer.wasm), one of the user's devices; word: what it does now; where: its model.
 let tab = null, me = "", running = false, messages = [], streamed = "", word = "", where = "";
 // tabs: the conversations the bar shows, by session file, with their titles; current: the one shown.
 let tabs = JSON.parse(localStorage.getItem("orb.tab.tabs") || "[]"), current = "";
 
 function showError(message) {
-  $("error").textContent = message || "";
-  $("error").hidden = !message;
+  notice.textContent = message || "";
+  notice.hidden = !message;
 }
-// show picks the one screen: the invitation, its approval, or the conversation; an error reads
-// at the end of what it concerns, as the apps note one.
+// show picks the one screen: the invitation, its approval, the conversation or Settings; an error
+// reads at the end of what it concerns, as the apps note one.
 function show(screen) {
   const opening = screen === "chat" && $("chat").hidden;
-  $(screen === "chat" ? "transcript" : screen).append($("error"));
-  $("pair").hidden = screen === "chat";
+  $({ chat: "transcript", settings: "page" }[screen] || screen).append(notice);
+  $("pair").hidden = screen === "chat" || screen === "settings";
   $("chat").hidden = screen !== "chat";
+  $("settings").hidden = screen !== "settings";
   $("invite").hidden = screen !== "invite";
   $("approve").hidden = screen !== "approve";
   // A hidden transcript has no height to scroll: it opens at its end once shown.
@@ -26,7 +29,7 @@ function controls() {
   $("send").ariaLabel = running ? "Stop" : "Send";
   $("send").classList.toggle("stop", running);
   $("send").disabled = !running && !$("prompt").value.trim();
-  $("new").disabled = running;
+  $("new").disabled = $("model").disabled = running;
   renderTabs();
 }
 // The desktop's tab bar: a chip per conversation, its square pulsing while it works, its × on it
@@ -106,15 +109,24 @@ function inline(text) {
     return part[0] === "`" ? node("code", part.slice(1, -1)) : part[1] === "*" ? node("strong", part.slice(2, -2)) : node("em", part.slice(1, -1));
   });
 }
-// What the person said sits at right on a soft ground; Orb just speaks, full width.
+// What the person said sits at right on a soft ground; Orb just speaks, full width, its actions
+// inline: a line per tool call (what ran, on what; failed in the rupture), which opens on what it
+// was given and what came back.
 function renderMessages(list) {
-  const transcript = $("transcript");
-  $("messages").replaceChildren(...list.filter(m => ["user", "assistant"].includes(m.role) && text(m.content)).map(message => {
-    const row = message.role === "user" ? node("p", text(message.content)) : node("div", ...markdown(text(message.content)));
-    row.className = message.role;
-    return row;
+  const transcript = $("transcript"), results = new Map(list.filter(m => m.role === "toolResult").map(m => [m.toolCallId, m]));
+  $("messages").replaceChildren(...list.flatMap(message => {
+    if (message.role === "user") return text(message.content) ? [Object.assign(node("p", text(message.content)), { className: "user" })] : [];
+    if (message.role !== "assistant") return [];
+    const blocks = (typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content || []).flatMap(block =>
+      block.type === "text" ? markdown(block.text) : block.type === "toolCall" ? [action(block, results.get(block.id))] : []);
+    return blocks.length ? [Object.assign(node("div", ...blocks), { className: "assistant" })] : [];
   }));
   transcript.scrollTop = transcript.scrollHeight;
+}
+function action(call, result) {
+  const args = call.arguments || {}, given = String(args.code ?? args.command ?? args.path ?? JSON.stringify(args));
+  const line = node("summary", node("b", call.name), node("span", given.split("\n")[0]), ...(result?.isError ? [node("em", "failed")] : []));
+  return Object.assign(node("details", line, node("pre", given), ...(result ? [node("pre", text(result.content))] : [])), { className: "action" });
 }
 function idle() {
   running = false; word = "";
@@ -159,6 +171,134 @@ $("prompt").onkeydown = event => {
   }
 };
 $("new").onclick = () => go("new_session");
+$("menu").onclick = () => openPage("general");
+$("back").onclick = () => show("chat");
+for (const button of $("pages").querySelectorAll("[data-page]")) button.onclick = () => openPage(button.dataset.page);
+$("model").onclick = openModels;
+$("filter").oninput = renderModels;
+document.onkeydown = event => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "," && tab) { event.preventDefault(); openPage("general"); }
+  else if (event.key === "Escape" && !$("settings").hidden) show("chat");
+};
+// deck: what the model deck shows, as the desktop's: the models the tab's accounts give, by
+// provider, and the reasoning levels the one in use takes.
+let deck = { models: [], levels: [], state: {} };
+async function readDeck() {
+  const [{ models }, state, { levels }] = await Promise.all([tab.rpc("get_available_models"), tab.rpc("get_state"), tab.rpc("get_available_thinking_levels")]);
+  deck = { models, levels, state };
+  const at = levels.indexOf(state.thinkingLevel);
+  $("meter").replaceChildren(...levels.map((level, i) => Object.assign(node("i"), { className: i <= at && level !== "off" ? "lit" : "" })));
+  where = state.model && state.model.provider !== "unknown" ? state.model.id.split("/").at(-1) : "";
+  controls();
+}
+async function openModels() {
+  await readDeck();
+  $("filter").value = "";
+  renderModels();
+  $("models").showModal();
+}
+function renderModels() {
+  const query = $("filter").value.trim().toLowerCase(), { model, thinkingLevel } = deck.state, rows = [];
+  const pick = (command, params) => tab.rpc(command, params).then(readDeck).then(renderModels).catch(error => showError(error.message));
+  $("levels").replaceChildren(...deck.levels.map(level => {
+    const chip = Object.assign(node("button", level), { type: "button", className: level === thinkingLevel ? "on" : "" });
+    chip.onclick = () => pick("set_thinking_level", { level });
+    return chip;
+  }));
+  let provider = "";
+  for (const m of deck.models.filter(m => `${m.provider} ${m.id} ${m.name || ""}`.toLowerCase().includes(query))) {
+    if (m.provider !== provider) rows.push(Object.assign(node("p", provider = m.provider), { className: "label" }));
+    const row = Object.assign(node("button", m.name || m.id), { type: "button", className: m.provider === model?.provider && m.id === model?.id ? "on" : "" });
+    row.onclick = () => pick("set_model", { provider: m.provider, modelId: m.id }).then(() => $("models").close());
+    rows.push(row);
+  }
+  $("list").replaceChildren(...rows);
+}
+// Settings, as the desktop's: its pages at left, the one shown at right.
+const label = text => Object.assign(node("p", text), { className: "label" });
+const note = text => Object.assign(node("p", text), { className: "meta" });
+function row(name, sub, action) {
+  return Object.assign(node("div", node("div", node("strong", name), note(sub)), ...(action ? [action] : [])), { className: "row" });
+}
+function button(text, onclick, className = "") {
+  return Object.assign(node("button", text), { type: "button", onclick, className });
+}
+// What each plugin does, as agent/assembly's catalog says it.
+const about = {
+  titles: "Name each session after its first exchange", tasks: "Live session task list and todo tool",
+  questions: "Ask the user questions with choices and custom answers", memory: "Bounded persistent remember, recall, replace, and forget tools",
+  memtree: "Experimental: zoomable summary tree of each session for lossless compaction or fresh turns",
+};
+const pages = {
+  async general() {
+    await readDeck();
+    const { model, thinkingLevel } = deck.state;
+    return [node("h2", "General"), note("new conversations, keys"), label("new conversations"),
+      row("default model", model ? [model.id.split("/").at(-1), thinkingLevel].filter(Boolean).join(" · ") : "none yet", button("change ›", openModels, "plain")),
+      label("keys"), ...[["Enter", "send"], ["Shift+Enter", "new line"], ["Ctrl+,", "settings"], ["Esc", "back to the conversations"]].map(([key, what]) => row(key, what))];
+  },
+  async providers() {
+    const counts = new Map();
+    for (const m of (await tab.rpc("get_available_models")).models) counts.set(m.provider, (counts.get(m.provider) || 0) + 1);
+    return [node("h2", "Providers"), note("the accounts your devices share with this tab"), label("accounts"),
+      ...[...counts].map(([provider, n]) => row(provider, `${n} model${n === 1 ? "" : "s"}`)),
+      note("Sign in on one of your devices: its accounts reach this tab, sealed to it.")];
+  },
+  async plugins() {
+    const plugins = await tab.plugins();
+    return [node("h2", "Plugins"), note("what this tab's Orb runs, from its next conversation"), ...Object.keys(plugins).sort().map(name =>
+      row(name, about[name], button(plugins[name] ? "on" : "off", () => tab.plugins(name, !plugins[name]).then(() => openPage("plugins"), error => showError(error.message)), plugins[name] ? "inverted" : "")))];
+  },
+  async mitosis() {
+    const [status, group] = await Promise.all([tab.admin("status"), tab.admin("sync")]);
+    return [node("h2", "Mitosis"), note("peer to peer"), label("devices"),
+      ...(group.members || []).filter(id => id !== me).map(id => row(group.names?.[id] || id.split(":").at(-1).slice(0, 8),
+        [status.peer_states?.[id] === "connected" ? "connected" : "not connected", group.owners?.includes(id) && "owner"].filter(Boolean).join(" · "))),
+      label("this tab"), note(me),
+      note("Each device is approved by fingerprint on its own screen. Forgetting this tab clears it here; block it on a device to take it out of your group."),
+      button("forget this tab", () => { if (confirm("Forget this tab? Its conversations here go with it.")) { localStorage.setItem("orb.tab.forget", "1"); location.reload(); } })];
+  },
+};
+async function openPage(name) {
+  show("settings");
+  for (const item of $("pages").querySelectorAll("[data-page]")) item.className = item.dataset.page === name ? "on" : "";
+  try { $("page").replaceChildren(...await pages[name]()); } catch (error) { showError(error.message); }
+  $("page").append(notice);
+}
+// Code mode's runtime: a frame of opaque origin (sandboxed without same-origin), so what runs reaches
+// neither this page, its storage nor the synced credentials. Each run is a worker in it, ended when it
+// settles or after 30 s, and answers {out, value, error}.
+const sandbox = `<script>onmessage = ({ data: { id, code } }) => {
+  const source = "const out = [], show = v => typeof v === 'string' ? v : JSON.stringify(v, null, 2) ?? String(v);" +
+    "for (const k of ['log', 'info', 'warn', 'error']) console[k] = (...a) => out.push(a.map(show).join(' '));" +
+    "onmessage = async ({ data }) => { try { const v = await (0, eval)('(async () => {' + data + String.fromCharCode(10) + '})()'); postMessage({ out, value: v === undefined ? undefined : show(v) }); }" +
+    " catch (e) { postMessage({ out, error: String(e && e.stack || e) }); } };";
+  const worker = new Worker(URL.createObjectURL(new Blob([source])));
+  const end = reply => { clearTimeout(timer); worker.terminate(); parent.postMessage({ id, ...reply }, "*"); };
+  const timer = setTimeout(() => end({ error: "stopped after 30 s" }), 30000);
+  worker.onmessage = ({ data }) => end(data);
+  worker.onerror = event => { event.preventDefault(); end({ error: event.message }); };
+  worker.postMessage(code);
+};<\/script>`;
+let frame, framed, runs = new Map(), nextRun = 0;
+function run(code) {
+  if (!frame) {
+    frame = Object.assign(document.createElement("iframe"), { srcdoc: sandbox, hidden: true });
+    frame.setAttribute("sandbox", "allow-scripts");
+    framed = new Promise(resolve => (frame.onload = resolve));
+    document.body.append(frame);
+  }
+  return framed.then(() => new Promise(resolve => {
+    const id = ++nextRun;
+    runs.set(id, resolve);
+    frame.contentWindow.postMessage({ id, code }, "*");
+  }));
+}
+addEventListener("message", ({ source, data }) => {
+  if (source !== frame?.contentWindow || !runs.has(data?.id)) return;
+  runs.get(data.id)(JSON.stringify({ out: data.out || [], value: data.value, error: data.error }));
+  runs.delete(data.id);
+});
 // The tab's Orb over IndexedDB, which keeps its identity, received providers, memory and
 // conversation across reloads. Starting its Mitosis makes it dial its devices.
 async function openTab() {
@@ -181,10 +321,11 @@ async function openTab() {
       if (frame.type !== "response") onEvent(frame);
       if (frame.type === "agent_end") settle().catch(error => showError(error.message));
     },
-    exit: () => { tab = null; idle(); showError("This tab's Orb stopped. Reload the page."); },
+    exit: () => { tab = null; idle(); showError("This tab's Orb stopped. Reload the page."); }, run,
   });
   tab = {
     admin: async (method, params = {}) => JSON.parse(await peer.mitosisAdmin(method, JSON.stringify(params), "")),
+    plugins: async (...args) => JSON.parse(await peer.plugins(...args)),
     rpc: (type, params = {}) => new Promise((resolve, reject) => {
       const id = `tab-${++next}`;
       replies.set(id, frame => (frame.success ? resolve(frame.data) : reject(new Error(frame.error))));
@@ -198,12 +339,13 @@ async function openTab() {
   await settle();
   refreshTab();
 }
-// settle shows the conversation the tab's Orb holds, and gives its chip the first thing said in it;
-// a chip left with nothing said goes.
+// settle shows the conversation the tab's Orb holds, and gives its chip its name (the titles plugin
+// names it) or the first thing said in it; a chip left with nothing said goes.
 async function settle() {
   ({ messages } = await tab.rpc("get_messages"));
-  current = (await tab.rpc("get_state")).sessionFile;
-  const title = text(messages.find(m => m.role === "user")?.content).trim().split("\n")[0];
+  const { sessionFile, sessionName } = await tab.rpc("get_state");
+  current = sessionFile;
+  const title = sessionName || text(messages.find(m => m.role === "user")?.content).trim().split("\n")[0];
   tabs = tabs.filter(t => t.title || t.file === current);
   const shown = tabs.find(t => t.file === current);
   if (shown) shown.title = title;
@@ -221,16 +363,14 @@ async function refreshTab() {
     const owner = localStorage.getItem("orb.tab.owner");
     const { models } = await tab.rpc("get_available_models");
     if (owner && !models.length) await tab.admin("sync", { join: owner }).catch(() => {});
-    let { model } = await tab.rpc("get_state");
+    const { model } = await tab.rpc("get_state");
     // A session started before any provider arrived has no model; a new one takes the preferred one.
     if (models.length && (!model || model.provider === "unknown") && !running && !messages.length) {
       await tab.rpc("new_session");
       await settle();
-      ({ model } = await tab.rpc("get_state"));
     }
-    show(!owner ? "invite" : models.length ? "chat" : "approve");
-    where = model && model.provider !== "unknown" ? model.id.split("/").at(-1) : "";
-    controls();
+    if ($("settings").hidden) show(!owner ? "invite" : models.length ? "chat" : "approve");
+    await readDeck();
   } catch (error) { showError(error.message); }
   finally { setTimeout(refreshTab, 3000); }
 }
@@ -249,5 +389,10 @@ $("join").onclick = async () => {
   } catch (error) { showError(error.message); }
   finally { $("join").disabled = false; }
 };
+// Forgetting the tab waits for the reload, when no runtime holds its database any more.
+if (localStorage.getItem("orb.tab.forget")) {
+  for (const key of Object.keys(localStorage)) if (key.startsWith("orb.tab.")) localStorage.removeItem(key);
+  await new Promise(resolve => Object.assign(indexedDB.deleteDatabase("orb-tab"), { onsuccess: resolve, onerror: resolve, onblocked: resolve }));
+}
 if (localStorage.getItem("orb.tab.owner")) openTab().catch(error => showError(error.message));
 else show("invite");

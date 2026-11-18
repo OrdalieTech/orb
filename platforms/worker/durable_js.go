@@ -69,10 +69,10 @@ func wait() (int, <-chan []js.Value) {
 	return settlements.next, done
 }
 
-// await blocks the calling goroutine until promise settles; the Go runtime
+// Await blocks the calling goroutine until promise settles; the Go runtime
 // yields to the JavaScript event loop meanwhile. A rejection settles with an
 // undefined value and its reason's message.
-func await(promise js.Value) (js.Value, error) {
+func Await(promise js.Value) (js.Value, error) {
 	id, done := wait()
 	helpers.await.Invoke(promise, id, settle)
 	results := <-done
@@ -106,7 +106,7 @@ func (kv durableKV) Get(_ context.Context, keys []string) (map[string][]byte, er
 		if err != nil {
 			return nil, err
 		}
-		found, err := await(promise)
+		found, err := Await(promise)
 		if err != nil {
 			return nil, err
 		}
@@ -124,7 +124,7 @@ func (kv durableKV) List(_ context.Context, prefix string) (map[string][]byte, e
 	if err != nil {
 		return nil, err
 	}
-	found, err := await(promise)
+	found, err := Await(promise)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +156,7 @@ func (kv durableKV) Write(_ context.Context, put map[string][]byte, del []string
 	}
 	var failure error
 	for _, promise := range pending {
-		if _, err := await(promise); err != nil && failure == nil {
+		if _, err := Await(promise); err != nil && failure == nil {
 			failure = err
 		}
 	}

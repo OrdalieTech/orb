@@ -11,16 +11,21 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync/atomic"
 	"syscall/js"
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
+	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/platforms/worker"
 	"github.com/OrdalieTech/orb/platforms/worker/peer"
@@ -87,6 +92,7 @@ func open(object js.Value) js.Value {
 		api.Set(name, funcs[len(funcs)-1])
 	}
 	var stopped, disposed atomic.Bool
+	var opened atomic.Pointer[worker.Instance]
 	set("command", func(_ js.Value, args []js.Value) any {
 		if stopped.Load() || disposed.Load() {
 			return "the object's Orb has stopped"
@@ -100,6 +106,36 @@ func open(object js.Value) js.Value {
 		default:
 			return "command queue is full"
 		}
+	})
+	// plugins resolves to which of the plugins an object can run are on, as JSON; given a name and a
+	// state, it sets that one first, for the sessions started after.
+	set("plugins", func(_ js.Value, args []js.Value) any {
+		return promise(func() (any, error) {
+			instance := opened.Load()
+			if instance == nil {
+				return nil, errors.New("the object's Orb is not open")
+			}
+			settings, err := instance.Settings()
+			if err != nil {
+				return nil, err
+			}
+			names := portable(settings)
+			if len(args) == 2 {
+				if _, ok := names[args[0].String()]; !ok {
+					return nil, errors.New("no such plugin here")
+				}
+				settings.SetPluginEnabled(args[0].String(), args[1].Bool())
+				if errs := settings.DrainErrors(); len(errs) > 0 {
+					return nil, errs[0].Err
+				}
+			}
+			on, state := settings.GetPlugins(), map[string]bool{}
+			for name := range names {
+				state[name] = on[name]
+			}
+			raw, err := json.Marshal(state)
+			return string(raw), err
+		})
 	})
 	set("stats", func(js.Value, []js.Value) any {
 		var memory runtime.MemStats
@@ -126,15 +162,10 @@ func open(object js.Value) js.Value {
 		instance, err := worker.Open(ctx, worker.Options{
 			KV: worker.NewDurableKV(object.Get("storage")), Env: lookup,
 			Settings: document("ORB_SETTINGS"), Models: document("ORB_MODELS"),
-			Tools: peer.AgentCalls(mitosis.open),
+			Tools: tools(peer.AgentCalls(mitosis.open), object.Get("run")),
 			Extensions: func(settings *config.SettingsManager, store host.Store) map[string]extensions.Factory {
-				// The bundled plugins an object runs, as its settings enable them: those that need no
-				// processes, files of their own or terminal (docs/plugins.md, where plugins run).
-				portable := map[string]extensions.Factory{
-					"titles": titles.Extension(), "tasks": tasks.Extension(tasks.Draw{}), "questions": questions.Extension(questions.Draw{}),
-					"memtree": memtree.Extension(memtree.OptionsFrom(settings.GetPluginSettings("memtree"))),
-					"memory":  memoryextension.Extension(peer.Memory(store)),
-				}
+				portable := portable(settings)
+				portable["memory"] = memoryextension.Extension(peer.Memory(store))
 				chosen := map[string]extensions.Factory{}
 				for name, on := range settings.GetPlugins() {
 					if on && portable[name] != nil {
@@ -150,6 +181,7 @@ func open(object js.Value) js.Value {
 			}
 			return nil, err
 		}
+		opened.Store(instance)
 		mitosis.mu.Lock()
 		mitosis.instance = instance
 		mitosis.mu.Unlock()
@@ -224,5 +256,70 @@ func (writer *frameWriter) Write(data []byte) (int, error) {
 		}
 		writer.emitFrame(writer.partial[:end+1])
 		writer.partial = writer.partial[end+1:]
+	}
+}
+
+// portable is the bundled plugins an object runs, as its settings enable them: those that need no
+// processes, files of their own or terminal (docs/plugins.md, where plugins run). Memory, over the
+// object's store, is wired where the store is known; its name is here so it can be listed and set.
+func portable(settings *config.SettingsManager) map[string]extensions.Factory {
+	return map[string]extensions.Factory{
+		"titles": titles.Extension(), "tasks": tasks.Extension(tasks.Draw{}), "questions": questions.Extension(questions.Draw{}),
+		"memtree": memtree.Extension(memtree.OptionsFrom(settings.GetPluginSettings("memtree"))),
+		"memory":  nil,
+	}
+}
+
+// tools adds code mode to calls where the host runs code: run(code) resolves to the run as JSON,
+// {out, value, error}, as a browser tab's sandboxed worker answers it (platforms/browser/web).
+func tools(calls worker.ToolsFunc, run js.Value) worker.ToolsFunc {
+	if run.Type() != js.TypeFunction {
+		return calls
+	}
+	code := extensions.ToolDefinition{
+		Name: "js", Label: "js", PromptSnippet: "Run JavaScript in a sandboxed worker",
+		Description: "Run JavaScript in a sandboxed worker of this browser tab, for computing, transforming data or trying code. " +
+			"The code is the body of an async function: return a value, await promises, console.log to print. " +
+			"It has no DOM and no access to the page, its storage or the files; fetch obeys the browser's CORS rules. A run stops after 30 s.",
+		Parameters: ai.JSONSchema(`{"type":"object","properties":{"code":{"type":"string","description":"The body of an async function."}},"required":["code"]}`),
+		Execute: func(_ context.Context, _ string, args any, _ engine.AgentToolUpdateCallback, _ extensions.Context) (engine.AgentToolResult, error) {
+			var input struct {
+				Code string `json:"code"`
+			}
+			raw, _ := json.Marshal(args)
+			if err := json.Unmarshal(raw, &input); err != nil || strings.TrimSpace(input.Code) == "" {
+				return engine.AgentToolResult{}, errors.New("code must not be empty")
+			}
+			answer, err := worker.Await(run.Invoke(input.Code))
+			if err != nil {
+				return engine.AgentToolResult{}, err
+			}
+			var result struct {
+				Out   []string `json:"out"`
+				Value *string  `json:"value"`
+				Error string   `json:"error"`
+			}
+			if err := json.Unmarshal([]byte(answer.String()), &result); err != nil {
+				return engine.AgentToolResult{}, err
+			}
+			lines := result.Out
+			if result.Value != nil {
+				lines = append(lines, "→ "+*result.Value)
+			}
+			if result.Error != "" {
+				lines = append(lines, result.Error)
+			}
+			text := strings.Join(lines, "\n")
+			if text == "" {
+				text = "(no output)"
+			}
+			if len(text) > 50_000 {
+				text = text[:50_000] + "\n… (cut at 50 KB)"
+			}
+			return engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: text}}, IsError: result.Error != ""}, nil
+		},
+	}
+	return func(settings *config.SettingsManager) []extensions.ToolDefinition {
+		return append(calls(settings), code)
 	}
 }

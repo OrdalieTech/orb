@@ -27,16 +27,26 @@
     </div>
   </section>
   <section id="chat" hidden>
-    <nav id="bar"><div id="tabs"></div><button id="new" type="button" aria-label="New conversation">+</button></nav>
+    <nav id="bar"><div id="tabs"></div><button id="new" type="button" aria-label="New conversation">+</button><button id="menu" type="button" aria-label="Settings"><i></i></button></nav>
     <div id="transcript" tabindex="0" aria-label="Messages">
       <div id="messages"></div>
       <div id="stream" class="assistant" hidden></div>
     </div>
     <form id="prompt-form">
       <textarea id="prompt" rows="2" maxlength="16384" placeholder="What next?" aria-label="Message"></textarea>
-      <div><output id="status"></output><button id="send" class="round" aria-label="Send"></button></div>
+      <div><button id="model" type="button"><i></i><span id="status"></span><span id="meter"></span></button><button id="send" class="round" aria-label="Send"></button></div>
     </form>
   </section>
+  <section id="settings" hidden>
+    <nav id="pages">
+      <h1>Settings</h1><p class="meta">this tab</p>
+      <button type="button" data-page="general">General</button><button type="button" data-page="providers">Providers</button>
+      <button type="button" data-page="plugins">Plugins</button><button type="button" data-page="mitosis">Mitosis</button>
+      <button id="back" type="button">‹  conversations <small>esc</small></button>
+    </nav>
+    <div id="page"></div>
+  </section>
+  <dialog id="models"><input id="filter" placeholder="Find a model" autocomplete="off" spellcheck="false"><div id="levels"></div><div id="list"></div></dialog>
   <p id="error" role="alert" hidden></p>
 </body>
 </html>

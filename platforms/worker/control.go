@@ -77,9 +77,9 @@ func (instance *Instance) notify(session *agent.AgentSession) {
 	}
 }
 
-// settings reads the object's settings.json through the Store port, as the
-// session itself does.
-func (instance *Instance) settings() (*config.SettingsManager, error) {
+// Settings reads the object's settings.json through the Store port, as the
+// session itself does; what it writes there applies to sessions started after.
+func (instance *Instance) Settings() (*config.SettingsManager, error) {
 	return config.NewSettingsManager(Workspace, config.WithAgentDir(AgentDir),
 		config.WithGlobalDocument(instance.Host.Document("settings.json")), config.WithProjectTrusted(false))
 }

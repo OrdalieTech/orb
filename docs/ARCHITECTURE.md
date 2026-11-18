@@ -160,14 +160,20 @@ No agent process or model proxy runs on the server. Each release attaches `make 
 `<base>` points at a directory named by version and digest, so a cache never mixes two releases'
 files. netapy.com/orb serves the latest release's.
 
-The page makes the tab one of the user's devices, and does nothing else: the code `orb mitosis`
+The page makes the tab one of the user's devices: the code `orb mitosis`
 shows opens `peer.js` over IndexedDB, which joins, trusts the inviting device and follows its sync
 group, and the page shows the fingerprint to confirm there, which approves the tab and adds it to
 the group. The first provider the group shares replaces the fingerprint with the conversation,
 which runs on the peer's Orb through its RPC `command` entry point, with the providers and memory
-the profile shares; its status line shows the link and the model, never a credential. A reload
-reopens the peer with its identity, data and conversation, and it dials its devices again. The
-page takes the apps' tokens (`platforms/desktop/theme.go`, Android's `ui/Theme.kt`): their
+the profile shares; the prompt box shows the model, never a credential. A reload reopens the peer
+with its identity, data and conversations, and it dials its devices again. Around the conversation
+it keeps the apps' parts: the desktop's tab bar (a chip per session, kept by the page by session
+file, since the RPC lists none), its model deck, and Settings with General, Providers (the
+accounts the group shares), Plugins (those an object runs, set through the Worker's `plugins`
+entry point for the sessions started after) and Mitosis (the group's devices, forgetting the tab).
+Code mode gives the tab's agent a `js` tool: `openPeer`'s `run` hands its code to a worker inside
+a frame sandboxed without same-origin, so it reaches neither the page, its storage nor the synced
+credentials, and a run stops after 30 s. The page takes the apps' tokens (`platforms/desktop/theme.go`, Android's `ui/Theme.kt`): their
 palette in both appearances, their face, radii and type scale, the desktop's on a wide screen and
 the phone's on a narrow one.
 
