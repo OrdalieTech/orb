@@ -221,25 +221,36 @@ func TestJournalCompactsChurn(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for round := range 50 {
-			err := store.Transact(ctx, func(tx memory.Store) error {
-				for i := range 40 {
-					id, err := tx.Append(ctx, memory.Item{Time: time.Now(), Content: strings.Repeat("churn ", 20) + strconv.Itoa(round*40+i)})
-					if err != nil {
-						return err
+		churn := func() {
+			for round := range 50 {
+				err := store.Transact(ctx, func(tx memory.Store) error {
+					for i := range 40 {
+						id, err := tx.Append(ctx, memory.Item{Time: time.Now(), Content: strings.Repeat("churn ", 20) + strconv.Itoa(round*40+i)})
+						if err != nil {
+							return err
+						}
+						if err := tx.Delete(ctx, id); err != nil {
+							return err
+						}
 					}
-					if err := tx.Delete(ctx, id); err != nil {
-						return err
-					}
+					return nil
+				})
+				if err != nil {
+					t.Fatal(err)
 				}
-				return nil
-			})
-			if err != nil {
-				t.Fatal(err)
 			}
 		}
+		churn()
 		items, err := store.Query(ctx, memory.Filter{Limit: -1})
 		if err != nil || len(items) != 1 || items[0].ID != kept {
+			t.Fatalf("live items = %#v, %v", items, err)
+		}
+		// With nothing live, the journal compacts to empty.
+		if err := store.Delete(ctx, kept); err != nil {
+			t.Fatal(err)
+		}
+		churn()
+		if items, err := store.Query(ctx, memory.Filter{Limit: -1}); err != nil || len(items) != 0 {
 			t.Fatalf("live items = %#v, %v", items, err)
 		}
 	}

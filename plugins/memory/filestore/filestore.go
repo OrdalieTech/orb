@@ -299,7 +299,7 @@ func compacted(raw []byte) ([]byte, error) {
 		live = append(live, item)
 	}
 	sort.Slice(live, func(i, j int) bool { return live[i].order < live[j].order })
-	var out []byte
+	out := []byte{}
 	for i := range live {
 		line, err := journalLine([]fileRecord{{Item: &live[i].Item}})
 		if err != nil {
