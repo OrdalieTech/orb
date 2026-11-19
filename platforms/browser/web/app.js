@@ -217,17 +217,19 @@ function aim() {
 const aimAt = (id, cwd = "") => { localStorage.setItem("orb.tab.aim", JSON.stringify({ machine: id, cwd })); controls(); };
 const base = path => path.split("/").filter(Boolean).at(-1) || path;
 const tidy = path => path.replace(/^\/(Users|home)\/[^/]+/, "~");
-// Where to run: this tab, an Orb running somewhere (it opens), or a device, in its home folder,
-// one of the folders worked in last, or any other.
+// Where to run: a device, in its home folder, one of the folders worked in last or any other, the
+// one chosen lit; an Orb running somewhere (it opens); this tab.
 async function chooseWhere() {
-  const self = machine(state.self), options = [];
-  if (self) options.push({ label: "this tab", detail: "its own Orb, one conversation at a time", value: () => aimAt(state.self) });
-  for (const m of home.machines) for (const r of m.running || []) if (!r.open && !m.self) options.push({ label: r.label, detail: r.busy ? "working · open it" : "running · open it", value: () => open(`i:${r.instance}`) });
+  const self = machine(state.self), now = aim(), options = [];
   for (const m of launchers()) {
-    options.push({ label: m.name, detail: "home folder", value: () => aimAt(m.id) });
-    for (const f of (m.folders || []).slice(0, 5)) options.push({ label: `${m.name} · ${base(f.cwd)}`, detail: `${tidy(f.cwd)} · ${f.threads} thread${f.threads === 1 ? "" : "s"}`, value: () => aimAt(m.id, f.cwd) });
-    options.push({ label: `${m.name} · another folder…`, detail: "type its path", value: () => pick(`a folder on ${m.name}`, [], { field: true, hint: "~/code/project" }).then(cwd => cwd?.trim() && aimAt(m.id, cwd.trim())) });
+    const at = now.machine?.id === m.id && tidy(now.cwd);
+    options.push({ label: m.name, detail: "home folder", on: at === "" || at === "~", value: () => aimAt(m.id) });
+    for (const f of (m.folders || []).filter(f => tidy(f.cwd) !== "~").slice(0, 5)) options.push({ label: tidy(f.cwd), detail: `${m.name} · ${f.threads} thread${f.threads === 1 ? "" : "s"}`, on: at === tidy(f.cwd), value: () => aimAt(m.id, f.cwd) });
+    if (at && at !== "~" && !options.some(o => o.on)) options.push({ label: at, detail: m.name, on: true, value: () => aimAt(m.id, now.cwd) });
+    options.push({ label: "another folder…", detail: `${m.name} · type its path`, value: () => pick(`a folder on ${m.name}`, [], { field: true, hint: "~/code/project" }).then(cwd => cwd?.trim() && aimAt(m.id, cwd.trim())) });
   }
+  for (const m of home.machines) for (const r of m.running || []) if (!r.open && !m.self) options.push({ label: r.label, detail: r.busy ? "working · open it" : "running · open it", value: () => open(`i:${r.instance}`) });
+  if (self) options.push({ label: "this tab", detail: "its own Orb, one conversation at a time", on: now.machine?.self, value: () => aimAt(state.self) });
   (await pick("run on", options))?.();
 }
 async function start(text) {
@@ -261,8 +263,10 @@ function toast(text, undo) {
   box.hidden = false;
   box.lastChild.hidden = !undo;
   box.lastChild.onclick = () => { box.hidden = true; reopen = reopen.filter(f => f !== undo); undo(); };
-  clearTimeout(box.timer);
-  box.timer = setTimeout(() => (box.hidden = true), 6000);
+  const later = () => { clearTimeout(box.timer); box.timer = setTimeout(() => (box.hidden = true), 10000); };
+  box.onmouseenter = () => clearTimeout(box.timer);
+  box.onmouseleave = later;
+  later();
 }
 async function rename(title, apply) {
   const name = (await pick("rename", [], { field: true, value: title }))?.trim();
@@ -299,7 +303,7 @@ function goTo() {
 const sheet = $("sheet");
 function pick(title, options, { field = false, value = "", hint = "" } = {}) {
   return new Promise(resolve => {
-    let at = 0, shown = [];
+    let at = Math.max(0, options.findIndex(o => o.on)), shown = [];
     const input = $("sheet-input");
     const done = v => { sheet.onclose = null; sheet.close(); resolve(v); };
     const draw = () => {
@@ -319,7 +323,8 @@ function pick(title, options, { field = false, value = "", hint = "" } = {}) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); at += event.key === "ArrowDown" ? 1 : -1; draw(); }
       else if (event.key === "Enter") { event.preventDefault(); field ? done(input.value) : shown[at] && done(shown[at].value ?? shown[at].label); }
     };
-    sheet.onclose = () => resolve(null);
+    // The close event comes after its close(): a sheet opened from a choice of the last one is open again.
+    sheet.onclose = () => !sheet.open && resolve(null);
     draw();
     sheet.showModal();
     // The keys go to the sheet, whose rows are drawn again as they move.
@@ -899,9 +904,15 @@ addEventListener("message", ({ source, data }) => {
 // and the view's open tabs across reloads. Starting its Mitosis makes it dial its devices.
 async function boot() {
   // One runtime owns the tab's storage for the page's life: its journals are read once and
-  // appended in memory, so a second page writing the same database would overwrite them.
-  const held = await new Promise(resolve => navigator.locks.request("orb-tab", { ifAvailable: true }, lock => { resolve(!!lock); return lock && new Promise(() => {}); }));
-  if (!held) throw new Error("Your Orb is already open in another tab of this page.");
+  // appended in memory, so a second page writing the same database would overwrite them. Another
+  // page takes it over as WhatsApp Web does: told to, the one holding it reloads, which lets go.
+  const take = sessionStorage.getItem("orb.take");
+  sessionStorage.removeItem("orb.take");
+  if (take) { showError("taking your Orb over from the other tab…"); moves.postMessage("take"); }
+  const held = await new Promise(resolve => navigator.locks.request("orb-tab", take ? {} : { ifAvailable: true }, lock => { resolve(!!lock); return lock && new Promise(() => {}); }));
+  if (!held) return elsewhere("Your Orb is open in another tab of this page."), false;
+  showError("");
+  moves.onmessage = ({ data }) => data === "take" && (sessionStorage.setItem("orb.moved", "1"), location.reload());
   const response = await fetch("peer.wasm.gz");
   if (!response.ok) throw new Error(`Wasm download failed: ${response.status}`);
   const answers = new Map();
@@ -934,6 +945,12 @@ async function boot() {
   $("fingerprint").textContent = me.split(":").at(-1).slice(0, 8);
   $("self").textContent = me;
   approval();
+  return true;
+}
+const moves = new BroadcastChannel("orb-tab");
+function elsewhere(text) {
+  showError(text);
+  notice.append(" ", button("use here", () => { sessionStorage.setItem("orb.take", "1"); location.reload(); }, "plain"));
 }
 // The first provider a device shares is the tab's approval: the app replaces the fingerprint. Until
 // then the tab asks to follow the device's sync group again, since the device may admit it after
@@ -964,7 +981,7 @@ async function join(text) {
     const invitation = JSON.parse(code ? atob(code.replace(/-/g, "+").replace(/_/g, "/")) : value || "{}");
     if (!invitation.peer_id || !invitation.token) throw new Error("Paste the code orb mitosis --browser shows.");
     if (!/^wss?:\/\//.test(invitation.locator ?? "")) throw new Error("That code is for the apps. For this tab, run orb mitosis --browser.");
-    if (!tab) await boot();
+    if (!tab && !await boot()) return;
     await tab.admin("join", invitation);
     await tab.admin("trust", { peer_id: invitation.peer_id });
     localStorage.setItem("orb.tab.owner", invitation.peer_id);
@@ -981,7 +998,8 @@ if (localStorage.getItem("orb.tab.forget")) {
 // The link orb mitosis --browser opens carries its code after #, which the browser never sends.
 const linked = decodeURIComponent(location.hash.slice(1));
 if (linked) history.replaceState(null, "", location.pathname + location.search);
-if (localStorage.getItem("orb.tab.owner")) boot().catch(error => showError(error.message));
+if (sessionStorage.getItem("orb.moved")) { sessionStorage.removeItem("orb.moved"); elsewhere("Your Orb moved to another tab of this page."); }
+else if (localStorage.getItem("orb.tab.owner")) boot().catch(error => showError(error.message));
 else {
   show("invite");
   if (linked.startsWith("orb-mitosis:v1:")) join($("code").value = linked);
