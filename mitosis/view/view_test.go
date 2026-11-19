@@ -233,14 +233,15 @@ func TestAStreamedAnswerArrivesAsSmallPatches(t *testing.T) {
 	}
 }
 
-// A question from the questions plugin is walked one at a time and answered as one result; an
-// approval is a choice.
+// A question from the questions plugin is walked one at a time and answered as one result, with
+// multi_select the choices ticked and a line; an approval is a choice.
 func TestQuestionsAreWalkedAndAnsweredAsOne(t *testing.T) {
 	tb := &tab{Tab: Tab{}, a: &App{}}
 	tb.asked = "q1"
-	tb.questions = []question{{ID: "colour", Question: "Colour?", Header: "Taste", Options: []struct{ Label string }{{"blue"}, {"red"}}}, {ID: "size", Question: "Size?"}}
+	tb.questions = []question{{ID: "colour", Question: "Colour?", Header: "Taste", Options: []struct{ Label string }{{"blue"}, {"red"}}}, {ID: "size", Question: "Size?"},
+		{ID: "extras", Question: "Extras?", MultiSelect: true, Options: []struct{ Label string }{{"nuts"}, {"cream"}}}}
 	tb.Ask = tb.question()
-	if tb.Ask.Message != "Taste  1 / 2" || !slices.Equal(tb.Ask.Choices, []string{"blue", "red"}) {
+	if tb.Ask.Message != "Taste  1 / 3" || !slices.Equal(tb.Ask.Choices, []string{"blue", "red"}) {
 		t.Fatalf("first: %+v", tb.Ask)
 	}
 	blue, big := "blue", "big"
@@ -249,7 +250,12 @@ func TestQuestionsAreWalkedAndAnsweredAsOne(t *testing.T) {
 		t.Fatalf("second: %+v", tb.Ask)
 	}
 	tb.answer(&big)
-	if want := `[{"id":"colour","selected":["blue"]},{"custom":"big","id":"size","selected":[]}]`; string(mitosis.JSON(tb.answers)) != want || tb.Ask != nil {
+	if tb.Ask == nil || !tb.Ask.Multi {
+		t.Fatalf("third: %+v", tb.Ask)
+	}
+	more := "more"
+	tb.answer(&more, "nuts", "cream")
+	if want := `[{"id":"colour","selected":["blue"]},{"custom":"big","id":"size","selected":[]},{"custom":"more","id":"extras","selected":["nuts","cream"]}]`; string(mitosis.JSON(tb.answers)) != want || tb.Ask != nil {
 		t.Fatalf("answers: %s", mitosis.JSON(tb.answers))
 	}
 }

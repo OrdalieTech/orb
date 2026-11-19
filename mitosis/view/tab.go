@@ -60,7 +60,7 @@ type Window struct {
 }
 
 // Ask is a plugin stopping the world until someone answers: an approval, or one question of a
-// series; Free takes any text.
+// series; Free takes any text, and Multi ticks several choices.
 type Ask struct {
 	ID      string   `json:"id"`
 	Owner   string   `json:"owner"`
@@ -68,6 +68,7 @@ type Ask struct {
 	Message string   `json:"message,omitempty"`
 	Choices []string `json:"choices,omitempty"`
 	Free    bool     `json:"free,omitempty"`
+	Multi   bool     `json:"multi,omitempty"`
 }
 
 // Slot is a plugin's line or lines beside the conversation; Alarm is an error notice.
@@ -127,6 +128,7 @@ type descriptor struct {
 
 type question struct {
 	ID, Question, Header string
+	MultiSelect          bool `json:"multi_select"`
 	Options              []struct{ Label string }
 }
 
@@ -379,7 +381,7 @@ func firstUserLine(t *transcript) string {
 // validates the one JSON result (plugins/questions).
 func (t *tab) question() *Ask {
 	q := t.questions[len(t.answers)]
-	ask := &Ask{ID: t.asked, Owner: "questions", Title: q.Question, Message: q.Header, Free: true}
+	ask := &Ask{ID: t.asked, Owner: "questions", Title: q.Question, Message: q.Header, Free: true, Multi: q.MultiSelect}
 	if len(t.questions) > 1 {
 		ask.Message = strings.TrimSpace(fmt.Sprintf("%s  %d / %d", ask.Message, len(t.answers)+1, len(t.questions)))
 	}
@@ -625,8 +627,9 @@ func (t *tab) reopen(text string) {
 	a.flush()
 }
 
-// answer replies to the open interrupt; nil dismisses it.
-func (t *tab) answer(value *string) {
+// answer replies to the open interrupt with a choice or a line, and with Multi the choices
+// ticked; nil dismisses it.
+func (t *tab) answer(value *string, ticked ...string) {
 	ask := t.Ask
 	if ask == nil {
 		return
@@ -640,12 +643,15 @@ func (t *tab) answer(value *string) {
 		reply = `{"cancelled":true}`
 	case t.questions != nil:
 		q := t.questions[len(t.answers)]
-		answer := map[string]any{"id": q.ID, "selected": []string{}}
-		if slices.ContainsFunc(q.Options, func(o struct{ Label string }) bool { return o.Label == *value }) {
-			answer["selected"] = []string{*value}
-		} else {
-			answer["custom"] = *value
+		answer, selected := map[string]any{"id": q.ID}, []string{}
+		for _, v := range append(ticked, *value) {
+			if slices.ContainsFunc(q.Options, func(o struct{ Label string }) bool { return o.Label == v }) {
+				selected = append(selected, v)
+			} else if v != "" {
+				answer["custom"] = v
+			}
 		}
+		answer["selected"] = selected
 		if t.answers = append(t.answers, answer); len(t.answers) < len(t.questions) {
 			t.Ask = t.question()
 			return

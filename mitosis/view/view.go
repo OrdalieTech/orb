@@ -140,6 +140,7 @@ type intent struct {
 	CWD      string   `json:"cwd"`
 	Text     string   `json:"text"`
 	Value    *string  `json:"value"`
+	Ticked   []string `json:"ticked"`
 	Name     string   `json:"name"`
 	Ref      string   `json:"ref"`
 	Px       int      `json:"px"`
@@ -271,7 +272,7 @@ func (a *App) now(in intent) (any, error) {
 		args := t.execution(map[string]any{})
 		go t.call("cancel", args)
 	case "answer":
-		t.answer(in.Value)
+		t.answer(in.Value, in.Ticked...)
 	case "model":
 		t.useModel(in.Name)
 	case "thinking":

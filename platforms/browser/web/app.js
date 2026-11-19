@@ -669,19 +669,25 @@ function interrupt(t, ask) {
   Object.assign(box.dataset, { ask: ask.id, armed: Date.now() + 800 });
   box.classList.toggle("again", again);
   const field = Object.assign(node("input"), { placeholder: "type an answer", autocomplete: "off", enterKeyHint: "send" });
-  const answer = value => { leave(); send({ do: "answer", tab: t.id, value }); };
+  const answer = (value, ticked) => { leave(); send({ do: "answer", tab: t.id, value, ticked }); };
+  // With several to choose, a choice ticks; send answers with what is ticked.
+  const ticked = new Set(), choose = (choice, row) => {
+    if (!ask.multi) return answer(choice);
+    ticked.has(choice) ? ticked.delete(choice) : ticked.add(choice);
+    row.classList.toggle("ticked", ticked.has(choice));
+  };
   const keys = event => {
     if (event.key === "Escape") return answer(null);
     const hit = event.target !== field && Date.now() > box.dataset.armed && keyed.find(([key]) => key === event.key);
-    if (hit) { event.preventDefault(); answer(hit[2]); }
+    if (hit) { event.preventDefault(); choose(hit[2], box.querySelectorAll(".choice")[keyed.indexOf(hit)]); }
   };
-  const submit = () => field.value.trim() && answer(field.value);
+  const submit = () => ask.multi ? (ticked.size || field.value.trim()) && answer(field.value.trim(), [...ticked]) : field.value.trim() && answer(field.value);
   field.onkeydown = event => event.key === "Enter" && submit();
   box.replaceChildren(node("i"), node("div", node("div", node("span", `${ask.owner} · ${t.where}`), node("span", "waiting on you")), node("hr"),
     el("h2", word.length > 5 ? "stretch word squeezed" : "stretch word", word), el("p", "caption", caption),
     el("p", "first", first), ...(detail ? [el("p", "detail", detail)] : []),
     node("hr"), ...keyed.map(([key, text, choice], n) => {
-      const pick = Object.assign(button("", () => answer(choice), n ? "choice" : "choice first"), { style: `--n: ${n}` });
+      const pick = Object.assign(button("", () => choose(choice, pick), n || ask.multi ? "choice" : "choice first"), { style: `--n: ${n}` });
       pick.append(node("b", key), node("span", text));
       return pick;
     }),
