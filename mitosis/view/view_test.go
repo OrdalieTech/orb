@@ -567,3 +567,28 @@ func TestAnEditOpensOnItsDiff(t *testing.T) {
 		}
 	}
 }
+
+// A /new sent the moment a conversation opens, before its Orb described it, still replaces the
+// session and runs the message in the new one.
+func TestNewRightAfterOpeningRunsInTheNewSession(t *testing.T) {
+	app, c, session := orb(t, 0, faux.AssistantMessage("fresh"))
+	c.until(t, "the Orb on Home", func() bool {
+		return slices.ContainsFunc(c.home, func(e Entry) bool { return e.Key == "i:"+session })
+	})
+	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + session + `"}`))
+	c.until(t, "the tab", func() bool { return c.replies["1"] != nil })
+	var opened struct{ Tab string }
+	_ = json.Unmarshal(c.replies["1"], &opened)
+	app.Do([]byte(`{"do":"show","tabs":["` + opened.Tab + `"]}`))
+	app.Do([]byte(`{"do":"send","tab":"` + opened.Tab + `","text":"/new hello"}`))
+	c.until(t, "the answer drawn", func() bool {
+		rows := c.rows[opened.Tab]
+		return len(rows) == 2 && rows[0].Text == "hello" && !c.tab(opened.Tab).Busy
+	})
+	app.mu.Lock()
+	now := app.tabs[0].session
+	app.mu.Unlock()
+	if now == session {
+		t.Fatalf("the message ran in the session it should replace")
+	}
+}

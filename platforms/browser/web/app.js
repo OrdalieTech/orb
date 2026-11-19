@@ -491,7 +491,7 @@ function controls() {
 }
 // Home takes the app's commands that open a screen, and /new; a conversation takes them all.
 const homeCommands = new Set(["new", "model", "sessions", "pair", "login", "plugins"]);
-let history = [];
+let past = [];
 async function submit(mode) {
   const t = conversation(), text = $("prompt").value.trim();
   if (t?.busy && !text) return send({ do: "abort", tab: t.id });
@@ -499,7 +499,7 @@ async function submit(mode) {
   $("prompt").value = "";
   pinned = true;
   showError("");
-  history = [...history.filter(h => h !== text), text].slice(-50);
+  past = [...past.filter(h => h !== text), text].slice(-50);
   controls();
   if (window.Notification?.permission === "default") Notification.requestPermission();
   // Refused, the text comes back to the box, unless a new draft took its place.
@@ -537,13 +537,13 @@ $("prompt").onkeydown = event => {
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); dismissed = box.value; return palette(); }
   }
   // Up in an empty box brings back what was sent last, as a terminal does.
-  if (event.key === "ArrowUp" && !box.value && history.length) { event.preventDefault(); box.value = history.at(-1); return controls(); }
+  if (event.key === "ArrowUp" && !box.value && past.length) { event.preventDefault(); box.value = past.at(-1); return controls(); }
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit(); }
 };
 // The palette over the box: typing / lists the app's commands and the conversation's Orb's,
 // prefix matches first; an @ token asks that Orb what it completes to, skills then files, as the
 // TUI does. Arrows choose, Tab or Enter takes, Esc puts it away until the text changes.
-let choices = [], chosen = -1, dismissed = null, found = { token: null, items: [] }, finding = 0;
+let choices = [], chosen = -1, dismissed = null, found = { tab: null, token: null, items: [] }, finding = 0;
 function palette() {
   const box = $("prompt"), text = box.value, t = conversation(), cursor = box.selectionStart;
   const typed = /^\/(\S*)$/.exec(text)?.[1], token = /(?:^|\s)(@\S*)$/.exec(text.slice(0, cursor))?.[1];
@@ -561,9 +561,9 @@ function palette() {
       },
     }));
   } else if (token && t) {
-    if (found.token !== token) {
+    if (found.token !== token || found.tab !== t.id) {
       clearTimeout(finding);
-      finding = setTimeout(() => ask("complete", { tab: t.id, text: token.slice(1) }).then(items => { found = { token, items: items || [] }; palette(); }, () => {}), 120);
+      finding = setTimeout(() => ask("complete", { tab: t.id, text: token.slice(1) }).then(items => { found = { tab: t.id, token, items: items || [] }; palette(); }, () => {}), 120);
     } else choices = found.items.map(f => ({
       label: f.text.startsWith("/skill:") ? `◆ ${f.label}` : f.label, detail: f.detail, pick: () => {
         // A folder keeps the token open, so completion goes on inside it.

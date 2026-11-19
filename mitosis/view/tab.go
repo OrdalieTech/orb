@@ -674,20 +674,27 @@ func (t *tab) useThinking(level string) {
 	}
 }
 
-// rename names the conversation; an Orb takes calls once it has described its session, so a
-// rename right after a launch waits for that.
+// described waits a few seconds for the Orb to describe its session: it takes calls once it has,
+// so a call right after a launch waits for that. Called without the lock.
+func (t *tab) described() bool {
+	for range 40 {
+		t.a.mu.Lock()
+		ready := t.info.Target.Session != ""
+		t.a.mu.Unlock()
+		if ready {
+			return true
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return false
+}
+
+// rename names the conversation.
 func (t *tab) rename(name string) {
 	t.Title = name
 	go func() {
-		for range 40 {
-			t.a.mu.Lock()
-			ready := t.info.Target.Session != ""
-			t.a.mu.Unlock()
-			if ready {
-				t.call("session.name", map[string]string{"name": name})
-				return
-			}
-			time.Sleep(250 * time.Millisecond)
+		if t.described() {
+			t.call("session.name", map[string]string{"name": name})
 		}
 	}()
 }

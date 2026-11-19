@@ -305,10 +305,18 @@ func (a *App) send(t *tab, text string) (any, error) {
 	if strings.HasPrefix(text, "/") {
 		switch name {
 		case "new":
-			if arg != "" {
-				t.queued, t.queuedFrom = arg, t.session
-			}
-			go t.call("session.new", map[string]any{})
+			// The message waits for the new session, so the one it replaces must be known first.
+			go func() {
+				if !t.described() {
+					return
+				}
+				a.mu.Lock()
+				if arg != "" {
+					t.queued, t.queuedFrom = arg, t.session
+				}
+				a.mu.Unlock()
+				t.call("session.new", map[string]any{})
+			}()
 			return nil, nil
 		case "compact":
 			args := map[string]string{}
