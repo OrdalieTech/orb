@@ -190,13 +190,14 @@ button.inverted { color: var(--bg); background: var(--fg); }
 #prompt-form > div:last-child { display: flex; align-items: center; gap: 12px; padding-left: 14px; }
 /* Where it runs and on what, as the desktop's prompt box says it: the square, the model, the
    reasoning as a small meter, a bar per level lit up to the one in use. */
-/* Where it runs, a chip of its own on Home, as Android's; the model beside it. */
-#aim { display: flex; align-items: center; gap: 7px; flex-shrink: 0; max-width: 40%; height: 30px; margin-left: -9px; padding: 0 9px; font-weight: 600; border: 0; border-radius: 8px; }
+/* Where it runs, a chip of its own on Home, as Android's; the model beside it. Both keep their
+   width while it fits and share the shortfall when it doesn't, so a folder is cut only when it must be. */
+#aim { display: flex; align-items: center; gap: 7px; flex: 0 1 auto; min-width: 0; height: 30px; margin-left: -9px; padding: 0 9px; font-weight: 600; border: 0; border-radius: 8px; }
 #aim:disabled { opacity: 1; cursor: default; }
 #aim > i { width: 7px; height: 7px; flex-shrink: 0; background: var(--hue, var(--fg)); }
 #aim span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #queue { padding: 4px 8px; color: var(--mute); border: 0; }
-#model { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; height: 30px; padding: 0 9px; font-weight: 500; color: var(--mute); border: 0; border-radius: 8px; justify-content: flex-start; }
+#model { display: flex; align-items: center; gap: 7px; flex: 1 1 auto; min-width: 0; height: 30px; padding: 0 9px; font-weight: 500; color: var(--mute); border: 0; border-radius: 8px; justify-content: flex-start; }
 #model:disabled { opacity: 1; }
 #model > i { width: 7px; height: 7px; flex-shrink: 0; background: var(--hue, var(--fg)); }
 #where { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--small); }
