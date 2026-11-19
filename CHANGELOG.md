@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- A phone, iPhone or desktop app paired with `orb mitosis` now follows the inviter's sync group, as `orb mitosis join` and the browser tab already did: before, the owner listed it as a member but the app never joined, so it got none of the group's logins and memory and reached no other member.
+
 ## [0.25.0] - 2026-11-18
 
 Orb runs in a browser tab as one of your devices, with every account they share: `orb mitosis --browser` opens the page at https://ordalietech.github.io/orb/ already paired but for the fingerprint, and the requests a browser refuses go through your devices. The page takes the apps' look, their Evangelion moments included, and holds heavy loads; an Orb's followers no longer cost its reply's length squared; MCP servers and their sign-ins travel with the sync group.
