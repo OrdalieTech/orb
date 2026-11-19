@@ -233,14 +233,15 @@ func TestAStreamedAnswerArrivesAsSmallPatches(t *testing.T) {
 	}
 }
 
-// A question from the questions plugin is walked one at a time and answered as one result; an
-// approval is a choice.
+// A question from the questions plugin is walked one at a time and answered as one result, with
+// multi_select the choices ticked and a line; an approval is a choice.
 func TestQuestionsAreWalkedAndAnsweredAsOne(t *testing.T) {
 	tb := &tab{Tab: Tab{}, a: &App{}}
 	tb.asked = "q1"
-	tb.questions = []question{{ID: "colour", Question: "Colour?", Header: "Taste", Options: []struct{ Label string }{{"blue"}, {"red"}}}, {ID: "size", Question: "Size?"}}
+	tb.questions = []question{{ID: "colour", Question: "Colour?", Header: "Taste", Options: []struct{ Label string }{{"blue"}, {"red"}}}, {ID: "size", Question: "Size?"},
+		{ID: "extras", Question: "Extras?", MultiSelect: true, Options: []struct{ Label string }{{"nuts"}, {"cream"}}}}
 	tb.Ask = tb.question()
-	if tb.Ask.Message != "Taste  1 / 2" || !slices.Equal(tb.Ask.Choices, []string{"blue", "red"}) {
+	if tb.Ask.Message != "Taste  1 / 3" || !slices.Equal(tb.Ask.Choices, []string{"blue", "red"}) {
 		t.Fatalf("first: %+v", tb.Ask)
 	}
 	blue, big := "blue", "big"
@@ -249,7 +250,12 @@ func TestQuestionsAreWalkedAndAnsweredAsOne(t *testing.T) {
 		t.Fatalf("second: %+v", tb.Ask)
 	}
 	tb.answer(&big)
-	if want := `[{"id":"colour","selected":["blue"]},{"custom":"big","id":"size","selected":[]}]`; string(mitosis.JSON(tb.answers)) != want || tb.Ask != nil {
+	if tb.Ask == nil || !tb.Ask.Multi {
+		t.Fatalf("third: %+v", tb.Ask)
+	}
+	more := "more"
+	tb.answer(&more, "nuts", "cream")
+	if want := `[{"id":"colour","selected":["blue"]},{"custom":"big","id":"size","selected":[]},{"custom":"more","id":"extras","selected":["nuts","cream"]}]`; string(mitosis.JSON(tb.answers)) != want || tb.Ask != nil {
 		t.Fatalf("answers: %s", mitosis.JSON(tb.answers))
 	}
 }
@@ -308,6 +314,31 @@ func TestHomeIsReadBeforeTheAppShows(t *testing.T) {
 		return json.Unmarshal([]byte(reply), result)
 	}})
 	c.until(t, "Home", func() bool { return len(c.home) == 1 && c.home[0].Title == "tides" })
+}
+
+// A device that connects once the app shows (a tab dialing its devices) has its threads on Home
+// at once, not at the next periodic read of every device's threads.
+func TestADeviceThatConnectsHasItsThreadsReadAtOnce(t *testing.T) {
+	c := newClient()
+	var up atomic.Bool
+	app := New(t.Context(), Options{Name: "this tab", Emit: func(m any) { c.out <- mitosis.JSON(m) }, Call: func(_ context.Context, method string, params, result any) error {
+		reply := fmt.Sprintf(`{"peer_id":"me","peers":["pc"],"peer_states":{"pc":%q}}`, map[bool]string{true: "connected", false: "disconnected"}[up.Load()])
+		if method == "remote" {
+			p := params.(map[string]any)
+			if p["peer_id"] == "pc" && !up.Load() {
+				return mitosis.Fail("unavailable")
+			}
+			reply = `{}`
+			if p["peer_id"] == "pc" && p["method"] == "host.sessions" {
+				reply = `{"items":[{"session_id":"s","name":"tides","cwd":"/w","modified":1}]}`
+			}
+		}
+		return json.Unmarshal([]byte(reply), result)
+	}})
+	app.Do([]byte(`{"do":"visible","on":true}`))
+	time.Sleep(500 * time.Millisecond)
+	up.Store(true)
+	c.until(t, "the device's threads", func() bool { return len(c.home) == 1 && c.home[0].Title == "tides" })
 }
 
 // A conversation shown asleep reads as it was while its Orb starts, is not said asleep, and keeps
@@ -540,5 +571,30 @@ func TestAnEditOpensOnItsDiff(t *testing.T) {
 		if d := x.detail(rows[0].Actions[0].Key); !strings.HasPrefix(d["diff"], "  4 func add()") {
 			t.Fatalf("detail: %q", d)
 		}
+	}
+}
+
+// A /new sent the moment a conversation opens, before its Orb described it, still replaces the
+// session and runs the message in the new one.
+func TestNewRightAfterOpeningRunsInTheNewSession(t *testing.T) {
+	app, c, session := orb(t, 0, faux.AssistantMessage("fresh"))
+	c.until(t, "the Orb on Home", func() bool {
+		return slices.ContainsFunc(c.home, func(e Entry) bool { return e.Key == "i:"+session })
+	})
+	app.Do([]byte(`{"id":"1","do":"open","key":"i:` + session + `"}`))
+	c.until(t, "the tab", func() bool { return c.replies["1"] != nil })
+	var opened struct{ Tab string }
+	_ = json.Unmarshal(c.replies["1"], &opened)
+	app.Do([]byte(`{"do":"show","tabs":["` + opened.Tab + `"]}`))
+	app.Do([]byte(`{"do":"send","tab":"` + opened.Tab + `","text":"/new hello"}`))
+	c.until(t, "the answer drawn", func() bool {
+		rows := c.rows[opened.Tab]
+		return len(rows) == 2 && rows[0].Text == "hello" && !c.tab(opened.Tab).Busy
+	})
+	app.mu.Lock()
+	now := app.tabs[0].session
+	app.mu.Unlock()
+	if now == session {
+		t.Fatalf("the message ran in the session it should replace")
 	}
 }

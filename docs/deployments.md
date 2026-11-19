@@ -116,8 +116,9 @@ joins an invitation, and follows its owner's sync group, so its Orb has the owne
 memory ("Profile sync" in ARCHITECTURE.md). The page does this and nothing else: run `orb mitosis
 --browser` on your device, which from then on listens for the page on loopback and opens it at
 https://ordalietech.github.io/orb/ with the invitation in the link, then confirm the tab's
-fingerprint there. The tab is then in your sync group, and the
-conversation it opens uses your providers and memory with no key typed, across reloads; the calls
+fingerprint there. The tab is then in your sync group: its Home lists the threads of every device of the group, which
+open and go on from the tab where a device lets it, and the conversations it runs itself use your
+providers and memory with no key typed, across reloads; the calls
 the browser refuses for lack of CORS go through your online devices (see
 [ARCHITECTURE.md](ARCHITECTURE.md#wasm-host-and-browser-page)).
 

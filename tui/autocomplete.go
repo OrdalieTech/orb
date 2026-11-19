@@ -209,14 +209,19 @@ type fdEntry struct {
 	isDirectory bool
 }
 
-// walkDirectoryWithFd walks the tree via fd (fast, respects .gitignore).
+// walkDirectoryWithFd walks the tree via fd (fast, respects .gitignore). Hidden entries are
+// searched only when the query names one, and node_modules never: in a home folder, caches and
+// packages would otherwise fill the results before the folders the person means.
 func walkDirectoryWithFd(ctx context.Context, baseDir, fdPath, query string, maxResults int) []fdEntry {
 	args := []string{
 		"--base-directory", baseDir,
 		"--max-results", strconv.Itoa(maxResults),
 		"--type", "f", "--type", "d",
-		"--follow", "--hidden",
-		"--exclude", ".git", "--exclude", ".git/*", "--exclude", ".git/**",
+		"--follow",
+		"--exclude", ".git", "--exclude", ".git/*", "--exclude", ".git/**", "--exclude", "node_modules",
+	}
+	if q := toDisplayPath(query); strings.HasPrefix(q, ".") || strings.Contains(q, "/.") {
+		args = append(args, "--hidden")
 	}
 	if strings.Contains(toDisplayPath(query), "/") {
 		args = append(args, "--full-path")
@@ -641,7 +646,12 @@ func (provider *CombinedAutocompleteProvider) getFuzzyFileSuggestions(ctx contex
 			scoredEntries = append(scoredEntries, scoredEntry{fdEntry: entry, score: score})
 		}
 	}
-	sort.SliceStable(scoredEntries, func(a, b int) bool { return scoredEntries[a].score > scoredEntries[b].score })
+	// The best match first, and among equals the shallowest: ~/Documents before a backup's.
+	depth := func(e scoredEntry) int { return strings.Count(strings.TrimSuffix(toDisplayPath(e.path), "/"), "/") }
+	sort.SliceStable(scoredEntries, func(a, b int) bool {
+		x, y := scoredEntries[a], scoredEntries[b]
+		return x.score > y.score || x.score == y.score && depth(x) < depth(y)
+	})
 	if len(scoredEntries) > 20 {
 		scoredEntries = scoredEntries[:20]
 	}
