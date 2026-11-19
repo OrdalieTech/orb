@@ -4,12 +4,12 @@
 @font-face { font-family: "Ubuntu Sans Mono"; src: url(ubuntu_sans_mono.ttf); font-weight: 100 900; }
 :root {
   --bg: #E3E7E0; --fg: #2A2D2B; --mute: #444A45; --meta: #646A65; --rule: #9EA49F; --raised: #ECEFE9; --hover: #D6DAD3; --shade: #00000012;
-  --rupture: #C94A3D; --title: 18px; --body: 15px; --small: 13px; --label: 10px; --round: 30px;
+  --rupture: #C94A3D; --hue0: var(--mute); --hue1: #2F5FA8; --hue2: #1F7F73; --hue3: #9A6A12; --hue4: #6A47A8; --hue5: #4A7A22; --hue6: #9C3F86; --title: 18px; --body: 15px; --small: 13px; --label: 10px; --round: 30px;
   --soft: 6px; --pane: 10px; --margin: 16px; --ease: cubic-bezier(.23, 1, .32, 1);
   color-scheme: light dark; font: 400 var(--body)/1.45 "Ubuntu Sans Mono", monospace; color: var(--fg); background: var(--bg);
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #1C201E; --fg: #DADFD8; --mute: #A8AEA9; --meta: #8A918C; --rule: #4E5550; --raised: #242927; --hover: #2F3331; --shade: #00000059; }
+  :root { --bg: #1C201E; --fg: #DADFD8; --mute: #A8AEA9; --meta: #8A918C; --rule: #4E5550; --raised: #242927; --hover: #2F3331; --shade: #00000059; --hue1: #6E9BE0; --hue2: #4FBFAE; --hue3: #D9A441; --hue4: #A88BE0; --hue5: #8CC255; --hue6: #D77CC4; }
 }
 @media (max-width: 600px) { :root { --title: 19px; --label: 11px; --round: 36px; } }
 * { box-sizing: border-box; }
@@ -49,21 +49,24 @@ button.inverted { color: var(--bg); background: var(--fg); }
 @keyframes appear { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { * { animation-duration: 0s !important; } }
 
-/* The conversation: what the person said sits at right on a soft ground; Orb just speaks, full
-   width, its blocks 8 apart; an empty one is the desktop's Home: its title card, the rupture's
-   square beside it. */
 /* The desktop's bar: 48 high over a drawn rule, chips 30 high on the raised ground when shown. */
+#app { max-width: none; padding: 0; }
 #bar { display: flex; align-items: center; gap: 4px; height: 48px; flex-shrink: 0; padding: 0 var(--margin); border-bottom: 1px solid var(--rule); }
 #tabs { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 #bar button { border: 0; font-weight: 400; color: var(--mute); }
 #tabs button { display: flex; align-items: center; gap: 7px; flex-shrink: 1; min-width: 72px; max-width: 220px; height: 30px; padding: 0 6px 0 10px; border-radius: 7px; }
 #tabs .on { color: var(--fg); font-weight: 600; background: var(--raised); }
-#tabs i { width: 7px; height: 7px; flex-shrink: 0; background: currentColor; }
-#tabs .live i { animation: blink 1.4s steps(1) infinite; }
 #tabs span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; }
+#tabs .unread { padding: 0 5px; font-size: var(--label); font-weight: 700; color: var(--bg); border-radius: 8px; background: var(--fg); }
 #tabs b { display: grid; place-items: center; width: 18px; height: 18px; flex-shrink: 0; border-radius: 4px; font-size: 14px; font-weight: 400; color: var(--meta); visibility: hidden; }
 #tabs .on b { visibility: visible; }
-#orb { margin: 0 8px 0 2px; font-size: 11.3px; line-height: 15px; color: var(--fg); }
+#orb { flex-shrink: 0; height: 30px; margin: 0 6px 0 -6px; padding: 0 8px; border-radius: 7px; }
+#orb b { font-size: 11.3px; line-height: 15px; color: var(--fg); }
+#orb.on { background: var(--raised); }
+/* Where a conversation runs: the ink for this tab, a device's own hue, red while it asks; it pulses while it works. */
+.where { width: 7px; height: 7px; flex-shrink: 0; background: var(--hue, var(--mute)); }
+.where.live { animation: blink 1.4s steps(1) infinite; }
+.where.asks { background: var(--rupture); }
 /* How full the context is: ten segments, as the desktop's strip and an EVA's sync rate, red past 80 %. */
 #context { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12px; color: var(--meta); }
 #gauge { display: flex; gap: 2px; }
@@ -76,66 +79,112 @@ button.inverted { color: var(--bg); background: var(--fg); }
 /* Three hairlines at the bar's end, as the apps' menu. */
 #menu { display: grid; place-items: center; width: 36px; height: 30px; flex-shrink: 0; margin-left: auto; padding: 0; border-radius: 7px; }
 #menu i { width: 16px; height: 11px; background: linear-gradient(currentColor 0 0) top / 100% 1.4px no-repeat, linear-gradient(currentColor 0 0) center / 100% 1.4px no-repeat, linear-gradient(currentColor 0 0) bottom / 100% 1.4px no-repeat; color: var(--fg); }
-@media (hover: hover) { #tabs button:hover:not(.on), #tabs b:hover, #new:hover:enabled, #menu:hover, #model:hover:enabled, #pages button:hover:not(.on), #list button:hover { background: var(--hover); } #tabs button:hover b { visibility: visible; } }
-#tabs button:disabled { opacity: 1; color: var(--meta); }
+@media (hover: hover) { #tabs button:hover:not(.on), #tabs b:hover, #orb:hover, #new:hover:enabled, #menu:hover, #model:hover:enabled, #pages button:hover:not(.on), :is(#list, #palette, #entries) button:hover, #machines button:hover:not(.on) { background: var(--hover); } #tabs button:hover b { visibility: visible; } }
+
+/* Home, as the apps': the devices put to the vote as the MAGI, then every thread newest first, one
+   line each, no rules between rows; the title card over the prompt box. */
+#home { flex: 1; min-height: 0; display: flex; flex-direction: column; width: 100%; max-width: calc(720px + 2 * var(--margin)); margin: 0 auto; padding: 10px var(--margin) 0; }
+#machines { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+#machines button { display: flex; flex-direction: column; gap: 2px; flex: 1 0 128px; max-width: 220px; padding: 6px 8px; text-align: left; font-weight: 400; border: 1px solid color-mix(in srgb, var(--rule) 80%, transparent); border-radius: 4px; }
+#machines .on { border-color: var(--fg); background: var(--raised); }
+#machines span { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; }
+#machines span:first-child { font-size: var(--label); font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--mute); }
+#machines .on span:first-child { color: var(--fg); }
+#machines span:last-child { font-size: 12px; color: var(--mute); }
+#machines span:last-child b { margin-left: auto; font-size: var(--label); }
+#machines .down span:last-child { color: var(--rupture); }
+#summary, #launching { padding: 6px 2px 0; font-size: var(--small); color: var(--meta); }
+#summary.asks { color: var(--rupture); }
+#launching:empty { display: none; }
+#entries { flex: 1; min-height: 0; overflow-y: auto; margin: 8px calc(-1 * var(--margin)) 0; padding: 0 var(--margin); scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+#entries button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 8px; margin: 0 -8px; width: calc(100% + 16px); text-align: left; font-size: var(--body); font-weight: 400; border: 0; border-radius: 7px; }
+#entries button span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#entries .open span { font-weight: 600; }
+#entries small { flex-shrink: 0; font-size: var(--small); color: var(--meta); }
+#entries small.asks { color: var(--rupture); }
+#entries > p { padding: 22px 0; }
+#card { display: flex; align-items: flex-end; gap: 8px; flex-shrink: 0; height: 64px; padding: 10px 4px 0; border-top: 1px solid var(--rule); }
+#card b { font-size: 21px; line-height: 26px; transform: scaleY(1.9); transform-origin: 0 100%; animation: wipe 260ms 60ms var(--ease) backwards; }
+#card i { width: 7px; height: 7px; margin-bottom: 4px; background: var(--rupture); }
 
 /* The conversation spans the window, so its scrollbar sits at the edge; what it holds keeps the reading column. */
-#chat { max-width: none; padding: 0; }
-#transcript > * { max-width: 720px; margin-inline: auto; }
-/* The page follows a reply itself (drawStream), only while the end is in view: the browser's own
-   anchoring would carry a reader scrolled up along with the reply. */
+#strip { display: flex; gap: 14px; width: 100%; max-width: calc(720px + 2 * var(--margin)); margin: 0 auto; padding: 6px var(--margin) 0; font-size: var(--small); color: var(--meta); }
+#strip.busy span:first-child { color: var(--fg); }
+#strip span:first-child { flex: 1; font-weight: 500; }
+#strip:empty { display: none; }
+#chat { max-width: 720px; margin-inline: auto; }
+/* The page follows a reply itself, only while the end is in view: the browser's own anchoring would
+   carry a reader scrolled up along with the reply. */
 #transcript { overflow-anchor: none; flex: 1; min-height: 0; padding: 12px var(--margin) 0; overflow-y: auto; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
 #transcript:focus-visible { outline: 0; }
-#messages:empty { display: flex; align-items: center; justify-content: center; gap: 10px; height: 100%; }
-#messages:empty::before { content: "NEW SESSION"; height: 46px; font-size: 34.6px; font-weight: 700; line-height: 46px; transform: scaleY(1.9); animation: wipe 260ms 60ms var(--ease) backwards; }
-#messages:empty::after { content: ""; width: 9px; height: 9px; margin-top: 30px; background: var(--rupture); }
-.user { width: fit-content; max-width: calc(100% - 48px); margin: 28px 0 16px auto; padding: 8px 12px; white-space: pre-wrap; border-radius: var(--pane); background: color-mix(in srgb, var(--fg) 7%, transparent); }
-.user:first-child { margin-top: 0; }
-.assistant { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 8px; }
-#final, #tail { display: contents; }
-/* Only the messages on screen are laid out and painted, however long the conversation. */
-#messages > * { content-visibility: auto; contain-intrinsic-size: auto 80px; }
-.assistant :is(p, h3, ul, ol, pre) { margin: 0; }
-.assistant p { white-space: pre-wrap; }
-.assistant h3 { margin-top: 4px; font-size: var(--title); font-weight: 600; letter-spacing: -.02em; }
-.assistant :is(ul, ol) { display: flex; flex-direction: column; gap: 4px; padding-left: 3ch; }
-.assistant ul { padding-left: 2ch; list-style: "· "; }
-.assistant li::marker { color: var(--meta); }
-.assistant code { padding: 0 4px; border-radius: 4px; background: color-mix(in srgb, var(--fg) 7%, transparent); }
-.assistant pre { overflow-x: auto; padding: 12px; font: inherit; font-size: var(--small); border: 1px solid var(--rule); border-radius: var(--pane); background: var(--raised); }
-.assistant div { overflow-x: auto; }
-.assistant table { border-collapse: collapse; font-size: var(--small); }
-.assistant :is(th, td) { padding: 6px 10px; text-align: left; vertical-align: top; border: 1px solid var(--rule); }
-.assistant th { font-weight: 600; background: var(--raised); }
-.assistant a { color: inherit; text-underline-offset: 2px; }
-/* An action is one line, as the apps' (what ran, on what, failed in the rupture); it opens onto a
-   raised, outlined pane with what it was given and what came back. */
+#earlier { display: block; margin: 0 auto 12px; color: var(--meta); border: 0; }
+#empty { padding: 40px 0; text-align: center; font-size: var(--label); letter-spacing: .06em; text-transform: uppercase; color: var(--meta); }
+#empty:empty { display: none; }
+/* Only the rows on screen are laid out and painted, however long the conversation. */
+#messages > * { content-visibility: auto; contain-intrinsic-size: auto 40px; }
+.you { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; margin: 28px 0 16px 48px; }
+.you:first-child { margin-top: 0; }
+.you p { padding: 8px 12px; white-space: pre-wrap; border-radius: var(--pane); background: color-mix(in srgb, var(--fg) 7%, transparent); }
+.via { font-size: var(--label); letter-spacing: .06em; text-transform: uppercase; color: var(--hue1); }
+.said { padding: 4px 0; }
+.said :is(p, h3, h4, pre, blockquote) { margin: 0; }
+.said p { white-space: pre-wrap; }
+.said h3 { margin-top: 6px; font-size: var(--title); font-weight: 600; letter-spacing: -.02em; }
+.said h4 { margin-top: 4px; font-size: var(--body); font-weight: 600; }
+.said .li { display: flex; gap: 1ch; }
+.said .mark { flex-shrink: 0; min-width: 1ch; font-weight: 500; color: var(--meta); }
+.said blockquote { padding-left: 14px; color: var(--mute); border-left: 2px solid var(--rule); }
+.said code { padding: 0 4px; border-radius: 4px; background: color-mix(in srgb, var(--fg) 7%, transparent); }
+.said pre { overflow-x: auto; padding: 12px; font: inherit; font-size: var(--small); white-space: pre-wrap; border: 1px solid var(--rule); border-radius: var(--pane); background: var(--raised); }
+.said pre.art { white-space: pre; line-height: 1.1; }
+.said pre > small { display: block; margin-bottom: 6px; font-size: var(--label); letter-spacing: .06em; text-transform: uppercase; color: var(--meta); }
+.said .table { overflow-x: auto; }
+.said table { border-collapse: collapse; font-size: var(--small); }
+.said :is(th, td) { padding: 6px 10px; text-align: left; vertical-align: top; border: 1px solid var(--rule); }
+.said th { font-weight: 600; background: var(--raised); }
+.said a { color: inherit; text-underline-offset: 2px; }
+.said hr { border: 0; }
+.note { padding: 4px 0; font-size: 14px; color: var(--meta); white-space: pre-wrap; }
+.alarm { color: var(--rupture) !important; }
+.pictures { display: flex; gap: 6px; overflow-x: auto; }
+.pictures img { height: 112px; border-radius: var(--soft); cursor: zoom-in; }
+/* An action is one line, as the apps' (what ran, on what, failed in the rupture); a run of them
+   folds into one; it opens onto a raised, outlined pane. */
 .action summary { display: flex; gap: 10px; min-width: 0; cursor: pointer; list-style: none; font-size: var(--small); color: var(--mute); }
 .action summary::-webkit-details-marker { display: none; }
-.action b { flex-shrink: 0; font-weight: 600; color: var(--fg); }
-.action span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.action em { font-style: normal; color: var(--rupture); }
-.action pre { margin: 6px 0 0 16px; }
-#stream::after { content: ""; width: .55em; height: 1.1em; background: var(--rupture); animation: blink 1.06s steps(1) infinite; }
+.action summary b { flex-shrink: 0; font-weight: 600; color: var(--fg); }
+.action summary b.live { animation: blink 1.4s steps(1) infinite; }
+.action summary span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.action summary em { flex-shrink: 1; max-width: 45%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-style: normal; color: var(--meta); }
+.action summary em.failed { color: var(--rupture); }
+.action.run > div { margin-left: 16px; }
+.pane { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 0 16px; padding: 12px; border: 1px solid var(--rule); border-radius: var(--pane); background: var(--raised); }
+.pane pre { margin: 0; max-height: 50vh; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+.pane small { font-size: var(--label); letter-spacing: .06em; text-transform: uppercase; color: var(--meta); }
+.pane .add { color: var(--hue5); } .pane .del { color: var(--rupture); }
+#caret::after { content: ""; display: block; width: .55em; height: 1.1em; margin: 6px 0; background: var(--rupture); animation: blink 1.06s steps(1) infinite; }
+#note { min-height: 24px; padding: 4px 0; font-size: var(--small); color: var(--meta); }
+#slots { width: 100%; max-width: 736px; margin: 0 auto; padding: 0 var(--margin); }
+#slots pre { margin: 2px 0; max-height: 7lh; overflow: auto; font: inherit; font-size: var(--small); color: var(--meta); white-space: pre-wrap; }
 
 /* The prompt box, as on the desktop: raised and outlined, the draft above, under it where it
    runs and the one action, round. */
-#prompt-form { flex-shrink: 0; width: calc(100% - 2 * var(--margin) + 16px); max-width: 736px; margin: 8px auto max(16px, env(safe-area-inset-bottom)); padding: 14px 10px 10px; border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent); border-radius: 16px; background: var(--raised); box-shadow: 0 6px 24px var(--shade); }
+#prompt-form { position: relative; flex-shrink: 0; width: calc(100% - 2 * var(--margin) + 16px); max-width: 736px; margin: 8px auto max(16px, env(safe-area-inset-bottom)); padding: 14px 10px 10px; border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent); border-radius: 16px; background: var(--raised); box-shadow: 0 6px 24px var(--shade); }
 #prompt { display: block; width: 100%; min-height: 2.9em; max-height: min(14lh, 30dvh); field-sizing: content; padding: 0 14px 4px; border: 0; resize: none; background: none; }
 #prompt::placeholder { color: var(--meta); }
 #prompt:focus-visible { outline: 0; }
-#prompt-form > div { display: flex; align-items: center; gap: 12px; padding-left: 14px; }
+#prompt-form > div:last-child { display: flex; align-items: center; gap: 12px; padding-left: 14px; }
 /* Where it runs and on what, as the desktop's prompt box says it: the square, the model, the
    reasoning as a small meter, a bar per level lit up to the one in use. */
 #model { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; height: 30px; margin-left: -9px; padding: 0 9px; border: 0; border-radius: 8px; justify-content: flex-start; }
 #model:disabled { opacity: 1; }
-#model > i { width: 7px; height: 7px; flex-shrink: 0; background: var(--fg); }
-#status { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--small); font-weight: 600; color: var(--fg); }
+#model > i { width: 7px; height: 7px; flex-shrink: 0; background: var(--hue, var(--fg)); }
+#where { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--small); font-weight: 600; color: var(--fg); }
 #meter { display: flex; align-items: flex-end; gap: 2px; }
 #meter i { width: 2px; background: var(--rule); border-radius: 1px; }
 #meter i:nth-child(1) { height: 4px; } #meter i:nth-child(2) { height: 6px; } #meter i:nth-child(3) { height: 8px; } #meter i:nth-child(4) { height: 10px; } #meter i:nth-child(5) { height: 12px; } #meter i:nth-child(6) { height: 14px; }
 #meter i.lit { background: var(--fg); }
-#prompt-form > div > :not(#model) { margin-left: auto; }
+#prompt-form > div:last-child > :not(#model) { margin-left: auto; }
 /* Its marks are drawn, square-cut and heavy as the EVA cards: an arrow to send, a block to stop. */
 .round { display: grid; place-items: center; width: var(--round); height: var(--round); padding: 0; flex-shrink: 0; border: 0; border-radius: 50%; color: var(--bg); background: var(--fg); }
 .round::before { content: ""; width: 62%; height: 62%; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 13.5V3.5M2.75 8.25 8 3l5.25 5.25' fill='none' stroke='black' stroke-width='3.2' stroke-miterlimit='8'/%3E%3C/svg%3E") center / contain no-repeat; }
@@ -143,11 +192,20 @@ button.inverted { color: var(--bg); background: var(--fg); }
 .round:disabled { opacity: 1; background: var(--rule); }
 .round.stop { background: var(--rupture); }
 
+/* The slash palette: over the prompt box, the commands as typed so far, Tab takes the first. */
+#palette { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); display: flex; flex-direction: column; padding: 6px; border: 1px solid var(--rule); border-radius: var(--pane); background: var(--raised); box-shadow: 0 16px 40px var(--shade); }
+#palette button { display: flex; gap: 12px; padding: 6px 10px; text-align: left; font-weight: 400; border: 0; border-radius: 7px; }
+#palette b { font-weight: 600; } #palette span { color: var(--meta); }
+#palette button:first-child { background: var(--hover); }
+
 /* The model deck: a raised pane over the prompt box, levels on top, models by provider. */
 #models { width: min(440px, calc(100% - 2 * var(--margin))); max-height: min(520px, 70dvh); inset: auto 0 108px; margin: 0 auto; padding: 10px; overflow: auto; color: var(--fg); border: 1px solid var(--rule); border-radius: var(--pane); background: var(--raised); box-shadow: 0 16px 40px var(--shade); }
 #models::backdrop { background: #0003; }
 #filter { width: 100%; padding: 8px 10px; font: inherit; color: inherit; border: 1px solid var(--rule); border-radius: var(--soft); background: var(--bg); }
 #filter:focus-visible { outline: 0; border-color: var(--fg); }
+#places { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+#places button { padding: 4px 10px; font-weight: 500; border-color: var(--rule); }
+#places .on { color: var(--bg); background: var(--fg); border-color: var(--fg); }
 #levels { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
 #levels button { padding: 4px 10px; font-weight: 500; border-color: var(--rule); }
 #levels .on { color: var(--bg); background: var(--fg); border-color: var(--fg); }
@@ -171,7 +229,7 @@ button.inverted { color: var(--bg); background: var(--fg); }
 #page > .meta { margin-top: 6px; }
 #page > button { margin-top: 16px; }
 #page .plain { padding: 4px 0; font-size: var(--body); font-weight: 500; border: 0; }
-#models .label { margin: 10px 10px 2px; font-size: var(--label); font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--meta); }
+#models .label, #models .meta { margin: 10px 10px 2px; font-size: var(--label); font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--meta); }
 @media (max-width: 600px) {
   #settings { flex-direction: column; }
   /* On a phone, as Android's: back first, then the pages in one row that scrolls. */

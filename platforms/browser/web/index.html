@@ -26,15 +26,30 @@
       <p><span class="dot"></span>waiting for the yes</p>
     </div>
   </section>
-  <section id="chat" hidden>
-    <nav id="bar"><b id="orb" class="stretch">ORB</b><div id="tabs"></div><button id="new" type="button" aria-label="New conversation">+</button><span id="context" title="Context in use" hidden><span id="gauge"></span><small></small></span><button id="menu" type="button" aria-label="Settings"><i></i></button></nav>
-    <div id="transcript" tabindex="0" aria-label="Messages">
-      <div id="messages"></div>
-      <div id="stream" class="assistant" hidden><div id="final"></div><div id="tail"></div></div>
+  <section id="app" hidden>
+    <nav id="bar"><button id="orb" type="button" aria-label="Home"><b class="stretch">ORB</b></button><div id="tabs"></div><button id="new" type="button" aria-label="New conversation">+</button><span id="context" title="Context in use" hidden><span id="gauge"></span><small></small></span><button id="menu" type="button" aria-label="Settings"><i></i></button></nav>
+    <div id="home">
+      <div id="machines"></div>
+      <p id="summary"></p>
+      <p id="launching"></p>
+      <div id="entries"></div>
+      <div id="card"><b class="stretch">NEW SESSION</b><i></i></div>
     </div>
+    <p id="strip" hidden></p>
+    <div id="transcript" tabindex="0" aria-label="Messages">
+      <div id="chat">
+        <button id="earlier" type="button" hidden>earlier messages</button>
+        <p id="empty"></p>
+        <div id="messages"></div>
+        <p id="caret" hidden></p>
+        <p id="note"></p>
+      </div>
+    </div>
+    <div id="slots"></div>
     <form id="prompt-form">
+      <div id="palette" hidden></div>
       <textarea id="prompt" rows="2" maxlength="16384" placeholder="What next?" aria-label="Message"></textarea>
-      <div><button id="model" type="button"><i></i><span id="status"></span><span id="meter"></span></button><button id="send" class="round" aria-label="Send"></button></div>
+      <div><button id="model" type="button"><i></i><span id="where"></span><span id="meter"></span></button><button id="send" class="round" aria-label="Send"></button></div>
     </form>
   </section>
   <section id="settings" hidden>
@@ -46,7 +61,7 @@
     </nav>
     <div id="page"></div>
   </section>
-  <dialog id="models"><input id="filter" placeholder="Find a model" autocomplete="off" spellcheck="false"><div id="levels"></div><div id="list"></div></dialog>
+  <dialog id="models"><div id="places"></div><input id="filter" placeholder="Find a model" autocomplete="off" spellcheck="false"><div id="levels"></div><div id="list"></div></dialog>
   <p id="error" role="alert" hidden></p>
 </body>
 </html>
