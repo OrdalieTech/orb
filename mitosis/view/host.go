@@ -456,6 +456,13 @@ func (a *App) join(code string) error {
 				set("")
 				return err
 			}
+			// As orb mitosis join does: a device in no sync group follows the inviter's.
+			if err := a.o.Call(ctx, "sync", struct{}{}, nil); mitosis.Code(err) == "not_found" {
+				if err := a.o.Call(ctx, "sync", map[string]string{"join": inv.PeerID}, nil); err != nil && mitosis.Code(err) != "unavailable" {
+					set("")
+					return err
+				}
+			}
 			set("paired")
 			a.wakeMachines()
 			return nil
