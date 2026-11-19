@@ -455,7 +455,7 @@ func (a *App) launchError(err error) error {
 	case "resource_exhausted":
 		return errors.New("every Orb that machine can start is in the middle of a turn · try again when one finishes")
 	case "busy":
-		return errors.New("this thread is open in another Orb on that device · continue it there, or turn on its mitosis plugin to follow it here")
+		return errors.New("the Orb that has this thread open there is too old to share it · restart that Orb to open it here")
 	}
 	return err
 }

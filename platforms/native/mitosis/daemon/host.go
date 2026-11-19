@@ -763,6 +763,10 @@ func (s *Service) launch(ctx context.Context, p mitosis.Principal, cwd, session 
 				time.Sleep(100 * time.Millisecond)
 			}
 		}
+		// Its holder let it go meanwhile (closing, or a brief claim to prune it): it opens here.
+		if !s.state.Held(session) {
+			return s.launch(ctx, p, cwd, session)
+		}
 		return nil, mitosis.Fail("busy")
 	}
 	exe, err := os.Executable()

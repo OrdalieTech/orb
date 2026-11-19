@@ -150,7 +150,9 @@ func openHeadless(ctx context.Context, args CLIArgs, dependencies cliDependencie
 		args.native.Release()
 		return nil, nil, err
 	}
-	return runtime, func() { runtime.Dispose(context.Background()); args.native.Release() }, nil
+	// Its conversation is on Mitosis as a terminal's is: with the plugin on, or once a peer opens it.
+	detach := attachCLIMitosis(ctx, runtime, args, runtime.Services().SettingsManager, streams.Stderr)
+	return runtime, func() { detach(); runtime.Dispose(context.Background()); args.native.Release() }, nil
 }
 
 func setVariable(values map[string]string, variable acp.Variable) map[string]string {

@@ -6,6 +6,7 @@ shown by `/changelog`.
 ## [Unreleased]
 
 - A phone, iPhone or desktop app paired with `orb mitosis` now follows the inviter's sync group, as `orb mitosis join` and the browser tab already did: before, the owner listed it as a member but the app never joined, so it got none of the group's logins and memory and reached no other member.
+- A conversation an ACP client (Zed, buzz-acp) or `orb chat` holds open now opens on every device as a terminal's does, followed live there and answering what you send from it: before, the apps and the browser tab said it was open in another Orb. A thread whose Orb let it go as you opened it now opens instead of failing, and only an Orb older than 0.23 still cannot be followed until it restarts.
 
 ## [0.25.0] - 2026-11-18
 
