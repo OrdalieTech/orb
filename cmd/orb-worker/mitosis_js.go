@@ -29,6 +29,8 @@ type mitosisPeer struct {
 	instance *worker.Instance
 	self     *peer.Peer
 	stop     context.CancelFunc
+	intents  chan string // the view's, consumed from the first until close
+	closed   bool
 }
 
 func (b *mitosisPeer) open(context.Context) (*peer.Peer, error) {
@@ -102,7 +104,11 @@ func (b *mitosisPeer) app(emit func(any)) (*view.App, error) {
 func (b *mitosisPeer) close() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.instance = nil
+	b.instance, b.closed = nil, true
+	if b.intents != nil {
+		close(b.intents)
+		b.intents = nil
+	}
 	if b.self != nil {
 		b.stop()
 		_ = b.self.Close()
@@ -119,29 +125,7 @@ func (b *mitosisPeer) close() {
 //	                                            comes out through emit beside the RPC frames, told
 //	                                            apart by its "t".
 func (b *mitosisPeer) register(set func(string, func(js.Value, []js.Value) any), emit js.Value) {
-	intents := make(chan string, 256)
-	set("app", func(_ js.Value, args []js.Value) any {
-		select {
-		case intents <- args[0].String():
-			return nil
-		default:
-			return "app queue is full"
-		}
-	})
-	go func() {
-		out := &frameWriter{emit: emit}
-		var app *view.App
-		for line := range intents {
-			if app == nil {
-				var err error
-				if app, err = b.app(func(m any) { raw, _ := json.Marshal(m); out.emitFrame(append(raw, '\n')) }); err != nil {
-					_, _ = os.Stderr.WriteString("app: " + err.Error() + "\n")
-					continue
-				}
-			}
-			app.Do([]byte(line))
-		}
-	}()
+	set("app", func(_ js.Value, args []js.Value) any { return b.intent(args[0].String(), emit) })
 	set("mitosisAccept", func(_ js.Value, args []js.Value) any {
 		// The listeners must exist before this JavaScript turn ends.
 		conn := websocket.NewSocketConn(args[0])
@@ -170,6 +154,39 @@ func (b *mitosisPeer) register(set func(string, func(js.Value, []js.Value) any),
 			return string(result), err
 		})
 	})
+}
+
+// intent queues one intent of the view. The first starts the goroutine that applies them in
+// order, so an object that never serves the page runs none; close ends it with the Orb.
+func (b *mitosisPeer) intent(line string, emit js.Value) any {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return "this Orb is closed"
+	}
+	if b.intents == nil {
+		b.intents = make(chan string, 256)
+		go func(intents <-chan string) {
+			out := &frameWriter{emit: emit}
+			var app *view.App
+			for line := range intents {
+				if app == nil {
+					var err error
+					if app, err = b.app(func(m any) { raw, _ := json.Marshal(m); out.emitFrame(append(raw, '\n')) }); err != nil {
+						_, _ = os.Stderr.WriteString("app: " + err.Error() + "\n")
+						continue
+					}
+				}
+				app.Do([]byte(line))
+			}
+		}(b.intents)
+	}
+	select {
+	case b.intents <- line:
+		return nil
+	default:
+		return "app queue is full"
+	}
 }
 
 // promise runs work on a goroutine and settles a JavaScript promise with it.
