@@ -310,6 +310,31 @@ func TestHomeIsReadBeforeTheAppShows(t *testing.T) {
 	c.until(t, "Home", func() bool { return len(c.home) == 1 && c.home[0].Title == "tides" })
 }
 
+// A device that connects once the app shows (a tab dialing its devices) has its threads on Home
+// at once, not at the next periodic read of every device's threads.
+func TestADeviceThatConnectsHasItsThreadsReadAtOnce(t *testing.T) {
+	c := newClient()
+	var up atomic.Bool
+	app := New(t.Context(), Options{Name: "this tab", Emit: func(m any) { c.out <- mitosis.JSON(m) }, Call: func(_ context.Context, method string, params, result any) error {
+		reply := fmt.Sprintf(`{"peer_id":"me","peers":["pc"],"peer_states":{"pc":%q}}`, map[bool]string{true: "connected", false: "disconnected"}[up.Load()])
+		if method == "remote" {
+			p := params.(map[string]any)
+			if p["peer_id"] == "pc" && !up.Load() {
+				return mitosis.Fail("unavailable")
+			}
+			reply = `{}`
+			if p["peer_id"] == "pc" && p["method"] == "host.sessions" {
+				reply = `{"items":[{"session_id":"s","name":"tides","cwd":"/w","modified":1}]}`
+			}
+		}
+		return json.Unmarshal([]byte(reply), result)
+	}})
+	app.Do([]byte(`{"do":"visible","on":true}`))
+	time.Sleep(500 * time.Millisecond)
+	up.Store(true)
+	c.until(t, "the device's threads", func() bool { return len(c.home) == 1 && c.home[0].Title == "tides" })
+}
+
 // A conversation shown asleep reads as it was while its Orb starts, is not said asleep, and keeps
 // its rows until the Orb has sent its own.
 func TestAnAsleepTabShowsItsThreadWhileItsOrbStarts(t *testing.T) {

@@ -8,7 +8,7 @@ const notice = $("error");
 // screen, "" for Home; device: the machine Home narrows to.
 let tab = null, me = "", state = { tabs: [], commands: [] }, home = { machines: [], entries: [] }, shown = "", device = "";
 const rows = new Map(), replies = new Map();
-let asked = 0, dirty = 0;
+let asked = 0, dirty = 0, restore = localStorage.getItem("orb.tab.shown") || "";
 // What each part last drew from: a part is drawn again only when that changed, so a list streaming
 // beside it never replaces the button under a click.
 const drewFrom = {};
@@ -56,8 +56,13 @@ function heard(m) {
   if (m.t === "state") {
     state = { ...m, tabs: m.tabs || [] };
     for (const id of rows.keys()) if (!state.tabs.some(t => t.id === id)) rows.delete(id);
+    // A reload opens on the conversation shown before it, once the view brings its tab back.
+    if (restore && state.tabs.some(c => c.id === restore)) focus(restore);
+    restore = "";
     if (shown && !conversation()) focus("");
+    for (const w of waiting.splice(0)) conversation(w.id)?.online ? w.resolve() : waiting.push(w);
   } else if (m.t === "home") home = m;
+  else if (m.t === "alert") return notify(m);
   else if (m.t === "rows") {
     const list = rows.get(m.tab) || [];
     list.length = Math.min(m.at, list.length);
@@ -65,18 +70,33 @@ function heard(m) {
   } else return;
   dirty ||= requestAnimationFrame(render);
 }
+// ready resolves once a conversation's Orb has described it, so what is sent there reaches it.
+const waiting = [];
+const ready = id => conversation(id)?.online ? Promise.resolve() : new Promise(resolve => waiting.push({ id, resolve }));
+// A conversation that finished or asks while the page is out of sight says so, once allowed to.
+function notify(m) {
+  if (window.Notification?.permission !== "granted") return;
+  const n = new Notification(m.title, { body: m.text, tag: m.tab, icon: "ordalie.svg" });
+  n.onclick = () => { window.focus(); focus(m.tab); n.close(); };
+}
 const conversation = (id = shown) => state.tabs.find(t => t.id === id);
 const machine = id => home.machines.find(m => m.id === id);
 const named = title => (title || "new session").replace(/^./, c => c.toUpperCase());
+// Each conversation keeps its draft, and Home its own, while another shows.
+const drafts = new Map();
 function focus(id) {
+  showError("");
+  localStorage.setItem("orb.tab.shown", id);
+  drafts.set(shown, $("prompt").value);
   shown = id;
-  $("prompt").value = "";
+  $("prompt").value = drafts.get(id) || "";
   send({ do: "show", tabs: id ? [id] : [] });
   dirty ||= requestAnimationFrame(render);
   $("prompt").focus({ preventScroll: true });
 }
 function open(key) {
-  ask("open", { key }).then(r => r?.tab && focus(r.tab), error => showError(error.message));
+  // A device that refuses says why on Home's launching line, which says it once.
+  ask("open", { key }).then(r => r?.tab && focus(r.tab), error => error.message !== state.launching && showError(error.message));
 }
 // A conversation's state in a word, as the apps say it; empty awake and at rest.
 function word(t) {
@@ -104,6 +124,11 @@ function render() {
   $("transcript").hidden = $("strip").hidden = !t;
   if (t) renderChat(t);
   else { renderHome(); $("slots").replaceChildren(); }
+  // Another Orb driving this tab's: blue fills space here and nowhere else.
+  $("acting").hidden = !t?.acting;
+  const unread = state.tabs.reduce((n, c) => n + (c.unread || 0), 0);
+  document.title = `${state.tabs.some(c => c.ask) ? "● " : unread ? `(${unread}) ` : ""}${t ? named(t.title) : "Orb"}`;
+  if (!$("settings").hidden && page.vendor && changed("login", state.login)) openPage(page.name, page.peer, page.vendor);
   controls();
   if (deck.open && changed("deck", t)) drawDeck();
   // A question the conversation on screen waits on stops the world; answered or gone, it sinks.
@@ -120,7 +145,17 @@ function renderBar(t) {
     const close = node("b", "×"), chip = button("", () => focus(c.id), c.id === shown ? "on" : "");
     chip.append(where(machine(c.peer)?.hue, c.busy, !!c.ask), node("span", named(c.title)), ...(c.unread ? [el("small", "unread", String(c.unread))] : []), close);
     chip.title = [c.where, word(c)].filter(Boolean).join(" · ");
-    close.onclick = event => { event.stopPropagation(); send({ do: "close", tab: c.id }); if (c.id === shown) focus(""); };
+    close.onclick = event => { event.stopPropagation(); closeTab(c); };
+    // A middle click closes it, a right click or a double click offers its menu, a drag moves it.
+    chip.onauxclick = event => event.button === 1 && closeTab(c);
+    chip.oncontextmenu = chip.ondblclick = event => { event.preventDefault(); tabMenu(c); };
+    chip.draggable = true;
+    chip.ondragstart = event => event.dataTransfer.setData("text/orb-tab", c.id);
+    chip.ondragover = event => event.preventDefault();
+    chip.ondrop = event => {
+      const id = event.dataTransfer.getData("text/orb-tab");
+      if (id && id !== c.id) send({ do: "move", tab: id, to: state.tabs.indexOf(c) });
+    };
     return chip;
   }));
   $("orb").classList.toggle("on", !t);
@@ -136,46 +171,167 @@ function renderBar(t) {
 // then each device, connected or not, and how many Orbs run there; a card narrows the list to it),
 // then every thread on every machine, newest first, where it lives a detail of its row.
 function renderHome() {
-  if (!changed("home", home, state.tabs, state.summary, state.launching, state.up, device)) return;
-  const machines = [...home.machines].sort((x, y) => !!y.self - !!x.self);
+  if (!changed("home", home, state.tabs, state.summary, state.launching, state.up, device, gone)) return;
+  // This tab's own Orb is a fallback, for when no device lets it start one: it stays out of sight
+  // while one does, unless a conversation was started on it.
+  const own = !launchers().length || aim().machine?.self;
+  const machines = [...home.machines].filter(m => own || !m.self).sort((x, y) => !!y.self - !!x.self);
   $("machines").replaceChildren(...machines.map(m => {
     const up = m.self ? state.up : m.connected;
     const card = button("", () => { device = device === m.id ? "" : m.id; render(); }, `${device === m.id ? "on" : ""}${up ? "" : " down"}`);
+    card.oncontextmenu = event => { event.preventDefault(); deviceMenu(m); };
     card.append(node("span", where(m.hue), m.self ? "this tab" : m.name), node("span", up ? `${m.running?.length || 0} running` : "offline", node("b", up ? "承認" : "否決")));
     return card;
   }));
   $("summary").textContent = state.summary || "";
   $("summary").classList.toggle("asks", (state.summary || "").startsWith("needs"));
-  $("launching").textContent = state.launching || "";
-  const entries = home.entries.filter(e => !device || e.machine === device);
+  // What starting Orb on a device is doing; why it failed, until clicked away.
+  const launching = state.launching || "", starting = launching.startsWith("starting");
+  $("launching").textContent = launching;
+  $("launching").hidden = !launching || launching === gone;
+  $("launching").className = starting ? "" : "alarm";
+  $("launching").onclick = () => { if (!starting) { gone = launching; render(); } };
+  const entries = home.entries.filter(e => (!device || e.machine === device) && (own || e.machine !== state.self || e.open));
+  // A device connected but not read yet says so, rather than an empty list filling at once.
+  const reading = home.machines.filter(m => !m.self && m.connected && !m.version && (!device || m.id === device));
   $("entries").replaceChildren(...entries.map(e => {
     const m = machine(e.machine), followed = conversation(e.tab), age = followed ? word(followed) : "";
     const row = button("", () => followed ? focus(followed.id) : open(e.key), e.open ? "open" : "");
+    row.oncontextmenu = event => { event.preventDefault(); threadMenu(e); };
     row.append(where(m?.hue, e.live, e.asks), node("span", named(e.title)),
       el("small", e.asks ? "asks" : "", [!device && m && (m.self ? "this tab" : m.name), e.asks ? "asks" : e.live ? "working" : age || (e.unstored ? "open" : ago(e.modified))].filter(Boolean).join(" · ")));
     return row;
-  }), ...(!home.machines.length ? [el("p", "meta", "reading conversations…")] : !entries.length ? [el("p", "meta", "no conversations here yet")] : []));
+  }), ...(!home.machines.length ? [el("p", "meta reading", "reading conversations…")] : reading.length ? [el("p", "meta reading", `reading ${reading.map(m => m.name).join(", ")}…`)] : !entries.length ? [el("p", "meta", "no conversations here yet")] : []));
 }
-// Where a new conversation starts: a device that lets this tab start Orb there, the one picked last
-// or the one this tab paired with; with none, this tab's own Orb.
+// Where Home's next message goes: the device and folder picked last, one that lets this tab start
+// Orb there, else the one this tab paired with; with none, this tab's own Orb.
 function launchers() {
   return home.machines.filter(m => !m.self && m.launch && m.connected);
 }
-function target() {
-  const all = launchers(), picked = localStorage.getItem("orb.tab.where");
-  return all.find(m => m.id === picked) || all.find(m => m.id === localStorage.getItem("orb.tab.owner")) || all[0] || machine(state.self);
+function aim() {
+  const saved = JSON.parse(localStorage.getItem("orb.tab.aim") || "{}"), all = launchers(), self = machine(state.self);
+  if (saved.machine === state.self && self) return { machine: self, cwd: "" };
+  const m = all.find(d => d.id === saved.machine) || all.find(d => d.id === localStorage.getItem("orb.tab.owner")) || all[0];
+  return m ? { machine: m, cwd: m.id === saved.machine ? saved.cwd || "" : "" } : { machine: self, cwd: "" };
+}
+const aimAt = (id, cwd = "") => { localStorage.setItem("orb.tab.aim", JSON.stringify({ machine: id, cwd })); controls(); };
+const base = path => path.split("/").filter(Boolean).at(-1) || path;
+const tidy = path => path.replace(/^\/(Users|home)\/[^/]+/, "~");
+// Where to run: this tab, an Orb running somewhere (it opens), or a device, in its home folder,
+// one of the folders worked in last, or any other.
+async function chooseWhere() {
+  const self = machine(state.self), options = [];
+  if (self) options.push({ label: "this tab", detail: "its own Orb, one conversation at a time", value: () => aimAt(state.self) });
+  for (const m of home.machines) for (const r of m.running || []) if (!r.open && !m.self) options.push({ label: r.label, detail: r.busy ? "working · open it" : "running · open it", value: () => open(`i:${r.instance}`) });
+  for (const m of launchers()) {
+    options.push({ label: m.name, detail: "home folder", value: () => aimAt(m.id) });
+    for (const f of (m.folders || []).slice(0, 5)) options.push({ label: `${m.name} · ${base(f.cwd)}`, detail: `${tidy(f.cwd)} · ${f.threads} thread${f.threads === 1 ? "" : "s"}`, value: () => aimAt(m.id, f.cwd) });
+    options.push({ label: `${m.name} · another folder…`, detail: "type its path", value: () => pick(`a folder on ${m.name}`, [], { field: true, hint: "~/code/project" }).then(cwd => cwd?.trim() && aimAt(m.id, cwd.trim())) });
+  }
+  (await pick("run on", options))?.();
 }
 async function start(text) {
-  const m = target();
-  if (!m) return;
-  if (!m.self) return ask("start", { machine: m.id, text }).then(r => focus(r.tab));
-  // This tab's Orb holds one conversation at a time: a new one replaces it.
+  const { machine: m, cwd } = aim();
+  if (!m) throw new Error("no device to start on yet");
+  if (!m.self) return ask("start", { machine: m.id, cwd, text }).then(r => focus(r.tab));
+  // This tab's Orb holds one conversation at a time: a new one replaces it, once its Orb is ready.
   const own = m.running?.[0];
   if (!own) throw new Error("this tab's Orb is still starting");
   const { tab: id } = await ask("open", { key: `i:${own.instance}` });
   focus(id);
+  await ready(id);
   await ask("send", { tab: id, text: `/new ${text}` });
 }
+
+// Closing a conversation stops following it; its thread stays where it runs, so for a few seconds
+// an undo (or Alt+Shift+T) opens it again in its place. The one shown gives way to its neighbour.
+let reopen = [], gone = "";
+function closeTab(c) {
+  const at = state.tabs.findIndex(x => x.id === c.id), entry = home.entries.find(e => e.tab === c.id);
+  send({ do: "close", tab: c.id });
+  if (c.id === shown) { const next = state.tabs[at + 1] || state.tabs[at - 1]; focus(next ? next.id : ""); }
+  if (!entry) return;
+  const again = () => ask("open", { key: entry.key }).then(r => { send({ do: "move", tab: r.tab, to: at }); focus(r.tab); }, error => showError(error.message));
+  reopen.push(again);
+  toast(`closed ${named(c.title)}`, again);
+}
+function toast(text, undo) {
+  const box = $("toast");
+  box.firstChild.textContent = text;
+  box.hidden = false;
+  box.lastChild.hidden = !undo;
+  box.lastChild.onclick = () => { box.hidden = true; reopen = reopen.filter(f => f !== undo); undo(); };
+  clearTimeout(box.timer);
+  box.timer = setTimeout(() => (box.hidden = true), 6000);
+}
+async function rename(title, apply) {
+  const name = (await pick("rename", [], { field: true, value: title }))?.trim();
+  if (name) apply(name);
+}
+async function tabMenu(c) {
+  const what = await pick(named(c.title), [{ label: "rename" }, { label: "close conversation" }]);
+  if (what === "rename") rename(c.title, name => send({ do: "rename", tab: c.id, name }));
+  if (what === "close conversation") closeTab(c);
+}
+// A Home row's menu: its tab's, and deleting a thread no Orb has open, which asks first.
+async function threadMenu(e) {
+  const c = conversation(e.tab), what = await pick(named(e.title), [{ label: "rename" }, ...(c ? [{ label: "close conversation" }] : []), ...(e.deletable ? [{ label: "delete forever" }] : [])]);
+  if (what === "rename") rename(e.title, name => ask("rename", { key: e.key, name }).catch(error => showError(error.message)));
+  if (what === "close conversation") closeTab(c);
+  if (what === "delete forever" && await pick(`delete ${named(e.title)}? it cannot come back`, [{ label: "keep it" }, { label: "delete forever" }]) === "delete forever") send({ do: "delete", key: e.key });
+}
+async function deviceMenu(m) {
+  const what = await pick(m.self ? "this tab" : m.name, [...(m.launch && m.connected ? [{ label: "start here" }] : []), { label: "providers" }, { label: "plugins" }, ...(m.self ? [] : [{ label: "rename" }, { label: "forget", detail: "takes it out of this tab's view" }])]);
+  if (what === "start here") chooseWhere();
+  if (what === "providers" || what === "plugins") openPage(what, m.id);
+  if (what === "rename") rename(m.name, name => send({ do: "rename", machine: m.id, name }));
+  if (what === "forget" && await pick(`forget ${m.name}?`, [{ label: "keep it" }, { label: "forget" }]) === "forget") ask("forget", { machine: m.id }).catch(error => showError(error.message));
+}
+// Go to, as the apps' Ctrl+K: Home, the conversations open, then the threads that are not.
+function goTo() {
+  pick("go to", [{ label: "home", value: () => focus("") }, ...state.tabs.map(c => ({ label: named(c.title), detail: c.where, value: () => focus(c.id) })),
+    ...home.entries.filter(e => !e.open && (e.machine !== state.self || !launchers().length)).map(e => ({ label: named(e.title), detail: machine(e.machine)?.name, value: () => open(e.key) }))]).then(go => go?.());
+}
+
+// pick is the apps' picker: a sheet of choices, typed to filter, arrows and Enter, a click outside
+// or Esc to leave; with field, it takes a line instead. It resolves to the choice's value (its
+// label when it has none), the line, or null.
+const sheet = $("sheet");
+function pick(title, options, { field = false, value = "", hint = "" } = {}) {
+  return new Promise(resolve => {
+    let at = 0, shown = [];
+    const input = $("sheet-input");
+    const done = v => { sheet.onclose = null; sheet.close(); resolve(v); };
+    const draw = () => {
+      const q = input.value.trim().toLowerCase();
+      shown = field ? [] : options.filter(o => `${o.label} ${o.detail || ""}`.toLowerCase().includes(q));
+      at = Math.max(0, Math.min(at, shown.length - 1));
+      $("sheet-list").replaceChildren(...shown.map((o, i) => {
+        const b = button("", () => done(o.value ?? o.label), i === at ? "on" : "");
+        b.append(node("span", o.label), ...(o.detail ? [node("small", o.detail)] : []));
+        return b;
+      }));
+    };
+    $("sheet-title").textContent = title;
+    Object.assign(input, { value, placeholder: hint || (field ? "" : "type to filter"), hidden: !field && options.length < 8 });
+    input.oninput = () => { at = 0; draw(); };
+    sheet.onkeydown = event => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); at += event.key === "ArrowDown" ? 1 : -1; draw(); }
+      else if (event.key === "Enter") { event.preventDefault(); field ? done(input.value) : shown[at] && done(shown[at].value ?? shown[at].label); }
+    };
+    sheet.onclose = () => resolve(null);
+    draw();
+    sheet.showModal();
+    // The keys go to the sheet, whose rows are drawn again as they move.
+    (input.hidden ? sheet : input).focus();
+  });
+}
+// A dialog closes on a click outside it, as the apps' sheets do.
+for (const dialog of document.querySelectorAll("dialog")) dialog.addEventListener("click", event => {
+  const r = dialog.getBoundingClientRect();
+  if (event.target === dialog && (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom)) dialog.close();
+});
+$("viewer").addEventListener("click", () => $("viewer").close());
 
 // The conversation, as the view folds it into rows: what the person said sits at right on a soft
 // ground; Orb just speaks, full width, its actions inline. A row is drawn again only when it
@@ -192,11 +348,12 @@ function renderChat(t) {
   drawn.rows = next;
   const box = $("messages");
   if (nodes.length !== box.childElementCount || nodes.some((n, i) => box.children[i] !== n)) box.replaceChildren(...nodes);
+  if (keep && list.length) { $("transcript").scrollTop = $("transcript").scrollHeight - keep; keep = 0; }
   $("earlier").hidden = !t.earlier;
   $("empty").hidden = list.length > 0;
   $("empty").textContent = t.asleep ? "asleep · a message wakes it" : t.loaded ? "" : "loading…";
-  $("strip").replaceChildren(...[[t.remote && t.where, word(t)].filter(Boolean).join(" · "), t.usage && usage(t.usage), t.cost > 0 && `$${t.cost.toFixed(2)}`]
-    .filter(Boolean).map(text => node("span", text)));
+  $("strip").replaceChildren(node("span", [t.remote && t.where, word(t)].filter(Boolean).join(" · ")),
+    ...(t.usage?.windows?.length ? [button(usage(t.usage), () => plan(t), "plain")] : []), ...(t.cost > 0 ? [node("span", `$${t.cost.toFixed(2)}`)] : []));
   $("strip").classList.toggle("busy", !!t.busy);
   $("caret").hidden = !t.streaming;
   $("note").textContent = t.status || "";
@@ -209,6 +366,12 @@ function usage({ windows }) {
   const w = [...windows].sort((x, y) => x.left - y.left)[0];
   return w && `活動限界 ${w.name} ${Math.round(w.left)}%${w.resets ? ` · ${new Date(w.resets).toTimeString().slice(0, 5)}` : ""}`;
 }
+// The plan's windows: what is left of each and when it resets, as its Orb last read them.
+function plan(t) {
+  const u = t.usage;
+  pick([t.model?.split("/")[0], u.plan, `read ${ago(u.at)} ago`].filter(Boolean).join(" · "),
+    u.windows.map(w => ({ label: `${w.name} · ${Math.round(w.left)}% left`, detail: w.resets ? `resets ${new Date(w.resets).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : "" })));
+}
 // The reply is followed while the reader stays at its end: scrolling up lets go, and coming back
 // to the end takes hold again.
 const end = () => requestAnimationFrame(() => ($("transcript").scrollTop = $("transcript").scrollHeight));
@@ -219,11 +382,13 @@ $("transcript").addEventListener("scroll", ({ target: t }) => {
   if (t.scrollTop > lastTop && t.scrollHeight - t.scrollTop - t.clientHeight < 4) pinned = true;
   lastTop = t.scrollTop;
 }, { passive: true });
-$("earlier").onclick = () => { pinned = false; send({ do: "earlier", tab: shown }); };
+// Earlier messages load above; the ones read so far stay where they are.
+let keep = 0;
+$("earlier").onclick = () => { pinned = false; keep = $("transcript").scrollHeight - $("transcript").scrollTop; send({ do: "earlier", tab: shown }); };
 
 function drawRow(r, t, old) {
   if (r.kind === "you") {
-    return el("div", "you", ...(r.via ? [el("small", "via", "from a peer")] : []), ...pictures(r.images, t), ...(r.text.trim() ? [el("p", "", r.text)] : []));
+    return el("div", "you", ...(r.via ? [el("small", "via", "from a peer")] : []), ...pictures(r.images, t), ...(r.text?.trim() ? [el("p", "", r.text)] : []));
   }
   if (r.kind === "md") return el("div", "said", ...blocks([r.block]));
   if (r.kind === "note") return el("p", r.alarm ? "note alarm" : "note", r.text);
@@ -259,14 +424,10 @@ function action(a, t) {
 function pictures(images = [], t) {
   if (!images?.length) return [];
   return [el("div", "pictures", ...images.map(ref => {
-    const img = Object.assign(node("img"), { alt: "", onclick: () => ask("image", { tab: t.id, ref, px: 0 }).then(r => open64(r.data)) });
+    const img = Object.assign(node("img"), { alt: "", onclick: () => ask("image", { tab: t.id, ref, px: 0 }).then(r => { $("picture").src = `data:image/png;base64,${r.data}`; $("viewer").showModal(); }) });
     ask("image", { tab: t.id, ref, px: 384 }).then(r => (img.src = `data:image/png;base64,${r.data}`), () => {});
     return img;
   }))];
-}
-function open64(data) {
-  const w = window.open();
-  if (w) w.document.body.append(Object.assign(w.document.createElement("img"), { src: `data:image/png;base64,${data}` }));
 }
 // The blocks the view parsed of what Orb wrote, drawn as elements, never as HTML.
 function blocks(list) {
@@ -276,15 +437,18 @@ function blocks(list) {
       case "h": return Object.assign(node(b.level <= 2 ? "h3" : "h4", ...spans(b.spans)), indent);
       case "li": return Object.assign(el("div", "li", el("span", "mark", b.mark), node("span", ...spans(b.spans))), indent);
       case "quote": return Object.assign(node("blockquote", ...blocks(b.blocks || [])), indent);
-      case "code": case "art": return Object.assign(el("pre", b.type, ...(b.lang ? [el("small", "", b.lang)] : []), b.text), indent);
-      case "table": return Object.assign(el("div", "table", node("table", ...(b.rows || []).map((r, i) => node("tr", ...r.map(cell => node(i ? "td" : "th", ...spans(cell))))))), indent);
+      case "code": case "art": {
+        const copy = button("copy", () => navigator.clipboard.writeText(b.text).then(() => { copy.textContent = "copied"; setTimeout(() => (copy.textContent = "copy"), 1200); }), "copy");
+        return Object.assign(el("pre", b.type, copy, ...(b.lang ? [el("small", "", b.lang)] : []), b.text), indent);
+      }
+      case "table": return Object.assign(el("div", "table", node("table", ...(b.rows || []).map((r, i) => node("tr", ...(r || []).map(cell => node(i ? "td" : "th", ...spans(cell))))))), indent);
       case "rule": return node("hr");
       default: return Object.assign(node("p", ...spans(b.spans)), indent);
     }
   });
 }
-function spans(list = []) {
-  return list.map(s => {
+function spans(list) {
+  return (list || []).map(s => {
     let n = s.t;
     if (s.c) n = node("code", n);
     if (s.b) n = node("strong", n);
@@ -295,106 +459,191 @@ function spans(list = []) {
   });
 }
 
-// The prompt box, as the apps': on Home it starts a conversation where the chip says; in one, it
-// sends, steers a run with what is typed, or stops it.
+// The prompt box, as the apps': on Home it starts a conversation where its chip says; in one, it
+// sends, and while a run goes it steers it (Enter) or queues for after it, or stops it.
 function controls() {
-  const t = conversation(), text = $("prompt").value.trim(), m = !t && target();
-  $("send").ariaLabel = t?.busy && !text ? "Stop" : "Send";
+  const t = conversation(), text = $("prompt").value.trim(), { machine: m, cwd } = aim();
+  $("send").ariaLabel = t?.busy && !text ? "Stop" : t?.busy ? "Steer" : "Send";
   $("send").classList.toggle("stop", !!t?.busy && !text);
   $("send").disabled = !text && !t?.busy;
-  $("prompt").placeholder = t ? "What next?" : "What should we work on?";
-  $("where").textContent = t ? [t.model?.split("/").at(-1), t.remote && t.where].filter(Boolean).join(" · ") || "model" : m ? (m.self ? "this tab" : m.name) : "no device";
-  $("model").firstChild.style = `--hue: var(--hue${(t ? machine(t.peer) : m)?.hue || 0})`;
-  const levels = t?.levels || [], at = levels.indexOf(t?.thinking);
+  $("queue").hidden = !(t?.busy && text);
+  $("prompt").placeholder = t ? (t.busy ? "steer or queue a message" : "What next?") : "What should we work on?";
+  // Where it runs is chosen on Home; a conversation stays where it started.
+  $("aim").disabled = !!t;
+  $("aim").lastChild.textContent = t ? (t.remote ? t.where : "this tab") : m ? `${m.self ? "this tab" : m.name}${cwd ? ` · ${base(cwd)}` : ""} ▾` : "no device";
+  $("aim").firstChild.style = `--hue: var(--hue${(t ? machine(t.peer) : m)?.hue || 0})`;
+  // On Home, what the device's next conversation starts on: its default, read once and on change.
+  const fresh = !t && m && !m.self ? defaultsOf.get(m.id) : null;
+  if (!t && m && !m.self && !defaultsOf.has(m.id)) {
+    defaultsOf.set(m.id, null);
+    ask("models", { machine: m.id }).then(d => { defaultsOf.set(m.id, d); controls(); }, () => defaultsOf.delete(m.id));
+  }
+  const on = t || (fresh && { model: fresh.default, levels: fresh.levels, thinking: fresh.thinking });
+  $("where").textContent = `${on?.model?.split("/").slice(1).join("/") || (t?.loaded && !t.asleep && !t.models?.length ? "connect a provider" : m?.self && !t ? "own model" : "model")} ▾`;
+  const levels = on?.levels || [], at = levels.indexOf(on?.thinking);
   $("meter").replaceChildren(...levels.filter(l => l !== "off").map((l, i) => el("i", i < at ? "lit" : "")));
   palette();
 }
-$("prompt-form").onsubmit = event => {
-  event.preventDefault();
+// Home takes the app's commands that open a screen, and /new; a conversation takes them all.
+const homeCommands = new Set(["new", "model", "sessions", "pair", "login", "plugins"]);
+let history = [];
+async function submit(mode) {
   const t = conversation(), text = $("prompt").value.trim();
   if (t?.busy && !text) return send({ do: "abort", tab: t.id });
   if (!text) return;
   $("prompt").value = "";
   pinned = true;
   showError("");
+  history = [...history.filter(h => h !== text), text].slice(-50);
   controls();
-  if (!t) return start(text).catch(error => { $("prompt").value = text; showError(error.message); });
-  if (t.busy) return send({ do: "steer", tab: t.id, text });
-  // What only the page can do comes back: a screen to open, or text to copy.
-  ask("send", { tab: t.id, text }).then(r => {
-    if (r?.copy) navigator.clipboard.writeText(r.copy);
-    if (r?.nav) go(r.nav);
-  }, error => showError(error.message));
-};
+  if (window.Notification?.permission === "default") Notification.requestPermission();
+  // Refused, the text comes back to the box, unless a new draft took its place.
+  const unsent = error => { if (!$("prompt").value) $("prompt").value = text; showError(error.message); controls(); };
+  const name = /^\/(\S+)/.exec(text)?.[1];
+  try {
+    if (t?.busy && mode !== "queue") return send({ do: "steer", tab: t.id, text });
+    if (!t && name && name !== "new" && homeCommands.has(name)) return outcome(await ask("send", { text }));
+    if (!t) return await start(name === "new" ? text.slice(4).trim() : text);
+    outcome(await ask("send", { tab: t.id, text }));
+  } catch (error) { unsent(error); }
+}
+// What only the page can do comes back from the view: a screen to open, or text to copy.
+function outcome(r) {
+  if (r?.copy) navigator.clipboard.writeText(r.copy).then(() => toast("copied the last answer"));
+  if (r?.nav) go(r.nav);
+}
+$("prompt-form").onsubmit = event => { event.preventDefault(); submit(); };
+$("queue").onclick = () => submit("queue");
+$("aim").onclick = chooseWhere;
+$("unblue").onclick = () => shown && send({ do: "abort", tab: shown });
 function go(nav) {
   if (nav === "model") openModels();
   else if (nav === "home") focus("");
-  else openPage({ providers: "providers", plugins: "plugins", pair: "mitosis" }[nav] || "general");
+  else openPage({ providers: "providers", plugins: "plugins", pair: "mitosis" }[nav] || "general", conversation()?.peer);
 }
 $("prompt").oninput = controls;
+$("prompt").onkeyup = event => ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) && palette();
 $("prompt").onkeydown = event => {
-  const first = $("palette").querySelector("button");
-  if (event.key === "Tab" && first && !event.shiftKey) { event.preventDefault(); first.click(); }
-  else if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); $("prompt-form").requestSubmit(); }
+  const box = $("prompt");
+  if (choices.length) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); chosen = (chosen + (event.key === "ArrowDown" ? 1 : -1) + choices.length) % choices.length; return drawPalette(); }
+    if (event.key === "Tab" || event.key === "Enter" && !event.shiftKey && chosen >= 0) { event.preventDefault(); return choices[Math.max(chosen, 0)].pick(); }
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); dismissed = box.value; return palette(); }
+  }
+  // Up in an empty box brings back what was sent last, as a terminal does.
+  if (event.key === "ArrowUp" && !box.value && history.length) { event.preventDefault(); box.value = history.at(-1); return controls(); }
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit(); }
 };
-// The slash palette: the app's commands, then the conversation's Orb's, as typed so far.
+// The palette over the box: typing / lists the app's commands and the conversation's Orb's,
+// prefix matches first; an @ token asks that Orb what it completes to, skills then files, as the
+// TUI does. Arrows choose, Tab or Enter takes, Esc puts it away until the text changes.
+let choices = [], chosen = -1, dismissed = null, found = { token: null, items: [] }, finding = 0;
 function palette() {
-  const text = $("prompt").value, typed = /^\/(\S*)$/.exec(text)?.[1];
-  const all = [...(state.commands || []), ...(conversation()?.commands || [])].filter(c => typed !== undefined && c.name.startsWith(typed));
-  $("palette").hidden = !all.length;
-  $("palette").replaceChildren(...all.slice(0, 8).map(c => {
-    const pick = button("", () => {
-      $("prompt").value = `/${c.name}${c.now ? "" : " "}`;
-      if (c.now) $("prompt-form").requestSubmit();
-      else { $("prompt").focus(); controls(); }
-    });
-    pick.append(node("b", `/${c.name}`), node("span", c.hint || ""));
-    return pick;
+  const box = $("prompt"), text = box.value, t = conversation(), cursor = box.selectionStart;
+  const typed = /^\/(\S*)$/.exec(text)?.[1], token = /(?:^|\s)(@\S*)$/.exec(text.slice(0, cursor))?.[1];
+  const before = choices.map(c => c.label).join();
+  choices = [];
+  if (text === dismissed) return drawPalette();
+  dismissed = null;
+  if (typed !== undefined) {
+    const all = t ? [...state.commands || [], ...t.commands || []] : (state.commands || []).filter(c => homeCommands.has(c.name));
+    choices = [...all.filter(c => c.name.startsWith(typed)), ...all.filter(c => !c.name.startsWith(typed) && c.name.includes(typed))].slice(0, 30).map(c => ({
+      label: `/${c.name}`, detail: c.hint, pick: () => {
+        box.value = `/${c.name}${c.now ? "" : " "}`;
+        if (c.now) submit();
+        else { box.focus(); controls(); }
+      },
+    }));
+  } else if (token && t) {
+    if (found.token !== token) {
+      clearTimeout(finding);
+      finding = setTimeout(() => ask("complete", { tab: t.id, text: token.slice(1) }).then(items => { found = { token, items: items || [] }; palette(); }, () => {}), 120);
+    } else choices = found.items.map(f => ({
+      label: f.text.startsWith("/skill:") ? `◆ ${f.label}` : f.label, detail: f.detail, pick: () => {
+        // A folder keeps the token open, so completion goes on inside it.
+        const end = cursor + Math.max(0, text.slice(cursor).search(/\s|$/)), gap = /\/"?$/.test(f.text) ? "" : " ";
+        box.value = text.slice(0, cursor - token.length) + f.text + gap + text.slice(end);
+        const caret = cursor - token.length + f.text.length + gap.length - (f.text.endsWith('/"') ? 1 : 0);
+        box.setSelectionRange(caret, caret);
+        box.focus();
+        controls();
+      },
+    }));
+  }
+  if (choices.map(c => c.label).join() !== before) chosen = typed !== undefined && choices.length ? 0 : -1;
+  drawPalette();
+}
+function drawPalette() {
+  $("palette").hidden = !choices.length;
+  $("palette").replaceChildren(...choices.map((c, i) => {
+    const b = button("", c.pick, i === chosen ? "on" : "");
+    b.onmousedown = event => event.preventDefault(); // the box keeps the focus
+    b.append(node("b", c.label), node("span", c.detail || ""));
+    return b;
   }));
+  $("palette").querySelector(".on")?.scrollIntoView({ block: "nearest" });
 }
 
-// The model deck, as the apps': in a conversation, the models its Orb has and the reasoning levels
-// the one in use takes; on Home, the devices a conversation can start on and each one's default.
-const deck = $("models");
-deck.onclick = event => {
-  const r = deck.getBoundingClientRect();
-  if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) deck.close();
-};
+// The model deck, as the apps': the model and its reasoning, every model the Orb running the
+// conversation has, those in use first, then by provider, said with how it is paid (a subscription,
+// an API key), its own provider first; the accounts of the model's provider there. On Home it
+// chooses the default a device's new conversations start on, and the device.
+const deck = $("models"), accountsOf = new Map(), defaultsOf = new Map();
+deck.addEventListener("close", () => $("prompt").focus({ preventScroll: true }));
 $("model").onclick = openModels;
 $("filter").oninput = () => drawDeck();
-let defaults = null;
 async function openModels() {
   $("filter").value = "";
-  defaults = null;
+  const t = conversation(), peer = t ? t.peer : aim().machine?.id;
   drawDeck();
-  deck.showModal();
-  const m = !conversation() && target();
-  if (m && !m.self) {
-    defaults = await ask("models", { machine: m.id }).catch(error => ({ models: [], error: error.message }));
-    drawDeck();
-  }
+  if (!deck.open) deck.showModal();
+  if (!peer || peer === state.self) return;
+  const [d, providers, accounts] = await Promise.all(["models", "providers", "accounts"].map(name => ask(name, { machine: peer }).catch(() => null)));
+  if (d) defaultsOf.set(peer, d);
+  if (providers) listed.set(peer, providers);
+  if (accounts) accountsOf.set(peer, accounts);
+  drawDeck();
+  controls();
 }
+const REASONING = { off: "no thinking", minimal: "barely", low: "light", medium: "balanced", high: "thorough", xhigh: "very thorough", max: "as long as it takes" };
 function drawDeck() {
-  const t = conversation(), m = !t && target(), query = $("filter").value.trim().toLowerCase();
+  const t = conversation(), m = t ? machine(t.peer) : aim().machine, peer = m?.id, def = defaultsOf.get(peer), query = $("filter").value.trim().toLowerCase();
+  const s = t || (def && { model: def.default, models: def.models, levels: def.levels, thinking: def.thinking }) || { models: [] };
+  const where = m ? (m.self ? "this tab" : m.name) : "";
+  const fail = error => showError(error.message);
+  const setDefault = (name, level = "") => ask("default", { machine: peer, name, level }).then(() => { defaultsOf.delete(peer); openModels(); }, fail);
+  const choose = id => { t ? send({ do: "model", tab: t.id, name: id }) : setDefault(id); deck.close(); };
+  $("deck-head").replaceChildren(node("div", el("p", "label", t ? "model" : `default · ${where}`), node("strong", s.model?.split("/").slice(1).join("/") || "none")),
+    t && def?.default && t.model && t.model !== def.default ? button("make default", () => setDefault(t.model, t.thinking), "plain") : note([s.model?.split("/")[0], t && where].filter(Boolean).join(" · ")));
   $("places").hidden = !!t;
-  $("places").replaceChildren(...(t ? [] : launchers()).map(d => button(d.name, () => {
-    localStorage.setItem("orb.tab.where", d.id);
-    openModels();
-    controls();
-  }, d.id === m?.id ? "on" : "")));
-  const levels = t ? t.levels || [] : defaults?.levels || [], level = t ? t.thinking : defaults?.thinking;
-  $("levels").replaceChildren(...levels.map(l => button(l, () => t ? send({ do: "thinking", tab: t.id, name: l }) :
-    ask("default", { machine: m.id, name: defaults.default, level: l }).then(openModels, error => showError(error.message)), l === level ? "on" : "")));
-  const models = t ? t.models || [] : defaults?.models || [], using = t ? t.model : defaults?.default, list = [];
-  let provider = "";
-  for (const id of models.filter(id => id.toLowerCase().includes(query))) {
-    const [p, ...rest] = id.split("/");
-    if (p !== provider) list.push(el("p", "label", (provider = p)));
-    list.push(button(rest.join("/"), () => t ? (send({ do: "model", tab: t.id, name: id }), deck.close()) :
-      ask("default", { machine: m.id, name: id }).then(() => deck.close(), error => showError(error.message)), id === using ? "on" : ""));
-  }
-  if (!list.length) list.push(el("p", "meta", defaults?.error || (!t && m && !m.self && !defaults ? "reading its models…" : m?.self ? "this tab's Orb uses its own default" : "no models")));
-  $("list").replaceChildren(...list);
+  $("places").replaceChildren(...(t ? [] : launchers()).map(d => button(d.name, () => { aimAt(d.id); openModels(); }, d.id === peer ? "on" : "")));
+  const providers = listed.get(peer) || [], info = id => providers.find(p => p.id === id);
+  const match = id => !query || `${id} ${info(id.split("/")[0])?.name || ""}`.toLowerCase().includes(query);
+  const models = (s.models || []).filter(match), mine = s.model?.split("/")[0];
+  const used = [...new Set([def?.default, ...state.tabs.filter(c => c.peer === peer).map(c => c.model)])].filter(id => id && models.includes(id));
+  const groups = Map.groupBy(models, id => id.split("/")[0]);
+  // Its own provider first, then those a subscription pays for, then the rest by name.
+  const order = [...groups.keys()].sort((x, y) => (y === mine) - (x === mine) || !!info(y)?.methods?.some(a => a.account) - !!info(x)?.methods?.some(a => a.account) || x.localeCompare(y));
+  const line = (id, full) => {
+    const b = button("", () => choose(id), id === s.model ? "on" : "");
+    b.append(node("span", full ? id : id.split("/").slice(1).join("/")), ...(id === def?.default ? [el("small", "", "default")] : []), ...(id === s.model ? [el("i", "")] : []));
+    return b;
+  };
+  $("list").replaceChildren(...(used.length ? [el("p", "label", "in use"), ...used.map(id => line(id, true))] : []),
+    ...order.flatMap(p => [el("p", "label", [info(p)?.name || p, info(p)?.holds, `${groups.get(p).length}`].filter(Boolean).join(" · ")), ...groups.get(p).map(id => line(id))]),
+    ...(!models.length ? [note(query ? "no model matches" : m && !m.self && !def && !t ? "reading its models…" : m?.self && !t ? "this tab's Orb uses its own default" : "no models")] : []),
+    ...(peer && peer !== state.self ? [button("+ connect a provider", () => { deck.close(); openPage("providers", peer); }, "plain add")] : []));
+  // The accounts of the model's provider on that device: the one in use marked, the others a click away.
+  const accounts = (accountsOf.get(peer) || []).filter(a => a.provider === mine);
+  $("accounts").replaceChildren(...(accounts.length ? [el("p", "label", `account · ${where}`), ...accounts.map(a => {
+    const w = [...(a.windows || [])].sort((x, y) => x.left - y.left)[0], b = button("", () => ask("account", { machine: peer, provider: a.provider, account: a.id }).then(openModels, fail), a.active ? "on" : "");
+    b.append(node("span", a.name), ...(w ? [el("small", w.left < 15 ? "alarm" : "", `${w.name} ${Math.round(w.left)}% left`)] : []));
+    return b;
+  })] : []));
+  // Reasoning, what changes most often, last: the levels this model takes, the one chosen in words.
+  const levels = s.levels || [];
+  $("levels").replaceChildren(...(levels.length ? [node("p", el("span", "label", "reasoning"), el("small", "", REASONING[s.thinking] || s.thinking || "")),
+    el("div", "levels", ...levels.map(l => button(l.replace("minimal", "min").replace("medium", "med"), () => t ? send({ do: "thinking", tab: t.id, name: l }) : setDefault(s.model, l), l === s.thinking ? "on" : "")))] : []));
 }
 
 // A question a conversation waits on stops the world, as in the apps (platforms/desktop's
@@ -445,22 +694,44 @@ function leave() {
 }
 
 $("orb").onclick = $("new").onclick = () => focus("");
-$("menu").onclick = () => openPage("general");
+$("menu").onclick = () => openPage("general", conversation()?.peer);
 $("back").onclick = () => { show("app"); render(); };
-for (const item of $("pages").querySelectorAll("[data-page]")) item.onclick = () => openPage(item.dataset.page);
+for (const item of $("pages").querySelectorAll("[data-page]")) item.onclick = () => openPage(item.dataset.page, page.peer);
+// The apps' keys, on Alt where the browser keeps Ctrl for itself (the physical key, so a Mac's
+// Option letters still work).
 document.onkeydown = event => {
-  if ((event.ctrlKey || event.metaKey) && event.key === "," && tab) { event.preventDefault(); openPage("general"); }
-  else if (event.key === "Escape" && !$("settings").hidden) $("back").onclick();
-  else if (event.key === "Escape" && !deck.open && !document.querySelector(".interrupt") && shown) focus("");
+  if (!tab || document.querySelector("dialog[open]")) return;
+  const code = event.code, alt = event.altKey && !event.ctrlKey && !event.metaKey, mod = (event.ctrlKey || event.metaKey) && !event.altKey;
+  const keys = {
+    Comma: mod && (() => openPage("general")), KeyK: mod && goTo, KeyN: alt && (() => focus("")), KeyW: alt && shown && (() => closeTab(conversation())),
+    KeyT: alt && event.shiftKey && (() => reopen.pop()?.()), KeyM: alt && openModels, KeyL: alt && (() => $("prompt").focus()),
+    Period: alt && shown && (() => send({ do: "abort", tab: shown })), BracketRight: alt && (() => step(1)), BracketLeft: alt && (() => step(-1)),
+  };
+  const digit = alt && /^Digit([1-9])$/.exec(code)?.[1];
+  const act = keys[code] || (digit && (() => { const c = digit === "9" ? state.tabs.at(-1) : state.tabs[digit - 1]; if (c) focus(c.id); }));
+  if (act && !$("app").hidden) { event.preventDefault(); return act(); }
+  if (event.key !== "Escape") return;
+  if (!$("settings").hidden) $("back").onclick();
+  else if (shown && !document.querySelector(".interrupt")) focus("");
 };
+// Home and the open conversations in a ring, as the apps' tab switching.
+function step(by) {
+  const ids = ["", ...state.tabs.map(c => c.id)], at = ids.indexOf(shown);
+  focus(ids[(at + by + ids.length) % ids.length]);
+}
 document.onvisibilitychange = () => send({ do: "visible", on: !document.hidden });
 
-// Settings, as the desktop's: its pages at left, the one shown at right. They are this tab's: its
-// Orb's accounts, plugins and devices.
+// Settings, as the desktop's: its pages at left, the one shown at right. Providers and Plugins are
+// a device's, as on Android: this tab's own (the accounts its devices share with it, the plugins its
+// Orb runs), or another device's, read and changed there.
 const label = text => el("p", "label", text);
 const note = text => el("p", "meta", text);
-function row(name, sub, action) {
-  return el("div", "row", node("div", node("strong", name), note(sub)), ...(action ? [action] : []));
+function row(name, sub, ...actions) {
+  return el("div", "row", node("div", node("strong", name), note(sub)), ...actions);
+}
+// The devices a page can be about: this tab, then each device it reaches.
+function devices(name, peer) {
+  return el("div", "chips", ...home.machines.filter(m => m.self || m.connected).map(m => button(m.self ? "this tab" : m.name, () => openPage(name, m.id), m.id === peer ? "on" : "")));
 }
 // What each plugin does, as agent/assembly's catalog says it.
 const about = {
@@ -468,37 +739,99 @@ const about = {
   questions: "Ask the user questions with choices and custom answers", memory: "Bounded persistent remember, recall, replace, and forget tools",
   memtree: "Experimental: zoomable summary tree of each session for lossless compaction or fresh turns",
 };
+const listed = new Map(); // each device's providers, as it last listed them
+const retry = (name, peer, vendor) => () => openPage(name, peer, vendor);
 const pages = {
   general() {
     // A phone has no keys to list.
     const keys = matchMedia("(hover: hover)").matches;
-    return [node("h2", "General"), note("this tab, one of your devices"), ...(keys ? [label("keys"), ...[["Enter", "send"], ["Shift+Enter", "new line"], ["Tab", "complete a / command"],
-      ["Ctrl+,", "settings"], ["Esc", "back to Home"]].map(([key, what]) => row(key, what))] : [])];
+    return [node("h2", "General"), note("this tab, one of your devices"), ...(keys ? [label("keys"), ...[["Enter", "send · steer a run"], ["Shift+Enter", "new line"], ["Tab", "complete a / command or an @ file"],
+      ["↑", "the last message again"], ["Ctrl+K", "go to a conversation"], ["Alt+N", "Home"], ["Alt+1…9", "a conversation"], ["Alt+[  Alt+]", "the previous, the next"],
+      ["Alt+W", "close the conversation"], ["Alt+Shift+T", "reopen it"], ["Alt+M", "models"], ["Alt+.", "stop"], ["Ctrl+,", "settings"], ["Esc", "back to Home"]].map(([key, what]) => row(key, what))] : [])];
   },
-  async providers() {
-    const counts = new Map();
-    for (const m of (await tab.rpc("get_available_models")).models) counts.set(m.provider, (counts.get(m.provider) || 0) + 1);
-    return [node("h2", "Providers"), note("the accounts your devices share with this tab"), label("accounts"),
-      ...[...counts].map(([provider, n]) => row(provider, `${n} model${n === 1 ? "" : "s"}`)),
-      note("Sign in on one of your devices: its accounts reach this tab, sealed to it. A conversation on a device runs on that device's own accounts.")];
+  async providers(peer, vendor) {
+    const m = machine(peer);
+    if (m?.self || !m) {
+      const counts = new Map();
+      for (const model of (await tab.rpc("get_available_models")).models) counts.set(model.provider, (counts.get(model.provider) || 0) + 1);
+      return [node("h2", "Providers"), devices("providers", peer), note("the accounts your devices share with this tab"), label("accounts"),
+        ...[...counts].map(([provider, n]) => row(provider, `${n} model${n === 1 ? "" : "s"}`)),
+        note("Sign in on one of your devices, here or on it: its accounts reach this tab, sealed to it. A conversation on a device runs on that device's own accounts.")];
+    }
+    if (vendor) return provider(m, vendor);
+    const [providers, accounts] = await Promise.all([ask("providers", { machine: peer }), ask("accounts", { machine: peer }).catch(() => [])]);
+    listed.set(peer, providers || []);
+    const section = (name, list) => list.length ? [label(name), ...list.map(p => Object.assign(row(p.name, p.ready ? p.holds : p.methods.map(x => (x.account ? "account" : "api key")).join(" · "),
+      button(p.ready ? `${p.models} model${p.models === 1 ? "" : "s"} ›` : p.methods.some(x => x.account) ? "sign in ›" : "add key ›", () => openPage("providers", peer, p.id), "plain")), { className: p.ready ? "row on" : "row" }))] : [];
+    const ready = (providers || []).filter(p => p.ready), rest = (providers || []).filter(p => !p.ready);
+    return [node("h2", "Providers"), devices("providers", peer), note(`${m.name} · ${ready.length} ready · ${(providers || []).length} to choose from`),
+      ...((accounts || []).length ? [label("accounts · quota left"), ...accounts.map(a => el("div", "account", row(a.name, [a.provider_name?.split(" (")[0], a.plan].filter(Boolean).join(" · "),
+        button(a.active ? "in use" : "use ›", () => ask("account", { machine: peer, provider: a.provider, account: a.id }).then(retry("providers", peer), error => showError(error.message)), a.active ? "plain on" : "plain")),
+        ...(a.windows || []).map(quota)))] : []),
+      ...section("ready", ready), ...section("your subscription", rest.filter(p => p.methods.some(x => x.account))), ...section("api key", rest.filter(p => !p.methods.some(x => x.account)))];
   },
-  async plugins() {
-    const plugins = await tab.plugins();
-    return [node("h2", "Plugins"), note("what this tab's Orb runs, from its next conversation"), ...Object.keys(plugins).sort().map(name =>
-      row(name, about[name], button(plugins[name] ? "on" : "off", () => tab.plugins(name, !plugins[name]).then(() => openPage("plugins"), error => showError(error.message)), plugins[name] ? "inverted" : "")))];
+  async plugins(peer) {
+    const m = machine(peer);
+    if (m?.self || !m) {
+      const plugins = await tab.plugins();
+      return [node("h2", "Plugins"), devices("plugins", peer), note("what this tab's Orb runs, from its next conversation"), ...Object.keys(plugins).sort().map(name =>
+        row(name, about[name], button(plugins[name] ? "on" : "off", () => tab.plugins(name, !plugins[name]).then(retry("plugins", peer), error => showError(error.message)), plugins[name] ? "inverted" : "")))];
+    }
+    const change = args => ask("plugin", { machine: peer, ...args }).then(retry("plugins", peer), error => showError(error.message));
+    const list = await ask("plugins", { machine: peer }) || [];
+    return [node("h2", "Plugins"), devices("plugins", peer), note(`${m.name} · ${list.filter(x => x.on).length} of ${list.length} on`), ...list.map(x => el("div", "plugin",
+      row(x.name, x.about, button(x.on ? "on" : "off", () => change({ name: x.name, on: !x.on }), x.on ? "inverted" : "")),
+      ...(x.on ? (x.choices || []).map(c => el("div", "chips", node("small", c.key), ...c.values.map(v => button(v, () => v !== c.value && change({ name: x.name, key: c.key, value: v }), v === c.value ? "on" : "")))) : []))),
+      note("An Orb reads its plugins when it starts: those open here reopen with a change at their next message.")];
   },
   mitosis() {
     return [node("h2", "Mitosis"), note("peer to peer"), label("devices"),
-      ...home.machines.filter(m => !m.self).map(m => row(m.name, [m.connected ? "connected" : "not connected", m.version, m.launch ? "starts conversations for this tab" : "follows only"].filter(Boolean).join(" · "))),
+      ...home.machines.filter(m => !m.self).map(m => row(m.name, [m.connected ? "connected" : "not connected", m.version && `orb ${m.version}`, m.launch ? "starts conversations for this tab" : "follows only"].filter(Boolean).join(" · "),
+        button("rename", () => rename(m.name, name => { send({ do: "rename", machine: m.id, name }); setTimeout(retry("mitosis"), 300); }), "plain"))),
       label("this tab"), note(me),
       note("Each device is approved by fingerprint on its own screen. A device you paired this tab with lets it follow and start its conversations; run  orb mitosis trust <this tab>  on another one to let it do so too. Forgetting this tab clears it here; block it on a device to take it out of your group."),
       button("forget this tab", () => { if (confirm("Forget this tab? Its conversations here go with it.")) { localStorage.setItem("orb.tab.forget", "1"); location.reload(); } })];
   },
 };
-async function openPage(name) {
+// One plan-limit window: the share left as a bar, in the rupture red once it runs low, and its reset.
+function quota(w) {
+  const low = w.left < 15;
+  return el("div", low ? "quota alarm" : "quota", node("small", w.name), Object.assign(el("i", "", node("b")), { style: `--left: ${Math.max(0, Math.min(100, w.left))}%` }),
+    node("small", `${Math.round(w.left)}%`), node("small", w.resets ? new Date(w.resets).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : ""));
+}
+// One provider of a device: its sign-in methods as /login offers them, and the sign-in running,
+// which the view drives on that device (a browser page, a code, a question).
+function provider(m, id) {
+  const p = listed.get(m.id)?.find(x => x.id === id) || { id, name: id, methods: [] }, f = state.login?.machine === m.id && state.login.provider === id ? state.login : null;
+  const answer = text => send({ do: "login.answer", text }), cancel = () => send({ do: "login.cancel" });
+  const back = button("‹ providers", () => { if (f && !["done", "failed"].includes(f.state)) cancel(); openPage("providers", m.id); }, "plain");
+  const field = (prompt, secret) => {
+    const input = Object.assign(node("input"), { type: secret ? "password" : "text", placeholder: prompt.placeholder || (secret ? "paste it here" : ""), autocomplete: "off" });
+    input.onkeydown = event => event.key === "Enter" && input.value.trim() && answer(input.value.trim());
+    return el("div", "answer", input, button("save", () => input.value.trim() && answer(input.value.trim()), "inverted"));
+  };
+  const head = [back, node("h2", p.name), note([m.name, p.ready ? `ready through ${p.holds} · ${p.models} model${p.models === 1 ? "" : "s"}` : "not signed in"].join(" · "))];
+  if (f && f.state !== "failed") {
+    const link = f.url && Object.assign(node("a", "open the sign-in page"), { href: f.url, target: "_blank", rel: "noreferrer", className: "inverted" });
+    const flow = {
+      starting: () => [note(f.detail || "starting…")],
+      browser: () => [node("h3", "Continue in the browser"), link, note("Finish on the page, then paste the code it shows or the final redirect URL here."), ...(f.prompt ? [field(f.prompt, false)] : [])],
+      code: () => [label("enter this code"), button(f.code, () => navigator.clipboard.writeText(f.code).then(() => toast("code copied")), "code"), link, ...(f.detail ? [note(f.detail)] : [])],
+      asking: () => [note(f.prompt?.message || ""), ...(f.prompt?.options?.length ? f.prompt.options.map((o, i) => button(o.label, () => answer(o.id), i ? "" : "inverted")) : [field(f.prompt || {}, f.prompt?.kind === "secret")])],
+      done: () => [node("h3", "Signed in"), note(`${m.name} holds the new credential; its conversations can use the models now.`), button("done", () => { cancel(); openPage("providers", m.id); }, "inverted")],
+    }[f.state]?.() || [note(f.state)];
+    return [...head, el("div", "flow", ...flow.filter(Boolean), ...(f.state === "done" ? [] : [button("cancel", cancel)]))];
+  }
+  return [...head, ...(f?.state === "failed" ? [el("p", "meta alarm", f.detail || "sign-in failed")] : []), ...p.methods.map(x => el("div", "method", label(x.account ? "account" : "api key"), node("strong", x.label), note(x.about),
+    button(x.account ? (p.ready ? "sign in again" : "sign in") : (p.ready ? "replace key" : "add key"), () => send({ do: "login", machine: m.id, provider: id, auth: x.auth }), p.ready ? "" : "inverted"))),
+    ...(p.ready && (p.status === "oauth" || p.source === "stored") ? [button(p.status === "oauth" ? "sign out" : "remove key", () => ask("logout", { machine: m.id, provider: id }).then(retry("providers", m.id, id), error => showError(error.message)))] : [])];
+}
+let page = { name: "general", peer: "", vendor: "" };
+async function openPage(name, peer = page.peer, vendor = "") {
+  page = { name, peer: peer || state.self, vendor };
   show("settings");
   for (const item of $("pages").querySelectorAll("[data-page]")) item.className = item.dataset.page === name ? "on" : "";
-  try { $("page").replaceChildren(...await pages[name]()); } catch (error) { showError(error.message); }
+  try { $("page").replaceChildren(...await pages[name](page.peer, vendor)); } catch (error) { showError(error.message); }
   $("page").append(notice);
 }
 // Code mode's runtime: a frame of opaque origin (sandboxed without same-origin), so what runs reaches

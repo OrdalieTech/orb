@@ -31,11 +31,12 @@
     <div id="home">
       <div id="machines"></div>
       <p id="summary"></p>
-      <p id="launching"></p>
+      <button id="launching" type="button" hidden></button>
       <div id="entries"></div>
       <div id="card"><b class="stretch">NEW SESSION</b><i></i></div>
     </div>
     <p id="strip" hidden></p>
+    <div id="acting" hidden><b class="stretch">PATTERN BLUE</b><p>パターン青 · another Orb is driving this tab</p><button id="unblue" type="button">stop</button></div>
     <div id="transcript" tabindex="0" aria-label="Messages">
       <div id="chat">
         <button id="earlier" type="button" hidden>earlier messages</button>
@@ -49,19 +50,22 @@
     <form id="prompt-form">
       <div id="palette" hidden></div>
       <textarea id="prompt" rows="2" maxlength="16384" placeholder="What next?" aria-label="Message"></textarea>
-      <div><button id="model" type="button"><i></i><span id="where"></span><span id="meter"></span></button><button id="send" class="round" aria-label="Send"></button></div>
+      <div><button id="aim" type="button"><i></i><span></span></button><button id="model" type="button"><span id="where"></span><span id="meter"></span></button><button id="queue" type="button" hidden>queue</button><button id="send" class="round" aria-label="Send"></button></div>
     </form>
   </section>
   <section id="settings" hidden>
     <nav id="pages">
-      <h1>Settings</h1><p class="meta">this tab</p>
+      <h1>Settings</h1><p class="meta">this tab and your devices</p>
       <button type="button" data-page="general">General</button><button type="button" data-page="providers">Providers</button>
       <button type="button" data-page="plugins">Plugins</button><button type="button" data-page="mitosis">Mitosis</button>
       <button id="back" type="button" aria-label="Back to the conversations">‹ <span>conversations</span> <small>esc</small></button>
     </nav>
     <div id="page"></div>
   </section>
-  <dialog id="models"><div id="places"></div><input id="filter" placeholder="Find a model" autocomplete="off" spellcheck="false"><div id="levels"></div><div id="list"></div></dialog>
+  <dialog id="models"><div id="deck-head"></div><div id="places"></div><input id="filter" placeholder="Search models" autocomplete="off" spellcheck="false"><div id="list"></div><div id="accounts"></div><div id="levels"></div></dialog>
+  <dialog id="sheet" tabindex="-1"><p id="sheet-title"></p><input id="sheet-input" autocomplete="off" spellcheck="false"><div id="sheet-list"></div></dialog>
+  <dialog id="viewer"><img id="picture" alt=""></dialog>
+  <p id="toast" hidden><span></span><button type="button">undo</button></p>
   <p id="error" role="alert" hidden></p>
 </body>
 </html>

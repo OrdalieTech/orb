@@ -181,6 +181,10 @@ func (a *App) refresh(first bool) {
 			m = &machine{id: id}
 		}
 		if m.state != "connected" || len(m.instances) == 0 {
+			// A device that just connected has its threads read now, not at the next periodic read.
+			if state == "connected" && m.state != "connected" && id != s.PeerID {
+				a.threadsAt = time.Time{}
+			}
 			m.state = state
 		}
 		next = append(next, m)
