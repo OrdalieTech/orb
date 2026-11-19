@@ -506,7 +506,8 @@ async function submit(mode) {
   const unsent = error => { if (!$("prompt").value) $("prompt").value = text; showError(error.message); controls(); };
   const name = /^\/(\S+)/.exec(text)?.[1];
   try {
-    if (t?.busy && mode !== "queue") return send({ do: "steer", tab: t.id, text });
+    // During a run the text steers it, but the app's own commands still open their screen.
+    if (t?.busy && mode !== "queue" && !state.commands?.some(c => c.name === name)) return send({ do: "steer", tab: t.id, text });
     if (!t && name && name !== "new" && homeCommands.has(name)) return outcome(await ask("send", { text }));
     if (!t) return await start(name === "new" ? text.slice(4).trim() : text);
     outcome(await ask("send", { tab: t.id, text }));
