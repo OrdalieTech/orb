@@ -383,6 +383,7 @@ const end = () => requestAnimationFrame(() => ($("transcript").scrollTop = $("tr
 let lastTop = 0;
 $("transcript").addEventListener("wheel", event => { if (event.deltaY < 0) pinned = false; }, { passive: true });
 $("transcript").addEventListener("touchmove", () => (pinned = false), { passive: true });
+$("transcript").addEventListener("keydown", event => { if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pinned = false; });
 $("transcript").addEventListener("scroll", ({ target: t }) => {
   if (t.scrollTop > lastTop && t.scrollHeight - t.scrollTop - t.clientHeight < 4) pinned = true;
   lastTop = t.scrollTop;
