@@ -184,7 +184,7 @@ palette in both appearances, their face, radii and type scale, the desktop's on 
 the phone's on a narrow one.
 
 A device reaches the tab over an outbound WebSocket: `orb mitosis --browser` turns on the device's
-loopback listener for the page (127.0.0.1:8789, origin https://ordalietech.github.io), which stays
+loopback listener for the page (127.0.0.1:8789, origins https://ordalietech.github.io and https://netapy.com), which stays
 on across restarts, and opens the page at a link carrying the invitation after `#`, which the
 browser never sends to the page's host: the tab joins with it at once. `orb mitosis run --web-listen <addr> --web-origin
 <page origin>` sets another address or page, and `--web-url wss://host/mitosis` advertises a

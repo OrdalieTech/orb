@@ -5,6 +5,7 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- `orb mitosis --browser` lets a tab at https://netapy.com/orb/ connect too: the page is the same as on GitHub Pages, but the device accepted only that origin, so a tab at netapy.com failed with "websocket: connection failed".
 - A phone, iPhone or desktop app paired with `orb mitosis` now follows the inviter's sync group, as `orb mitosis join` and the browser tab already did: before, the owner listed it as a member but the app never joined, so it got none of the group's logins and memory and reached no other member.
 
 ## [0.25.0] - 2026-11-18
