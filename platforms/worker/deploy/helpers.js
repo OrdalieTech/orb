@@ -25,6 +25,10 @@
       );
       return controller;
     },
+    // pause settles on the event loop's next turn, so what waits there (a stop) runs.
+    pause(id, settle) {
+      setTimeout(() => settle(id), 0);
+    },
     read(reader, id, settle) {
       reader.read().then(
         ({ value }) => settle(id, value ?? null),

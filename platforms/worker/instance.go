@@ -166,7 +166,7 @@ func (instance *Instance) start(ctx context.Context, journal *harness.Session) (
 		CWD: Workspace, Host: instance.Host, SessionManager: manager, Model: instance.model, StreamFn: instance.streamFn,
 		Resources: &agent.Resources{}, DeferExtensionStart: true, ModelRegistry: instance.registry,
 	}
-	settings, err := instance.settings()
+	settings, err := instance.Settings()
 	if err != nil {
 		return nil, err
 	}

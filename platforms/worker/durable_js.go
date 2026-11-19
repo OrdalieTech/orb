@@ -30,12 +30,12 @@ type durableKV struct{ storage js.Value }
 
 // helpers are the shim's (deploy/worker.mjs). Each settles a wait on
 // JavaScript by calling settle once with the wait's id and its results.
-var helpers struct{ await, fetch, read, release js.Value }
+var helpers struct{ await, fetch, pause, read, release js.Value }
 
 // Bind hands the package the shim's helpers, through which the Durable Object
 // storage and FetchTransport wait on JavaScript.
 func Bind(shim js.Value) {
-	helpers.await, helpers.fetch, helpers.read, helpers.release = shim.Get("await"), shim.Get("fetch"), shim.Get("read"), shim.Get("release")
+	helpers.await, helpers.fetch, helpers.pause, helpers.read, helpers.release = shim.Get("await"), shim.Get("fetch"), shim.Get("pause"), shim.Get("read"), shim.Get("release")
 }
 
 // settlements are the waits in flight. One callback settles them all: a pair
@@ -69,10 +69,10 @@ func wait() (int, <-chan []js.Value) {
 	return settlements.next, done
 }
 
-// await blocks the calling goroutine until promise settles; the Go runtime
+// Await blocks the calling goroutine until promise settles; the Go runtime
 // yields to the JavaScript event loop meanwhile. A rejection settles with an
 // undefined value and its reason's message.
-func await(promise js.Value) (js.Value, error) {
+func Await(promise js.Value) (js.Value, error) {
 	id, done := wait()
 	helpers.await.Invoke(promise, id, settle)
 	results := <-done
@@ -106,7 +106,7 @@ func (kv durableKV) Get(_ context.Context, keys []string) (map[string][]byte, er
 		if err != nil {
 			return nil, err
 		}
-		found, err := await(promise)
+		found, err := Await(promise)
 		if err != nil {
 			return nil, err
 		}
@@ -124,7 +124,7 @@ func (kv durableKV) List(_ context.Context, prefix string) (map[string][]byte, e
 	if err != nil {
 		return nil, err
 	}
-	found, err := await(promise)
+	found, err := Await(promise)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +156,7 @@ func (kv durableKV) Write(_ context.Context, put map[string][]byte, del []string
 	}
 	var failure error
 	for _, promise := range pending {
-		if _, err := await(promise); err != nil && failure == nil {
+		if _, err := Await(promise); err != nil && failure == nil {
 			failure = err
 		}
 	}

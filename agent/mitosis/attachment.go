@@ -51,6 +51,10 @@ type Options struct {
 	Authorize   func(mitosis.Request) bool
 	LedgerQuota int
 }
+
+// updateEvery spaces the updates of the message streaming in that the stream carries.
+const updateEvery = 50 * time.Millisecond
+
 type frozen struct {
 	first    int // the index in the conversation of messages[0]
 	messages []json.RawMessage
@@ -71,6 +75,7 @@ type Attachment struct {
 	stopSessions, stopEvents func()
 	stream                   *mitosis.Stream
 	partial                  json.RawMessage
+	updated                  time.Time // when the stream last carried the message streaming in
 	messages                 []json.RawMessage
 	messageBytes             int
 	dropped                  int // the oldest messages the window let go
@@ -138,9 +143,21 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 		}
 	}, func(event engine.AgentEvent) {
 		// An update repeats the whole message in its assistantMessageEvent; followers read the message.
+		// Marshalled at every delta, a long reply would cost its length squared, here and on the
+		// wire, so one goes out at most every updateEvery: the next delta, or the message's end,
+		// brings what came between.
 		var b []byte
 		var err error
 		if update, ok := event.(engine.MessageUpdateEvent); ok {
+			a.mu.Lock()
+			soon := time.Since(a.updated) < updateEvery
+			if !soon {
+				a.updated = time.Now()
+			}
+			a.mu.Unlock()
+			if soon {
+				return
+			}
 			b, err = ai.Marshal(update.Message)
 		} else {
 			b, err = engine.MarshalAgentEvent(event)

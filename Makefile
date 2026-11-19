@@ -18,11 +18,12 @@ BROWSER_PORT ?= 8787
 .PHONY: browser-build browser-serve browser-dist
 browser-build:
 	rm -rf .tools/browser && mkdir -p .tools/browser
-	$(GO_ENV) CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -o .tools/browser/orb.wasm ./cmd/orb-wasm
 	# The tab as a full Mitosis peer (peer.js) runs the Worker runtime.
 	$(GO_ENV) CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -trimpath -ldflags=-s -o .tools/browser/peer.wasm ./cmd/orb-worker
 	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" platforms/worker/deploy/helpers.js .tools/browser/
 	cp platforms/browser/web/* .tools/browser/
+	# The apps' face and mark: the page takes them from Android and the desktop, never a copy.
+	cp platforms/android/app/src/main/res/font/ubuntu_sans_mono.ttf platforms/desktop/ordalie.svg .tools/browser/
 	# Gzipped, as the page fetches them: peer.wasm is over the 25 MiB a static host such as Cloudflare Pages takes.
 	gzip -9n .tools/browser/*.wasm
 

@@ -5,6 +5,24 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-11-18
+
+Orb runs in a browser tab as one of your devices, with every account they share: `orb mitosis --browser` opens the page at https://ordalietech.github.io/orb/ already paired but for the fingerprint, and the requests a browser refuses go through your devices. The page takes the apps' look, their Evangelion moments included, and holds heavy loads; an Orb's followers no longer cost its reply's length squared; MCP servers and their sign-ins travel with the sync group.
+
+- MCP servers travel with the sync group, with their sign-ins: native devices share the global mcp.json's https servers and mcp-auth.json's OAuth grants for them, so one sign-in serves every device. Stdio servers, servers whose headers or client secret read `${VAR}` or `!command`, those signed in with an `orb login` account and those only one device can reach (http, localhost, a LAN or a Tailscale 100.x address) stay on their device; a grant travels without the endpoints it discovered, which each device finds again from the server's URL.
+
+- Memory's journal no longer grows forever: every remember, replace and forget appended a line, so churn grew the file while what it held stayed under the tools' limits. Past 256 KiB, once it is four times what is live, a write rewrites it to the live items, in the file store and in the document a Worker or browser tab keeps.
+- The browser page takes the desktop and Android apps' look and parts: their paper and ink in light and dark, Ubuntu Sans Mono, the tab bar, the prompt box with its model deck, inline tool lines, Settings (General, Providers, Plugins, Mitosis), and their Evangelion moments: the NEW SESSION title card, the context gauge, and the red interrupt in warning stripes where the questions plugin asks, one question at a time, each choice on its key. Pairing is the code `orb mitosis` shows and the fingerprint, and no longer stalls when the device admits the tab late. Code mode gives the tab's agent a `js` tool, run in a sandboxed worker that can't reach the page or its credentials, whose code calls the agent's other tools (`await tools.remember({…})`). The bring-your-own-key agent, the remote-control panel and the debug panel are gone.
+
+- A browser tab uses every account its devices share: the requests the browser refuses, to APIs that send no CORS headers (ChatGPT, opencode, xAI's sign-in), go through an online device of the tab's group, to public HTTPS addresses only, following redirects to HTTPS only. `orb mitosis --browser` opens the page, now on GitHub Pages at https://ordalietech.github.io/orb/ with each release, at a link that pairs the tab by itself (the code rides after `#`, which never leaves the browser), and turns on, for good, the loopback listener the page reaches.
+
+- An Orb's Mitosis stream no longer marshals the whole reply at every delta of it: a 330 KB reply in 41,000 deltas made 13 GB of JSON for its followers (134 s in a browser tab, 4 s now). The message streaming in goes out at most every 50 ms; its end carries it whole.
+- The browser tab stays responsive under load: its Orb runs in a Web Worker, the reply streaming in is drawn once a frame and only its end, a long conversation reuses what it drew and lays out only what is on screen, a tool's input and output are drawn when opened (64 KiB at most), Stop stops within 0.1 s, and a reader scrolled up stays put.
+
+- On a phone the page lays out as Android does: the questions' word at Android's height, Settings with back first and its pages in one scrolling row, no list of keys, and the context's percentage without its gauge. A question with several answers (`multi_select`) takes its choices ticked before send, and a command a plugin handles (`/tasks`) no longer leaves the page waiting on a turn.
+
+- `make check` takes about half as long on a warm cache: each cross-build links only `cmd/orb`, and Wazero keeps the test binaries it compiled.
+
 - `orb mitosis join` starts Mitosis before it reads a short code, so a daemon that can't start no longer uses up the code.
 
 ## [0.24.0] - 2026-11-17
