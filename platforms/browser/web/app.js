@@ -400,12 +400,13 @@ function drawRow(r, t, old) {
   if (r.kind === "note") return el("p", r.alarm ? "note alarm" : "note", r.text);
   // A run of actions folds into one line, as the TUI folds exploration, naming what runs now.
   const one = r.actions?.length === 1, line = one ? action(r.actions[0], t) : el("details", "action run");
-  const opened = !!old?.querySelector("details")?.open;
+  // What the reader opened stays open as the run goes on: the run, and each action by its key.
+  const opened = !!old?.querySelector("details")?.open, kept = new Set([...(old?.querySelectorAll("details[open]") ?? [])].map(d => d.dataset.k));
   if (one) line.firstChild.open = opened;
   else {
     line.open = opened;
     line.append(summary(r.live ? "working" : "worked", [r.what, !line.open && r.now].filter(Boolean).join(" · "), r.failed ? `${r.failed} failed` : "", r.live, r.failed > 0),
-      ...r.actions.map(a => action(a, t)));
+      ...r.actions.map(a => { const row = action(a, t); row.firstChild.open = kept.has(a.k); return row; }));
   }
   return el("div", "said", line, ...pictures(r.images, t));
 }
@@ -416,6 +417,7 @@ function summary(verb, target, result, live, failed) {
 // returned, read from the view when it opens.
 function action(a, t) {
   const details = el("details", "action", summary(a.verb, a.target, a.result, a.live, a.failed));
+  details.dataset.k = a.k;
   details.ontoggle = () => details.open && ask("detail", { tab: t.id, key: a.k }).then(d => {
     const pane = el("div", "pane");
     if (a.verb === "thought") pane.append(el("pre", "", d?.text || ""));
