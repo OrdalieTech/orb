@@ -21,6 +21,7 @@ type Machine struct {
 	Name      string    `json:"name"`
 	Self      bool      `json:"self,omitempty"`
 	Connected bool      `json:"connected,omitempty"`
+	Reading   bool      `json:"reading,omitempty"` // connected, first thread read still in flight
 	Version   string    `json:"version,omitempty"`
 	Launch    bool      `json:"launch,omitempty"` // it lets this app start Orb there
 	Hue       int       `json:"hue,omitempty"`    // 1 to 6 for a peer, its own while hues last; 0 for this machine
@@ -62,10 +63,10 @@ type Entry struct {
 }
 
 type machine struct {
-	id, host, version, state string
-	instances                []instance // the conversations its Orbs run
-	threads                  []thread
-	launch, fetching, read   bool // read: its running Orbs were read at least once
+	id, host, version, state         string
+	instances                        []instance // the conversations its Orbs run
+	threads                          []thread
+	launch, fetching, read, loadDone bool // read: its running Orbs were read; loadDone: host.sessions answered or refused
 }
 
 type instance struct {
@@ -184,6 +185,7 @@ func (a *App) refresh(first bool) {
 			// A device that just connected has its threads read now, not at the next periodic read.
 			if state == "connected" && m.state != "connected" && id != s.PeerID {
 				a.threadsAt = time.Time{}
+				m.loadDone = false
 			}
 			m.state = state
 		}
@@ -311,12 +313,12 @@ func (a *App) loadThreads(peer string) {
 	case m == nil:
 		return
 	case err == nil:
-		m.threads, m.launch, m.version = found, true, version
+		m.threads, m.launch, m.version, m.loadDone = found, true, version, true
 		if peer != a.self && host != "" {
 			m.host = host
 		}
-	case mitosis.Code(err) == "unauthorized":
-		m.threads, m.launch = nil, false
+	case mitosis.Code(err) == "unauthorized", mitosis.Code(err) == "method_not_found":
+		m.threads, m.launch, m.loadDone = nil, false, true
 	}
 	a.flush()
 }
@@ -329,7 +331,7 @@ func (a *App) machinesState() ([]Machine, []Entry) {
 	hues := hues(a.machines, a.self)
 	for _, m := range a.machines {
 		name := a.name(m)
-		out := Machine{ID: m.id, Name: name, Self: m.id == a.self, Connected: m.state == "connected", Version: m.version, Launch: m.launch, Hue: hues[m.id]}
+		out := Machine{ID: m.id, Name: name, Self: m.id == a.self, Connected: m.state == "connected", Reading: m.id != a.self && m.state == "connected" && !m.loadDone, Version: m.version, Launch: m.launch, Hue: hues[m.id]}
 		for _, i := range m.instances {
 			what := cmp.Or(a.tabTitle(m.id, i.session), i.title)
 			for _, th := range m.threads {

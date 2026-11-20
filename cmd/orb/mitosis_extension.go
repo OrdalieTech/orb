@@ -532,7 +532,7 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 		if e != nil {
 			return e
 		}
-		ok, e := ui.Confirm(ctx, "Trust this Orb?", inv.PeerID+"\nAllow full control of your current and future conversations,\nand starting Orb in any folder on this machine.\nVerify this fingerprint on the sharing Orb.", nil)
+		ok, e := ui.Confirm(ctx, "Trust this Orb?", inv.PeerID+"\nAllow control of your current and future conversations.\nVerify this fingerprint on the sharing Orb.", nil)
 		if e != nil || !ok {
 			return e
 		}
@@ -551,6 +551,9 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 		}
 		if e = trustMitosisPeer(ctx, client, profile, inv.PeerID, false); e != nil {
 			return e
+		}
+		if err := client.Call(ctx, "sync", struct{}{}, nil); mitosis.Code(err) == "not_found" {
+			_ = client.Call(ctx, "sync", map[string]string{"join": inv.PeerID}, nil)
 		}
 		ui.Notify("Device connected. Choose a shared conversation.", extensions.NotifyInfo)
 		return openSharedMitosisConversation(ctx, ui, profile, inv.PeerID)
@@ -808,6 +811,10 @@ func approveMitosisPairing(ctx context.Context, ui extensions.UI, client *protoc
 	}
 	if err = client.Call(ctx, "approve", map[string]string{"invitation_id": claimed.ID, "claimant": claimed.Claimant}, nil); err != nil {
 		return err
+	}
+	if err = client.Call(ctx, "sync", map[string]string{"add": claimed.Claimant}, nil); err != nil && mitosis.Code(err) != "unauthorized" && mitosis.Code(err) != "unavailable" {
+		ui.Notify("Device paired, but sync group update failed: "+err.Error(), extensions.NotifyWarning)
+		return nil
 	}
 	ui.Notify("Device paired. It can now open the conversations you shared.", extensions.NotifyInfo)
 	return nil

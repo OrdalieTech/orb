@@ -587,7 +587,6 @@ func (host *interactiveSessionHost) ChangeAccount(ctx context.Context, provider,
 	if err != nil {
 		return err
 	}
-	var removed *aiauth.Credential
 	switch action {
 	case "select":
 		var book accountBook
@@ -595,10 +594,10 @@ func (host *interactiveSessionHost) ChangeAccount(ctx context.Context, provider,
 			err = book.use(ctx, provider, id)
 		}
 	case "remove":
-		if provider == claudesessions.Name {
-			removed, _ = store.View(provider, id).Read(ctx, provider)
+		var book accountBook
+		if book, err = host.book(); err == nil {
+			err = book.remove(ctx, provider, id)
 		}
-		err = store.Remove(ctx, provider, id)
 	case "rename":
 		err = store.Rename(ctx, provider, id, name)
 	default:
@@ -607,7 +606,6 @@ func (host *interactiveSessionHost) ChangeAccount(ctx context.Context, provider,
 	if err != nil {
 		return err
 	}
-	host.forgetClaudeAccount(removed)
 	return host.refreshAuthState(ctx, provider)
 }
 

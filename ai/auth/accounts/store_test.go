@@ -53,6 +53,21 @@ func TestOAuthIdentityKeepsAccountsSeparateAndRefreshesExisting(t *testing.T) {
 	if err != nil || len(rows) != 2 {
 		t.Fatal("unexpected account count", err)
 	}
+	// Re-signing in without passing a name (as orb login --json does) preserves the account's name.
+	relogged, err := store.Add(t.Context(), "openai-codex", "", auth.OAuthCredential("renewed-refresh-2", token("work", "pro"), 10))
+	if err != nil || relogged.ID != first.ID || relogged.Name != "Work" {
+		t.Fatalf("re-login erased account name: %#v, %v", relogged, err)
+	}
+	// Same for a named default account in auth.json.
+	base := auth.NewMemoryStore(map[string]*auth.Credential{"openai-codex": auth.OAuthCredential("base-r", token("base", "plus"), 0)})
+	withBase := NewStoreWithDocument(&memoryDocument{}, base)
+	if err := withBase.Rename(t.Context(), "openai-codex", DefaultID, "Main"); err != nil {
+		t.Fatal(err)
+	}
+	reloggedBase, err := withBase.Add(t.Context(), "openai-codex", "", auth.OAuthCredential("base-r2", token("base", "plus"), 20))
+	if err != nil || reloggedBase.ID != DefaultID || reloggedBase.Name != "Main" {
+		t.Fatalf("re-login erased default account name: %#v, %v", reloggedBase, err)
+	}
 }
 
 // A credential held by another program (a CLI's own sign-in) has no token to

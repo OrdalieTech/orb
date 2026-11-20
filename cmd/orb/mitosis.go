@@ -280,6 +280,48 @@ orb mitosis instances|peers|grants|scopes|prune|pipe`)
 		_, _ = fmt.Fprintf(streams.Stdout, "Mitosis stopped (profile %s).\n", profile)
 	case method == "block":
 		_, _ = fmt.Fprintf(streams.Stdout, "Blocked %s: no channel, grant or vault from now on.\n", args[1])
+	case method == "sync" && streams.StdoutTTY:
+		var group struct {
+			GroupID  string              `json:"group_id"`
+			Self     string              `json:"self"`
+			Owners   []string            `json:"owners"`
+			Members  []string            `json:"members"`
+			Names    map[string]string   `json:"names"`
+			InSync   bool                `json:"in_sync"`
+			Received map[string][]string `json:"received"`
+		}
+		if json.Unmarshal(result, &group) == nil && group.GroupID != "" {
+			status := "syncing"
+			if group.InSync {
+				status = "in sync"
+			}
+			_, _ = fmt.Fprintf(streams.Stdout, "Sync group %s (%s, %d devices)\n", group.GroupID, status, len(group.Members))
+			for _, m := range group.Members {
+				var tags []string
+				if m == group.Self {
+					tags = append(tags, "this device")
+				}
+				if slices.Contains(group.Owners, m) {
+					tags = append(tags, "owner")
+				}
+				name := group.Names[m]
+				if name == "" {
+					name = "(unnamed)"
+				}
+				if len(tags) > 0 {
+					_, _ = fmt.Fprintf(streams.Stdout, "  %s  %s  (%s)\n", m, name, strings.Join(tags, ", "))
+				} else {
+					_, _ = fmt.Fprintf(streams.Stdout, "  %s  %s\n", m, name)
+				}
+			}
+			for class, items := range group.Received {
+				if len(items) > 0 {
+					_, _ = fmt.Fprintf(streams.Stdout, "Updated %s: %s\n", class, strings.Join(items, ", "))
+				}
+			}
+			return 0
+		}
+		_, _ = fmt.Fprintln(streams.Stdout, string(result))
 	case method == "status" && streams.StdoutTTY:
 		var status struct {
 			mitosisSettingsStatus
@@ -303,14 +345,25 @@ orb mitosis instances|peers|grants|scopes|prune|pipe`)
 }
 
 // peerArg is a PeerID typed whole or as an unambiguous prefix, with or without "orb:ed25519:", of
-// a device this Mitosis knows; anything else goes through as typed.
+// a device this Mitosis knows (paired peers or sync group members); anything else goes through as typed.
 func peerArg(ctx context.Context, client *protocol.Conn, arg string) (string, error) {
-	var status mitosisSettingsStatus
+	var status struct {
+		mitosisSettingsStatus
+		Scopes map[string][]string `json:"scopes"`
+	}
 	if err := client.Call(ctx, "status", struct{}{}, &status); err != nil {
 		return "", err
 	}
+	known := slices.Clone(status.Peers)
+	for _, members := range status.Scopes {
+		for _, p := range members {
+			if !slices.Contains(known, p) {
+				known = append(known, p)
+			}
+		}
+	}
 	var match []string
-	for _, p := range status.Peers {
+	for _, p := range known {
 		if p == arg {
 			return p, nil
 		}

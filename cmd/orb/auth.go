@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -382,19 +381,12 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 		removed := false
 		for _, row := range rows {
 			if row.Provider == provider && row.Active {
-				var claudeCred *aiauth.Credential
+				book := accountBook{store: accountStore, agentDir: agentDir}
 				if provider == claudesessions.Name {
-					claudeCred, _ = accountStore.View(provider, row.ID).Read(ctx, provider)
+					book.settings, _ = stateFromContext(ctx).Settings(agentDir, agentDir)
 				}
-				if err := accountStore.Remove(ctx, provider, row.ID); err != nil {
+				if err := book.remove(ctx, provider, row.ID); err != nil {
 					return reportCLIError(streams.Stderr, err)
-				}
-				if claudeCred != nil {
-					if cwd, err := os.Getwd(); err == nil {
-						if settings, err := stateFromContext(ctx).Settings(cwd, agentDir); err == nil {
-							claudesessions.ForgetAccount(settings, agentDir, os.Environ(), claudeCred)
-						}
-					}
 				}
 				removed = true
 				break

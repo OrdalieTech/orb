@@ -134,7 +134,8 @@ func (s *Store) Add(ctx context.Context, provider, name string, credential *auth
 	if provider == "" || credential == nil || (credential.Type != auth.CredentialAPIKey && credential.Type != auth.CredentialOAuth) {
 		return Account{}, errors.New("provider and credential are required")
 	}
-	name = strings.TrimSpace(name)
+	explicitName := strings.TrimSpace(name)
+	name = explicitName
 	if name == "" {
 		name = credentialName(credential)
 	}
@@ -166,10 +167,14 @@ func (s *Store) Add(ctx context.Context, provider, name string, credential *auth
 	err = s.update(ctx, func(d *document) error {
 		if matchedDefault {
 			result.ID = DefaultID
-			if d.Names == nil {
-				d.Names = map[string]string{}
+			if explicitName != "" {
+				if d.Names == nil {
+					d.Names = map[string]string{}
+				}
+				d.Names[provider] = explicitName
+			} else if existing := d.Names[provider]; existing != "" {
+				result.Name = existing
 			}
-			d.Names[provider] = name
 			delete(d.Active, provider)
 			return nil
 		}
@@ -177,7 +182,10 @@ func (s *Store) Add(ctx context.Context, provider, name string, credential *auth
 			if a.Provider == provider && sameCredential(a.Credential, credential) {
 				result.ID = a.ID
 				d.Accounts[i].Credential = credential.Clone()
-				d.Accounts[i].Name = name
+				if explicitName != "" || d.Accounts[i].Name == "" {
+					d.Accounts[i].Name = name
+				}
+				result.Name = d.Accounts[i].Name
 				d.Active[provider] = a.ID
 				return nil
 			}

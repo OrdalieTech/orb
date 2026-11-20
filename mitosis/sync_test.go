@@ -8,8 +8,10 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/OrdalieTech/orb/plugins/memory/filestore"
@@ -423,5 +425,115 @@ func TestSyncOwnersLiveWithoutEachOther(t *testing.T) {
 	in := slices.DeleteFunc([]*Mitosis{a, b}, func(x *Mitosis) bool { return x.state.Group == "" })
 	if len(in) != 1 || !slices.Equal(in[0].state.Owners, []string{in[0].PeerID()}) {
 		t.Fatal("concurrent removals did not leave exactly one owner", len(in))
+	}
+}
+
+// TestSyncMixedClassPeersConvergeWithoutFlapping checks that a peer without the accounts class
+// (such as a 0.25.0 device) and peers with it coexist in one group, converge on both credentials
+// and accounts, and settle without re-publishing records on subsequent rounds.
+func TestSyncMixedClassPeersConvergeWithoutFlapping(t *testing.T) {
+	ctx := t.Context()
+	openPeer := func(withAccounts bool) (*Mitosis, *document.Memory, *accounts.Store) {
+		m, err := Open(&document.Memory{}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = m.Close() })
+		credDoc := &document.Memory{}
+		credStore := aiauth.NewDocumentStore(credDoc)
+		m.SetClass("credentials", credStore)
+		var acctStore *accounts.Store
+		if withAccounts {
+			acctStore = accounts.NewStoreWithDocument(&document.Memory{}, credStore)
+			m.SetClass("accounts", acctStore)
+		}
+		return m, credDoc, acctStore
+	}
+	olderOwner, olderCred, _ := openPeer(false)
+	newerOwner, newerCred, newerAccts := openPeer(true)
+	tabMember, tabCred, tabAccts := openPeer(true)
+
+	link := func(x, y *Mitosis) {
+		_ = x.SavePeer(y.PeerID(), "tc1")
+		_ = y.SavePeer(x.PeerID(), "tc1")
+		a, b := net.Pipe()
+		go func() { _, _, _ = x.Connect(ctx, a, "", true) }()
+		if _, _, err := y.Connect(ctx, b, x.PeerID(), false); err != nil {
+			t.Fatal(err)
+		}
+		for x.Connection(y.PeerID()) == nil || y.Connection(x.PeerID()) == nil {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	link(olderOwner, newerOwner)
+	link(newerOwner, tabMember)
+
+	_ = document.Replace(ctx, olderCred, []byte(`{"anthropic":{"type":"api_key","key":"sk-old"}}`))
+	_ = document.Replace(ctx, newerCred, []byte(`{"openai":{"type":"api_key","key":"sk-new"}}`))
+	if _, err := newerAccts.Add(ctx, "opencode", "zen", aiauth.APIKeyCredential("sk-zen")); err != nil {
+		t.Fatal(err)
+	}
+
+	admin := func(m *Mitosis, body string) {
+		if _, err := m.SyncAdmin(ctx, json.RawMessage(body), nil); err != nil {
+			t.Fatalf("sync %s: %v", body, err)
+		}
+	}
+	admin(olderOwner, `{"add":"`+newerOwner.PeerID()+`"}`)
+	admin(olderOwner, `{"promote":"`+newerOwner.PeerID()+`"}`)
+	admin(newerOwner, `{"join":"`+olderOwner.PeerID()+`"}`)
+	group := olderOwner.state.Group
+	exchange := func(peers ...*Mitosis) {
+		for _, a := range peers {
+			for _, b := range peers {
+				if a != b {
+					if recs, err := a.Contacts(b.PeerID(), group); err == nil {
+						for _, r := range recs {
+							_, _ = b.MergeContact(a.PeerID(), r)
+						}
+					}
+				}
+			}
+		}
+	}
+	round := func(peers ...*Mitosis) {
+		for range 3 {
+			exchange(peers...)
+			for _, p := range peers {
+				_, _ = p.Sync(ctx, nil)
+			}
+			exchange(peers...)
+		}
+	}
+	round(olderOwner, newerOwner)
+	admin(newerOwner, `{"add":"`+tabMember.PeerID()+`"}`)
+	admin(tabMember, `{"join":"`+newerOwner.PeerID()+`"}`)
+	round(olderOwner, newerOwner, tabMember)
+
+	for name, doc := range map[string]*document.Memory{"olderOwner": olderCred, "newerOwner": newerCred, "tab": tabCred} {
+		raw, _ := doc.Read(ctx)
+		if !strings.Contains(string(raw), "sk-old") || !strings.Contains(string(raw), "sk-new") {
+			t.Fatalf("%s credentials did not converge: %s", name, raw)
+		}
+	}
+	rows, err := tabAccts.Accounts(ctx)
+	if err != nil || !slices.ContainsFunc(rows, func(a accounts.Account) bool { return a.Provider == "opencode" && a.Name == "zen" && a.Active }) {
+		t.Fatalf("tab accounts did not receive zen: %#v, %v", rows, err)
+	}
+
+	// Subsequent rounds publish no new records (no version or vault flapping).
+	before := [3]Record{
+		olderOwner.state.Records[group+"/"+olderOwner.PeerID()],
+		newerOwner.state.Records[group+"/"+newerOwner.PeerID()],
+		tabMember.state.Records[group+"/"+tabMember.PeerID()],
+	}
+	round(olderOwner, newerOwner, tabMember)
+	after := [3]Record{
+		olderOwner.state.Records[group+"/"+olderOwner.PeerID()],
+		newerOwner.state.Records[group+"/"+newerOwner.PeerID()],
+		tabMember.state.Records[group+"/"+tabMember.PeerID()],
+	}
+	if before != after {
+		t.Fatalf("records flapped across idle rounds with mixed-class peers")
 	}
 }
