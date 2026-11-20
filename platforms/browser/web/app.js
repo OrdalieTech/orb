@@ -1084,19 +1084,24 @@ function elsewhere(text) {
   showError(text);
   notice.append(" ", button("use here", () => { sessionStorage.setItem("orb.take", "1"); location.reload(); }, "plain"));
 }
-// Once the inviting device approves this tab (sharing a provider, admitting it to the sync group,
-// or answering agent.describe), the app replaces the fingerprint screen. Join the sync group only
-// when not already in one, so polling never resets sync state.
+// The Go peer retries joining the inviter's sync group until approval succeeds; the page reflects
+// state and enters the app once the tab is in sync or has received models (or, if paired with a
+// non-owner that cannot add it to a group, after a short wait once joined and approved).
+let joinedAt = 0;
 async function approval() {
   try {
     const owner = localStorage.getItem("orb.tab.owner");
     if (!owner) return show("invite");
-    let synced = await tab.admin("sync").catch(() => null);
-    if (!synced?.group_id) synced = await tab.admin("sync", { join: owner }).catch(() => null);
+    const synced = await tab.admin("sync").catch(() => null);
+    if (!synced?.group_id) {
+      // Idempotent: ensures the Go peer's retry loop is armed even on a tab paired before this fix.
+      await tab.admin("trust", { peer_id: owner }).catch(() => {});
+    } else if (!joinedAt) joinedAt = Date.now();
     const { models } = await tab.rpc("get_available_models");
-    const approved = !!localStorage.getItem("orb.tab.approved") || models.length > 0 || !!synced?.in_sync ||
-      await tab.admin("remote", { peer_id: owner, method: "agent.describe", params: {} }).then(() => true, () => false);
-    if (!approved) { show("approve"); return setTimeout(approval, 3000); }
+    const ready = !!localStorage.getItem("orb.tab.approved") || !!synced?.in_sync || models.length > 0 ||
+      (!!synced?.group_id && Date.now() - joinedAt > 12000 &&
+        await tab.admin("remote", { peer_id: owner, method: "agent.describe", params: {} }).then(() => true, () => false));
+    if (!ready) { show("approve"); return setTimeout(approval, 2000); }
     localStorage.setItem("orb.tab.approved", "1");
     // A session started before any provider arrived has no model; a new one takes the preferred one.
     if (models.length) {

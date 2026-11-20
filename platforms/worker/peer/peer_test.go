@@ -421,3 +421,77 @@ func TestPeerSyncsNamedAccountsAndPublishesName(t *testing.T) {
 		t.Fatalf("peer registry did not see synced openai account (got %d models)", len(avail))
 	}
 }
+
+// TestDialPeerRetriesSyncJoinUntilApproved proves a dialling peer (browser tab) that pairs and
+// trusts its inviter before approval automatically retries sync join in the background once
+// approved, receiving credentials and named accounts with no further join call from the page.
+func TestDialPeerRetriesSyncJoinUntilApproved(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	kv := &mapKV{data: map[string][]byte{}}
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	instance, open := object(t, kv, provider)
+	defer instance.Dispose()
+	self, err := open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := mitosis.Open(&document.Memory{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = owner.Close() }()
+	owner.SetName("MacBook")
+	ownerAuth := aiauth.NewDocumentStore(&document.Memory{})
+	_, _ = ownerAuth.Modify(ctx, "openai", func(*aiauth.Credential) (*aiauth.Credential, error) {
+		return aiauth.APIKeyCredential("sk-mac"), nil
+	})
+	ownerAccounts := accounts.NewStoreWithDocument(&document.Memory{}, ownerAuth)
+	if _, err := ownerAccounts.Add(ctx, "openai", "lea", aiauth.APIKeyCredential("sk-lea")); err != nil {
+		t.Fatal(err)
+	}
+	owner.SetClass("credentials", ownerAuth)
+	owner.SetClass("accounts", ownerAccounts)
+
+	self.Dial(ctx, func(_ context.Context, _, _ string) (net.Conn, error) {
+		server, client := net.Pipe()
+		go func() { _, _, _ = owner.Connect(ctx, server, "", true) }()
+		return client, nil
+	})
+
+	inv, err := owner.Invite([]mitosis.Grant{mitosis.FullGrant("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv.Locator = "ws://127.0.0.1:8789"
+	admin(t, self, "join", inv)
+	admin(t, self, "trust", map[string]string{"peer_id": owner.PeerID()})
+
+	// Before approval, sync.group rejects the tab, so it is not in any group yet.
+	time.Sleep(200 * time.Millisecond)
+	if _, err := self.Admin(ctx, "sync", mitosis.JSON(struct{}{}), ""); mitosis.Code(err) != "not_found" {
+		t.Fatalf("expected not_found before approval, got %v", err)
+	}
+
+	// Owner approves and admits the tab; with no further join call, followGroup joins and syncs.
+	if err := owner.Approve(inv.ID, self.PeerID()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.SyncAdmin(ctx, mitosis.JSON(map[string]string{"add": self.PeerID()}), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		rows, err := Accounts(instance.Host.Store).Accounts(ctx)
+		if err == nil && slices.ContainsFunc(rows, func(a accounts.Account) bool { return a.Name == "lea" }) {
+			// Verify pending join document was cleared once joined.
+			if raw, _ := instance.Host.Store.Document(joinDocument).Read(ctx); strings.TrimSpace(string(raw)) != "" {
+				t.Fatalf("joinDocument not cleared after sync join: %q", raw)
+			}
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("dialling peer never joined inviter's sync group or received synced accounts after approval")
+}

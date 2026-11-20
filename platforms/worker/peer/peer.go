@@ -45,6 +45,7 @@ const (
 	StateDocument    = "/mitosis/state.json"
 	instanceDocument = "/mitosis/instance.json"
 	ledgerDocument   = "/mitosis/operations.json"
+	joinDocument     = "/mitosis/join-group"
 )
 
 // StateKey is present once the object has a Mitosis identity; the shim serves
@@ -62,6 +63,8 @@ type Peer struct {
 	instanceID string
 	attachment *attach.Attachment
 	peers      *mitosis.Peers // set by Dial
+	store      orbhost.Store
+	joinWake   chan struct{}
 }
 
 // Memory is the memory plugin's journal in the object's Store, as the native agent directory keeps
@@ -126,7 +129,7 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 		_ = attachment.Close()
 		return nil, err
 	}
-	return &Peer{mitosis: b, instanceID: self.InstanceID, attachment: attachment}, nil
+	return &Peer{mitosis: b, instanceID: self.InstanceID, attachment: attachment, store: store, joinWake: make(chan struct{}, 1)}, nil
 }
 
 // Alias turns an object name into a Mitosis instance alias.
@@ -195,6 +198,43 @@ func (p *Peer) Dial(ctx context.Context, dial func(ctx context.Context, peer, lo
 	p.peers.Dial = dial
 	go p.peers.Reconcile()
 	go p.peers.Greet()
+	go p.followGroup(ctx)
+}
+
+// wantJoin records (or clears, when peer == "") the inviter whose sync group this dialling peer
+// should follow once approved, persisted across reloads until sync join succeeds.
+func (p *Peer) wantJoin(ctx context.Context, peer string) {
+	if p.store == nil {
+		return
+	}
+	_ = document.Replace(ctx, p.store.Document(joinDocument), []byte(peer))
+	select {
+	case p.joinWake <- struct{}{}:
+	default:
+	}
+}
+
+// followGroup retries joining the inviter's sync group until the inviter approves this peer and
+// sync join succeeds, mirroring how orb mitosis join and mitosis/view follow the inviter's group.
+func (p *Peer) followGroup(ctx context.Context) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		raw, _ := p.store.Document(joinDocument).Read(ctx)
+		if inviter := strings.TrimSpace(string(raw)); inviter != "" {
+			if _, err := p.mitosis.Admin(ctx, "sync", mitosis.JSON(struct{}{})); mitosis.Code(err) != "not_found" {
+				p.wantJoin(ctx, "")
+			} else if _, err := p.peers.Admin(ctx, "sync", mitosis.JSON(map[string]string{"join": inviter})); err == nil {
+				p.wantJoin(ctx, "")
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-p.joinWake:
+		case <-ticker.C:
+		}
+	}
 }
 
 // Call is the object's agent-initiated call: it needs this agent's own
@@ -373,12 +413,23 @@ func (p *Peer) Admin(ctx context.Context, method string, params json.RawMessage,
 		}
 		for _, old := range status.Grants {
 			if old.Principal == grant.Principal && old.Destination == "" && slices.Equal(old.Permissions, grant.Permissions) {
+				if p.peers != nil {
+					if _, syncErr := p.mitosis.Admin(ctx, "sync", mitosis.JSON(struct{}{})); mitosis.Code(syncErr) == "not_found" {
+						p.wantJoin(ctx, request.PeerID)
+					}
+				}
 				return mitosis.JSON(struct{}{}), nil
 			}
 		}
 		if p.peers != nil {
-			// Trusting the device it joined keeps its locator, so the peer dials it again.
+			// Trusting the device it joined keeps its locator, so the peer dials it again, and
+			// schedules following its sync group once the inviter approves.
 			_, err = p.peers.Admin(ctx, "grant", mitosis.JSON(grant))
+			if err == nil {
+				if _, syncErr := p.mitosis.Admin(ctx, "sync", mitosis.JSON(struct{}{})); mitosis.Code(syncErr) == "not_found" {
+					p.wantJoin(ctx, request.PeerID)
+				}
+			}
 			return mitosis.JSON(struct{}{}), err
 		}
 		return mitosis.JSON(struct{}{}), p.mitosis.AddGrant(grant)
@@ -395,7 +446,17 @@ func (p *Peer) Admin(ctx context.Context, method string, params json.RawMessage,
 		return result, p.remote(ctx, request.PeerID, request.Method, request.Params, &result)
 	case "join", "sync", "block":
 		if p.peers != nil {
-			return p.peers.Admin(ctx, method, params)
+			res, err := p.peers.Admin(ctx, method, params)
+			if method == "sync" && err == nil {
+				var q struct {
+					Join   string `json:"join"`
+					Remove string `json:"remove"`
+				}
+				if json.Unmarshal(params, &q) == nil && (q.Join != "" || q.Remove == p.PeerID()) {
+					p.wantJoin(ctx, "")
+				}
+			}
+			return res, err
 		}
 		if method == "join" {
 			return nil, fmt.Errorf("peer: join is not available on a Worker object; create the invitation here and join it from the other Orb")
