@@ -326,7 +326,16 @@ func (s *Service) cli(ctx context.Context, method string, params json.RawMessage
 		return nil, mitosis.Fail("unavailable")
 	}
 	s.endLaunched(false)
+	if method == "host.logout" {
+		s.notify()
+	}
 	return mitosis.JSON(struct{}{}), nil
+}
+
+func (s *Service) notify() {
+	if s.Peers != nil && s.Mitosis != nil {
+		s.Mitosis.Notify()
+	}
 }
 
 // maxLogins bounds the sign-ins one Mitosis runs at once; loginPoll is how long a poll waits for
@@ -483,6 +492,7 @@ func (s *Service) startLogin(exe, provider, method string) (json.RawMessage, err
 		// credential at their next message.
 		if command.Wait() == nil {
 			s.endLaunched(false)
+			s.notify()
 		}
 		cancel()
 		l.add(nil, true)

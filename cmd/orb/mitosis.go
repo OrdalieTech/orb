@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
@@ -25,6 +26,19 @@ import (
 
 func mitosisAdmin(ctx context.Context, profile string) (*protocol.Conn, error) {
 	return daemon.Admin(ctx, stateFromContext(ctx), profile)
+}
+
+// notifyMitosis asks a running personal Mitosis daemon to schedule a debounced sync round after
+// a local credential or account change; no-op when Mitosis is not running.
+func notifyMitosis(ctx context.Context) {
+	callCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	client, err := mitosisAdmin(callCtx, "personal")
+	if err != nil {
+		return
+	}
+	defer func() { _ = client.Close() }()
+	_ = client.Call(callCtx, "notify", struct{}{}, nil)
 }
 
 func startMitosis(ctx context.Context, profile string, explicit bool) error {

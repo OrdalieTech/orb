@@ -156,6 +156,13 @@ func (b *Mitosis) Admin(ctx context.Context, method string, params json.RawMessa
 		return JSON(struct{}{}), b.SetScope(p.ID, p.Peers)
 	case "sync":
 		return b.SyncAdmin(ctx, params, nil)
+	case "notify":
+		var p struct{}
+		if err := protocol.Decode(params, &p); err != nil {
+			return nil, err
+		}
+		b.Notify()
+		return JSON(struct{}{}), nil
 	case "takeover":
 		var p struct {
 			Instance string `json:"instance_id"`

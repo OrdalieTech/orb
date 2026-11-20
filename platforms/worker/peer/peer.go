@@ -97,6 +97,16 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 	b.SetClass("credentials", creds)
 	b.SetClass("accounts", accounts.NewStoreWithDocument(store.Document(path.Join(worker.AgentDir, "accounts.json")), creds))
 	b.SetClass("memory", memory.Shared{Store: Memory(store)})
+	if ws, ok := store.(*worker.Store); ok {
+		ws.OnWrite = func(name string) {
+			switch name {
+			case path.Join(worker.AgentDir, "auth.json"),
+				path.Join(worker.AgentDir, "accounts.json"),
+				path.Join(worker.AgentDir, "memory", "memory.jsonl"):
+				b.Notify()
+			}
+		}
+	}
 	enrolled := store.Document(instanceDocument)
 	raw, err := enrolled.Read(context.Background())
 	if err != nil {
@@ -222,10 +232,15 @@ func (p *Peer) followGroup(ctx context.Context) {
 	for {
 		raw, _ := p.store.Document(joinDocument).Read(ctx)
 		if inviter := strings.TrimSpace(string(raw)); inviter != "" {
-			if _, err := p.mitosis.Admin(ctx, "sync", mitosis.JSON(struct{}{})); mitosis.Code(err) != "not_found" {
+			var group struct {
+				GroupID string `json:"group_id"`
+			}
+			if status, err := p.mitosis.Admin(ctx, "sync", mitosis.JSON(struct{}{})); err == nil && json.Unmarshal(status, &group) == nil && group.GroupID != "" {
 				p.wantJoin(ctx, "")
-			} else if _, err := p.peers.Admin(ctx, "sync", mitosis.JSON(map[string]string{"join": inviter})); err == nil {
-				p.wantJoin(ctx, "")
+			} else if mitosis.Code(err) == "not_found" {
+				if _, err := p.peers.Admin(ctx, "sync", mitosis.JSON(map[string]string{"join": inviter})); err == nil {
+					p.wantJoin(ctx, "")
+				}
 			}
 		}
 		select {

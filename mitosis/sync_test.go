@@ -551,3 +551,48 @@ func TestSyncMixedClassPeersConvergeWithoutFlapping(t *testing.T) {
 		t.Fatalf("other owner still lists departed member %s after sync", tabMember.PeerID())
 	}
 }
+
+// TestNotifyDebouncesAndWakesSync proves Notify is a no-op outside a sync group and coalesces a
+// burst of local changes into one Changes signal inside a group.
+func TestNotifyDebouncesAndWakesSync(t *testing.T) {
+	ctx := t.Context()
+	m := newMitosis(t)
+	drain := func() {
+		for {
+			select {
+			case <-m.Changes():
+			default:
+				return
+			}
+		}
+	}
+	drain()
+	m.Notify() // not in a group: should not wake
+	select {
+	case <-m.Changes():
+		t.Fatal("Notify woke Changes outside a sync group")
+	case <-time.After(350 * time.Millisecond):
+	}
+	other := newMitosis(t)
+	_ = m.SavePeer(other.PeerID(), "tc1")
+	m.SetClass("credentials", aiauth.NewDocumentStore(&document.Memory{}))
+	if _, err := m.SyncAdmin(ctx, json.RawMessage(`{"add":"`+other.PeerID()+`"}`), nil); err != nil {
+		t.Fatal(err)
+	}
+	drain()
+	// Rapid burst coalesces into a single wake after ~250 ms.
+	for range 5 {
+		m.Notify()
+		time.Sleep(20 * time.Millisecond)
+	}
+	select {
+	case <-m.Changes():
+	case <-time.After(2 * time.Second):
+		t.Fatal("Notify did not wake Changes")
+	}
+	select {
+	case <-m.Changes():
+		t.Fatal("Notify fired more than once for a coalesced burst")
+	case <-time.After(350 * time.Millisecond):
+	}
+}

@@ -606,6 +606,9 @@ func (host *interactiveSessionHost) ChangeAccount(ctx context.Context, provider,
 	if err != nil {
 		return err
 	}
+	if action == "remove" || action == "rename" {
+		go notifyMitosis(context.Background())
+	}
 	return host.refreshAuthState(ctx, provider)
 }
 
@@ -639,6 +642,7 @@ func (host *interactiveSessionHost) LoginAccount(ctx context.Context, provider s
 	if provider == claudesessions.Name {
 		host.forgetClaudeAccount(replaced)
 	}
+	go notifyMitosis(context.Background())
 	return host.refreshAuthState(ctx, provider)
 }
 
