@@ -27,6 +27,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/platforms/worker"
@@ -136,6 +137,45 @@ func open(object js.Value) js.Value {
 				state[name] = on[name]
 			}
 			raw, err := json.Marshal(state)
+			return string(raw), err
+		})
+	})
+	// accounts resolves to this object's synced provider accounts as JSON; given a provider and
+	// account id, it selects that account first.
+	set("accounts", func(_ js.Value, args []js.Value) any {
+		return promise(func() (any, error) {
+			instance := opened.Load()
+			if instance == nil {
+				return nil, errors.New("the object's Orb is not open")
+			}
+			ctx := context.Background()
+			store := peer.Accounts(instance.Host.Store)
+			if len(args) == 2 {
+				if err := store.Select(ctx, args[0].String(), args[1].String()); err != nil {
+					return nil, err
+				}
+			}
+			rows, err := store.Accounts(ctx)
+			if err != nil {
+				return nil, err
+			}
+			type item struct {
+				ID           string `json:"id"`
+				Provider     string `json:"provider"`
+				ProviderName string `json:"provider_name"`
+				Name         string `json:"name"`
+				Auth         string `json:"auth"`
+				Active       bool   `json:"active"`
+			}
+			out := make([]item, 0, len(rows))
+			for _, r := range rows {
+				pName := r.Provider
+				if def, ok := providers.Get(ai.ProviderID(r.Provider)); ok && def.Name != "" {
+					pName = def.Name
+				}
+				out = append(out, item{ID: r.ID, Provider: r.Provider, ProviderName: pName, Name: r.Name, Auth: string(r.Type), Active: r.Active})
+			}
+			raw, err := json.Marshal(out)
 			return string(raw), err
 		})
 	})

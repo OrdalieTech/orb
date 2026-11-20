@@ -125,6 +125,9 @@ func (b accountBook) remove(ctx context.Context, provider, id string) error {
 
 func (b accountBook) usage(ctx context.Context, provider, id string) (usage.Snapshot, error) {
 	if provider == claudesessions.Name {
+		if b.settings == nil || !b.settings.GetPlugins()[claudesessions.Name] {
+			return usage.Snapshot{}, usage.ErrUnavailable
+		}
 		var credential *aiauth.Credential
 		if id != "ambient" {
 			var err error

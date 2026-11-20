@@ -193,7 +193,7 @@ function renderHome() {
   $("launching").onclick = () => { if (!starting) { gone = launching; render(); } };
   const entries = home.entries.filter(e => (!device || e.machine === device) && (own || e.machine !== state.self || e.open));
   // A device connected but not read yet says so, rather than an empty list filling at once.
-  const reading = home.machines.filter(m => !m.self && m.connected && !m.version && (!device || m.id === device));
+  const reading = home.machines.filter(m => m.reading && (!device || m.id === device));
   $("entries").replaceChildren(...entries.map(e => {
     const m = machine(e.machine), followed = conversation(e.tab), age = followed ? word(followed) : "";
     const row = button("", () => followed ? focus(followed.id) : open(e.key), e.open ? "open" : "");
@@ -481,15 +481,16 @@ function controls() {
   $("aim").lastChild.textContent = t ? (t.remote ? t.where : "this tab") : m ? `${m.self ? "this tab" : m.name}${cwd ? ` · ${base(cwd)}` : ""} ▾` : "no device";
   $("aim").firstChild.style = `--hue: var(--hue${(t ? machine(t.peer) : m)?.hue || 0})`;
   // On Home, what the device's next conversation starts on: its default, read once and on change.
-  const fresh = !t && m && !m.self ? defaultsOf.get(m.id) : null;
-  if (!t && m && !m.self && !defaultsOf.has(m.id)) {
+  const fresh = !t && m ? defaultsOf.get(m.id) : null;
+  if (!t && m && !defaultsOf.has(m.id)) {
     defaultsOf.set(m.id, null);
-    ask("models", { machine: m.id }).then(d => { defaultsOf.set(m.id, d); controls(); }, () => defaultsOf.delete(m.id));
+    if (m.self) loadTabDefaults().then(() => controls(), () => defaultsOf.delete(m.id));
+    else ask("models", { machine: m.id }).then(d => { defaultsOf.set(m.id, d); controls(); }, () => defaultsOf.delete(m.id));
   }
   const on = t || (fresh && { model: fresh.default, levels: fresh.levels, thinking: fresh.thinking });
   $("where").textContent = `${on?.model?.split("/").slice(1).join("/") || (t?.loaded && !t.asleep && !t.models?.length ? "connect a provider" : m?.self && !t ? "own model" : "model")} ▾`;
-  const levels = on?.levels || [], at = levels.indexOf(on?.thinking);
-  $("meter").replaceChildren(...levels.filter(l => l !== "off").map((l, i) => el("i", i < at ? "lit" : "")));
+  const shownLevels = (on?.levels || []).filter(l => l !== "off"), lit = shownLevels.indexOf(on?.thinking) + 1;
+  $("meter").replaceChildren(...shownLevels.map((_, i) => el("i", i < lit ? "lit" : "")));
   palette();
 }
 // Home takes the app's commands that open a screen, and /new; a conversation takes them all.
@@ -525,10 +526,13 @@ $("prompt-form").onsubmit = event => { event.preventDefault(); submit(); };
 $("queue").onclick = () => submit("queue");
 $("aim").onclick = chooseWhere;
 $("unblue").onclick = () => shown && send({ do: "abort", tab: shown });
+function defaultPeer() {
+  return conversation()?.peer || aim().machine?.id || state.self;
+}
 function go(nav) {
   if (nav === "model") openModels();
   else if (nav === "home") focus("");
-  else openPage({ providers: "providers", plugins: "plugins", pair: "mitosis" }[nav] || "general", conversation()?.peer);
+  else openPage({ providers: "providers", plugins: "plugins", pair: "mitosis" }[nav] || "general", defaultPeer());
 }
 $("prompt").oninput = controls;
 $("prompt").onkeyup = event => ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) && palette();
@@ -598,21 +602,58 @@ function drawPalette() {
 // an API key), its own provider first; the accounts of the model's provider there. On Home it
 // chooses the default a device's new conversations start on, and the device.
 const deck = $("models"), accountsOf = new Map(), defaultsOf = new Map();
+let deckAt = -1;
 deck.addEventListener("close", () => $("prompt").focus({ preventScroll: true }));
 $("model").onclick = openModels;
-$("filter").oninput = () => drawDeck();
-async function openModels() {
-  $("filter").value = "";
+$("filter").oninput = () => { deckAt = $("filter").value.trim() ? 0 : -1; drawDeck(); };
+deck.addEventListener("keydown", event => {
+  const buttons = [...$("list").querySelectorAll("button[data-model]")];
+  if (!buttons.length) return;
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    deckAt = deckAt < 0 ? (event.key === "ArrowDown" ? 0 : buttons.length - 1) : (deckAt + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+    buttons.forEach((b, i) => b.classList.toggle("hi", i === deckAt));
+    buttons[deckAt]?.scrollIntoView({ block: "nearest" });
+  } else if (event.key === "Enter" && deckAt >= 0 && buttons[deckAt]) {
+    event.preventDefault();
+    buttons[deckAt].click();
+  }
+});
+async function loadTabDefaults() {
+  if (!tab) return null;
+  let [{ models }, st, accts] = await Promise.all([tab.rpc("get_available_models"), tab.rpc("get_state"), tab.accounts().catch(() => [])]);
+  // A session created before synced credentials arrived sits on unknown/unknown: replace it once a model exists.
+  if (models.length && (!st?.model || st.model.provider === "unknown")) {
+    await tab.rpc("new_session").catch(() => {});
+    st = await tab.rpc("get_state").catch(() => st);
+  }
+  const current = st?.model && st.model.provider !== "unknown" ? `${st.model.provider}/${st.model.id}` : "";
+  const matched = models.find(x => `${x.provider}/${x.id}` === current);
+  const d = {
+    models: models.map(x => `${x.provider}/${x.id}`),
+    default: current,
+    thinking: st?.thinkingLevel || "",
+    levels: matched?.reasoning ? ["off", "low", "medium", "high"] : [],
+  };
+  defaultsOf.set(state.self, d);
+  accountsOf.set(state.self, accts || []);
+  return d;
+}
+function openModels() {
+  if (!deck.open) { $("filter").value = ""; deckAt = -1; }
   const t = conversation(), peer = t ? t.peer : aim().machine?.id;
   drawDeck();
   if (!deck.open) deck.showModal();
-  if (!peer || peer === state.self) return;
-  const [d, providers, accounts] = await Promise.all(["models", "providers", "accounts"].map(name => ask(name, { machine: peer }).catch(() => null)));
-  if (d) defaultsOf.set(peer, d);
-  if (providers) listed.set(peer, providers);
-  if (accounts) accountsOf.set(peer, accounts);
-  drawDeck();
-  controls();
+  if (!peer) return;
+  const refresh = () => { if (deck.open) drawDeck(); controls(); };
+  if (peer === state.self) {
+    loadTabDefaults().then(refresh, () => {});
+    return;
+  }
+  // Load models, providers and accounts independently so slow quota fetches never hold up the deck.
+  ask("models", { machine: peer }).then(d => { if (d) defaultsOf.set(peer, d); refresh(); }, () => {});
+  ask("providers", { machine: peer }).then(p => { if (p) listed.set(peer, p); refresh(); }, () => {});
+  ask("accounts", { machine: peer }).then(a => { if (a) accountsOf.set(peer, a); refresh(); }, () => {});
 }
 const REASONING = { off: "no thinking", minimal: "barely", low: "light", medium: "balanced", high: "thorough", xhigh: "very thorough", max: "as long as it takes" };
 function drawDeck() {
@@ -620,12 +661,23 @@ function drawDeck() {
   const s = t || (def && { model: def.default, models: def.models, levels: def.levels, thinking: def.thinking }) || { models: [] };
   const where = m ? (m.self ? "this tab" : m.name) : "";
   const fail = error => showError(error.message);
-  const setDefault = (name, level = "") => ask("default", { machine: peer, name, level }).then(() => { defaultsOf.delete(peer); openModels(); }, fail);
+  const setDefault = (name, level = "") => {
+    if (peer === state.self) {
+      const [provider, ...rest] = name.split("/");
+      return tab.rpc("set_model", { provider, modelId: rest.join("/") })
+        .then(() => level ? tab.rpc("set_thinking_level", { level }) : null)
+        .then(() => loadTabDefaults())
+        .then(() => { if (deck.open) drawDeck(); controls(); }, fail);
+    }
+    return ask("default", { machine: peer, name, level }).then(() =>
+      ask("models", { machine: peer }).then(d => { if (d) defaultsOf.set(peer, d); if (deck.open) drawDeck(); controls(); }, () => defaultsOf.delete(peer)), fail);
+  };
   const choose = id => { t ? send({ do: "model", tab: t.id, name: id }) : setDefault(id); deck.close(); };
   $("deck-head").replaceChildren(node("div", el("p", "label", t ? "model" : `default · ${where}`), node("strong", s.model?.split("/").slice(1).join("/") || "none")),
-    t && def?.default && t.model && t.model !== def.default ? button("make default", () => setDefault(t.model, t.thinking), "plain") : note([s.model?.split("/")[0], t && where].filter(Boolean).join(" · ")));
-  $("places").hidden = !!t;
-  $("places").replaceChildren(...(t ? [] : launchers()).map(d => button(d.name, () => { aimAt(d.id); openModels(); }, d.id === peer ? "on" : "")));
+    t && !m?.self && def?.default && t.model && t.model !== def.default ? button("make default", () => setDefault(t.model, t.thinking), "plain") : note([s.model?.split("/")[0], t && where].filter(Boolean).join(" · ")));
+  const places = [...launchers(), ...(machine(state.self) ? [machine(state.self)] : [])];
+  $("places").hidden = !!t || places.length < 2;
+  $("places").replaceChildren(...(t ? [] : places).map(d => button(d.self ? "this tab" : d.name, () => { aimAt(d.id); openModels(); }, d.id === peer ? "on" : "")));
   const providers = listed.get(peer) || [], info = id => providers.find(p => p.id === id);
   const match = id => !query || `${id} ${info(id.split("/")[0])?.name || ""}`.toLowerCase().includes(query);
   const models = (s.models || []).filter(match), mine = s.model?.split("/")[0];
@@ -633,19 +685,29 @@ function drawDeck() {
   const groups = Map.groupBy(models, id => id.split("/")[0]);
   // Its own provider first, then those a subscription pays for, then the rest by name.
   const order = [...groups.keys()].sort((x, y) => (y === mine) - (x === mine) || !!info(y)?.methods?.some(a => a.account) - !!info(x)?.methods?.some(a => a.account) || x.localeCompare(y));
+  let idx = 0;
   const line = (id, full) => {
-    const b = button("", () => choose(id), id === s.model ? "on" : "");
+    const i = idx++;
+    const b = button("", () => choose(id), `${id === s.model ? "on" : ""}${i === deckAt ? " hi" : ""}`.trim());
+    b.dataset.model = id;
     b.append(node("span", full ? id : id.split("/").slice(1).join("/")), ...(id === def?.default ? [el("small", "", "default")] : []), ...(id === s.model ? [el("i", "")] : []));
     return b;
   };
   $("list").replaceChildren(...(used.length ? [el("p", "label", "in use"), ...used.map(id => line(id, true))] : []),
     ...order.flatMap(p => [el("p", "label", [info(p)?.name || p, info(p)?.holds, `${groups.get(p).length}`].filter(Boolean).join(" · ")), ...groups.get(p).map(id => line(id))]),
-    ...(!models.length ? [note(query ? "no model matches" : m && !m.self && !def && !t ? "reading its models…" : m?.self && !t ? "this tab's Orb uses its own default" : "no models")] : []),
+    ...(!models.length ? [note(query ? "no model matches" : m && !def && !t ? "reading its models…" : "no models")] : []),
     ...(peer && peer !== state.self ? [button("+ connect a provider", () => { deck.close(); openPage("providers", peer); }, "plain add")] : []));
   // The accounts of the model's provider on that device: the one in use marked, the others a click away.
   const accounts = (accountsOf.get(peer) || []).filter(a => a.provider === mine);
+  const switchAccount = a => {
+    if (peer === state.self) {
+      return tab.accounts(a.provider, a.id).then(list => { accountsOf.set(state.self, list || []); if (deck.open) drawDeck(); controls(); }, fail);
+    }
+    return ask("account", { machine: peer, provider: a.provider, account: a.id }).then(() =>
+      ask("accounts", { machine: peer }).then(list => { if (list) accountsOf.set(peer, list); if (deck.open) drawDeck(); controls(); }, () => {}), fail);
+  };
   $("accounts").replaceChildren(...(accounts.length ? [el("p", "label", `account · ${where}`), ...accounts.map(a => {
-    const w = [...(a.windows || [])].sort((x, y) => x.left - y.left)[0], b = button("", () => ask("account", { machine: peer, provider: a.provider, account: a.id }).then(openModels, fail), a.active ? "on" : "");
+    const w = [...(a.windows || [])].sort((x, y) => x.left - y.left)[0], b = button("", () => switchAccount(a), a.active ? "on" : "");
     b.append(node("span", a.name), ...(w ? [el("small", w.left < 15 ? "alarm" : "", `${w.name} ${Math.round(w.left)}% left`)] : []));
     return b;
   })] : []));
@@ -709,7 +771,7 @@ function leave() {
 }
 
 $("orb").onclick = $("new").onclick = () => focus("");
-$("menu").onclick = () => openPage("general", conversation()?.peer);
+$("menu").onclick = () => openPage("general", defaultPeer());
 $("back").onclick = () => { show("app"); render(); };
 for (const item of $("pages").querySelectorAll("[data-page]")) item.onclick = () => openPage(item.dataset.page, page.peer);
 // The apps' keys, on Alt where the browser keeps Ctrl for itself (the physical key, so a Mac's
@@ -718,7 +780,7 @@ document.onkeydown = event => {
   if (!tab || document.querySelector("dialog[open]")) return;
   const code = event.code, alt = event.altKey && !event.ctrlKey && !event.metaKey, mod = (event.ctrlKey || event.metaKey) && !event.altKey;
   const keys = {
-    Comma: mod && (() => openPage("general")), KeyK: mod && goTo, KeyN: alt && (() => focus("")), KeyW: alt && shown && (() => closeTab(conversation())),
+    Comma: mod && (() => openPage("general", defaultPeer())), KeyK: mod && goTo, KeyN: alt && (() => focus("")), KeyW: alt && shown && (() => closeTab(conversation())),
     KeyT: alt && event.shiftKey && (() => reopen.pop()?.()), KeyM: alt && openModels, KeyL: alt && (() => $("prompt").focus()),
     Period: alt && shown && (() => send({ do: "abort", tab: shown })), BracketRight: alt && (() => step(1)), BracketLeft: alt && (() => step(-1)),
   };
@@ -744,9 +806,10 @@ const note = text => el("p", "meta", text);
 function row(name, sub, ...actions) {
   return el("div", "row", node("div", node("strong", name), note(sub)), ...actions);
 }
-// The devices a page can be about: this tab, then each device it reaches.
+// The devices a page can be about: connected devices first, then this tab.
 function devices(name, peer) {
-  return el("div", "chips", ...home.machines.filter(m => m.self || m.connected).map(m => button(m.self ? "this tab" : m.name, () => openPage(name, m.id), m.id === peer ? "on" : "")));
+  const list = [...home.machines.filter(m => !m.self && m.connected), ...home.machines.filter(m => m.self)];
+  return el("div", "chips", ...list.map(m => button(m.self ? "this tab" : m.name, () => openPage(name, m.id), m.id === peer ? "on" : "")));
 }
 // What each plugin does, as agent/assembly's catalog says it.
 const about = {
@@ -756,6 +819,19 @@ const about = {
 };
 const listed = new Map(); // each device's providers, as it last listed them
 const retry = (name, peer, vendor) => () => openPage(name, peer, vendor);
+const shortPeer = id => id?.split(":").at(-1)?.slice(0, 8) || id;
+function renderRemoteProviders(m, providers, accounts, loadingAccounts) {
+  const peer = m.id;
+  const section = (name, list) => list.length ? [label(name), ...list.map(p => Object.assign(row(p.name, p.ready ? p.holds : p.methods.map(x => (x.account ? "account" : "api key")).join(" · "),
+    button(p.ready ? `${p.models} model${p.models === 1 ? "" : "s"} ›` : p.methods.some(x => x.account) ? "sign in ›" : "add key ›", () => openPage("providers", peer, p.id), "plain")), { className: p.ready ? "row on" : "row" }))] : [];
+  const ready = (providers || []).filter(p => p.ready), rest = (providers || []).filter(p => !p.ready);
+  return [node("h2", "Providers"), devices("providers", peer),
+    note(providers ? `${m.name} · ${ready.length} ready · ${providers.length} to choose from` : `${m.name} · loading…`),
+    ...((accounts || []).length ? [label("accounts · quota left"), ...accounts.map(a => el("div", "account", row(a.name, [a.provider_name?.split(" (")[0], a.plan].filter(Boolean).join(" · "),
+      button(a.active ? "in use" : "use ›", () => ask("account", { machine: peer, provider: a.provider, account: a.id }).then(() => { accountsOf.delete(peer); openPage("providers", peer); }, error => showError(error.message)), a.active ? "plain on" : "plain")),
+      ...(a.windows || []).map(quota)))] : loadingAccounts ? [label("accounts"), note("reading accounts and quotas…")] : []),
+    ...section("ready", ready), ...section("your subscription", rest.filter(p => p.methods.some(x => x.account))), ...section("api key", rest.filter(p => !p.methods.some(x => x.account)))];
+}
 const pages = {
   general() {
     // A phone has no keys to list.
@@ -764,26 +840,35 @@ const pages = {
       ["↑", "the last message again"], ["Ctrl+K", "go to a conversation"], ["Alt+N", "Home"], ["Alt+1…9", "a conversation"], ["Alt+[  Alt+]", "the previous, the next"],
       ["Alt+W", "close the conversation"], ["Alt+Shift+T", "reopen it"], ["Alt+M", "models"], ["Alt+.", "stop"], ["Ctrl+,", "settings"], ["Esc", "back to Home"]].map(([key, what]) => row(key, what))] : [])];
   },
-  async providers(peer, vendor) {
+  async providers(peer, vendor, seq) {
     const m = machine(peer);
     if (m?.self || !m) {
+      const [rawAccounts, avail] = await Promise.all([tab.accounts().catch(() => []), tab.rpc("get_available_models")]);
+      const accounts = [...(rawAccounts || [])].sort((a, b) => (a.provider_name || a.provider).localeCompare(b.provider_name || b.provider) || Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
+      accountsOf.set(state.self, accounts);
       const counts = new Map();
-      for (const model of (await tab.rpc("get_available_models")).models) counts.set(model.provider, (counts.get(model.provider) || 0) + 1);
-      return [node("h2", "Providers"), devices("providers", peer), note("the accounts your devices share with this tab"), label("accounts"),
-        ...[...counts].map(([provider, n]) => row(provider, `${n} model${n === 1 ? "" : "s"}`)),
-        note("Sign in on one of your devices, here or on it: its accounts reach this tab, sealed to it. A conversation on a device runs on that device's own accounts.")];
+      for (const model of avail.models || []) counts.set(model.provider, (counts.get(model.provider) || 0) + 1);
+      const listedProviders = new Set(accounts.map(a => a.provider));
+      const extraProviders = [...counts].filter(([p]) => !listedProviders.has(p));
+      const use = a => tab.accounts(a.provider, a.id).then(list => { accountsOf.set(state.self, list || []); openPage("providers", peer); }, error => showError(error.message));
+      const connected = home.machines.filter(d => !d.self && d.connected);
+      return [node("h2", "Providers"), devices("providers", peer), note("accounts synced to this tab"),
+        ...(accounts.length ? [label("accounts"), ...accounts.map(a => row(a.name, [a.provider_name?.split(" (")[0] || a.provider, a.auth === "oauth" ? "account" : "api key", counts.get(a.provider) ? `${counts.get(a.provider)} model${counts.get(a.provider) === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "),
+          button(a.active ? "in use" : "use ›", () => !a.active && use(a), a.active ? "plain on" : "plain")))] : [label("accounts"), note("no shared accounts yet")]),
+        ...(extraProviders.length ? [label("other providers"), ...extraProviders.map(([p, n]) => row(p, `${n} model${n === 1 ? "" : "s"}`))] : []),
+        note(connected.length ? "Shared accounts sync from your devices. Local-only accounts (such as Claude Code) run on the device that holds them — pick that device above to manage them." : "Sign in on one of your devices to share accounts with this tab.")];
     }
     if (vendor) return provider(m, vendor);
-    const [providers, accounts] = await Promise.all([ask("providers", { machine: peer }), ask("accounts", { machine: peer }).catch(() => [])]);
-    listed.set(peer, providers || []);
-    const section = (name, list) => list.length ? [label(name), ...list.map(p => Object.assign(row(p.name, p.ready ? p.holds : p.methods.map(x => (x.account ? "account" : "api key")).join(" · "),
-      button(p.ready ? `${p.models} model${p.models === 1 ? "" : "s"} ›` : p.methods.some(x => x.account) ? "sign in ›" : "add key ›", () => openPage("providers", peer, p.id), "plain")), { className: p.ready ? "row on" : "row" }))] : [];
-    const ready = (providers || []).filter(p => p.ready), rest = (providers || []).filter(p => !p.ready);
-    return [node("h2", "Providers"), devices("providers", peer), note(`${m.name} · ${ready.length} ready · ${(providers || []).length} to choose from`),
-      ...((accounts || []).length ? [label("accounts · quota left"), ...accounts.map(a => el("div", "account", row(a.name, [a.provider_name?.split(" (")[0], a.plan].filter(Boolean).join(" · "),
-        button(a.active ? "in use" : "use ›", () => ask("account", { machine: peer, provider: a.provider, account: a.id }).then(retry("providers", peer), error => showError(error.message)), a.active ? "plain on" : "plain")),
-        ...(a.windows || []).map(quota)))] : []),
-      ...section("ready", ready), ...section("your subscription", rest.filter(p => p.methods.some(x => x.account))), ...section("api key", rest.filter(p => !p.methods.some(x => x.account)))];
+    // Draw cached providers immediately, then update independently as providers and accounts (quota
+    // fetches) finish, so slow quota endpoints never stall the page.
+    let providers = listed.get(peer) || null, accounts = accountsOf.get(peer) || null, loadingAccounts = !accounts;
+    const paint = () => {
+      if (seq !== pageSeq || page.name !== "providers" || page.peer !== peer || page.vendor) return;
+      $("page").replaceChildren(...renderRemoteProviders(m, providers, accounts, loadingAccounts), notice);
+    };
+    ask("providers", { machine: peer }).then(p => { providers = p || []; listed.set(peer, providers); paint(); }, error => { if (seq === pageSeq) showError(error.message); });
+    ask("accounts", { machine: peer }).then(a => { accounts = a || []; accountsOf.set(peer, accounts); loadingAccounts = false; paint(); }, () => { loadingAccounts = false; paint(); });
+    return renderRemoteProviders(m, providers, accounts, loadingAccounts);
   },
   async plugins(peer) {
     const m = machine(peer);
@@ -799,13 +884,39 @@ const pages = {
       ...(x.on ? (x.choices || []).map(c => el("div", "chips", node("small", c.key), ...c.values.map(v => button(v, () => v !== c.value && change({ name: x.name, key: c.key, value: v }), v === c.value ? "on" : "")))) : []))),
       note("An Orb reads its plugins when it starts: those open here reopen with a change at their next message.")];
   },
-  mitosis() {
-    return [node("h2", "Mitosis"), note("peer to peer"), label("devices"),
-      ...home.machines.filter(m => !m.self).map(m => row(m.name, [m.connected ? "connected" : "not connected", m.version && `orb ${m.version}`, m.launch ? "starts conversations for this tab" : "follows only"].filter(Boolean).join(" · "),
-        button("rename", () => rename(m.name, name => { send({ do: "rename", machine: m.id, name }); setTimeout(retry("mitosis"), 300); }), "plain"))),
-      label("this tab"), note(me),
-      note("Each device is approved by fingerprint on its own screen. A device you paired this tab with lets it follow and start its conversations; run  orb mitosis trust <this tab>  on another one to let it do so too. Forgetting this tab clears it here; block it on a device to take it out of your group."),
-      button("forget this tab", () => { if (confirm("Forget this tab? Its conversations here go with it.")) { localStorage.setItem("orb.tab.forget", "1"); location.reload(); } })];
+  async mitosis(_peer, _vendor, seq) {
+    const syncGroup = await tab.admin("sync").catch(() => null);
+    const pairAnother = async () => {
+      const text = (await pick("pair a device", [], { field: true, hint: "paste code from orb mitosis --browser" }))?.trim();
+      if (!text) return;
+      await join(text, true);
+      if (seq === pageSeq) openPage("mitosis");
+    };
+    const forgetTab = async () => {
+      if (await pick("forget this tab? its conversations here go with it", [{ label: "keep it" }, { label: "forget this tab" }]) === "forget this tab") {
+        localStorage.setItem("orb.tab.forget", "1");
+        location.reload();
+      }
+    };
+    const syncNow = () => tab.admin("sync").then(() => { toast("synced"); openPage("mitosis"); }, error => showError(error.message));
+    const members = syncGroup?.members || [], owners = new Set(syncGroup?.owners || []), names = syncGroup?.names || {};
+    return [node("h2", "Mitosis"), note("peer to peer"),
+      label("paired devices"),
+      ...(home.machines.filter(m => !m.self).length ? home.machines.filter(m => !m.self).map(m => row(m.name, [m.connected ? "connected" : "offline", m.version && `orb ${m.version}`, m.launch ? "starts conversations" : "follows only"].filter(Boolean).join(" · "),
+        button("rename", () => rename(m.name, name => { send({ do: "rename", machine: m.id, name }); setTimeout(retry("mitosis"), 300); }), "plain"))) : [note("no devices paired yet")]),
+      el("div", "actions", button("+ pair a device", pairAnother)),
+      ...(syncGroup?.group_id ? [label(`sync group · ${syncGroup.in_sync ? "in sync" : "syncing"} · ${members.length} device${members.length === 1 ? "" : "s"}`),
+        ...members.map(id => {
+          const m = machine(id);
+          const display = id === me ? (names[id] || tabName()) : (m?.name || names[id] || shortPeer(id));
+          const tags = [id === me && "this tab", owners.has(id) && "owner", m && !m.self && (m.connected ? "connected" : "offline")].filter(Boolean);
+          return row(display, tags.join(" · ") || "sync member");
+        }),
+        el("div", "actions", button("sync now", syncNow))] : []),
+      label("this tab"),
+      row(shortPeer(me), me, button("copy", () => navigator.clipboard.writeText(me).then(() => toast("peer id copied")), "plain")),
+      note("Each device is approved by fingerprint on its own screen. Forgetting this tab clears it here; block it on a device to take it out of your group."),
+      el("div", "actions", button("forget this tab", forgetTab))];
   },
 };
 // One plan-limit window: the share left as a bar, in the rupture red once it runs low, and its reset.
@@ -841,13 +952,23 @@ function provider(m, id) {
     button(x.account ? (p.ready ? "sign in again" : "sign in") : (p.ready ? "replace key" : "add key"), () => send({ do: "login", machine: m.id, provider: id, auth: x.auth }), p.ready ? "" : "inverted"))),
     ...(p.ready && (p.status === "oauth" || p.source === "stored") ? [button(p.status === "oauth" ? "sign out" : "remove key", () => ask("logout", { machine: m.id, provider: id }).then(retry("providers", m.id, id), error => showError(error.message)))] : [])];
 }
-let page = { name: "general", peer: "", vendor: "" };
+let page = { name: "general", peer: "", vendor: "" }, pageSeq = 0;
 async function openPage(name, peer = page.peer, vendor = "") {
-  page = { name, peer: peer || state.self, vendor };
+  const seq = ++pageSeq;
+  page = { name, peer: peer || defaultPeer(), vendor };
+  showError("");
   show("settings");
   for (const item of $("pages").querySelectorAll("[data-page]")) item.className = item.dataset.page === name ? "on" : "";
-  try { $("page").replaceChildren(...await pages[name](page.peer, vendor)); } catch (error) { showError(error.message); }
-  $("page").append(notice);
+  if (name === "plugins" || name === "mitosis") {
+    $("page").replaceChildren(node("h2", name[0].toUpperCase() + name.slice(1)), ...(name === "plugins" ? [devices("plugins", page.peer)] : []), note("loading…"), notice);
+  }
+  try {
+    const content = await pages[name](page.peer, vendor, seq);
+    if (seq !== pageSeq) return;
+    $("page").replaceChildren(...content, notice);
+  } catch (error) {
+    if (seq === pageSeq) showError(error.message);
+  }
 }
 // Code mode's runtime: a frame of opaque origin (sandboxed without same-origin), so what runs reaches
 // neither this page, its storage nor the synced credentials. Each run is a worker in it, ended when it
@@ -910,6 +1031,15 @@ addEventListener("message", ({ source, data }) => {
   ongoing.resolve(JSON.stringify({ out: data.out || [], value: data.value, error: data.error }));
   runs.delete(data.id);
 });
+function tabName() {
+  const ua = navigator.userAgent || "";
+  if (/iPhone|iPad/.test(ua)) return "Browser (iOS)";
+  if (/Android/.test(ua)) return "Browser (Android)";
+  if (/Mac OS X|Macintosh/.test(ua)) return "Browser (Mac)";
+  if (/Windows/.test(ua)) return "Browser (Windows)";
+  if (/Linux/.test(ua)) return "Browser (Linux)";
+  return "Browser";
+}
 // The tab's Orb over IndexedDB, which keeps its identity, received providers, memory, conversation
 // and the view's open tabs across reloads. Starting its Mitosis makes it dial its devices.
 async function boot() {
@@ -930,7 +1060,7 @@ async function boot() {
   // In a worker, so the page stays responsive however much Orb computes. Its frames are the RPC
   // frames of its own session and, told apart by their "t", what the view sends.
   const peer = spawnPeer({
-    wasm: await new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(), storage: "orb-tab",
+    wasm: await new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(), storage: "orb-tab", name: tabName(),
     env: { ORB_SETTINGS: JSON.stringify({ plugins: { memory: true } }) },
     emit: text => {
       const frame = JSON.parse(text);
@@ -943,6 +1073,7 @@ async function boot() {
     admin: async (method, params = {}) => JSON.parse(await peer.mitosisAdmin(method, JSON.stringify(params), "")),
     app: line => peer.app(line),
     plugins: async (...args) => JSON.parse(await peer.plugins(...args)),
+    accounts: async (...args) => JSON.parse(await peer.accounts(...args)),
     rpc: (type, params = {}) => new Promise((resolve, reject) => {
       const id = `tab-${++next}`;
       answers.set(id, frame => (frame.success ? resolve(frame.data) : reject(new Error(frame.error))));
@@ -962,19 +1093,25 @@ function elsewhere(text) {
   showError(text);
   notice.append(" ", button("use here", () => { sessionStorage.setItem("orb.take", "1"); location.reload(); }, "plain"));
 }
-// The first provider a device shares is the tab's approval: the app replaces the fingerprint. Until
-// then the tab asks to follow the device's sync group again, since the device may admit it after
-// the tab first asked. Credentials never leave the tab's Orb: it reads provider names only.
+// Once the inviting device approves this tab (sharing a provider, admitting it to the sync group,
+// or answering agent.describe), the app replaces the fingerprint screen. Join the sync group only
+// when not already in one, so polling never resets sync state.
 async function approval() {
   try {
     const owner = localStorage.getItem("orb.tab.owner");
-    const { models } = await tab.rpc("get_available_models");
-    if (owner && !models.length) await tab.admin("sync", { join: owner }).catch(() => {});
     if (!owner) return show("invite");
-    if (!models.length) { show("approve"); return setTimeout(approval, 3000); }
+    let synced = await tab.admin("sync").catch(() => null);
+    if (!synced?.group_id) synced = await tab.admin("sync", { join: owner }).catch(() => null);
+    const { models } = await tab.rpc("get_available_models");
+    const approved = !!localStorage.getItem("orb.tab.approved") || models.length > 0 || !!synced?.in_sync ||
+      await tab.admin("remote", { peer_id: owner, method: "agent.describe", params: {} }).then(() => true, () => false);
+    if (!approved) { show("approve"); return setTimeout(approval, 3000); }
+    localStorage.setItem("orb.tab.approved", "1");
     // A session started before any provider arrived has no model; a new one takes the preferred one.
-    const { model } = await tab.rpc("get_state");
-    if (!model || model.provider === "unknown") await tab.rpc("new_session");
+    if (models.length) {
+      const { model } = await tab.rpc("get_state");
+      if (!model || model.provider === "unknown") await tab.rpc("new_session");
+    }
     send({ do: "hello", budget: 4 });
     send({ do: "visible", on: !document.hidden });
     send({ do: "show", tabs: shown ? [shown] : [] });
@@ -983,7 +1120,7 @@ async function approval() {
   } catch (error) { showError(error.message); setTimeout(approval, 3000); }
 }
 $("join").onclick = () => join($("code").value);
-async function join(text) {
+async function join(text, additional = false) {
   $("join").disabled = true; showError("");
   try {
     // The code orb mitosis --browser shows (orb-mitosis:v1:<base64url JSON>), or the invitation JSON itself.
@@ -994,6 +1131,10 @@ async function join(text) {
     if (!tab && !await boot()) return;
     await tab.admin("join", invitation);
     await tab.admin("trust", { peer_id: invitation.peer_id });
+    if (additional) {
+      toast("claimed · approve this tab on that device");
+      return;
+    }
     localStorage.setItem("orb.tab.owner", invitation.peer_id);
     show("approve");
     approval();

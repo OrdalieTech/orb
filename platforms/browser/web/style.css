@@ -230,6 +230,7 @@ button.inverted { color: var(--bg); background: var(--fg); }
 #places .on { color: var(--bg); background: var(--fg); border-color: var(--fg); }
 #list button { display: block; width: 100%; padding: 7px 10px; text-align: left; font-weight: 400; border: 0; border-radius: 7px; }
 #list .on { font-weight: 600; background: var(--hover); }
+#list .hi { background: var(--hover); outline: 1px solid var(--rule); outline-offset: -1px; }
 
 /* Settings: its pages at left, the one shown lit, the way back at their foot; the page at right. */
 #settings { flex-direction: row; max-width: none; padding: 0; }
@@ -246,7 +247,8 @@ button.inverted { color: var(--bg); background: var(--fg); }
 #page .row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid color-mix(in srgb, var(--rule) 50%, transparent); }
 #page .row > div { flex: 1; min-width: 0; } #page .row strong { font-weight: 600; } #page .row .meta { overflow-wrap: anywhere; }
 #page > .meta { margin-top: 6px; }
-#page > button { margin-top: 16px; }
+#page > button, #page .actions { margin-top: 16px; }
+#page .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 #page .plain { padding: 4px 0; font-size: var(--body); font-weight: 500; border: 0; }
 #models .label, #models .meta { margin: 10px 10px 2px; font-size: var(--label); font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--meta); }
 @media (max-width: 600px) {
