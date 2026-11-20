@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 func TestSharedServersShareOnlyWhatCannotRunOrLeak(t *testing.T) {
@@ -123,7 +124,7 @@ func TestSharedMCPRemovedTombstones(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	serversPath := GlobalPath(dir)
-	if _, err := AddServer(serversPath, "remote", ServerConfig{URL: "https://mcp.example.com/mcp"}); err != nil {
+	if _, err := AddServer(serversPath, "remote", ServerConfig{URL: "https://mcp.example.com/mcp", Headers: map[string]string{"Authorization": "Bearer secret-hdr"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := AddServer(serversPath, "local", ServerConfig{Command: "echo"}); err != nil {
@@ -141,9 +142,12 @@ func TestSharedMCPRemovedTombstones(t *testing.T) {
 	if removed, err := RemoveServer(serversPath, "local"); err != nil || !removed {
 		t.Fatalf("RemoveServer(local) = %v, %v", removed, err)
 	}
+	if rawServers, _ := os.ReadFile(serversPath); strings.Contains(string(rawServers), "secret-hdr") {
+		t.Fatalf("mcp.json retained secret header after RemoveServer: %s", rawServers)
+	}
 	rem, err := sClass.Removed(ctx)
-	if err != nil || len(rem) != 1 || string(rem["remote"]) != string(before["remote"]) {
-		t.Fatalf("SharedServers.Removed = %v, %v; want remote=%s", rem, err, before["remote"])
+	if err != nil || len(rem) != 1 || rem["remote"] != jsonwire.Digest(before["remote"]) {
+		t.Fatalf("SharedServers.Removed = %v, %v; want remote=%s", rem, err, jsonwire.Digest(before["remote"]))
 	}
 	// Group removal clears the tombstone.
 	if _, err := sClass.MergeShared(ctx, nil, false, []string{"remote"}); err != nil {
@@ -159,7 +163,7 @@ func TestSharedMCPRemovedTombstones(t *testing.T) {
 	}
 	exp := int64(500)
 	if err := newCredentialStore(dir).update("remote", "https://mcp.example.com/mcp", func(st *oauthState) {
-		st.Tokens = &oauthTokens{AccessToken: "tok", TokenType: "Bearer"}
+		st.Tokens = &oauthTokens{AccessToken: "secret-mcp-tok", TokenType: "Bearer"}
 		st.TokensExpireAt = &exp
 	}); err != nil {
 		t.Fatal(err)
@@ -173,13 +177,16 @@ func TestSharedMCPRemovedTombstones(t *testing.T) {
 	if removed, err := RemoveCredentials(dir, "remote", "https://mcp.example.com/mcp"); err != nil || !removed {
 		t.Fatalf("RemoveCredentials = %v, %v", removed, err)
 	}
+	if rawAuth, _ := os.ReadFile(AuthPath(dir)); strings.Contains(string(rawAuth), "secret-mcp-tok") {
+		t.Fatalf("mcp-auth.json retained access token after RemoveCredentials: %s", rawAuth)
+	}
 	// Calling RemoveCredentials a second time reports false (tombstone only).
 	if removed, err := RemoveCredentials(dir, "remote", "https://mcp.example.com/mcp"); err != nil || removed {
 		t.Fatalf("second RemoveCredentials = %v, %v", removed, err)
 	}
 	lRem, err := lClass.Removed(ctx)
-	if err != nil || len(lRem) != 1 || string(lRem[key]) != string(beforeLogin[key]) {
-		t.Fatalf("SharedLogins.Removed = %v, %v; want %s=%s", lRem, err, key, beforeLogin[key])
+	if err != nil || len(lRem) != 1 || lRem[key] != jsonwire.Digest(beforeLogin[key]) {
+		t.Fatalf("SharedLogins.Removed = %v, %v; want %s=%s", lRem, err, key, jsonwire.Digest(beforeLogin[key]))
 	}
 	if _, err := lClass.MergeShared(ctx, nil, false, []string{key}); err != nil {
 		t.Fatal(err)

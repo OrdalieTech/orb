@@ -96,7 +96,9 @@ func (store *Store) Modify(ctx context.Context, provider string, modify ModifyFu
 		return true, nil
 	})
 	if err == nil && wrote {
-		_ = store.clearRemoved(ctx, []string{provider})
+		if clearErr := store.clearRemoved(ctx, []string{provider}); clearErr != nil {
+			return result, clearErr
+		}
 	}
 	return result, err
 }
@@ -114,12 +116,14 @@ func (store *Store) Delete(ctx context.Context, provider string) error {
 		}
 		return true, nil
 	})
-	if err == nil && old != nil && ShareableCredential(old) {
-		if raw, mErr := json.Marshal(old); mErr == nil {
-			_ = store.recordRemoved(ctx, provider, raw)
-		}
+	if err != nil || old == nil || !ShareableCredential(old) || store.removed == nil {
+		return err
 	}
-	return err
+	raw, err := json.Marshal(old)
+	if err != nil {
+		return err
+	}
+	return store.recordRemoved(ctx, provider, jsonwire.Digest(raw))
 }
 
 func (store *Store) update(ctx context.Context, change func(*credentials) (bool, error)) error {

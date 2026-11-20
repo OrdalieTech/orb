@@ -15,6 +15,7 @@ import (
 
 	configpkg "github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/internal/filelock"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 // Servers are read from mcp.json in the agent directory and, for trusted
@@ -372,7 +373,7 @@ func AddServer(path, name string, config ServerConfig) (bool, error) {
 		return false, err
 	}
 	replaced := false
-	return replaced, editServers(path, func(servers []member, removed map[string]json.RawMessage) ([]member, bool) {
+	return replaced, editServers(path, func(servers []member, removed map[string]string) ([]member, bool) {
 		delete(removed, name)
 		index := slices.IndexFunc(servers, func(entry member) bool { return entry.name == name })
 		if replaced = index >= 0; replaced {
@@ -390,13 +391,13 @@ func RemoveServer(path, name string) (bool, error) {
 		return false, nil
 	}
 	found := false
-	return found, editServers(path, func(servers []member, removed map[string]json.RawMessage) ([]member, bool) {
+	return found, editServers(path, func(servers []member, removed map[string]string) ([]member, bool) {
 		index := slices.IndexFunc(servers, func(entry member) bool { return entry.name == name })
 		if found = index >= 0; !found {
 			return servers, false
 		}
 		if val := shared(servers[index]); val != nil {
-			removed[name] = val
+			removed[name] = jsonwire.Digest(val)
 		}
 		return slices.Delete(servers, index, index+1), true
 	})
@@ -408,10 +409,10 @@ type member struct {
 }
 
 // editServers reads an mcp.json (empty when missing), lets edit change its
-// mcpServers and removed tombstones, and writes it back with its indentation;
-// other content is kept. It takes the lock a sync group's merge takes, and
-// readers, which take none, see the old file or the new one.
-func editServers(path string, edit func([]member, map[string]json.RawMessage) ([]member, bool)) error {
+// mcpServers and removed digest tombstones, and writes it back with its
+// indentation; other content is kept. It takes the lock a sync group's merge
+// takes, and readers, which take none, see the old file or the new one.
+func editServers(path string, edit func([]member, map[string]string) ([]member, bool)) error {
 	return filelock.File{Path: path, Perm: 0o600, Atomic: true}.Update(context.Background(), func(data []byte) ([]byte, error) {
 		next, err := editServerData(data, edit)
 		if err != nil {
@@ -425,7 +426,7 @@ func editServers(path string, edit func([]member, map[string]json.RawMessage) ([
 }
 
 // editServerData is editServers on an mcp.json's content; nil means unchanged.
-func editServerData(data []byte, edit func([]member, map[string]json.RawMessage) ([]member, bool)) ([]byte, error) {
+func editServerData(data []byte, edit func([]member, map[string]string) ([]member, bool)) ([]byte, error) {
 	if data = bytes.TrimPrefix(data, bom); len(bytes.TrimSpace(data)) == 0 {
 		data = []byte("{}")
 	}
@@ -473,16 +474,15 @@ func editServerData(data []byte, edit func([]member, map[string]json.RawMessage)
 	return output.Bytes(), nil
 }
 
-func removedMembers(root []member) map[string]json.RawMessage {
-	out := map[string]json.RawMessage{}
+func removedMembers(root []member) map[string]string {
+	out := map[string]string{}
 	for _, entry := range root {
 		if entry.name == "removed" {
-			var parsed map[string]json.RawMessage
+			var parsed map[string]string
 			if json.Unmarshal(entry.value, &parsed) == nil {
 				for k, v := range parsed {
-					var compact bytes.Buffer
-					if json.Compact(&compact, v) == nil {
-						out[k] = compact.Bytes()
+					if v != "" {
+						out[k] = v
 					}
 				}
 			}

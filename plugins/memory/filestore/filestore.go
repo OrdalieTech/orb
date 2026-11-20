@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/uuidv7"
 	"github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/gofrs/flock"
@@ -32,7 +33,7 @@ var _ memory.RemovalStore = (*FileStore)(nil)
 
 type fileTransaction struct {
 	items   map[string]storedItem
-	removed map[string]memory.Item
+	removed map[string]string
 	records []fileRecord
 	order   int
 }
@@ -160,7 +161,7 @@ func (store *FileStore) Purge(ctx context.Context, id string) error {
 	})
 }
 
-func (store *FileStore) Removed(ctx context.Context) (removed map[string]memory.Item, err error) {
+func (store *FileStore) Removed(ctx context.Context) (removed map[string]string, err error) {
 	err = store.locked(ctx, true, func() error {
 		_, removed, err = store.readStateLocked(ctx)
 		return err
@@ -240,13 +241,17 @@ func (transaction *fileTransaction) Delete(ctx context.Context, id string) error
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	transaction.records = append(transaction.records, fileRecord{Delete: id})
 	if old, ok := transaction.items[id]; ok {
-		if transaction.removed == nil {
-			transaction.removed = map[string]memory.Item{}
+		raw, err := json.Marshal(old.Item)
+		if err != nil {
+			return err
 		}
-		transaction.removed[id] = old.Item
+		if transaction.removed == nil {
+			transaction.removed = map[string]string{}
+		}
+		transaction.removed[id] = jsonwire.Digest(raw)
 	}
+	transaction.records = append(transaction.records, fileRecord{Delete: id})
 	delete(transaction.items, id)
 	return nil
 }
@@ -266,11 +271,11 @@ func (transaction *fileTransaction) Purge(ctx context.Context, id string) error 
 	return nil
 }
 
-func (transaction *fileTransaction) Removed(ctx context.Context) (map[string]memory.Item, error) {
+func (transaction *fileTransaction) Removed(ctx context.Context) (map[string]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	out := make(map[string]memory.Item, len(transaction.removed))
+	out := make(map[string]string, len(transaction.removed))
 	for k, v := range transaction.removed {
 		out[k] = v
 	}
@@ -386,13 +391,13 @@ func (store *FileStore) readLocked(ctx context.Context) (map[string]storedItem, 
 	return items, err
 }
 
-func (store *FileStore) readStateLocked(ctx context.Context) (map[string]storedItem, map[string]memory.Item, error) {
+func (store *FileStore) readStateLocked(ctx context.Context) (map[string]storedItem, map[string]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
 	file, err := os.Open(store.path)
 	if errors.Is(err, os.ErrNotExist) {
-		return map[string]storedItem{}, map[string]memory.Item{}, nil
+		return map[string]storedItem{}, map[string]string{}, nil
 	}
 	if err != nil {
 		return nil, nil, err
@@ -407,11 +412,11 @@ func readJournal(file io.Reader) (map[string]storedItem, error) {
 	return items, err
 }
 
-// readJournalState replays a journal into its live items and locally deleted tombstones.
-func readJournalState(file io.Reader) (map[string]storedItem, map[string]memory.Item, error) {
+// readJournalState replays a journal into its live items and locally deleted digest tombstones.
+func readJournalState(file io.Reader) (map[string]storedItem, map[string]string, error) {
 	// ponytail: linear scan + tombstones; index/compaction when >10k items.
 	items := make(map[string]storedItem)
-	removed := make(map[string]memory.Item)
+	removed := make(map[string]string)
 	reader := bufio.NewReader(file)
 	order := 0
 	for {
@@ -433,7 +438,7 @@ func readJournalState(file io.Reader) (map[string]storedItem, map[string]memory.
 	return items, removed, nil
 }
 
-func applyFileRecord(items map[string]storedItem, removed map[string]memory.Item, record fileRecord, order *int) {
+func applyFileRecord(items map[string]storedItem, removed map[string]string, record fileRecord, order *int) {
 	records := record.Batch
 	if len(records) == 0 {
 		records = []fileRecord{record}
@@ -445,7 +450,9 @@ func applyFileRecord(items map[string]storedItem, removed map[string]memory.Item
 			delete(removed, current.Purge)
 		case current.Delete != "":
 			if old, ok := items[current.Delete]; ok && removed != nil {
-				removed[current.Delete] = old.Item
+				if raw, err := json.Marshal(old.Item); err == nil {
+					removed[current.Delete] = jsonwire.Digest(raw)
+				}
 			}
 			delete(items, current.Delete)
 		case current.Item != nil && current.Item.ID != "":
@@ -534,7 +541,7 @@ func (j Journal) items(ctx context.Context) (map[string]storedItem, error) {
 	return readJournal(bytes.NewReader(raw))
 }
 
-func (j Journal) Removed(ctx context.Context) (map[string]memory.Item, error) {
+func (j Journal) Removed(ctx context.Context) (map[string]string, error) {
 	raw, err := j.Document.Read(ctx)
 	if err != nil {
 		return nil, err

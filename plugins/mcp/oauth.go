@@ -33,6 +33,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/oauth"
 	"github.com/OrdalieTech/orb/internal/filelock"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 const (
@@ -115,7 +116,7 @@ type oauthState struct {
 	CodeVerifier      string          `json:"codeVerifier,omitempty"`
 	OAuthState        string          `json:"oauthState,omitempty"`
 	Discovery         *discoveryState `json:"discovery,omitempty"`
-	Removed           json.RawMessage `json:"removed,omitempty"`
+	Removed           string          `json:"removed,omitempty"`
 }
 
 // challenge is a server's WWW-Authenticate challenge.
@@ -229,7 +230,7 @@ func (store credentialStore) update(name, serverURL string, change func(*oauthSt
 		if state == nil || state.ServerURL != normalizeServerURL(serverURL) {
 			state = &oauthState{ServerURL: normalizeServerURL(serverURL)}
 		}
-		state.Removed = nil
+		state.Removed = ""
 		change(state)
 		states[key] = state
 		return true
@@ -252,7 +253,7 @@ func (store credentialStore) remove(name, serverURL string) (bool, error) {
 				continue
 			}
 			if val, shareable := shareableLogin(candidate, state); shareable {
-				states[candidate] = &oauthState{ServerURL: state.ServerURL, Removed: val}
+				states[candidate] = &oauthState{ServerURL: state.ServerURL, Removed: jsonwire.Digest(val)}
 			} else {
 				delete(states, candidate)
 			}

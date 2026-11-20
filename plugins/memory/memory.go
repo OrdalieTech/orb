@@ -44,10 +44,10 @@ type TransactionalStore interface {
 	Transact(context.Context, func(Store) error) error
 }
 
-// RemovalStore is an optional interface a Store may implement to persist tombstones for items
-// deleted locally (for Mitosis sync) and drop those tombstones once the group applies them.
+// RemovalStore is an optional interface a Store may implement to persist digest tombstones for
+// items deleted locally (for Mitosis sync) and drop those tombstones once the group applies them.
 type RemovalStore interface {
-	Removed(context.Context) (map[string]Item, error)
+	Removed(context.Context) (map[string]string, error)
 	Purge(context.Context, string) error
 }
 
@@ -71,22 +71,12 @@ func (s Shared) Shareable(ctx context.Context) (map[string]json.RawMessage, erro
 	return shareable(ctx, s.Store)
 }
 
-func (s Shared) Removed(ctx context.Context) (map[string]json.RawMessage, error) {
+func (s Shared) Removed(ctx context.Context) (map[string]string, error) {
 	rs, ok := s.Store.(RemovalStore)
 	if !ok {
 		return nil, nil
 	}
-	items, err := rs.Removed(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]json.RawMessage, len(items))
-	for id, item := range items {
-		if out[id], err = json.Marshal(item); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	return rs.Removed(ctx)
 }
 
 func shareable(ctx context.Context, store Store) (map[string]json.RawMessage, error) {

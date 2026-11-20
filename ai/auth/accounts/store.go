@@ -15,6 +15,7 @@ import (
 
 	"github.com/OrdalieTech/orb/ai/auth"
 	docport "github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 const DefaultID = "default"
@@ -36,12 +37,12 @@ type record struct {
 }
 
 type document struct {
-	Version  int                        `json:"version"`
-	Accounts []record                   `json:"accounts"`
-	Active   map[string]string          `json:"active"`
-	Ambient  map[string]bool            `json:"ambient,omitempty"`
-	Names    map[string]string          `json:"names,omitempty"`
-	Removed  map[string]json.RawMessage `json:"removed,omitempty"`
+	Version  int               `json:"version"`
+	Accounts []record          `json:"accounts"`
+	Active   map[string]string `json:"active"`
+	Ambient  map[string]bool   `json:"ambient,omitempty"`
+	Names    map[string]string `json:"names,omitempty"`
+	Removed  map[string]string `json:"removed,omitempty"`
 }
 
 type Store struct {
@@ -254,13 +255,19 @@ func (s *Store) Rename(ctx context.Context, provider, id, name string) error {
 		key := accountNameKey(provider, id)
 		if name == "" {
 			if id == DefaultID && d.Names[key] != "" {
-				if base, err := s.base.Read(ctx, provider); err == nil && auth.ShareableCredential(base) {
-					if raw, err := json.Marshal(sharedName{Name: d.Names[key]}); err == nil {
-						if d.Removed == nil {
-							d.Removed = map[string]json.RawMessage{}
-						}
-						d.Removed[defaultNamePrefix+provider] = raw
+				base, err := s.base.Read(ctx, provider)
+				if err != nil {
+					return err
+				}
+				if auth.ShareableCredential(base) {
+					raw, err := json.Marshal(sharedName{Name: d.Names[key]})
+					if err != nil {
+						return err
 					}
+					if d.Removed == nil {
+						d.Removed = map[string]string{}
+					}
+					d.Removed[defaultNamePrefix+provider] = jsonwire.Digest(raw)
 				}
 			}
 			delete(d.Names, key)
@@ -322,12 +329,14 @@ func (s *Store) Remove(ctx context.Context, provider, id string) error {
 	return s.update(ctx, func(d *document) error {
 		for _, a := range d.Accounts {
 			if a.Provider == provider && a.ID == id && auth.ShareableCredential(a.Credential) {
-				if raw, err := json.Marshal(sharedRecord{Provider: a.Provider, Name: a.Name, Credential: a.Credential}); err == nil {
-					if d.Removed == nil {
-						d.Removed = map[string]json.RawMessage{}
-					}
-					d.Removed[a.ID] = raw
+				raw, err := json.Marshal(sharedRecord{Provider: a.Provider, Name: a.Name, Credential: a.Credential})
+				if err != nil {
+					return err
 				}
+				if d.Removed == nil {
+					d.Removed = map[string]string{}
+				}
+				d.Removed[a.ID] = jsonwire.Digest(raw)
 				break
 			}
 		}

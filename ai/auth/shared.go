@@ -27,21 +27,14 @@ func (store *Store) Shareable(ctx context.Context) (map[string]json.RawMessage, 
 	return out, nil
 }
 
-// Removed returns credentials explicitly deleted locally (via Delete/logout), each with the last
-// shareable value it held before deletion. If auth.json itself is missing/empty (fresh or wiped
-// device), tombstones are ignored so nothing is removed from the group.
-func (store *Store) Removed(ctx context.Context) (map[string]json.RawMessage, error) {
+// Removed returns credentials explicitly deleted locally (via Delete/logout), each mapped to the
+// digest of the last shareable value it held before deletion. No credential value or secret is
+// stored in the tombstone document; a wiped device loses both auth.json and auth-removed.json.
+func (store *Store) Removed(ctx context.Context) (map[string]string, error) {
 	if store.removed == nil {
 		return nil, nil
 	}
-	authData, err := store.document.Read(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if len(bytes.TrimSpace(authData)) == 0 {
-		return nil, nil
-	}
-	stored, err := parseCredentials(authData)
+	stored, err := store.load(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -52,33 +45,32 @@ func (store *Store) Removed(ctx context.Context) (map[string]json.RawMessage, er
 	if len(bytes.TrimSpace(remData)) == 0 {
 		return nil, nil
 	}
-	var all map[string]json.RawMessage
+	var all map[string]string
 	if err := json.Unmarshal(remData, &all); err != nil {
 		return nil, err
 	}
-	out := map[string]json.RawMessage{}
-	for provider, raw := range all {
-		if _, live := stored.byProvider[provider]; live {
+	out := map[string]string{}
+	for provider, digest := range all {
+		if _, live := stored.byProvider[provider]; live || digest == "" {
 			continue
 		}
-		var c Credential
-		if json.Unmarshal(raw, &c) == nil && ShareableCredential(&c) {
-			out[provider] = compactJSON(raw)
-		}
+		out[provider] = digest
 	}
 	return out, nil
 }
 
-func (store *Store) recordRemoved(ctx context.Context, provider string, raw json.RawMessage) error {
+func (store *Store) recordRemoved(ctx context.Context, provider, digest string) error {
 	if store.removed == nil {
 		return nil
 	}
 	return store.removed.Update(ctx, func(current []byte) ([]byte, error) {
-		all := map[string]json.RawMessage{}
+		all := map[string]string{}
 		if len(bytes.TrimSpace(current)) > 0 {
-			_ = json.Unmarshal(current, &all)
+			if err := json.Unmarshal(current, &all); err != nil {
+				return nil, err
+			}
 		}
-		all[provider] = compactJSON(raw)
+		all[provider] = digest
 		return json.Marshal(all)
 	})
 }
@@ -91,7 +83,7 @@ func (store *Store) clearRemoved(ctx context.Context, providers []string) error 
 	if err != nil || len(bytes.TrimSpace(current)) == 0 {
 		return err
 	}
-	var peek map[string]json.RawMessage
+	var peek map[string]string
 	if json.Unmarshal(current, &peek) != nil {
 		return nil
 	}
@@ -106,7 +98,7 @@ func (store *Store) clearRemoved(ctx context.Context, providers []string) error 
 		return nil
 	}
 	return store.removed.Update(ctx, func(data []byte) ([]byte, error) {
-		all := map[string]json.RawMessage{}
+		all := map[string]string{}
 		if len(bytes.TrimSpace(data)) > 0 && json.Unmarshal(data, &all) != nil {
 			return data, nil
 		}

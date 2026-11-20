@@ -1,7 +1,6 @@
 package mitosis
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"crypto/aes"
@@ -19,6 +18,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
 )
 
@@ -111,12 +111,13 @@ type Class interface {
 }
 
 // RemovalClass is an optional interface a Class may implement to report entries explicitly removed
-// on this device by a user gesture (forget, logout, account or MCP removal), each with the last
-// shareable value it held before removal. Tombstones live alongside the data so a fresh, offline
-// or wiped device removes nothing.
+// on this device by a user gesture (forget, logout, account or MCP removal), each mapped to the
+// jsonwire.Digest of the last shareable value it held before removal. Tombstones live alongside
+// the data (never storing the removed value itself) so a fresh, offline or wiped device removes
+// nothing.
 type RemovalClass interface {
 	Class
-	Removed(ctx context.Context) (map[string]json.RawMessage, error)
+	Removed(ctx context.Context) (map[string]string, error)
 }
 
 // SetClass shares a data class with the sync group under name; nil stops sharing it.
@@ -461,20 +462,20 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			stale[name] = true
 			continue
 		}
-		var localRemoved map[string]json.RawMessage
+		var localRemoved map[string]string
 		if rc, ok := class.(RemovalClass); ok {
 			var err error
 			if localRemoved, err = rc.Removed(ctx); err != nil {
 				return nil, err
 			}
 		}
-		// A member's tombstone matching the group's current value is handed in and keeps the
+		// A member's tombstone matching the group's current digest is handed in and keeps the
 		// member from re-taking that entry; one whose group version changed elsewhere is dropped
 		// when MergeShared writes the newer value.
 		var handinRemoved map[string]version
 		if !owner {
-			for entry, raw := range localRemoved {
-				if v := vs[entry]; v.D != "" && v.D == digests(raw) {
+			for entry, digest := range localRemoved {
+				if v := vs[entry]; v.D != "" && v.D == digest {
 					if handinRemoved == nil {
 						handinRemoved = map[string]version{}
 					}
@@ -716,14 +717,7 @@ type sealed struct {
 	vault pointer
 }
 
-func digests(v json.RawMessage) string {
-	var compact bytes.Buffer
-	if json.Compact(&compact, v) == nil {
-		v = compact.Bytes()
-	}
-	sum := sha256.Sum256(v)
-	return base64.RawURLEncoding.EncodeToString(sum[:])
-}
+func digests(v json.RawMessage) string { return jsonwire.Digest(v) }
 
 // pointers reads the vaults, by class, that peer's record in the group points at: none unless
 // every one is well formed and together they stay within maxVault.

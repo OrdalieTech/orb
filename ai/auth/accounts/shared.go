@@ -63,9 +63,10 @@ func (s *Store) Shareable(ctx context.Context) (map[string]json.RawMessage, erro
 }
 
 // Removed returns shareable accounts and default-account display names explicitly removed on this
-// device (via Remove or Rename("")), each with its last shared JSON value. Tombstones live inside
-// accounts.json so wiping the store drops them too.
-func (s *Store) Removed(_ context.Context) (map[string]json.RawMessage, error) {
+// device (via Remove or Rename("")), each mapped to the digest of its last shared value (no
+// credentials or secrets are retained). Tombstones live inside accounts.json so wiping the store
+// drops them too.
+func (s *Store) Removed(_ context.Context) (map[string]string, error) {
 	d, err := s.load()
 	if err != nil {
 		return nil, err
@@ -82,15 +83,12 @@ func (s *Store) Removed(_ context.Context) (map[string]json.RawMessage, error) {
 			live[defaultNamePrefix+k] = true
 		}
 	}
-	out := map[string]json.RawMessage{}
-	for key, raw := range d.Removed {
-		if live[key] || len(bytes.TrimSpace(raw)) == 0 {
+	out := map[string]string{}
+	for key, digest := range d.Removed {
+		if live[key] || digest == "" {
 			continue
 		}
-		var compact bytes.Buffer
-		if json.Compact(&compact, raw) == nil {
-			out[key] = compact.Bytes()
-		}
+		out[key] = digest
 	}
 	return out, nil
 }

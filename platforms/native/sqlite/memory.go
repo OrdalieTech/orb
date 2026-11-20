@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/internal/uuidv7"
 	"github.com/OrdalieTech/orb/plugins/memory"
 )
@@ -37,26 +38,26 @@ func (store *Memory) inTx() bool {
 	return !auto
 }
 
-func (store *Memory) loadRemoved(ctx context.Context) (map[string]memory.Item, error) {
+func (store *Memory) loadRemoved(ctx context.Context) (map[string]string, error) {
 	var raw []byte
 	err := store.connection.QueryRowContext(ctx, "SELECT content FROM documents WHERE namespace=? AND key=?", store.namespace, memoryRemovedKey).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) || len(raw) == 0 {
-		return map[string]memory.Item{}, nil
+		return map[string]string{}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	var out map[string]memory.Item
+	var out map[string]string
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, err
 	}
 	if out == nil {
-		out = map[string]memory.Item{}
+		out = map[string]string{}
 	}
 	return out, nil
 }
 
-func (store *Memory) saveRemoved(ctx context.Context, removed map[string]memory.Item) error {
+func (store *Memory) saveRemoved(ctx context.Context, removed map[string]string) error {
 	if len(removed) == 0 {
 		_, err := store.connection.ExecContext(ctx, "DELETE FROM documents WHERE namespace=? AND key=?", store.namespace, memoryRemovedKey)
 		return err
@@ -122,15 +123,22 @@ func (store *Memory) Delete(ctx context.Context, id string) error {
 		return store.Transact(ctx, func(tx memory.Store) error { return tx.Delete(ctx, id) })
 	}
 	old, getErr := store.Get(ctx, id)
+	if getErr != nil && !errors.Is(getErr, sql.ErrNoRows) {
+		return getErr
+	}
 	if _, err := store.connection.ExecContext(ctx, "DELETE FROM memory_items WHERE namespace=? AND id=?", store.namespace, id); err != nil {
 		return err
 	}
 	if getErr == nil {
+		raw, err := json.Marshal(old)
+		if err != nil {
+			return err
+		}
 		removed, err := store.loadRemoved(ctx)
 		if err != nil {
 			return err
 		}
-		removed[id] = old
+		removed[id] = jsonwire.Digest(raw)
 		return store.saveRemoved(ctx, removed)
 	}
 	return nil
@@ -152,7 +160,7 @@ func (store *Memory) Purge(ctx context.Context, id string) error {
 	}
 	return nil
 }
-func (store *Memory) Removed(ctx context.Context) (map[string]memory.Item, error) {
+func (store *Memory) Removed(ctx context.Context) (map[string]string, error) {
 	removed, err := store.loadRemoved(ctx)
 	if err != nil {
 		return nil, err

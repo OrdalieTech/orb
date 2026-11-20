@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/plugins/memory"
 )
 
@@ -370,15 +372,31 @@ func TestMemoryRemovalTombstones(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	store := db.Memory("agent")
-	if _, err := store.Append(ctx, memory.Item{ID: "m1", Content: "first"}); err != nil {
+	if _, err := store.Append(ctx, memory.Item{ID: "m1", Content: "secret forgotten fact"}); err != nil {
+		t.Fatal(err)
+	}
+	item, err := store.Get(ctx, "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemRaw, err := json.Marshal(item)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Delete(ctx, "m1"); err != nil {
 		t.Fatal(err)
 	}
 	rem, err := store.Removed(ctx)
-	if err != nil || rem["m1"].Content != "first" {
-		t.Fatalf("Removed after Delete = %+v, %v", rem, err)
+	if err != nil || rem["m1"] != jsonwire.Digest(itemRaw) {
+		t.Fatalf("Removed after Delete = %+v, %v; want %s", rem, err, jsonwire.Digest(itemRaw))
+	}
+	// Forgotten text must not remain in orb.db documents.
+	var docContent []byte
+	if err := db.QueryRowContext(ctx, "SELECT content FROM documents WHERE namespace='agent' AND key=?", memoryRemovedKey).Scan(&docContent); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(docContent), "secret forgotten fact") {
+		t.Fatalf("orb.db documents retained forgotten text: %s", docContent)
 	}
 	// Local re-add clears tombstone.
 	if _, err := store.Append(ctx, memory.Item{ID: "m1", Content: "again"}); err != nil {

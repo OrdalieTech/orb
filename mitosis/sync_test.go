@@ -613,7 +613,7 @@ func (f failingClass) Shareable(ctx context.Context) (map[string]json.RawMessage
 	return f.Class.Shareable(ctx)
 }
 
-func (f failingClass) Removed(ctx context.Context) (map[string]json.RawMessage, error) {
+func (f failingClass) Removed(ctx context.Context) (map[string]string, error) {
 	if f.removeErr != nil {
 		return nil, f.removeErr
 	}
@@ -757,9 +757,10 @@ func TestSyncMemberRemovals(t *testing.T) {
 	if !slices.Equal(memIDs(fresh), []string{"keep", "race"}) {
 		t.Fatalf("fresh member did not get group items: %v", memIDs(fresh))
 	}
-	// Wiped store on mem1 (tombstones gone with it) re-receives everything and removes nothing on owner.
+	// Wiped store on mem1 (data + tombstones gone with it) re-receives everything and removes nothing on owner.
 	_ = document.Replace(ctx, mem1.memDoc, nil)
 	_ = document.Replace(ctx, mem1.authDoc, nil)
+	_ = document.Replace(ctx, mem1.authRem, nil)
 	_ = document.Replace(ctx, mem1.acctDoc, nil)
 	round(owner, mem1)
 	if !slices.Equal(memIDs(owner), []string{"keep", "race"}) || !slices.Equal(memIDs(mem1), []string{"keep", "race"}) {
@@ -788,12 +789,21 @@ func TestSyncMemberRemovals(t *testing.T) {
 		}
 	}
 
-	// (4) Member logout (auth.json + accounts.json) removes them on owner and other members.
+	// (4) Member logout of its only credential (leaving auth.json empty) + account removal
+	// removes them on owner and other members, and never keeps the secret in tombstones.
 	if err := mem1.auth.Delete(ctx, "openai"); err != nil {
 		t.Fatal(err)
 	}
+	// Simulate a writer that leaves auth.json completely empty after logging out of the last provider.
+	_ = document.Replace(ctx, mem1.authDoc, nil)
 	if err := mem1.accts.Remove(ctx, "openai", lea.ID); err != nil {
 		t.Fatal(err)
+	}
+	if remRaw, _ := mem1.authRem.Read(ctx); strings.Contains(string(remRaw), "sk-default") {
+		t.Fatalf("auth tombstone leaked secret: %s", remRaw)
+	}
+	if acctRaw, _ := mem1.acctDoc.Read(ctx); strings.Contains(string(acctRaw), "sk-lea") {
+		t.Fatalf("accounts tombstone leaked secret: %s", acctRaw)
 	}
 	round(owner, mem1, mem2)
 	round(owner, mem1, mem2)
