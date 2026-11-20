@@ -24,6 +24,10 @@ const (
 	streamDialTimeout = 15 * time.Second
 )
 
+// streamClaim is how long an opened stream waits for its caller's first read or write: one whose
+// stream.open timed out on the caller's side never gets its id, so it gives its slot back soon.
+var streamClaim = 10 * time.Second
+
 // relayedStream is one single-hop raw byte pipe a group member relays between two other members
 // (e.g. a browser tab reaching a Tailcat peer). The relay carries opaque TLS ciphertext; the
 // endpoints authenticate and authorize each other directly inside the stream.
@@ -197,7 +201,7 @@ func (b *Mitosis) streamOpen(ctx context.Context, caller string, params json.Raw
 		return nil, Fail("resource_exhausted")
 	}
 	b.streams[id] = s
-	s.idle = time.AfterFunc(streamIdle, func() { b.closeStream(id) })
+	s.idle = time.AfterFunc(streamClaim, func() { b.closeStream(id) })
 	s.stopWatch = context.AfterFunc(ctx, func() { b.closeStream(id) })
 	b.mu.Unlock()
 	go s.pump()

@@ -273,6 +273,25 @@ func TestStreamRelayEnforcesMembershipLimitsAndRevocation(t *testing.T) {
 	for _, id := range openedIDs {
 		_, _ = mac.Handle(ctx, tab.PeerID(), "stream.close", JSON(map[string]string{"stream_id": id}))
 	}
+	// A stream its caller never used (its open timed out there) gives its slot back.
+	claim := streamClaim
+	streamClaim = 50 * time.Millisecond
+	_, err := mac.Handle(ctx, tab.PeerID(), "stream.open", JSON(map[string]string{"peer_id": fedora.PeerID()}))
+	streamClaim = claim
+	if err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		mac.mu.Lock()
+		left := len(mac.streams)
+		mac.mu.Unlock()
+		if left == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("an unused stream kept its slot")
+		}
+	}
 
 	// Open a real relayed channel from tab to fedora, then remove tab on mac -> stream closes immediately.
 	tabPeers := NewPeers(ctx, tab)
