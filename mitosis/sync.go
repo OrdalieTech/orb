@@ -121,6 +121,15 @@ type RemovalClass interface {
 	Removed(ctx context.Context) (map[string]string, error)
 }
 
+// EditableClass is a Class whose existing entries a member may change, such as settings. A member's
+// value that differs from the group's at a version the group has not moved since is its own change:
+// it keeps it and hands it in instead of taking the group's back, and the class's MergeShared takes
+// it on an owner. Other classes only take a member's new entries and explicit removals.
+type EditableClass interface {
+	Class
+	Editable()
+}
+
 // SetClass shares a data class with the sync group under name; nil stops sharing it.
 func (b *Mitosis) SetClass(name string, c Class) {
 	b.mu.Lock()
@@ -542,13 +551,26 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 				}
 			}
 		}
+		var edited map[string]bool
+		if _, ok := class.(EditableClass); ok && !owner {
+			mine, err := class.Shareable(ctx)
+			if err != nil {
+				return nil, err
+			}
+			edited = map[string]bool{}
+			for entry, value := range mine {
+				if v := vs[entry]; !newer[entry] && v.D != "" && digests(value) != v.D {
+					edited[entry] = true
+				}
+			}
+		}
 		// An owner takes what is newer than what it holds; a member takes the whole set (except
-		// entries it explicitly removed at the current version), so what it changed of it comes
-		// back to the group's.
+		// entries it explicitly removed at the current version, and those of an editable class it
+		// changed since), so what it changed of it otherwise comes back to the group's.
 		incoming, removed := map[string]json.RawMessage{}, []string{}
 		for entry, v := range vs {
 			switch {
-			case !owner && handinRemoved[entry].D != "":
+			case !owner && (handinRemoved[entry].D != "" || edited[entry]):
 			case !owner && !newer[entry] && v.D != "" && values[entry] != nil:
 				incoming[entry] = values[entry]
 			case !newer[entry]:

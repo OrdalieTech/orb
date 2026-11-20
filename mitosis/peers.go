@@ -405,8 +405,8 @@ func (ps *Peers) Greet() {
 
 // Reconcile exchanges scope records with members on every change and every 15 s. A link whose
 // records and channel are as they were after its last exchange waits five minutes, so an idle
-// scope costs no traffic, and one that failed waits a minute, so an offline member is not dialled
-// (a whole Tailcat client started and stopped) every sweep.
+// scope costs no traffic, and one that failed waits a minute whatever changed, so an offline
+// member is not dialled (a whole Tailcat client started and stopped) every sweep or change.
 func (ps *Peers) Reconcile() {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -414,6 +414,7 @@ func (ps *Peers) Reconcile() {
 		versions string
 		c        *protocol.Conn
 		until    time.Time
+		failed   bool
 	}
 	var mu sync.Mutex
 	last := map[string]mark{}
@@ -447,7 +448,11 @@ func (ps *Peers) Reconcile() {
 				mu.Lock()
 				m, ok := last[k]
 				mu.Unlock()
-				if ok && m.versions == string(JSON(versions)) && m.c == ps.Mitosis.Connection(peer) && time.Now().Before(m.until) {
+				// A link that failed waits out its minute even as records change, unless a channel
+				// to it opened since: every round waits for its exchanges, so redialling an offline
+				// member on each change held the next round, and the hand-in it was woken for, for
+				// the dial's timeout.
+				if ok && time.Now().Before(m.until) && m.c == ps.Mitosis.Connection(peer) && (m.failed || m.versions == string(JSON(versions))) {
 					continue
 				}
 				wg.Add(1)
@@ -460,9 +465,9 @@ func (ps *Peers) Reconcile() {
 					if err == nil {
 						err = ps.exchange(ctx, c, scope, peer, versions)
 					}
-					m := mark{string(JSON(versions)), ps.Mitosis.Connection(peer), time.Now().Add(time.Minute)}
+					m := mark{string(JSON(versions)), ps.Mitosis.Connection(peer), time.Now().Add(time.Minute), true}
 					if after, e := ps.Mitosis.Versions(peer, scope); err == nil && e == nil {
-						m = mark{string(JSON(after)), c, time.Now().Add(5 * time.Minute)}
+						m = mark{string(JSON(after)), c, time.Now().Add(5 * time.Minute), false}
 					}
 					mu.Lock()
 					last[k] = m

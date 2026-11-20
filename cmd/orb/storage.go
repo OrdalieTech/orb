@@ -49,7 +49,12 @@ func stateFromContext(ctx context.Context) *native.State {
 }
 
 func openNativeState(ctx context.Context, agentDir string, migrate bool, sessionDirs ...string) (*native.State, error) {
-	return native.Open(ctx, agentDir, migrate, teamenv.AuthDocument(), sessionDirs...)
+	state, err := native.Open(ctx, agentDir, migrate, teamenv.AuthDocument(), sessionDirs...)
+	if state != nil {
+		// At once, not debounced: `orb plugins` and `orb models use` exit right after writing.
+		state.OnSettingsWrite = func() { notifyMitosis(context.Background(), state, "personal") }
+	}
+	return state, err
 }
 
 func nativeKeybindings(state *native.State) (tui.KeybindingsConfig, error) {
