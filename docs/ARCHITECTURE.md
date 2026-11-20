@@ -163,18 +163,20 @@ files. GitHub Pages serves the latest release's at https://ordalietech.github.io
 The tab's Orb runs in a Web Worker (`peer.js` is also the worker's script), so what it computes
 never holds up the page; its RPC frames cross at most every 16 ms, and a fetch body already
 received is read 16 ms at a time, the event loop turning between, so a stop is never stuck behind
-a fast stream. The page draws a reply streaming in once a frame, only its end, and draws each
-message once. The page makes the tab one of the user's devices: the link `orb mitosis --browser`
+a fast stream. The page draws at most once a frame, and a row again only when it changed. The page makes the tab one of the user's devices: the link `orb mitosis --browser`
 opens `peer.js` over IndexedDB, which joins, trusts the inviting device and follows its sync
 group, and the page shows the fingerprint to confirm there, which approves the tab and adds it to
-the group. The first provider the group shares replaces the fingerprint with the conversation,
-which runs on the peer's Orb through its RPC `command` entry point, with the providers and memory
-the profile shares; the prompt box shows the model, never a credential. A reload reopens the peer
-with its identity, data and conversations, and it dials its devices again. Around the conversation
-it keeps the apps' parts: the desktop's tab bar (a chip per session, kept by the page by session
-file, since the RPC lists none), its model deck, and Settings with General, Providers (the
-accounts the group shares), Plugins (those an object runs, set through the Worker's `plugins`
-entry point for the sessions started after) and Mitosis (the group's devices, forgetting the tab).
+the group. The first provider the group shares replaces the fingerprint with the app, which is
+the client the desktop and Android apps draw: the tab's Orb runs `mitosis/view` over its own peer
+(the Worker's `app` entry point takes its intents, and what it sends comes out with the RPC frames,
+told apart by their `"t"`), so the page only renders Home (the group's devices and every thread on
+them), the open conversations' rows, the model deck of the Orb that runs each one and its
+questions, and sends intents back. A thread on a device that granted the tab opens and goes on
+there; a new conversation starts on the device the prompt box names, or on the tab's own Orb when
+none lets the tab start one. The view keeps its tabs in the object's store, so a reload reopens
+them, and the tab's Orb dials its devices again. Settings has General, Providers (the accounts the
+group shares), Plugins (those an object runs, set through the Worker's `plugins` entry point for
+the sessions started after) and Mitosis (the group's devices, forgetting the tab).
 Code mode gives the tab's agent a `js` tool: `openPeer`'s `run` hands its code to a worker inside
 a frame sandboxed without same-origin, so it reaches neither the page, its storage nor the synced
 credentials, and a run stops after 2 min. Its code calls the session's other tools as
@@ -184,7 +186,7 @@ palette in both appearances, their face, radii and type scale, the desktop's on 
 the phone's on a narrow one.
 
 A device reaches the tab over an outbound WebSocket: `orb mitosis --browser` turns on the device's
-loopback listener for the page (127.0.0.1:8789, origin https://ordalietech.github.io), which stays
+loopback listener for the page (127.0.0.1:8789, origins https://ordalietech.github.io and https://netapy.com), which stays
 on across restarts, and opens the page at a link carrying the invitation after `#`, which the
 browser never sends to the page's host: the tab joins with it at once. `orb mitosis run --web-listen <addr> --web-origin
 <page origin>` sets another address or page, and `--web-url wss://host/mitosis` advertises a

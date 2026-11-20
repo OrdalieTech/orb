@@ -110,6 +110,19 @@ func TestProviderQuotedPaths(t *testing.T) {
 	}
 }
 
+// Among equal matches the shallowest comes first, so a home folder's Documents beats a backup's.
+func TestProviderFuzzyFdShallowFirst(t *testing.T) {
+	fdPath, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(fakeFDEnv, "backups/Hex/Documents/\nDocuments/\n")
+	result := NewCombinedAutocompleteProvider(nil, t.TempDir(), fdPath).GetSuggestions(context.Background(), []string{"@Docu"}, 0, 5, false)
+	if values := suggestionValues(result); len(values) != 2 || values[0] != "@Documents/" {
+		t.Fatalf("values = %v", values)
+	}
+}
+
 func TestProviderFuzzyFdSuggestions(t *testing.T) {
 	baseDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(baseDir, "src"), 0o755); err != nil {

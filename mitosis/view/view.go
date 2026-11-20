@@ -140,6 +140,7 @@ type intent struct {
 	CWD      string   `json:"cwd"`
 	Text     string   `json:"text"`
 	Value    *string  `json:"value"`
+	Ticked   []string `json:"ticked"`
 	Name     string   `json:"name"`
 	Ref      string   `json:"ref"`
 	Px       int      `json:"px"`
@@ -271,7 +272,7 @@ func (a *App) now(in intent) (any, error) {
 		args := t.execution(map[string]any{})
 		go t.call("cancel", args)
 	case "answer":
-		t.answer(in.Value)
+		t.answer(in.Value, in.Ticked...)
 	case "model":
 		t.useModel(in.Name)
 	case "thinking":
@@ -305,10 +306,18 @@ func (a *App) send(t *tab, text string) (any, error) {
 	if strings.HasPrefix(text, "/") {
 		switch name {
 		case "new":
-			if arg != "" {
-				t.queued, t.queuedFrom = arg, t.session
-			}
-			go t.call("session.new", map[string]any{})
+			// The message waits for the new session, so the one it replaces must be known first.
+			go func() {
+				if !t.described() {
+					return
+				}
+				a.mu.Lock()
+				if arg != "" {
+					t.queued, t.queuedFrom = arg, t.session
+				}
+				a.mu.Unlock()
+				t.call("session.new", map[string]any{})
+			}()
 			return nil, nil
 		case "compact":
 			args := map[string]string{}

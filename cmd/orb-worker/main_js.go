@@ -173,7 +173,7 @@ func open(object js.Value) js.Value {
 	if name := object.Get("name"); name.Type() == js.TypeString {
 		mitosis.name = name.String()
 	}
-	mitosis.register(set)
+	mitosis.register(set, object.Get("emit"))
 	if mitosis.dial { // a tab's model calls the browser refuses go through a device of its group
 		http.DefaultTransport = peer.Relay(worker.FetchTransport(), mitosis.open)
 	}

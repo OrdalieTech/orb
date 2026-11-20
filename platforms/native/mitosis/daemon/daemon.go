@@ -225,12 +225,11 @@ func publicClient() *http.Client {
 	return &http.Client{Transport: &http.Transport{DialContext: dialer.DialContext, ForceAttemptHTTP2: true, TLSHandshakeTimeout: 10 * time.Second, IdleConnTimeout: 90 * time.Second}}
 }
 
-// A tab at the page (platforms/browser, on GitHub Pages) reaches this machine at browserListen once the owner
-// turns it on with `orb mitosis --browser` (DECISIONS.md P4: listening stays explicit).
-const (
-	browserListen = "127.0.0.1:8789"
-	browserOrigin = "https://ordalietech.github.io"
-)
+// A tab at the page (platforms/browser, on GitHub Pages and at netapy.com/orb) reaches this machine at
+// browserListen once the owner turns it on with `orb mitosis --browser` (DECISIONS.md P4: listening stays explicit).
+const browserListen = "127.0.0.1:8789"
+
+var browserOrigins = []string{"https://ordalietech.github.io", "https://netapy.com"}
 
 type Web struct {
 	Listen  string
@@ -291,7 +290,7 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 	// `orb mitosis --browser` turned on the listener a tab at the page reaches, which stays on.
 	browser := filepath.Join(dir, "browser")
 	if _, err := state.Read(ctx, browser); err == nil && web.Listen == "" {
-		web.Listen, web.Origins = browserListen, []string{browserOrigin}
+		web.Listen, web.Origins = browserListen, browserOrigins
 	}
 	if web.Listen != "" {
 		if err := listen(web); err != nil {
@@ -349,7 +348,7 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 			listening.Lock()
 			defer listening.Unlock()
 			if web.Listen == "" {
-				if err := listen(Web{Listen: browserListen, Origins: []string{browserOrigin}}); err != nil {
+				if err := listen(Web{Listen: browserListen, Origins: browserOrigins}); err != nil {
 					return nil, err
 				}
 				web.Listen = browserListen
