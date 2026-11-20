@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 
@@ -21,7 +22,9 @@ type SharedSettings struct{ Document document.Document }
 // Editable: a member's change to a setting reaches the group (mitosis.EditableClass).
 func (SharedSettings) Editable() {}
 
-var sharedSettingKeys = []string{"defaultProvider", "defaultModel", "defaultThinkingLevel"}
+// sharedDefaults are the entries for settings that travel as one: a model is its provider and id
+// together, so two devices' choices never mix into a pair neither made.
+var sharedDefaults = map[string][]string{"model": {"defaultProvider", "defaultModel"}, "thinking": {"defaultThinkingLevel"}}
 
 // localPlugins run against their device's programs, peers or permissions.
 var localPlugins = []string{"claude-sessions", "mitosis", "mitosis-agent-calls", "bridge", "bridge-agent-calls", "permissions", "plugin-control"}
@@ -38,9 +41,9 @@ func (s SharedSettings) Shareable(ctx context.Context) (map[string]json.RawMessa
 		return nil, err
 	}
 	out := map[string]json.RawMessage{}
-	for _, key := range sharedSettingKeys {
-		if raw, ok := object.Get(key); ok && sharedScalar(raw) {
-			out[key] = compactSetting(raw)
+	for entry, keys := range sharedDefaults {
+		if values := defaultValues(object, keys); values != nil {
+			out[entry], _ = json.Marshal(values)
 		}
 	}
 	for name, enabled := range pluginGates(object) {
@@ -76,20 +79,26 @@ func (s SharedSettings) MergeShared(ctx context.Context, incoming []map[string]j
 					changed = append(changed, key)
 					continue
 				}
-				have, set := object.Get(key)
-				if !slices.Contains(sharedSettingKeys, key) || !sharedScalar(raw) || set && bytes.Equal(compactSetting(have), compactSetting(raw)) {
+				keys, ok := sharedDefaults[key]
+				var next map[string]string
+				if !ok || json.Unmarshal(raw, &next) != nil || len(next) != len(keys) || maps.Equal(next, defaultValues(object, keys)) {
 					continue
 				}
-				object.Set(key, compactSetting(raw))
+				if slices.ContainsFunc(keys, func(k string) bool { return next[k] == "" }) {
+					continue
+				}
+				for _, k := range keys {
+					value, _ := json.Marshal(next[k])
+					object.Set(k, value)
+				}
 				changed = append(changed, key)
 			}
 		}
-		for _, key := range removed {
-			if _, plugin := strings.CutPrefix(key, pluginEntry); keepOwn || plugin || !slices.Contains(sharedSettingKeys, key) {
-				continue // a gate the group stops sharing leaves the device's own as it is
-			}
-			if _, set := object.Get(key); set {
-				object.Delete(key)
+		for _, key := range removed { // a gate the group stops sharing leaves the device's own as it is
+			if keys, ok := sharedDefaults[key]; ok && !keepOwn && defaultValues(object, keys) != nil {
+				for _, k := range keys {
+					object.Delete(k)
+				}
 				changed = append(changed, key)
 			}
 		}
@@ -148,16 +157,16 @@ func setPluginGate(object *jsonwire.RawObject, name string, enabled bool) {
 	object.Set("plugins", encoded)
 }
 
-// sharedScalar is a value the shared keys may hold: a string, as the setters write them.
-func sharedScalar(raw json.RawMessage) bool {
-	var value string
-	return json.Unmarshal(raw, &value) == nil && value != ""
-}
-
-func compactSetting(raw json.RawMessage) json.RawMessage {
-	var out bytes.Buffer
-	if json.Compact(&out, raw) != nil {
-		return raw
+// defaultValues reads keys as the strings the setters write; nil unless every one is set.
+func defaultValues(object jsonwire.RawObject, keys []string) map[string]string {
+	values := map[string]string{}
+	for _, k := range keys {
+		raw, _ := object.Get(k)
+		var value string
+		if json.Unmarshal(raw, &value) != nil || value == "" {
+			return nil
+		}
+		values[k] = value
 	}
-	return out.Bytes()
+	return values
 }

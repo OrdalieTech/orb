@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/internal/document"
@@ -32,7 +33,7 @@ func TestSharedSettingsShareDefaultsAndGates(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		"defaultProvider": `"google"`, "defaultModel": `"gemini-4-neon"`, "defaultThinkingLevel": `"high"`,
+		"model": `{"defaultModel":"gemini-4-neon","defaultProvider":"google"}`, "thinking": `{"defaultThinkingLevel":"high"}`,
 		"plugins/memory": "true", "plugins/tasks": "false", "plugins/memtree": "false",
 	}
 	if len(got) != len(want) {
@@ -48,6 +49,7 @@ func TestSharedSettingsShareDefaultsAndGates(t *testing.T) {
 func TestSharedSettingsMergeKeepsDeviceSettings(t *testing.T) {
 	s, doc := sharedSettingsDoc(t, `{
   "theme": "light",
+  "defaultProvider": "openai",
   "defaultModel": "old",
   "plugins": {
     "memtree": {"enabled": true, "depth": 3},
@@ -56,7 +58,8 @@ func TestSharedSettingsMergeKeepsDeviceSettings(t *testing.T) {
   }
 }`)
 	incoming := map[string]json.RawMessage{
-		"defaultProvider": json.RawMessage(`"google"`), "defaultModel": json.RawMessage(`"gemini-4-neon"`),
+		"model":           json.RawMessage(`{"defaultModel":"gemini-4-neon","defaultProvider":"google"}`),
+		"defaultModel":    json.RawMessage(`"half"`), // not an entry: a model travels with its provider
 		"plugins/memtree": json.RawMessage(`false`), "plugins/memory": json.RawMessage(`true`),
 		"plugins/permissions": json.RawMessage(`true`), "theme": json.RawMessage(`"dark"`),
 	}
@@ -65,7 +68,7 @@ func TestSharedSettingsMergeKeepsDeviceSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	slices.Sort(changed)
-	if want := []string{"defaultModel", "defaultProvider", "plugins/memory", "plugins/memtree"}; !slices.Equal(changed, want) {
+	if want := []string{"model", "plugins/memory", "plugins/memtree"}; !slices.Equal(changed, want) {
 		t.Fatalf("changed %v, want %v", changed, want)
 	}
 	data, _ := doc.Read(context.Background())
@@ -91,11 +94,14 @@ func TestSharedSettingsMergeKeepsDeviceSettings(t *testing.T) {
 
 	// An owner folding a hand-in takes the member's change but drops nothing; a member drops a
 	// default the group no longer shares.
-	if changed, _ = s.MergeShared(context.Background(), []map[string]json.RawMessage{{"defaultModel": json.RawMessage(`"gemini-4-neon"`), "plugins/memory": json.RawMessage(`false`)}}, true, []string{"defaultModel"}); !slices.Equal(changed, []string{"plugins/memory"}) {
+	if changed, _ = s.MergeShared(context.Background(), []map[string]json.RawMessage{{"model": json.RawMessage(`{"defaultModel":"gemini-4-neon","defaultProvider":"google"}`), "plugins/memory": json.RawMessage(`false`)}}, true, []string{"model"}); !slices.Equal(changed, []string{"plugins/memory"}) {
 		t.Fatalf("keepOwn changed %v", changed)
 	}
-	if changed, _ = s.MergeShared(context.Background(), nil, false, []string{"defaultModel"}); !slices.Equal(changed, []string{"defaultModel"}) {
+	if changed, _ = s.MergeShared(context.Background(), nil, false, []string{"model"}); !slices.Equal(changed, []string{"model"}) {
 		t.Fatalf("removal changed %v", changed)
+	}
+	if data, _ := doc.Read(context.Background()); strings.Contains(string(data), "defaultProvider") || strings.Contains(string(data), "defaultModel") {
+		t.Fatalf("removing the model left half of it: %s", data)
 	}
 	before, _ := doc.Read(context.Background())
 	if changed, _ = s.MergeShared(context.Background(), []map[string]json.RawMessage{{"plugins/memory": json.RawMessage(`false`)}}, false, nil); len(changed) != 0 {
