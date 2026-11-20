@@ -95,6 +95,11 @@ func dial(t *testing.T, self *Peer, laptop *mitosis.Mitosis) *protocol.Conn {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The object registers its side of the channel after the laptop's Connect returns: a call
+	// that needs it (sync join) right away failed "unavailable" on a slow runner.
+	for self.mitosis.Connection(laptop.PeerID()) == nil {
+		time.Sleep(time.Millisecond)
+	}
 	return channel
 }
 
