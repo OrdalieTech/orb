@@ -559,7 +559,7 @@ func renderMemorySection(label string, items []memorysdk.Item, limit int) string
 	}
 	slices.Reverse(selected)
 	var body strings.Builder
-	body.WriteString(fmt.Sprintf("%s [%d%% — %d/%d chars]", label, used*100/limit, used, limit))
+	fmt.Fprintf(&body, "%s [%d%% — %d/%d chars]", label, used*100/limit, used, limit)
 	if len(selected) > 0 {
 		body.WriteByte('\n')
 		body.WriteString(strings.Join(selected, memoryDelimiter))
@@ -569,7 +569,7 @@ func renderMemorySection(label string, items []memorysdk.Item, limit int) string
 		if omitted == 1 {
 			noun = "memory"
 		}
-		body.WriteString(fmt.Sprintf("\n(+%d older %s · use recall to search)", omitted, noun))
+		fmt.Fprintf(&body, "\n(+%d older %s · use recall to search)", omitted, noun)
 	}
 	return body.String()
 }
