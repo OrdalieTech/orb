@@ -72,6 +72,9 @@ type State struct {
 	Files bool
 	// credentials, when set, holds auth.json instead of the database.
 	credentials host.Document
+	// OnSettingsWrite, when set, runs after Settings writes settings.json, so a running Mitosis
+	// shares a new default model or plugin gate with the group at once.
+	OnSettingsWrite func()
 
 	mu          sync.Mutex
 	sessionID   string
@@ -346,7 +349,11 @@ func (state *State) ChatNamespace(path string) string {
 func (state *State) Settings(cwd, agentDir string, options ...config.Option) (*config.SettingsManager, error) {
 	options = append(options, config.WithAgentDir(agentDir))
 	if state != nil && !state.Files {
-		options = append(options, config.WithGlobalDocument(state.Document(filepath.Join(agentDir, "settings.json"))))
+		global := state.Document(filepath.Join(agentDir, "settings.json"))
+		if state.OnSettingsWrite != nil {
+			global = writtenDocument{global, state.OnSettingsWrite}
+		}
+		options = append(options, config.WithGlobalDocument(global))
 	}
 	return config.NewSettingsManager(cwd, options...)
 }
@@ -616,4 +623,18 @@ func (state *State) DeleteSession(id string) error {
 		return errors.New("cannot delete an open conversation")
 	}
 	return state.Sessions().Delete(context.Background(), harness.SessionMetadata{ID: id})
+}
+
+// writtenDocument calls written after each committed update.
+type writtenDocument struct {
+	host.Document
+	written func()
+}
+
+func (d writtenDocument) Update(ctx context.Context, change func([]byte) ([]byte, error)) error {
+	err := d.Document.Update(ctx, change)
+	if err == nil {
+		d.written()
+	}
+	return err
 }

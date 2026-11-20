@@ -7,6 +7,7 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -907,5 +908,146 @@ func TestSyncMemberRemovals(t *testing.T) {
 		if rem, err := n.memories.Removed(ctx); err != nil || len(rem) != 0 {
 			t.Fatalf("%s lingering tombstones = %v, %v", name, rem, err)
 		}
+	}
+}
+
+// kvClass is a class over a map: the group's values replace a member's, and an owner takes a
+// member's hand-in over its own, as settings do. editable marks it a mitosis.EditableClass.
+type kvClass struct {
+	mu     *sync.Mutex
+	values map[string]string
+}
+
+func (c kvClass) Shareable(context.Context) (map[string]json.RawMessage, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := map[string]json.RawMessage{}
+	for k, v := range c.values {
+		out[k] = JSON(v)
+	}
+	return out, nil
+}
+
+func (c kvClass) MergeShared(_ context.Context, incoming []map[string]json.RawMessage, keepOwn bool, removed []string) ([]string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var changed []string
+	for _, entries := range incoming {
+		for k, raw := range entries {
+			var v string
+			if json.Unmarshal(raw, &v) == nil && c.values[k] != v {
+				c.values[k] = v
+				changed = append(changed, k)
+			}
+		}
+	}
+	for _, k := range removed {
+		if _, ok := c.values[k]; ok && !keepOwn {
+			delete(c.values, k)
+			changed = append(changed, k)
+		}
+	}
+	return changed, nil
+}
+
+func (c kvClass) get(k string) string { c.mu.Lock(); defer c.mu.Unlock(); return c.values[k] }
+func (c kvClass) set(k, v string)     { c.mu.Lock(); defer c.mu.Unlock(); c.values[k] = v }
+
+type editableKV struct{ kvClass }
+
+func (editableKV) Editable() {}
+
+func TestSyncMemberEditsEditableClass(t *testing.T) {
+	ctx := t.Context()
+	owner, member := newMitosis(t), newMitosis(t)
+	classes := map[*Mitosis][2]kvClass{}
+	for _, m := range []*Mitosis{owner, member} {
+		plain, edit := kvClass{&sync.Mutex{}, map[string]string{}}, kvClass{&sync.Mutex{}, map[string]string{}}
+		m.SetClass("plain", plain)
+		m.SetClass("settings", editableKV{edit})
+		classes[m] = [2]kvClass{plain, edit}
+	}
+	classes[owner][0].set("key", "group")
+	classes[owner][1].set("model", "group")
+	_ = owner.SavePeer(member.PeerID(), "tc1")
+	_ = member.SavePeer(owner.PeerID(), "tc1")
+	near, far := net.Pipe()
+	served := make(chan error, 1)
+	go func() { _, _, err := member.Connect(ctx, far, "", true); served <- err }()
+	if _, _, err := owner.Connect(ctx, near, member.PeerID(), false); err != nil || <-served != nil {
+		t.Fatal("link", err)
+	}
+	if _, err := owner.Admin(ctx, "sync", JSON(map[string]string{"add": member.PeerID()})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := member.Admin(ctx, "sync", JSON(map[string]string{"join": owner.PeerID()})); err != nil {
+		t.Fatal(err)
+	}
+	group := owner.state.Group
+	round := func() {
+		for range 3 {
+			for _, pair := range [][2]*Mitosis{{owner, member}, {member, owner}} {
+				if recs, err := pair[0].Contacts(pair[1].PeerID(), group); err == nil {
+					for _, r := range recs {
+						_, _ = pair[1].MergeContact(pair[0].PeerID(), r)
+					}
+				}
+			}
+			for _, m := range []*Mitosis{member, owner} {
+				if _, err := m.Sync(ctx, nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	round()
+	if classes[member][0].get("key") != "group" || classes[member][1].get("model") != "group" {
+		t.Fatalf("member did not take the group's values: %v %v", classes[member][0].values, classes[member][1].values)
+	}
+	// The member changes both: the editable class's change reaches the owner and stays; the other
+	// class takes the group's value back, as before.
+	classes[member][0].set("key", "mine")
+	classes[member][1].set("model", "mine")
+	round()
+	if got := classes[owner][1].get("model"); got != "mine" {
+		t.Fatalf("owner's editable value = %q, want the member's change", got)
+	}
+	if got := classes[member][1].get("model"); got != "mine" {
+		t.Fatalf("member's editable value = %q, want its own change kept", got)
+	}
+	if got, own := classes[member][0].get("key"), classes[owner][0].get("key"); got != "group" || own != "group" {
+		t.Fatalf("plain class: member %q owner %q, want the group's value on both", got, own)
+	}
+	// The owner changes it back: the member takes it, its earlier change being the group's now.
+	classes[owner][1].set("model", "owner")
+	round()
+	if got := classes[member][1].get("model"); got != "owner" {
+		t.Fatalf("member's editable value after the owner's change = %q", got)
+	}
+	// A member's change that reaches the owner after the owner changed the same entry loses: the
+	// member hands in "late" over "owner", but the owner holds "newer" by then.
+	classes[member][1].set("model", "late")
+	if _, err := member.Sync(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	classes[owner][1].set("model", "newer")
+	round()
+	if got, mine := classes[owner][1].get("model"), classes[member][1].get("model"); got != "newer" || mine != "newer" {
+		t.Fatalf("after a stale member change: owner %q member %q, want the owner's later change on both", got, mine)
+	}
+	// So does a member's new entry when the owner set the same one before taking the hand-in, and
+	// a new entry the owner lacks reaches it.
+	classes[member][1].set("level", "high")
+	classes[member][1].set("theme", "dark")
+	if _, err := member.Sync(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	classes[owner][1].set("level", "low")
+	round()
+	if got, mine := classes[owner][1].get("level"), classes[member][1].get("level"); got != "low" || mine != "low" {
+		t.Fatalf("after a member's late new entry: owner %q member %q, want the owner's on both", got, mine)
+	}
+	if got := classes[owner][1].get("theme"); got != "dark" {
+		t.Fatalf("owner's new entry from the member = %q, want dark", got)
 	}
 }

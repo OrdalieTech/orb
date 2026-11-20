@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/internal/ctxsleep"
+	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
@@ -317,6 +318,16 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 		servers := filelock.File{Path: mcp.GlobalPath(agentDir), Perm: 0o600, Atomic: true}
 		b.SetClass("mcp", mcp.SharedServers{Document: servers})
 		b.SetClass("mcp-auth", mcp.SharedLogins{Servers: servers, Logins: filelock.File{Path: mcp.AuthPath(agentDir), Perm: 0o600}})
+	}
+	// What a new conversation starts with: the settings.json the agent's own settings read.
+	if agentDir != "" {
+		// In place, as the settings writer does: a settings.json mounted as a single file cannot
+		// be renamed over.
+		var settings document.Document = filelock.File{Path: filepath.Join(agentDir, "settings.json"), Perm: 0o600}
+		if state != nil && !state.Files {
+			settings = state.Document(filepath.Join(agentDir, "settings.json"))
+		}
+		b.SetClass("settings", config.SharedSettings{Document: settings})
 	}
 	// The memory the agent's memory plugin keeps: native storage's, else the agent directory's journal.
 	if memories := state.Memory(); memories != nil {

@@ -97,13 +97,15 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 	b.SetClass("credentials", creds)
 	b.SetClass("accounts", accounts.NewStoreWithDocument(store.Document(path.Join(worker.AgentDir, "accounts.json")), creds))
 	b.SetClass("memory", memory.Shared{Store: Memory(store)})
+	b.SetClass("settings", config.SharedSettings{Document: store.Document(path.Join(worker.AgentDir, "settings.json"))})
 	if ws, ok := store.(*worker.Store); ok {
 		ws.OnWrite = func(name string) {
 			switch name {
 			case path.Join(worker.AgentDir, "auth.json"),
 				path.Join(worker.AgentDir, "auth-removed.json"),
 				path.Join(worker.AgentDir, "accounts.json"),
-				path.Join(worker.AgentDir, "memory", "memory.jsonl"):
+				path.Join(worker.AgentDir, "memory", "memory.jsonl"),
+				path.Join(worker.AgentDir, "settings.json"):
 				b.Notify()
 			}
 		}
