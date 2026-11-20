@@ -1144,8 +1144,22 @@ if (localStorage.getItem("orb.tab.forget")) {
   await new Promise(resolve => Object.assign(indexedDB.deleteDatabase("orb-tab"), { onsuccess: resolve, onerror: resolve, onblocked: resolve }));
 }
 // The link orb mitosis --browser opens carries its code after #, which the browser never sends.
-const linked = decodeURIComponent(location.hash.slice(1));
-if (linked) history.replaceState(null, "", location.pathname + location.search);
+function consumeHash() {
+  const raw = location.hash.slice(1);
+  if (!raw) return "";
+  let decoded = raw;
+  try { decoded = decodeURIComponent(raw); } catch {}
+  history.replaceState(null, "", location.pathname + location.search);
+  return decoded;
+}
+addEventListener("hashchange", () => {
+  const code = consumeHash();
+  if (code.startsWith("orb-mitosis:v1:") && !localStorage.getItem("orb.tab.owner")) {
+    show("invite");
+    join($("code").value = code);
+  }
+});
+const linked = consumeHash();
 if (sessionStorage.getItem("orb.moved")) { sessionStorage.removeItem("orb.moved"); elsewhere("Your Orb moved to another tab of this page."); }
 else if (localStorage.getItem("orb.tab.owner")) boot().catch(error => showError(error.message));
 else {
