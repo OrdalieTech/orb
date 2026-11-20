@@ -26,6 +26,7 @@ func TestSharedSettingsShareDefaultsAndGates(t *testing.T) {
   "defaultProvider": "google",
   "defaultModel": "gemini-4-neon",
   "defaultThinkingLevel": "high",
+  "modelThinkingLevels": {"openai-codex/gpt-6.1-sol": "xhigh"},
   "plugins": {"memory": true, "tasks": false, "permissions": {"enabled": true, "mode": "auto"}, "claude-sessions": {"model": "opus"}, "memtree": {"enabled": false, "depth": 3}}
 }`)
 	got, err := s.Shareable(context.Background())
@@ -35,6 +36,7 @@ func TestSharedSettingsShareDefaultsAndGates(t *testing.T) {
 	want := map[string]string{
 		"model": `{"defaultModel":"gemini-4-neon","defaultProvider":"google"}`, "thinking": `{"defaultThinkingLevel":"high"}`,
 		"plugins/memory": "true", "plugins/tasks": "false", "plugins/memtree": "false",
+		"levels/openai-codex/gpt-6.1-sol": `"xhigh"`,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("shared %v, want the keys of %v", slices.Sorted(maps.Keys(got)), want)
@@ -62,21 +64,24 @@ func TestSharedSettingsMergeKeepsDeviceSettings(t *testing.T) {
 		"defaultModel":    json.RawMessage(`"half"`), // not an entry: a model travels with its provider
 		"plugins/memtree": json.RawMessage(`false`), "plugins/memory": json.RawMessage(`true`),
 		"plugins/permissions": json.RawMessage(`true`), "theme": json.RawMessage(`"dark"`),
+		"levels/google/gemini-4-neon": json.RawMessage(`"low"`),
 	}
 	changed, err := s.MergeShared(context.Background(), []map[string]json.RawMessage{incoming}, false, []string{"plugins/titles"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	slices.Sort(changed)
-	if want := []string{"model", "plugins/memory", "plugins/memtree"}; !slices.Equal(changed, want) {
+	// The group no longer holding titles' gate takes it back to its default here too.
+	if want := []string{"levels/google/gemini-4-neon", "model", "plugins/memory", "plugins/memtree", "plugins/titles"}; !slices.Equal(changed, want) {
 		t.Fatalf("changed %v, want %v", changed, want)
 	}
 	data, _ := doc.Read(context.Background())
 	var got struct {
-		Theme         string         `json:"theme"`
-		DefaultModel  string         `json:"defaultModel"`
-		DefaultProvdr string         `json:"defaultProvider"`
-		Plugins       map[string]any `json:"plugins"`
+		Theme         string            `json:"theme"`
+		DefaultModel  string            `json:"defaultModel"`
+		DefaultProvdr string            `json:"defaultProvider"`
+		Plugins       map[string]any    `json:"plugins"`
+		Levels        map[string]string `json:"modelThinkingLevels"`
 	}
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatal(err)
@@ -88,8 +93,10 @@ func TestSharedSettingsMergeKeepsDeviceSettings(t *testing.T) {
 		t.Fatalf("top-level settings: %s", data)
 	case memtree["enabled"] != false || memtree["depth"] != float64(3):
 		t.Fatalf("memtree's gate changes beside its settings: %s", data)
-	case permissions["enabled"] != false, got.Plugins["memory"] != true, got.Plugins["titles"] != true:
+	case permissions["enabled"] != false, got.Plugins["memory"] != true, got.Plugins["titles"] != nil:
 		t.Fatalf("plugins: %s", data)
+	case got.Levels["google/gemini-4-neon"] != "low":
+		t.Fatalf("levels: %s", data)
 	}
 
 	// An owner folding a hand-in takes the member's change but drops nothing; a member drops a

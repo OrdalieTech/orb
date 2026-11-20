@@ -29,7 +29,10 @@ var sharedDefaults = map[string][]string{"model": {"defaultProvider", "defaultMo
 // localPlugins run against their device's programs, peers or permissions.
 var localPlugins = []string{"claude-sessions", "mitosis", "mitosis-agent-calls", "bridge", "bridge-agent-calls", "permissions", "plugin-control"}
 
-const pluginEntry = "plugins/"
+const (
+	pluginEntry = "plugins/"
+	levelEntry  = "levels/" // a model's own reasoning level, by "provider/id" as modelThinkingLevels keys it
+)
 
 func (s SharedSettings) Shareable(ctx context.Context) (map[string]json.RawMessage, error) {
 	data, err := s.Document.Read(ctx)
@@ -50,6 +53,9 @@ func (s SharedSettings) Shareable(ctx context.Context) (map[string]json.RawMessa
 		if !slices.Contains(localPlugins, name) {
 			out[pluginEntry+name], _ = json.Marshal(enabled)
 		}
+	}
+	for model, level := range nestedStrings(object, "modelThinkingLevels") {
+		out[levelEntry+model], _ = json.Marshal(level)
 	}
 	return out, nil
 }
@@ -79,6 +85,15 @@ func (s SharedSettings) MergeShared(ctx context.Context, incoming []map[string]j
 					changed = append(changed, key)
 					continue
 				}
+				if model, ok := strings.CutPrefix(key, levelEntry); ok {
+					var level string
+					if json.Unmarshal(raw, &level) != nil || level == "" || nestedStrings(object, "modelThinkingLevels")[model] == level {
+						continue
+					}
+					setNested(&object, "modelThinkingLevels", model, raw)
+					changed = append(changed, key)
+					continue
+				}
 				keys, ok := sharedDefaults[key]
 				var next map[string]string
 				if !ok || json.Unmarshal(raw, &next) != nil || len(next) != len(keys) || maps.Equal(next, defaultValues(object, keys)) {
@@ -94,11 +109,36 @@ func (s SharedSettings) MergeShared(ctx context.Context, incoming []map[string]j
 				changed = append(changed, key)
 			}
 		}
-		for _, key := range removed { // a gate the group stops sharing leaves the device's own as it is
-			if keys, ok := sharedDefaults[key]; ok && !keepOwn && defaultValues(object, keys) != nil {
+		for _, key := range removed {
+			if keepOwn {
+				break
+			}
+			if keys, ok := sharedDefaults[key]; ok && defaultValues(object, keys) != nil {
 				for _, k := range keys {
 					object.Delete(k)
 				}
+				changed = append(changed, key)
+			}
+			if model, ok := strings.CutPrefix(key, levelEntry); ok {
+				if _, set := nestedStrings(object, "modelThinkingLevels")[model]; set {
+					setNested(&object, "modelThinkingLevels", model, nil)
+					changed = append(changed, key)
+				}
+			}
+			// A gate the group no longer holds is gone here too, back to its default (off): a
+			// device keeping its own would hand it in again as new. A plugin's object keeps its
+			// settings, off.
+			if name, ok := strings.CutPrefix(key, pluginEntry); ok && !slices.Contains(localPlugins, name) {
+				if _, set := gates[name]; !set {
+					continue
+				}
+				var gate bool
+				if json.Unmarshal(pluginValue(object, name), &gate) == nil {
+					setNested(&object, "plugins", name, nil)
+				} else {
+					setPluginGate(&object, name, false)
+				}
+				delete(gates, name)
 				changed = append(changed, key)
 			}
 		}
@@ -134,6 +174,49 @@ func pluginGates(object jsonwire.RawObject) map[string]bool {
 		}
 	}
 	return gates
+}
+
+// nestedStrings reads field as an object of strings, as modelThinkingLevels is.
+func nestedStrings(object jsonwire.RawObject, field string) map[string]string {
+	out := map[string]string{}
+	raw, ok := object.Get(field)
+	if !ok {
+		return out
+	}
+	_ = json.Unmarshal(raw, &out)
+	return out
+}
+
+// setNested sets field.key to value, or deletes it for nil, dropping an emptied field.
+func setNested(object *jsonwire.RawObject, field, key string, value json.RawMessage) {
+	nested := jsonwire.RawObject{}
+	if raw, ok := object.Get(field); ok {
+		if parsed, err := parseSettingsObject(raw); err == nil {
+			nested = parsed
+		}
+	}
+	if value == nil {
+		nested.Delete(key)
+	} else {
+		nested.Set(key, value)
+	}
+	if len(nested) == 0 {
+		object.Delete(field)
+		return
+	}
+	encoded, _ := nested.MarshalJSON()
+	object.Set(field, encoded)
+}
+
+// pluginValue is name's value in the plugins object: a gate, or the plugin's settings object.
+func pluginValue(object jsonwire.RawObject, name string) json.RawMessage {
+	raw, _ := object.Get("plugins")
+	plugins, err := parseSettingsObject(raw)
+	if err != nil {
+		return nil
+	}
+	value, _ := plugins.Get(name)
+	return value
 }
 
 // setPluginGate writes a gate as SetPluginEnabled does: inside the plugin's object when it has one.

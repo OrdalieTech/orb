@@ -5,7 +5,7 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
-- What a new conversation starts with travels with the sync group: the default model (with its provider, as one choice), its reasoning level, and each plugin's on/off switch (memory, titles, web search…). Change one on any device, the phone and a browser tab included, and every other device has it within a second; a device that cannot run the shared model starts on its own preferred one, and plugins tied to their device (Claude Code, permissions, Mitosis) keep their own switch. A change made on a non-owner device now reaches the group; before, its next round took the group's value back.
+- What a new conversation starts with travels with the sync group: the default model (with its provider, as one choice), its reasoning level (and each model's own), and each plugin's on/off switch (memory, titles, web search…). Change one on any device, the phone and a browser tab included, and every other device has it within a second; a device that cannot run the shared model starts on its own preferred one, and plugins tied to their device (Claude Code, permissions, Mitosis) keep their own switch. A change made on a non-owner device now reaches the group; before, its next round took the group's value back.
 - A change on a sync group member reached its owner up to 7 s late when the owner had an offline device in its group: each change made the owner redial it and its next round waited for that dial to fail. A link that failed now waits its minute before the next try.
 
 ## [0.26.0] - 2026-11-20
