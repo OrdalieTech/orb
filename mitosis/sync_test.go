@@ -1024,4 +1024,15 @@ func TestSyncMemberEditsEditableClass(t *testing.T) {
 	if got := classes[member][1].get("model"); got != "owner" {
 		t.Fatalf("member's editable value after the owner's change = %q", got)
 	}
+	// A member's change that reaches the owner after the owner changed the same entry loses: the
+	// member hands in "late" over "owner", but the owner holds "newer" by then.
+	classes[member][1].set("model", "late")
+	if _, err := member.Sync(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	classes[owner][1].set("model", "newer")
+	round()
+	if got, mine := classes[owner][1].get("model"), classes[member][1].get("model"); got != "newer" || mine != "newer" {
+		t.Fatalf("after a stale member change: owner %q member %q, want the owner's later change on both", got, mine)
+	}
 }

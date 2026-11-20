@@ -79,12 +79,14 @@ func (d doc) valid() bool {
 
 // vaultBody is what a vault seals: a class's entries and, from an owner, every entry's version,
 // deletions included, and the hand-in it folded in per member. A member's hand-in may also list
-// entries it explicitly removed, each with the group version it held when removed.
+// entries it explicitly removed, and those of an editable class it changed, each with the group
+// version it held when it did.
 type vaultBody struct {
 	Entries  map[string]json.RawMessage `json:"entries"`
 	Versions map[string]version         `json:"versions,omitempty"`
 	Handins  map[string]string          `json:"handins,omitempty"`
 	Removed  map[string]version         `json:"removed,omitempty"`
+	Edited   map[string]version         `json:"edited,omitempty"`
 }
 
 // version is where an entry stands: a Lamport counter, the owner that set it, and its value's
@@ -490,7 +492,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	opens := map[string][]vaultBody{} // class -> other owners' vaults opened, and who each is sealed to
 	readers := map[string][][]string{}
 	out := bundle{}
-	outRemoved := map[string]map[string]version{}
+	outRemoved, outEdited := map[string]map[string]version{}, map[string]map[string]version{}
 	received := map[string][]string{}
 	for name, class := range classes {
 		vs, values, newer := versions[name], map[string]json.RawMessage{}, map[string]bool{}
@@ -551,16 +553,16 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 				}
 			}
 		}
-		var edited map[string]bool
+		var edited map[string]version // entry -> the group's version this member changed it from
 		if _, ok := class.(EditableClass); ok && !owner {
 			mine, err := class.Shareable(ctx)
 			if err != nil {
 				return nil, err
 			}
-			edited = map[string]bool{}
+			edited = map[string]version{}
 			for entry, value := range mine {
 				if v := vs[entry]; !newer[entry] && v.D != "" && digests(value) != v.D {
-					edited[entry] = true
+					edited[entry] = v
 				}
 			}
 		}
@@ -570,7 +572,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		incoming, removed := map[string]json.RawMessage{}, []string{}
 		for entry, v := range vs {
 			switch {
-			case !owner && (handinRemoved[entry].D != "" || edited[entry]):
+			case !owner && (handinRemoved[entry].D != "" || edited[entry].D != ""):
 			case !owner && !newer[entry] && v.D != "" && values[entry] != nil:
 				incoming[entry] = values[entry]
 			case !newer[entry]:
@@ -594,6 +596,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			return nil, err
 		}
 		var folded []map[string]json.RawMessage
+		var held map[string]json.RawMessage // this owner's values, read once a hand-in carries an edit
 		memberRemovals := map[string]version{}
 		for _, s := range handins[name] {
 			if merged[s.peer+" "+name] == s.vault.Digest {
@@ -605,7 +608,23 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 				in, _, err = b.open(blob)
 			}
 			if err == nil && in.Versions == nil { // a former owner's vault is no hand-in
-				folded, merged[s.peer+" "+name] = append(folded, in.Entries), s.vault.Digest
+				// A member's change applies only over the value it changed: one the group or
+				// this owner changed since keeps the later change.
+				entries := in.Entries
+				if len(in.Edited) > 0 {
+					if held == nil {
+						if held, err = class.Shareable(ctx); err != nil {
+							return nil, err
+						}
+					}
+					entries = maps.Clone(in.Entries)
+					for entry, v := range in.Edited {
+						if vs[entry] != v || held[entry] == nil || digests(held[entry]) != v.D {
+							delete(entries, entry)
+						}
+					}
+				}
+				folded, merged[s.peer+" "+name] = append(folded, entries), s.vault.Digest
 				for entry, v := range in.Removed { // only a removal of the current version can apply
 					if vs[entry] == v {
 						memberRemovals[entry] = v
@@ -665,6 +684,9 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			if len(handinRemoved) > 0 {
 				outRemoved[name] = handinRemoved
 			}
+			if len(edited) > 0 {
+				outEdited[name] = edited
+			}
 		}
 		out[name] = own
 		if len(changed) > 0 {
@@ -704,7 +726,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	total := 0
 	b.handing = false
 	for name, entries := range out {
-		body := vaultBody{Entries: entries, Removed: outRemoved[name]}
+		body := vaultBody{Entries: entries, Removed: outRemoved[name], Edited: outEdited[name]}
 		b.handing = b.handing || !owner && (len(entries) > 0 || len(body.Removed) > 0)
 		if owner {
 			body.Versions, body.Handins = versions[name], map[string]string{}

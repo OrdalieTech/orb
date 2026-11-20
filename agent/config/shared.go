@@ -52,7 +52,8 @@ func (s SharedSettings) Shareable(ctx context.Context) (map[string]json.RawMessa
 }
 
 // MergeShared takes the group's settings, and an owner takes a member's hand-in over its own too:
-// a member hands in only what it changed since the group's version, so its change is the latest.
+// a member hands in only what it changed since the group's version, and Mitosis has already dropped
+// a change made over a value the group or this owner changed since.
 func (s SharedSettings) MergeShared(ctx context.Context, incoming []map[string]json.RawMessage, keepOwn bool, removed []string) ([]string, error) {
 	var changed []string
 	err := s.Document.Update(ctx, func(data []byte) ([]byte, error) {
