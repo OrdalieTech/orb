@@ -868,4 +868,44 @@ func TestSyncMemberRemovals(t *testing.T) {
 	if !slices.Equal(memIDs(owner), []string{"keep", "newer", "race"}) || !slices.Equal(memIDs(mem1), []string{"keep", "newer", "race"}) {
 		t.Fatalf("error round caused removals: owner=%v mem1=%v", memIDs(owner), memIDs(mem1))
 	}
+
+	// (6) A member forgets an entry it handed in, after the owner took it but before the owner's
+	// new vault reaches it: the removal waits for that vault and the entry ends up nowhere.
+	send := func(from, to *node) {
+		recs, err := from.m.Contacts(to.m.PeerID(), group)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range recs {
+			_, _ = to.m.MergeContact(from.m.PeerID(), r)
+		}
+	}
+	syncOnce := func(n *node) {
+		if _, err := n.m.Sync(ctx, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := mem1.memories.Append(ctx, memory.Item{ID: "brief", Content: "added then forgotten"}); err != nil {
+		t.Fatal(err)
+	}
+	syncOnce(mem1)
+	send(mem1, owner)
+	syncOnce(owner)
+	if _, err := owner.memories.Get(ctx, "brief"); err != nil {
+		t.Fatalf("owner did not take the hand-in: %v", err)
+	}
+	if err := mem1.memories.Delete(ctx, "brief"); err != nil {
+		t.Fatal(err)
+	}
+	syncOnce(mem1) // still on the owner's vault from before the hand-in
+	round(owner, mem1, mem2)
+	round(owner, mem1, mem2)
+	for name, n := range map[string]*node{"owner": owner, "mem1": mem1, "mem2": mem2} {
+		if slices.Contains(memIDs(n), "brief") {
+			t.Fatalf("%s holds the forgotten entry: %v", name, memIDs(n))
+		}
+		if rem, err := n.memories.Removed(ctx); err != nil || len(rem) != 0 {
+			t.Fatalf("%s lingering tombstones = %v, %v", name, rem, err)
+		}
+	}
 }

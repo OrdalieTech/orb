@@ -558,9 +558,12 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 				incoming[entry] = values[entry]
 			}
 		}
-		// Clear local tombstones the group already removed (or never held).
+		// Clear local tombstones the group already removed (or never held), but on a member only
+		// once an owner says it consumed the hand-in this member publishes: until then, an entry
+		// it handed in may already be the group's and come back in the next owner's vault.
+		settled := owner || current[self+" "+name] == "" || merged[self+" "+name] == current[self+" "+name]
 		for entry := range localRemoved {
-			if vs[entry].D == "" && !slices.Contains(removed, entry) {
+			if settled && vs[entry].D == "" && !slices.Contains(removed, entry) {
 				removed = append(removed, entry)
 			}
 		}
