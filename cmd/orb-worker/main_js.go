@@ -140,6 +140,32 @@ func open(object js.Value) js.Value {
 			return string(raw), err
 		})
 	})
+	// models resolves to the models a new session of this object can start on, its persisted
+	// default and reasoning levels; given provider, model id and optional level, it persists that
+	// default in settings.json first so /new sessions start on it.
+	set("models", func(_ js.Value, args []js.Value) any {
+		return promise(func() (any, error) {
+			instance := opened.Load()
+			if instance == nil {
+				return nil, errors.New("the object's Orb is not open")
+			}
+			if len(args) >= 2 {
+				level := ""
+				if len(args) >= 3 && args[2].Type() == js.TypeString {
+					level = args[2].String()
+				}
+				if err := instance.SetDefaultModel(context.Background(), args[0].String(), args[1].String(), level); err != nil {
+					return nil, err
+				}
+			}
+			out, err := instance.DefaultModels()
+			if err != nil {
+				return nil, err
+			}
+			raw, err := json.Marshal(out)
+			return string(raw), err
+		})
+	})
 	// accounts resolves to this object's synced provider accounts as JSON; given a provider and
 	// account id, it selects that account first.
 	set("accounts", func(_ js.Value, args []js.Value) any {

@@ -621,21 +621,13 @@ deck.addEventListener("keydown", event => {
 });
 async function loadTabDefaults() {
   if (!tab) return null;
-  let [{ models }, st, accts] = await Promise.all([tab.rpc("get_available_models"), tab.rpc("get_state"), tab.accounts().catch(() => [])]);
+  const [d, accts] = await Promise.all([tab.models(), tab.accounts().catch(() => [])]);
   // A session created before synced credentials arrived sits on unknown/unknown: replace it once a model exists.
-  if (models.length && (!st?.model || st.model.provider === "unknown")) {
-    await tab.rpc("new_session").catch(() => {});
-    st = await tab.rpc("get_state").catch(() => st);
+  if (d?.models?.length) {
+    const st = await tab.rpc("get_state").catch(() => null);
+    if (!st?.model || st.model.provider === "unknown") await tab.rpc("new_session").catch(() => {});
   }
-  const current = st?.model && st.model.provider !== "unknown" ? `${st.model.provider}/${st.model.id}` : "";
-  const matched = models.find(x => `${x.provider}/${x.id}` === current);
-  const d = {
-    models: models.map(x => `${x.provider}/${x.id}`),
-    default: current,
-    thinking: st?.thinkingLevel || "",
-    levels: matched?.reasoning ? ["off", "low", "medium", "high"] : [],
-  };
-  defaultsOf.set(state.self, d);
+  defaultsOf.set(state.self, d || { models: [] });
   accountsOf.set(state.self, accts || []);
   return d;
 }
@@ -664,17 +656,15 @@ function drawDeck() {
   const setDefault = (name, level = "") => {
     if (peer === state.self) {
       const [provider, ...rest] = name.split("/");
-      return tab.rpc("set_model", { provider, modelId: rest.join("/") })
-        .then(() => level ? tab.rpc("set_thinking_level", { level }) : null)
-        .then(() => loadTabDefaults())
-        .then(() => { if (deck.open) drawDeck(); controls(); }, fail);
+      return tab.models(provider, rest.join("/"), level)
+        .then(d => { if (d) defaultsOf.set(state.self, d); if (deck.open) drawDeck(); controls(); }, fail);
     }
     return ask("default", { machine: peer, name, level }).then(() =>
       ask("models", { machine: peer }).then(d => { if (d) defaultsOf.set(peer, d); if (deck.open) drawDeck(); controls(); }, () => defaultsOf.delete(peer)), fail);
   };
   const choose = id => { t ? send({ do: "model", tab: t.id, name: id }) : setDefault(id); deck.close(); };
   $("deck-head").replaceChildren(node("div", el("p", "label", t ? "model" : `default · ${where}`), node("strong", s.model?.split("/").slice(1).join("/") || "none")),
-    t && !m?.self && def?.default && t.model && t.model !== def.default ? button("make default", () => setDefault(t.model, t.thinking), "plain") : note([s.model?.split("/")[0], t && where].filter(Boolean).join(" · ")));
+    t && def?.default && t.model && t.model !== def.default ? button("make default", () => setDefault(t.model, t.thinking), "plain") : note([s.model?.split("/")[0], t && where].filter(Boolean).join(" · ")));
   const places = [...launchers(), ...(machine(state.self) ? [machine(state.self)] : [])];
   $("places").hidden = !!t || places.length < 2;
   $("places").replaceChildren(...(t ? [] : places).map(d => button(d.self ? "this tab" : d.name, () => { aimAt(d.id); openModels(); }, d.id === peer ? "on" : "")));
@@ -1073,6 +1063,7 @@ async function boot() {
     admin: async (method, params = {}) => JSON.parse(await peer.mitosisAdmin(method, JSON.stringify(params), "")),
     app: line => peer.app(line),
     plugins: async (...args) => JSON.parse(await peer.plugins(...args)),
+    models: async (...args) => JSON.parse(await peer.models(...args)),
     accounts: async (...args) => JSON.parse(await peer.accounts(...args)),
     rpc: (type, params = {}) => new Promise((resolve, reject) => {
       const id = `tab-${++next}`;
