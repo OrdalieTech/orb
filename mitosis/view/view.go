@@ -314,6 +314,7 @@ func (a *App) send(t *tab, text string) (any, error) {
 				a.mu.Lock()
 				if arg != "" {
 					t.queued, t.queuedFrom = arg, t.session
+					t.tr.sent = append(t.tr.sent, arg)
 				}
 				a.mu.Unlock()
 				t.call("session.new", map[string]any{})

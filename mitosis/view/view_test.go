@@ -597,6 +597,9 @@ func TestNewRightAfterOpeningRunsInTheNewSession(t *testing.T) {
 	if now == session {
 		t.Fatalf("the message ran in the session it should replace")
 	}
+	if via := c.rows[opened.Tab][0].Via; via != "" {
+		t.Fatalf("message sent via /new was marked via=%q, want empty", via)
+	}
 }
 
 // Approving a pairing from an app admits the paired device to this owner's sync group, as `orb
