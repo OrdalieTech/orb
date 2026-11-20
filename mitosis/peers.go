@@ -226,7 +226,8 @@ func (ps *Peers) hasDirectGroupLink() bool {
 // member. The relay only forwards opaque ciphertext; id authenticates this peer directly.
 func (ps *Peers) dialRelayed(ctx context.Context, id string) error {
 	var lastErr error
-	for _, relayPeer := range ps.relayCandidates(id) {
+	candidates := ps.relayCandidates(id)
+	for i, relayPeer := range candidates {
 		rConn := ps.Mitosis.Connection(relayPeer)
 		if rConn == nil {
 			continue
@@ -234,7 +235,14 @@ func (ps *Peers) dialRelayed(ctx context.Context, id string) error {
 		var opened struct {
 			StreamID string `json:"stream_id"`
 		}
-		if err := rConn.Call(ctx, "stream.open", map[string]string{"peer_id": id}, &opened); err != nil {
+		// A relay that cannot reach id must leave the next candidates time to try theirs.
+		open, stop := ctx, context.CancelFunc(func() {})
+		if i < len(candidates)-1 {
+			open, stop = context.WithTimeout(ctx, 6*time.Second)
+		}
+		err := rConn.Call(open, "stream.open", map[string]string{"peer_id": id}, &opened)
+		stop()
+		if err != nil {
 			lastErr = err
 			continue
 		}

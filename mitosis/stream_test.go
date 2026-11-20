@@ -421,20 +421,21 @@ func TestReconcileSkipsRelayWhenDirectGroupMemberConnected(t *testing.T) {
 	}
 }
 
-func TestRelayRunsAfterDirectDialHangs(t *testing.T) {
+func TestRelayRunsAfterDirectDialAndFirstRelayHang(t *testing.T) {
 	ctx := t.Context()
-	mac, fedora, tab := newMitosis(t), newMitosis(t), newMitosis(t)
-	for _, x := range []*Mitosis{mac, fedora, tab} {
+	mac, fedora, tab, lab := newMitosis(t), newMitosis(t), newMitosis(t), newMitosis(t)
+	for _, x := range []*Mitosis{mac, fedora, tab, lab} {
 		t.Cleanup(func() { _ = x.Close() })
 	}
 	fedora.SetName("Fedora")
-	group := setupGroup(t, mac, fedora, tab)
+	group := setupGroup(t, mac, fedora, tab, lab)
 	if _, err := fedora.Sync(ctx, []Locator{{Transport: "tailcat/1", Locator: "tc-fedora"}}); err != nil {
 		t.Fatal(err)
 	}
 	recs, _ := fedora.Contacts(mac.PeerID(), group)
 	for _, r := range recs {
 		_, _ = mac.MergeContact(fedora.PeerID(), r)
+		_, _ = lab.MergeContact(fedora.PeerID(), r)
 		_, _ = tab.MergeContact(mac.PeerID(), r)
 	}
 	tab.Hangup(fedora.PeerID())
@@ -445,12 +446,23 @@ func TestRelayRunsAfterDirectDialHangs(t *testing.T) {
 		go func() { _, _, _ = fedora.Connect(ctx, b, "", true) }()
 		return a, nil
 	}
-	// The saved locator never answers: the direct dial runs until its context ends.
-	tabPeers := NewPeers(ctx, tab)
-	tabPeers.Dial = func(ctx context.Context, _, _ string) (net.Conn, error) {
+	// The saved locator never answers, and neither does fedora from lab, the relay tried first:
+	// both must leave time for the relay through mac.
+	hang := func(ctx context.Context, _, _ string) (net.Conn, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
+	NewPeers(ctx, lab).Dial = hang
+	a, b := net.Pipe()
+	go func() { _, _, _ = lab.Connect(ctx, a, "", true) }()
+	if _, _, err := tab.Connect(ctx, b, lab.PeerID(), false); err != nil {
+		t.Fatal(err)
+	}
+	tabPeers := NewPeers(ctx, tab)
+	tabPeers.Dial = hang
+	tabPeers.mu.Lock()
+	tabPeers.lastRelay = lab.PeerID()
+	tabPeers.mu.Unlock()
 	raw, err := tabPeers.Remote(ctx, fedora.PeerID(), "mitosis.ping", struct{}{})
 	if err != nil || !strings.Contains(string(raw), `"Fedora"`) {
 		t.Fatalf("relay after a hanging direct dial: %s %v", raw, err)
