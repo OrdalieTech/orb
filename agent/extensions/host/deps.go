@@ -49,11 +49,14 @@ func materializeDependencies(ctx context.Context, runtime Runtime, entryPath str
 	command.Env = append([]string(nil), environment...)
 	output, err := command.CombinedOutput()
 	if err != nil {
-		detail := strings.TrimSpace(string(output))
-		if detail == "" {
-			detail = err.Error()
+		// A killed installer may have printed a success line; the cause comes first.
+		if ctx.Err() != nil {
+			err = ctx.Err()
 		}
-		return fmt.Errorf("install dependencies for %s: %s", entryPath, detail)
+		if detail := strings.TrimSpace(string(output)); detail != "" {
+			return fmt.Errorf("install dependencies for %s: %w: %s", entryPath, err, detail)
+		}
+		return fmt.Errorf("install dependencies for %s: %w", entryPath, err)
 	}
 	if !dependenciesSatisfied(packageDir, manifest.Dependencies) {
 		return fmt.Errorf("install dependencies for %s: installer completed but node_modules is incomplete", entryPath)
