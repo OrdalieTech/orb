@@ -852,7 +852,9 @@ change), on every record change of a Worker object, and on `orb mitosis sync` (t
 method on every host with a Mitosis). The core is format-blind: a host registers each data class
 with `SetClass(name, Class)`, a
 `Shareable`/`MergeShared` pair over its own store. `credentials` is `ai/auth`'s Store over
-auth.json; `memory` is `plugins/memory`'s `Shared` over the memory plugin's `Store`, merged by
+auth.json; `accounts` is `ai/auth/accounts`'s Store over accounts.json (named extra accounts and
+default-account display names, never local CLI config directories such as `claudeConfigDir`, auto-activating
+a newly synced provider when auth.json has none); `memory` is `plugins/memory`'s `Shared` over the memory plugin's `Store`, merged by
 item ID (native storage's, else the agent directory's journal; a Worker object's or tab's
 `filestore.Journal` document); `mcp` and `mcp-auth` are `plugins/mcp`'s `SharedServers` and
 `SharedLogins` over the agent directory's mcp.json and mcp-auth.json files, which the MCP plugin

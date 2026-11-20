@@ -9,6 +9,7 @@ import (
 	"github.com/OrdalieTech/orb/agent/config"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/tools"
+	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/host"
 )
@@ -66,11 +67,12 @@ func newModelRegistry(h *host.Host, agentDir string) (*config.ModelRegistry, err
 	if err != nil {
 		return nil, err
 	}
+	credentials := accounts.NewStoreWithDocument(h.Document("accounts.json"), auth)
 	var options []config.ModelRegistryOption
 	if h.Env != nil {
 		options = append(options, config.WithEnvironment(h.Env))
 	}
-	return config.NewModelRegistryWithDocuments(agentDir, auth, h.Document("models.json"), h.Document("models-store.json"), false, options...)
+	return config.NewModelRegistryWithDocuments(agentDir, credentials, h.Document("models.json"), h.Document("models-store.json"), false, options...)
 }
 
 func hostSessionManager(h *host.Host, cwd string) (*sessionstore.SessionManager, error) {

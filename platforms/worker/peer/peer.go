@@ -27,6 +27,7 @@ import (
 	attach "github.com/OrdalieTech/orb/agent/mitosis"
 	mitosistool "github.com/OrdalieTech/orb/agent/mitosis/tool"
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/engine"
 	orbhost "github.com/OrdalieTech/orb/host"
 	"github.com/OrdalieTech/orb/internal/document"
@@ -69,6 +70,15 @@ func Memory(store orbhost.Store) memory.Store {
 	return filestore.Journal{Document: store.Document(path.Join(worker.AgentDir, "memory", "memory.jsonl"))}
 }
 
+// Accounts is the named-account store in the object's Store over its auth.json, shared with the
+// object's sync group.
+func Accounts(store orbhost.Store) *accounts.Store {
+	return accounts.NewStoreWithDocument(
+		store.Document(path.Join(worker.AgentDir, "accounts.json")),
+		aiauth.NewDocumentStore(store.Document(path.Join(worker.AgentDir, "auth.json"))),
+	)
+}
+
 // Open loads or creates the object's Mitosis identity, enrolls the object's
 // Orb once under alias, and attaches it for this runtime's lifetime.
 func Open(instance *worker.Instance, alias string) (*Peer, error) {
@@ -77,7 +87,12 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 	if err != nil {
 		return nil, err
 	}
-	b.SetClass("credentials", aiauth.NewDocumentStore(store.Document(path.Join(worker.AgentDir, "auth.json"))))
+	if alias != "" {
+		b.SetName(alias)
+	}
+	creds := aiauth.NewDocumentStore(store.Document(path.Join(worker.AgentDir, "auth.json")))
+	b.SetClass("credentials", creds)
+	b.SetClass("accounts", accounts.NewStoreWithDocument(store.Document(path.Join(worker.AgentDir, "accounts.json")), creds))
 	b.SetClass("memory", memory.Shared{Store: Memory(store)})
 	enrolled := store.Document(instanceDocument)
 	raw, err := enrolled.Read(context.Background())

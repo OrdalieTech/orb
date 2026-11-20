@@ -14,6 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrdalieTech/orb/ai"
+	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/ai/providers/faux"
 	"github.com/OrdalieTech/orb/internal/document"
 	"github.com/OrdalieTech/orb/mitosis"
@@ -329,5 +332,92 @@ func TestRelayTakesWhatTheBrowserRefuses(t *testing.T) {
 	}
 	if want := []string{"auth.example grant", "auth.example grant"}; !slices.Equal(relayed, want) {
 		t.Fatalf("relayed %q, want %q", relayed, want)
+	}
+}
+
+// TestPeerSyncsNamedAccountsAndPublishesName proves a Worker/tab peer receives accounts stored
+// only in accounts.json (such as a second Codex account or OpenCode Zen), sees their models in
+// its registry without a restart, and publishes its own name instead of "".
+func TestPeerSyncsNamedAccountsAndPublishesName(t *testing.T) {
+	ctx := t.Context()
+	kv := &mapKV{data: map[string][]byte{}}
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	instance, open := object(t, kv, provider)
+	defer instance.Dispose()
+	self, err := open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := mitosis.Open(&document.Memory{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = owner.Close() }()
+	owner.SetName("MacBook")
+	ownerAuth := aiauth.NewDocumentStore(&document.Memory{})
+	ownerAccounts := accounts.NewStoreWithDocument(&document.Memory{}, ownerAuth)
+	added, err := ownerAccounts.Add(ctx, "openai", "lea", aiauth.APIKeyCredential("sk-lea"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner.SetClass("credentials", ownerAuth)
+	owner.SetClass("accounts", ownerAccounts)
+
+	// Pair and connect owner <-> peer.
+	admin(t, self, "trust", map[string]string{"peer_id": owner.PeerID()})
+	if err := owner.AddGrant(mitosis.FullGrant(self.PeerID())); err != nil {
+		t.Fatal(err)
+	}
+	channel := dial(t, self, owner)
+	defer func() { _ = channel.Close() }()
+
+	// Peer reports its display name on ping.
+	var ping struct {
+		Name string `json:"name"`
+	}
+	if err := channel.Call(ctx, "mitosis.ping", struct{}{}, &ping); err != nil || ping.Name != "Durable Object/1" {
+		t.Fatalf("ping = %+v, %v", ping, err)
+	}
+
+	// Owner adds peer to sync group; peer joins and exchanges records, then syncs.
+	if _, err := owner.SyncAdmin(ctx, mitosis.JSON(map[string]string{"add": self.PeerID()}), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := self.Admin(ctx, "sync", mitosis.JSON(map[string]string{"join": owner.PeerID()}), ""); err != nil {
+		t.Fatal(err)
+	}
+	// Exchange signed scope records both ways, as Reconcile does.
+	var group struct {
+		GroupID string `json:"group_id"`
+	}
+	raw, _ := owner.Sync(ctx, nil)
+	_ = json.Unmarshal(raw, &group)
+	ownerRecs, _ := owner.Contacts(self.PeerID(), group.GroupID)
+	for _, r := range ownerRecs {
+		_, _ = self.mitosis.MergeContact(owner.PeerID(), r)
+	}
+	if _, err := self.mitosis.Sync(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	peerRecs, _ := self.mitosis.Contacts(owner.PeerID(), group.GroupID)
+	for _, r := range peerRecs {
+		_, _ = owner.MergeContact(self.PeerID(), r)
+	}
+	var synced struct {
+		Names map[string]string `json:"names"`
+	}
+	raw, err = owner.Sync(ctx, nil)
+	if err != nil || json.Unmarshal(raw, &synced) != nil || synced.Names[self.PeerID()] != "Durable Object/1" {
+		t.Fatalf("owner sync names = %+v, %v", synced.Names, err)
+	}
+
+	// Peer's accounts store holds "lea" and its session's ModelRegistry offers openai models.
+	rows, err := Accounts(instance.Host.Store).Accounts(ctx)
+	if err != nil || len(rows) != 1 || rows[0].ID != added.ID || rows[0].Name != "lea" || !rows[0].Active {
+		t.Fatalf("peer accounts = %#v, %v", rows, err)
+	}
+	avail := instance.Session().AvailableModels()
+	if !slices.ContainsFunc(avail, func(m ai.Model) bool { return m.Provider == "openai" }) {
+		t.Fatalf("peer registry did not see synced openai account (got %d models)", len(avail))
 	}
 }

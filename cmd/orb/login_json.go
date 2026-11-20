@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/plugins/claudesessions"
 )
 
 // runLoginJSON is /login for apps that draw their own screens, as JSON lines on stdout.
@@ -63,7 +64,14 @@ func runLoginJSON(ctx context.Context, args []string, streams cliStreams) int {
 	interaction := aiauth.NewJSONInteraction(ctx, streams.Stdin, out)
 	credential, err := loginCredential(ctx, stateFromContext(ctx), registry, provider, authType, interaction)
 	if err == nil {
-		_, err = storage.Modify(ctx, provider, func(*aiauth.Credential) (*aiauth.Credential, error) { return credential, nil })
+		base, _ := storage.Read(ctx, provider)
+		if base == nil && provider != claudesessions.Name {
+			if _, err = storage.Modify(ctx, provider, func(*aiauth.Credential) (*aiauth.Credential, error) { return credential, nil }); err == nil {
+				err = book.store.Deselect(ctx, provider)
+			}
+		} else {
+			_, err = book.store.Add(ctx, provider, "", credential)
+		}
 	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
