@@ -581,7 +581,11 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			}
 			if err == nil && in.Versions == nil { // a former owner's vault is no hand-in
 				folded, merged[s.peer+" "+name] = append(folded, in.Entries), s.vault.Digest
-				maps.Copy(memberRemovals, in.Removed)
+				for entry, v := range in.Removed { // only a removal of the current version can apply
+					if vs[entry] == v {
+						memberRemovals[entry] = v
+					}
+				}
 			}
 		}
 		if len(folded) > 0 {
@@ -600,10 +604,8 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			// still match what the member removed.
 			var deletes []string
 			for entry, v := range memberRemovals {
-				if v.D != "" && vs[entry] == v {
-					if cur, ok := own[entry]; ok && digests(cur) == v.D {
-						deletes = append(deletes, entry)
-					}
+				if cur, ok := own[entry]; ok && v.D != "" && digests(cur) == v.D {
+					deletes = append(deletes, entry)
 				}
 			}
 			if len(deletes) > 0 {
