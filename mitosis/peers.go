@@ -448,11 +448,12 @@ func (ps *Peers) Reconcile() {
 				mu.Lock()
 				m, ok := last[k]
 				mu.Unlock()
-				// A link that failed waits out its minute even as records change, unless a channel
-				// to it opened since: every round waits for its exchanges, so redialling an offline
-				// member on each change held the next round, and the hand-in it was woken for, for
-				// the dial's timeout.
-				if ok && time.Now().Before(m.until) && m.c == ps.Mitosis.Connection(peer) && (m.failed || m.versions == string(JSON(versions))) {
+				// A link that failed and still has no channel waits out its minute even as records
+				// change: every round waits for its exchanges, so redialling an offline member on
+				// each change held the next round, and the hand-in it was woken for, for the dial's
+				// timeout. A member with a channel is tried again at once.
+				live := ps.Mitosis.Connection(peer)
+				if ok && time.Now().Before(m.until) && (m.failed && live == nil || m.versions == string(JSON(versions)) && m.c == live) {
 					continue
 				}
 				wg.Add(1)
