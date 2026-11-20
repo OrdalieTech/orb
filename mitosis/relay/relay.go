@@ -352,7 +352,7 @@ func (t *Transport) open(ctx context.Context, params map[string]any) (device, id
 			return device, opened.ID, nil
 		}
 		// Anything else may have reached the device, which may have sent the request already.
-		if code := mitosis.Code(err); code != "unauthorized" && code != "not_found" && code != "method_not_found" {
+		if code := mitosis.Code(err); code != "unauthorized" && code != "not_found" && code != "not_a_peer" && code != "method_not_found" {
 			return "", "", err
 		}
 	}

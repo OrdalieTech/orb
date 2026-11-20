@@ -244,9 +244,11 @@ func (b *Mitosis) change(kind, peer string) error {
 
 // adopt takes the newest valid membership the group's owners published until none is newer,
 // leaves the group when it leaves this device out, and makes this owner's last change again when
-// another's won over it.
-func (b *Mitosis) adopt() {
+// another's won over it. It returns channels, event-watch cancels, and relayed streams to close
+// outside b.mu for peers that left the group (keeping explicit pairwise pairings/grants untouched).
+func (b *Mitosis) adopt() revocation {
 	self, adopted := b.PeerID(), false
+	before := slices.Clone(b.state.Scopes[b.state.Group])
 	for changed := true; changed && b.state.Group != ""; {
 		changed = false
 		for _, p := range slices.Concat(b.state.Owners, b.state.Prior) {
@@ -269,12 +271,20 @@ func (b *Mitosis) adopt() {
 	if b.state.Group != "" && !slices.Contains(cur.Members, self) {
 		b.leave()
 	}
+	var rev revocation
 	if adopted {
+		after := b.state.Scopes[b.state.Group]
+		for _, p := range before {
+			if p == self || b.state.Group != "" && slices.Contains(after, p) {
+				continue
+			}
+			rev.merge(b.revokePeerLocked(p, !b.hasExplicitGrantLocked(p) && !slices.Contains(b.state.Prior, p)))
+		}
 		b.pruneRecordsLocked()
 		_ = b.save()
 	}
 	if b.state.Group == "" {
-		return
+		return rev
 	}
 	shown := map[string]bool{"add": slices.Contains(cur.Members, op[1]), "promote": slices.Contains(cur.Owners, op[1]),
 		"remove": !slices.Contains(cur.Members, op[1]), "demote": !slices.Contains(cur.Owners, op[1])}
@@ -284,6 +294,7 @@ func (b *Mitosis) adopt() {
 		}
 		b.op = [2]string{}
 	}
+	return rev
 }
 
 // SyncAdmin is the sync admin method: one membership change, then a round. join follows a paired
@@ -340,6 +351,7 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 	defer b.round.Unlock()
 	b.mu.Lock()
 	var err error
+	var drop revocation
 	group := b.state.Group
 	switch {
 	case p.Join != "":
@@ -347,13 +359,27 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 			err = Fail("resource_exhausted")
 			break
 		}
+		before := slices.Clone(b.state.Scopes[b.state.Group])
 		b.leave()
 		b.state.Group, b.state.Owners = joined.Group, joined.Owners
 		members := slices.Concat(joined.Owners, []string{p.Join, self})
 		slices.Sort(members)
 		b.state.Scopes[joined.Group] = slices.Compact(members)
+		for _, m := range before {
+			if m == self || slices.Contains(b.state.Scopes[joined.Group], m) {
+				continue
+			}
+			drop.merge(b.revokePeerLocked(m, !b.hasExplicitGrantLocked(m)))
+		}
 	case peer == self:
+		before := slices.Clone(b.state.Scopes[b.state.Group])
 		b.leave()
+		for _, m := range before {
+			if m == self {
+				continue
+			}
+			drop.merge(b.revokePeerLocked(m, !b.hasExplicitGrantLocked(m)))
+		}
 	case group == "" && kind != "add":
 		err = Fail("not_found")
 	case kind == "": // a round
@@ -373,6 +399,7 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 	}
 	group = b.state.Group
 	b.mu.Unlock()
+	drop.close()
 	if err != nil || group == "" {
 		return JSON(struct{}{}), err
 	}
@@ -390,8 +417,10 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 			}
 		}
 		b.pruneRecordsLocked()
+		rev := b.revokePeerLocked(peer, !slices.Contains(b.state.Prior, peer))
 		saveErr := b.save()
 		b.mu.Unlock()
+		rev.close()
 		if err == nil {
 			err = saveErr
 		}
@@ -450,11 +479,12 @@ func (b *Mitosis) Sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 
 func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessage, error) {
 	b.mu.Lock()
-	b.adopt()
+	rev := b.adopt()
 	group, classes, self := b.state.Group, maps.Clone(b.classes), b.PeerID()
 	members, owners := slices.Clone(b.state.Scopes[group]), slices.Clone(b.state.Owners)
 	if group == "" || len(classes) == 0 {
 		b.mu.Unlock()
+		rev.close()
 		return nil, Fail("not_found")
 	}
 	owner := slices.Contains(owners, self)
@@ -485,6 +515,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		}
 	}
 	b.mu.Unlock()
+	rev.close()
 
 	opened := map[string][]byte{}
 	merged := map[string]string{}

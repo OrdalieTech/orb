@@ -315,12 +315,12 @@ func (b *Mitosis) Known(peer string) bool {
 	return false
 }
 
-// nameFor is what this agent is called, for its owner and the peers it granted anything; a
-// stranger learns nothing.
+// nameFor is what this agent is called, for its owner, current sync-group members, and the peers
+// it granted anything; a stranger learns nothing.
 func (b *Mitosis) nameFor(p Principal) string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.state.Blocked[p.PeerID] || !b.owner(p) && !slices.ContainsFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == p.PeerID }) {
+	if b.state.Blocked[p.PeerID] || !b.owner(p) && !b.groupPermits(p, "") && !b.hasExplicitGrantLocked(p.PeerID) {
 		return ""
 	}
 	return b.name
@@ -343,16 +343,9 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 		if err := protocol.Decode(params, &p); err != nil {
 			return nil, err
 		}
-		// The owner and a peer granted anything here learn what this machine is called; a stranger, nothing.
-		b.mu.Lock()
-		name := ""
-		if !b.state.Blocked[peer] && (b.owner(principal) || slices.ContainsFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == peer })) {
-			name = b.name
-		}
-		b.mu.Unlock()
 		return JSON(struct {
 			Name string `json:"name,omitempty"`
-		}{name}), nil
+		}{b.nameFor(principal)}), nil
 	case "pair.claim":
 		var p struct {
 			ID      string `json:"invitation_id"`
@@ -463,9 +456,21 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 			return nil, err
 		}
 		if method != "conversation.describe" {
-			result, err := b.observe(ctx, principal, h.endpoint, method, h.id, p.observation)
-			if err != nil || method != "operations.get" {
-				return result, err
+			obsCtx := ctx
+			if method == "events.subscribe" {
+				var stop func()
+				obsCtx, stop = b.watch(ctx, peer)
+				defer stop()
+			}
+			result, err := b.observe(obsCtx, principal, h.endpoint, method, h.id, p.observation)
+			if err != nil {
+				return nil, err
+			}
+			if method == "events.subscribe" && !b.permits(principal, gate) {
+				return nil, Fail("not_found")
+			}
+			if method != "operations.get" {
+				return result, nil
 			}
 			var receipt map[string]json.RawMessage
 			if json.Unmarshal(result, &receipt) != nil {
@@ -510,6 +515,8 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 		return b.SyncAdmin(ctx, JSON(map[string]string{"remove": peer}), nil)
 	case "vault.get":
 		return b.serveVault(peer, params)
+	case "stream.open", "stream.write", "stream.read", "stream.close":
+		return b.handleStream(ctx, peer, method, params)
 	case "peers.list":
 		var p struct {
 			pageRequest

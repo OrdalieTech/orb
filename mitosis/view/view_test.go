@@ -651,7 +651,8 @@ func TestConnectedPeerWithoutLaunchStopsReading(t *testing.T) {
 		c.out <- raw
 	}, Call: func(_ context.Context, method string, params, result any) error {
 		if method == "status" {
-			return json.Unmarshal([]byte(`{"peer_id":"me","peers":["worker"],"peer_states":{"worker":"connected"}}`), result)
+			return json.Unmarshal([]byte(`{"peer_id":"me","peers":["old","worker"],"peer_states":{"old":"connected","worker":"connected"},
+				"group_id":"g","scopes":{"g":["me","old"]}}`), result)
 		}
 		if method == "remote" {
 			p := params.(map[string]any)
@@ -663,16 +664,88 @@ func TestConnectedPeerWithoutLaunchStopsReading(t *testing.T) {
 		return nil
 	}})
 	app.Do([]byte(`{"do":"visible","on":true}`))
-	c.until(t, "worker no longer reading", func() bool {
+	// A paired machine refusing this app only follows; a group member refusing it runs an Orb
+	// from before group access, and says so.
+	c.until(t, "worker and old no longer reading", func() bool {
 		list := machines.Load()
 		if list == nil {
 			return false
 		}
+		done := 0
 		for _, m := range *list {
-			if m.ID == "worker" && m.Connected && !m.Reading && !m.Launch {
-				return true
+			if m.Connected && !m.Reading && !m.Launch && (m.ID == "worker" && !m.Outdated || m.ID == "old" && m.Outdated) {
+				done++
 			}
 		}
-		return false
+		return done == 2
 	})
+}
+
+// Non-paired sync-group members appear in Home with names seeded from peer_names, dial on demand
+// to populate threads and peer count, and back off when offline instead of hammering remote.
+func TestGroupMembersSeedNamesAndOfflinePeersBackOff(t *testing.T) {
+	c := newClient()
+	var machines atomic.Pointer[[]Machine]
+	var offlineCalls atomic.Int32
+	app := New(t.Context(), Options{Name: "this tab", Emit: func(m any) {
+		raw := mitosis.JSON(m)
+		var h struct {
+			T        string
+			Machines []Machine
+		}
+		if json.Unmarshal(raw, &h) == nil && h.T == "home" {
+			machines.Store(&h.Machines)
+		}
+		c.out <- raw
+	}, Call: func(_ context.Context, method string, params, result any) error {
+		if method == "status" {
+			return json.Unmarshal([]byte(`{
+				"peer_id":"me",
+				"peers":["fedora","offline"],
+				"peer_states":{"fedora":"disconnected","offline":"disconnected"},
+				"peer_names":{"fedora":"Fedora","offline":"lab-3"}
+			}`), result)
+		}
+		if method == "remote" {
+			p := params.(map[string]any)
+			if p["peer_id"] == "offline" {
+				offlineCalls.Add(1)
+				return mitosis.Fail("unavailable")
+			}
+			if p["peer_id"] == "fedora" {
+				if p["method"] == "host.sessions" {
+					return json.Unmarshal([]byte(`{"host":"Fedora","items":[{"session_id":"s1","name":"build","cwd":"/src","modified":10}]}`), result)
+				}
+				return json.Unmarshal([]byte(`{}`), result)
+			}
+		}
+		return nil
+	}})
+	app.Do([]byte(`{"do":"visible","on":true}`))
+	c.until(t, "group members loaded", func() bool {
+		list := machines.Load()
+		if list == nil || len(c.home) != 1 || c.home[0].Title != "build" || c.state.Summary != "ready · 1 peer" {
+			return false
+		}
+		var sawFedora, sawOffline bool
+		for _, m := range *list {
+			if m.ID == "fedora" && m.Name == "Fedora" && m.Connected && m.Launch {
+				sawFedora = true
+			}
+			if m.ID == "offline" && m.Name == "lab-3" && !m.Connected {
+				sawOffline = true
+			}
+		}
+		return sawFedora && sawOffline && offlineCalls.Load() > 0
+	})
+	// Let the initial offline probe finish setting retryAt, then verify extra refreshes back off.
+	time.Sleep(50 * time.Millisecond)
+	before := offlineCalls.Load()
+	app.wakeMachines()
+	time.Sleep(200 * time.Millisecond)
+	app.wakeMachines()
+	time.Sleep(200 * time.Millisecond)
+	if after := offlineCalls.Load(); after != before {
+		t.Fatalf("offline peer hammered during backoff: before=%d after=%d", before, after)
+	}
 }

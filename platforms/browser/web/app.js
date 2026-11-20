@@ -180,7 +180,7 @@ function renderHome() {
     const up = m.self ? state.up : m.connected;
     const card = button("", () => { device = device === m.id ? "" : m.id; render(); }, `${device === m.id ? "on" : ""}${up ? "" : " down"}`);
     card.oncontextmenu = event => { event.preventDefault(); deviceMenu(m); };
-    card.append(node("span", where(m.hue), m.self ? "this tab" : m.name), node("span", up ? `${m.running?.length || 0} running` : "offline", node("b", up ? "承認" : "否決")));
+    card.append(node("span", where(m.hue), m.self ? "this tab" : m.name), node("span", !up ? "offline" : m.outdated ? "update Orb" : `${m.running?.length || 0} running`, node("b", up && !m.outdated ? "承認" : "否決")));
     return card;
   }));
   $("summary").textContent = state.summary || "";
@@ -892,9 +892,9 @@ const pages = {
     const syncNow = () => tab.admin("sync").then(() => { toast("synced"); openPage("mitosis"); }, error => showError(error.message));
     const members = syncGroup?.members || [], owners = new Set(syncGroup?.owners || []), names = syncGroup?.names || {};
     return [node("h2", "Mitosis"), note("peer to peer"),
-      label("paired devices"),
-      ...(home.machines.filter(m => !m.self).length ? home.machines.filter(m => !m.self).map(m => row(m.name, [m.connected ? "connected" : "offline", m.version && `orb ${m.version}`, m.launch ? "starts conversations" : "follows only"].filter(Boolean).join(" · "),
-        button("rename", () => rename(m.name, name => { send({ do: "rename", machine: m.id, name }); setTimeout(retry("mitosis"), 300); }), "plain"))) : [note("no devices paired yet")]),
+      label("devices"),
+      ...(home.machines.filter(m => !m.self).length ? home.machines.filter(m => !m.self).map(m => row(m.name, [m.connected ? "connected" : "offline", m.version && `orb ${m.version}`, m.launch ? "starts conversations" : m.outdated ? "its Orb predates group access · update it" : "follows only"].filter(Boolean).join(" · "),
+        button("rename", () => rename(m.name, name => { send({ do: "rename", machine: m.id, name }); setTimeout(retry("mitosis"), 300); }), "plain"))) : [note("no devices yet")]),
       el("div", "actions", button("+ pair a device", pairAnother)),
       ...(syncGroup?.group_id ? [label(`sync group · ${syncGroup.in_sync ? "in sync" : "syncing"} · ${members.length} device${members.length === 1 ? "" : "s"}`),
         ...members.map(id => {

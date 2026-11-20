@@ -771,9 +771,17 @@ Native IPC separates local-owner administration from scoped instance attachment,
 credentials, fences registrations with persistent generations, and refuses simultaneous writers.
 Mitosis loss marks runtimes unavailable while their local work continues. Pairing pins Ed25519
 PeerIDs and requires a recoverable one-use invitation claim plus local-owner approval of exact
-grants. Discovery scopes grant no execution authority. Agent calls require source and
-destination grants, derive the agent subject from attachment credentials, and never
-transparently forward execution through a third peer. A call addressed to a conversation goes
+grants. Plain discovery scopes grant no execution authority; current, unblocked members of the
+owner-managed sync group (`mitosis/sync.go`) hold full controller authority (`FullGrant`: `agent.*`
+and `host.launch`), derived live from membership with no minted grants, so removing or blocking a
+member cuts its access, event waits and relayed streams immediately (while keeping explicit
+pairwise grants on other machines intact for direct pairings and 0.25/0.26 interop). Agent calls
+require source and destination grants, derive the agent subject from attachment credentials, and
+never transparently forward execution through a third peer. A peer that cannot directly dial a
+group member's locator (such as a browser tab) may open a single-hop raw byte tunnel
+(`stream.open`/`write`/`read`/`close`) through a connected group member and run its own pinned
+TLS 1.3 handshake (`orb-mitosis/1`) directly with the target, so the target authenticates the
+caller's PeerID and authorizes it itself while the relay carries only ciphertext. A call addressed to a conversation goes
 to the runtime holding it; one no runtime holds is launched where the host launches Orbs
 (`host.launch`, native), and a call with no conversation goes to the agent's default one: native,
 its stored conversation written in last, resumed, or a new one in `~` when it has none; a Worker
@@ -887,8 +895,10 @@ of its own, with an agent directory of its own holding capped credentials.
 
 A browser tab is a full peer (`platforms/browser/web/peer.js`): it runs the Worker runtime
 (`cmd/orb-worker`, built as `peer.wasm`) over IndexedDB, with its identity, credentials and memory
-in the same Store a Worker object keeps, and dials its peers' `ws://` or `wss://` locators itself
-(`platforms/worker/peer` `Dial`, which runs `mitosis.Peers` with a WebSocket dialer). It joins an
+in the same Store a Worker object keeps, dials its paired peers' `ws://` or `wss://` locators
+itself (`platforms/worker/peer` `Dial`, which runs `mitosis.Peers` with a WebSocket dialer), and
+reaches other sync-group members end to end through a connected member's `stream.*` single-hop
+tunnel (running TLS 1.3 directly against each target). It joins an
 invitation, trusts the device it joined, follows its sync group and reconnects on reload like a
 native device, though no one dials it; a Worker object only accepts streams. The browser debug
 page uses it to make a tab one of the user's devices ("Wasm host and browser page").
@@ -915,6 +925,7 @@ IDs use 16 random bytes encoded as unpadded base64url. Session/entry IDs remain 
 | `events.unsubscribe` | `session_id`, `snapshot_id` → release retained snapshot |
 | `peers.list` | `scope_id`, `have` (the caller's revision by record peer), optional `cursor` → the scoped signed records newer than `have`, and `behind`, the record peers the caller holds newer or alone |
 | `peers.publish` | bounded `records` array → validated, durably merged revisions |
+| `stream.open`, `stream.write`, `stream.read`, `stream.close` | single-hop raw byte tunnel between two current, unblocked sync-group members (target locator resolved via `PeerLocator`, bounded at 16 per peer / 32 total, 2 min idle); endpoints run pinned TLS 1.3 end to end inside the tunnel |
 
 `expected` contains `registration_generation` and `session_revision`. Prompt arguments are
 `{text}`; steer/follow-up are `{text, execution_id}`; cancel is `{execution_id}`; input replies

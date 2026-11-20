@@ -148,7 +148,7 @@ func (b *Mitosis) permits(p Principal, permission string) bool {
 	if b.failed || b.closed || b.state.Blocked[p.PeerID] {
 		return false
 	}
-	return b.owner(p) || slices.ContainsFunc(b.state.Grants, func(g Grant) bool {
+	return b.owner(p) || b.groupPermits(p, permission) || slices.ContainsFunc(b.state.Grants, func(g Grant) bool {
 		return g.Principal == p && g.Destination == "" && (permission == "" || slices.Contains(g.Permissions, permission))
 	})
 }
