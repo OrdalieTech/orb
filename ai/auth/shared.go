@@ -89,10 +89,7 @@ func ShareableCredential(credential *Credential) bool {
 			return false
 		}
 	}
-	if len(credential.Extra["claudeConfigDir"]) > 0 {
-		return false
-	}
-	return true
+	return len(credential.Extra["claudeConfigDir"]) == 0
 }
 
 func compactJSON(raw []byte) []byte {
