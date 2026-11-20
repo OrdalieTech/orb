@@ -884,6 +884,7 @@ const pages = {
     };
     const forgetTab = async () => {
       if (await pick("forget this tab? its conversations here go with it", [{ label: "keep it" }, { label: "forget this tab" }]) === "forget this tab") {
+        await Promise.race([tab.admin("sync", { remove: me }).catch(() => {}), new Promise(r => setTimeout(r, 3000))]);
         localStorage.setItem("orb.tab.forget", "1");
         location.reload();
       }
@@ -905,7 +906,7 @@ const pages = {
         el("div", "actions", button("sync now", syncNow))] : []),
       label("this tab"),
       row(shortPeer(me), me, button("copy", () => navigator.clipboard.writeText(me).then(() => toast("peer id copied")), "plain")),
-      note("Each device is approved by fingerprint on its own screen. Forgetting this tab clears it here; block it on a device to take it out of your group."),
+      note("Each device is approved by fingerprint on its own screen. Forgetting this tab leaves the sync group and clears it here; if offline, block it on an owner to drop it there."),
       el("div", "actions", button("forget this tab", forgetTab))];
   },
 };

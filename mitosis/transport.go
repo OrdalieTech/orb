@@ -493,6 +493,18 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 			return JSON(map[string]any{"group_id": groupID(self), "owners": []string{self}}), nil
 		}
 		return JSON(map[string]any{"group_id": b.state.Group, "owners": b.state.Owners}), nil
+	case "sync.leave": // a member voluntarily leaving this owner's sync group (authenticated as peer)
+		var p struct{}
+		if err := protocol.Decode(params, &p); err != nil {
+			return nil, err
+		}
+		b.mu.Lock()
+		inGroup := b.state.Group != "" && slices.Contains(b.state.Owners, b.PeerID()) && slices.Contains(b.state.Scopes[b.state.Group], peer) && peer != b.PeerID()
+		b.mu.Unlock()
+		if !inGroup {
+			return nil, Fail("unauthorized")
+		}
+		return b.SyncAdmin(ctx, JSON(map[string]string{"remove": peer}), nil)
 	case "vault.get":
 		return b.serveVault(peer, params)
 	case "peers.list":

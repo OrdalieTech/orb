@@ -536,4 +536,18 @@ func TestSyncMixedClassPeersConvergeWithoutFlapping(t *testing.T) {
 	if before != after {
 		t.Fatalf("records flapped across idle rounds with mixed-class peers")
 	}
+
+	// A member removing itself (e.g. "Forget this tab") leaves locally and asks a connected owner
+	// to drop it from the group so no ghost member remains.
+	admin(tabMember, `{"remove":"`+tabMember.PeerID()+`"}`)
+	if tabMember.state.Group != "" {
+		t.Fatalf("member still in group after removing itself: %q", tabMember.state.Group)
+	}
+	if slices.Contains(newerOwner.state.Scopes[group], tabMember.PeerID()) {
+		t.Fatalf("connected owner still lists departed member %s", tabMember.PeerID())
+	}
+	round(olderOwner, newerOwner)
+	if slices.Contains(olderOwner.state.Scopes[group], tabMember.PeerID()) {
+		t.Fatalf("other owner still lists departed member %s after sync", tabMember.PeerID())
+	}
 }

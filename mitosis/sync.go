@@ -263,6 +263,12 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 			return nil, Fail("unauthorized")
 		}
 	}
+	if peer == self && kind == "remove" {
+		b.mu.Lock()
+		owners := slices.Clone(b.state.Owners)
+		b.mu.Unlock()
+		b.tellLeave(ctx, owners)
+	}
 	b.round.Lock()
 	defer b.round.Unlock()
 	b.mu.Lock()
@@ -308,6 +314,28 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 		b.tellRemoved(peer, group)
 	}
 	return out, err
+}
+
+// tellLeave asks a connected owner to remove this device from the group's membership before it
+// leaves locally, so forgetting a browser tab or leaving from a member does not leave a ghost
+// member on the owners. Best effort: an offline device still leaves locally.
+func (b *Mitosis) tellLeave(ctx context.Context, owners []string) {
+	self := b.PeerID()
+	for _, owner := range owners {
+		if owner == self {
+			continue
+		}
+		c := b.Connection(owner)
+		if c == nil {
+			continue
+		}
+		call, cancel := context.WithTimeout(ctx, 2*time.Second)
+		err := c.Call(call, "sync.leave", struct{}{}, nil)
+		cancel()
+		if err == nil {
+			return
+		}
+	}
 }
 
 // tellRemoved hands a device this owner just left out its record, whose membership no longer
