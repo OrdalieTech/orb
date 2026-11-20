@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 func TestSharedServersShareOnlyWhatCannotRunOrLeak(t *testing.T) {
@@ -116,4 +118,106 @@ func TestSharedMergeKeepsLocalServersAndFresherGrants(t *testing.T) {
 	if _, err := class.MergeShared(ctx, nil, false, []string{key}); err != nil || held() != "none" {
 		t.Fatalf("removed grant still held: %q (%v)", held(), err)
 	}
+}
+
+func TestSharedMCPRemovedTombstones(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	serversPath := GlobalPath(dir)
+	if _, err := AddServer(serversPath, "remote", ServerConfig{URL: "https://mcp.example.com/mcp", Headers: map[string]string{"Authorization": "Bearer secret-hdr"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddServer(serversPath, "local", ServerConfig{Command: "echo"}); err != nil {
+		t.Fatal(err)
+	}
+	serversDoc := fileDoc(serversPath)
+	sClass := SharedServers{Document: serversDoc}
+	before, err := sClass.Shareable(ctx)
+	if err != nil || before["remote"] == nil {
+		t.Fatalf("before = %v, %v", before, err)
+	}
+	if removed, err := RemoveServer(serversPath, "remote"); err != nil || !removed {
+		t.Fatalf("RemoveServer(remote) = %v, %v", removed, err)
+	}
+	if removed, err := RemoveServer(serversPath, "local"); err != nil || !removed {
+		t.Fatalf("RemoveServer(local) = %v, %v", removed, err)
+	}
+	if rawServers, _ := os.ReadFile(serversPath); strings.Contains(string(rawServers), "secret-hdr") {
+		t.Fatalf("mcp.json retained secret header after RemoveServer: %s", rawServers)
+	}
+	rem, err := sClass.Removed(ctx)
+	if err != nil || len(rem) != 1 || rem["remote"] != jsonwire.Digest(before["remote"]) {
+		t.Fatalf("SharedServers.Removed = %v, %v; want remote=%s", rem, err, jsonwire.Digest(before["remote"]))
+	}
+	// Group removal clears the tombstone.
+	if _, err := sClass.MergeShared(ctx, nil, false, []string{"remote"}); err != nil {
+		t.Fatal(err)
+	}
+	if rem, err := sClass.Removed(ctx); err != nil || len(rem) != 0 {
+		t.Fatalf("tombstone lingered after MergeShared removal: %v, %v", rem, err)
+	}
+
+	// MCP OAuth login tombstone via RemoveCredentials.
+	if _, err := AddServer(serversPath, "remote", ServerConfig{URL: "https://mcp.example.com/mcp"}); err != nil {
+		t.Fatal(err)
+	}
+	exp := int64(500)
+	if err := newCredentialStore(dir).update("remote", "https://mcp.example.com/mcp", func(st *oauthState) {
+		st.Tokens = &oauthTokens{AccessToken: "secret-mcp-tok", TokenType: "Bearer"}
+		st.TokensExpireAt = &exp
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lClass := SharedLogins{Servers: serversDoc, Logins: fileDoc(AuthPath(dir))}
+	beforeLogin, err := lClass.Shareable(ctx)
+	key, _ := credentialKeys("remote", "https://mcp.example.com/mcp")
+	if err != nil || beforeLogin[key] == nil {
+		t.Fatalf("beforeLogin = %v, %v", beforeLogin, err)
+	}
+	if removed, err := RemoveCredentials(dir, "remote", "https://mcp.example.com/mcp"); err != nil || !removed {
+		t.Fatalf("RemoveCredentials = %v, %v", removed, err)
+	}
+	if rawAuth, _ := os.ReadFile(AuthPath(dir)); strings.Contains(string(rawAuth), "secret-mcp-tok") {
+		t.Fatalf("mcp-auth.json retained access token after RemoveCredentials: %s", rawAuth)
+	}
+	// Calling RemoveCredentials a second time reports false (tombstone only).
+	if removed, err := RemoveCredentials(dir, "remote", "https://mcp.example.com/mcp"); err != nil || removed {
+		t.Fatalf("second RemoveCredentials = %v, %v", removed, err)
+	}
+	lRem, err := lClass.Removed(ctx)
+	if err != nil || len(lRem) != 1 || lRem[key] != jsonwire.Digest(beforeLogin[key]) {
+		t.Fatalf("SharedLogins.Removed = %v, %v; want %s=%s", lRem, err, key, jsonwire.Digest(beforeLogin[key]))
+	}
+	if _, err := lClass.MergeShared(ctx, nil, false, []string{key}); err != nil {
+		t.Fatal(err)
+	}
+	if lRem, err := lClass.Removed(ctx); err != nil || len(lRem) != 0 {
+		t.Fatalf("login tombstone lingered: %v, %v", lRem, err)
+	}
+}
+
+func fileDoc(path string) document.Document {
+	return fileDocument{path}
+}
+
+type fileDocument struct{ path string }
+
+func (f fileDocument) Read(context.Context) ([]byte, error) {
+	data, err := os.ReadFile(f.path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	return data, err
+}
+
+func (f fileDocument) Update(_ context.Context, change func([]byte) ([]byte, error)) error {
+	cur, err := f.Read(context.Background())
+	if err != nil {
+		return err
+	}
+	next, err := change(cur)
+	if err != nil || next == nil {
+		return err
+	}
+	return os.WriteFile(f.path, next, 0o600)
 }

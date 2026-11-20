@@ -47,7 +47,10 @@ func (s *Store) Shareable(ctx context.Context) (map[string]json.RawMessage, erro
 			continue
 		}
 		base, err := s.base.Read(ctx, key)
-		if err != nil || !auth.ShareableCredential(base) {
+		if err != nil {
+			return nil, err
+		}
+		if !auth.ShareableCredential(base) {
 			continue
 		}
 		raw, err := json.Marshal(sharedName{Name: name})
@@ -59,14 +62,53 @@ func (s *Store) Shareable(ctx context.Context) (map[string]json.RawMessage, erro
 	return out, nil
 }
 
+// Removed returns shareable accounts and default-account display names explicitly removed on this
+// device (via Remove or Rename("")), each mapped to the digest of its last shared value (no
+// credentials or secrets are retained). Tombstones live inside accounts.json so wiping the store
+// drops them too.
+func (s *Store) Removed(_ context.Context) (map[string]string, error) {
+	d, err := s.load()
+	if err != nil {
+		return nil, err
+	}
+	if len(d.Removed) == 0 {
+		return nil, nil
+	}
+	live := make(map[string]bool, len(d.Accounts)+len(d.Names))
+	for _, a := range d.Accounts {
+		live[a.ID] = true
+	}
+	for k, name := range d.Names {
+		if name != "" && !strings.ContainsRune(k, '\x00') {
+			live[defaultNamePrefix+k] = true
+		}
+	}
+	out := map[string]string{}
+	for key, digest := range d.Removed {
+		if live[key] || digest == "" {
+			continue
+		}
+		out[key] = digest
+	}
+	return out, nil
+}
+
 // MergeShared folds in named accounts and display names a sync group shared and returns the keys
 // it changed. Local-only credentials (such as Claude Code config directories) are never accepted,
 // overwritten or dropped. Selection stays local: no automatic Active entry is persisted on merge,
 // so receiving accounts and credentials in either order yields the same active account.
 func (s *Store) MergeShared(ctx context.Context, incoming []map[string]json.RawMessage, keepOwn bool, removed []string) ([]string, error) {
 	var changed []string
+	wrote := false
 	merge := func(d *document) error {
 		changed = nil
+		wrote = false
+		dropTombstone := func(key string) {
+			if _, ok := d.Removed[key]; ok {
+				delete(d.Removed, key)
+				wrote = true
+			}
+		}
 		for _, entries := range incoming {
 			for _, key := range slices.Sorted(maps.Keys(entries)) {
 				raw := entries[key]
@@ -79,7 +121,11 @@ func (s *Store) MergeShared(ctx context.Context, incoming []map[string]json.RawM
 						continue
 					}
 					name := strings.TrimSpace(next.Name)
-					if name == "" || len(name) > 128 || d.Names[provider] == name || (keepOwn && d.Names[provider] != "") {
+					if name == "" || len(name) > 128 {
+						continue
+					}
+					dropTombstone(key)
+					if d.Names[provider] == name || (keepOwn && d.Names[provider] != "") {
 						continue
 					}
 					if d.Names == nil {
@@ -87,6 +133,7 @@ func (s *Store) MergeShared(ctx context.Context, incoming []map[string]json.RawM
 					}
 					d.Names[provider] = name
 					changed = append(changed, key)
+					wrote = true
 					continue
 				}
 				if key == "" || key == DefaultID || strings.ContainsRune(key, '\x00') {
@@ -103,6 +150,7 @@ func (s *Store) MergeShared(ctx context.Context, incoming []map[string]json.RawM
 				if len(name) > 128 {
 					continue
 				}
+				dropTombstone(key)
 				i := slices.IndexFunc(d.Accounts, func(a record) bool { return a.ID == key })
 				if i >= 0 {
 					have := d.Accounts[i]
@@ -117,18 +165,22 @@ func (s *Store) MergeShared(ctx context.Context, incoming []map[string]json.RawM
 					}
 					d.Accounts[i] = record{ID: key, Provider: next.Provider, Name: name, Credential: next.Credential.Clone()}
 					changed = append(changed, key)
+					wrote = true
 					continue
 				}
 				d.Accounts = append(d.Accounts, record{ID: key, Provider: next.Provider, Name: name, Credential: next.Credential.Clone()})
 				changed = append(changed, key)
+				wrote = true
 			}
 		}
 		if !keepOwn {
 			for _, key := range removed {
+				dropTombstone(key)
 				if provider, ok := strings.CutPrefix(key, defaultNamePrefix); ok {
 					if d.Names[provider] != "" {
 						delete(d.Names, provider)
 						changed = append(changed, key)
+						wrote = true
 					}
 					continue
 				}
@@ -142,6 +194,7 @@ func (s *Store) MergeShared(ctx context.Context, incoming []map[string]json.RawM
 					delete(d.Active, provider)
 				}
 				changed = append(changed, key)
+				wrote = true
 			}
 		}
 		return nil
@@ -150,7 +203,7 @@ func (s *Store) MergeShared(ctx context.Context, incoming []map[string]json.RawM
 	if err == nil {
 		err = merge(&d)
 	}
-	if err != nil || len(changed) == 0 {
+	if err != nil || !wrote {
 		return nil, err
 	}
 	return changed, s.update(ctx, merge)

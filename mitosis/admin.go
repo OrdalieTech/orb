@@ -81,7 +81,20 @@ func (b *Mitosis) Admin(ctx context.Context, method string, params json.RawMessa
 			return nil, err
 		}
 		removed, err := b.Retire(p.IDs)
-		return JSON(map[string]int{"removed": removed}), err
+		if err != nil {
+			return nil, err
+		}
+		records := 0
+		if len(p.IDs) == 0 {
+			if records, err = b.PruneRecords(); err != nil {
+				return nil, err
+			}
+		}
+		res := map[string]int{"removed": removed}
+		if records > 0 {
+			res["records"] = records
+		}
+		return JSON(res), nil
 	case "invite":
 		var p struct {
 			Grants []Grant `json:"grants"`

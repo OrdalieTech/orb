@@ -44,6 +44,13 @@ type TransactionalStore interface {
 	Transact(context.Context, func(Store) error) error
 }
 
+// RemovalStore is an optional interface a Store may implement to persist digest tombstones for
+// items deleted locally (for Mitosis sync) and drop those tombstones once the group applies them.
+type RemovalStore interface {
+	Removed(context.Context) (map[string]string, error)
+	Purge(context.Context, string) error
+}
+
 // SemanticSearcher returns highest-scoring items first and honors positive
 // limit values.
 type SemanticSearcher interface {
@@ -62,6 +69,14 @@ type Shared struct{ Store Store }
 
 func (s Shared) Shareable(ctx context.Context) (map[string]json.RawMessage, error) {
 	return shareable(ctx, s.Store)
+}
+
+func (s Shared) Removed(ctx context.Context) (map[string]string, error) {
+	rs, ok := s.Store.(RemovalStore)
+	if !ok {
+		return nil, nil
+	}
+	return rs.Removed(ctx)
 }
 
 func shareable(ctx context.Context, store Store) (map[string]json.RawMessage, error) {
@@ -88,6 +103,7 @@ func (s Shared) MergeShared(ctx context.Context, incoming []map[string]json.RawM
 		if err != nil {
 			return err
 		}
+		rs, hasRemoval := store.(RemovalStore)
 		for _, entries := range incoming {
 			for id, raw := range entries {
 				var item Item
@@ -105,13 +121,22 @@ func (s Shared) MergeShared(ctx context.Context, incoming []map[string]json.RawM
 				changed = append(changed, id)
 			}
 		}
-		for _, id := range removed {
-			if _, ok := have[id]; ok && !keepOwn {
-				if err = store.Delete(ctx, id); err != nil {
-					return err
+		if !keepOwn {
+			for _, id := range removed {
+				_, existed := have[id]
+				if hasRemoval {
+					if err = rs.Purge(ctx, id); err != nil {
+						return err
+					}
+				} else if existed {
+					if err = store.Delete(ctx, id); err != nil {
+						return err
+					}
 				}
-				delete(have, id)
-				changed = append(changed, id)
+				if existed {
+					delete(have, id)
+					changed = append(changed, id)
+				}
 			}
 		}
 		return nil

@@ -112,15 +112,18 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 			t.Fatal("memory not merged", got)
 		}
 	}
-	// What the owner deletes is deleted everywhere; what a member deletes comes back.
+	// What either the owner or a member explicitly deletes is deleted everywhere.
 	_ = memories[owner].Delete(ctx, "m1")
 	_ = memories[c].Delete(ctx, "m2")
 	round()
 	for _, x := range []*Mitosis{owner, b, c} {
-		if got := memorized(x); !slices.Equal(got, []string{"m2"}) {
-			t.Fatal("owner deletion not applied", got)
+		if got := memorized(x); len(got) != 0 {
+			t.Fatal("deletions not applied everywhere", got)
 		}
 	}
+	// Re-add one item so the forged-vault check below has a non-empty memory vault.
+	_, _ = memories[owner].Append(ctx, memory.Item{ID: "m2", Content: "restored"})
+	round()
 
 	// A vault is checked against its signed digest before anything opens it.
 	v := owner.pointers(group, owner.PeerID())["memory"]
@@ -538,7 +541,10 @@ func TestSyncMixedClassPeersConvergeWithoutFlapping(t *testing.T) {
 	}
 
 	// A member removing itself (e.g. "Forget this tab") leaves locally and asks a connected owner
-	// to drop it from the group so no ghost member remains.
+	// to drop it from the group along with its pairing, grants and group record so no debris remains.
+	if err := newerOwner.AddGrant(FullGrant(tabMember.PeerID())); err != nil {
+		t.Fatal(err)
+	}
 	admin(tabMember, `{"remove":"`+tabMember.PeerID()+`"}`)
 	if tabMember.state.Group != "" {
 		t.Fatalf("member still in group after removing itself: %q", tabMember.state.Group)
@@ -546,9 +552,43 @@ func TestSyncMixedClassPeersConvergeWithoutFlapping(t *testing.T) {
 	if slices.Contains(newerOwner.state.Scopes[group], tabMember.PeerID()) {
 		t.Fatalf("connected owner still lists departed member %s", tabMember.PeerID())
 	}
+	if _, ok := newerOwner.state.Peers[tabMember.PeerID()]; ok {
+		t.Fatalf("connected owner kept pairing for departed member %s", tabMember.PeerID())
+	}
+	if slices.ContainsFunc(newerOwner.state.Grants, func(g Grant) bool { return g.Principal.PeerID == tabMember.PeerID() }) {
+		t.Fatalf("connected owner kept grant for departed member %s", tabMember.PeerID())
+	}
+	if _, ok := newerOwner.state.Records[group+"/"+tabMember.PeerID()]; ok {
+		t.Fatalf("connected owner kept group record for departed member %s", tabMember.PeerID())
+	}
 	round(olderOwner, newerOwner)
 	if slices.Contains(olderOwner.state.Scopes[group], tabMember.PeerID()) {
 		t.Fatalf("other owner still lists departed member %s after sync", tabMember.PeerID())
+	}
+	if _, ok := olderOwner.state.Records[group+"/"+tabMember.PeerID()]; ok {
+		t.Fatalf("other owner kept group record for departed member %s after adopt", tabMember.PeerID())
+	}
+
+	// Pre-existing ghost records for devices no longer in the group are dropped by prune (retire)
+	// and refused if an older peer tries to re-inject them via MergeContact.
+	ghost := newMitosis(t)
+	_ = ghost.SetScope(group, []string{ghost.PeerID()})
+	ghostRec, err := ghost.PublishContact(group, "ghost", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newerOwner.MergeContact(olderOwner.PeerID(), ghostRec); Code(err) != "unauthorized" {
+		t.Fatalf("MergeContact accepted ghost record for non-member: %v", err)
+	}
+	newerOwner.mu.Lock()
+	newerOwner.state.Records[group+"/"+ghost.PeerID()] = ghostRec
+	newerOwner.mu.Unlock()
+	raw, err := newerOwner.Admin(ctx, "retire", json.RawMessage(`{}`))
+	if err != nil || !strings.Contains(string(raw), `"records":1`) {
+		t.Fatalf("retire (prune) did not drop ghost record: %s, %v", raw, err)
+	}
+	if _, ok := newerOwner.state.Records[group+"/"+ghost.PeerID()]; ok {
+		t.Fatal("ghost record remained after prune")
 	}
 }
 
@@ -594,5 +634,278 @@ func TestNotifyDebouncesAndWakesSync(t *testing.T) {
 	case <-m.Changes():
 		t.Fatal("Notify fired more than once for a coalesced burst")
 	case <-time.After(350 * time.Millisecond):
+	}
+}
+
+type failingClass struct {
+	Class
+	shareErr  error
+	removeErr error
+}
+
+func (f failingClass) Shareable(ctx context.Context) (map[string]json.RawMessage, error) {
+	if f.shareErr != nil {
+		return nil, f.shareErr
+	}
+	return f.Class.Shareable(ctx)
+}
+
+func (f failingClass) Removed(ctx context.Context) (map[string]string, error) {
+	if f.removeErr != nil {
+		return nil, f.removeErr
+	}
+	if rc, ok := f.Class.(RemovalClass); ok {
+		return rc.Removed(ctx)
+	}
+	return nil, nil
+}
+
+// TestSyncMemberRemovals covers all member-removal guarantees:
+// (1) member forget removes on owner and stays gone after several rounds;
+// (2) fresh member, offline member with older set, and wiped-store member remove nothing;
+// (3) owner modifying an entry after member removal wins and propagates back to the member;
+// (4) member logout removes credentials/accounts on owner and other members;
+// (5) Shareable/Removed error stops the round without removing anything.
+func TestSyncMemberRemovals(t *testing.T) {
+	ctx := t.Context()
+	type node struct {
+		m        *Mitosis
+		authDoc  *document.Memory
+		authRem  *document.Memory
+		auth     *aiauth.Store
+		acctDoc  *document.Memory
+		accts    *accounts.Store
+		memDoc   *document.Memory
+		memories filestore.Journal
+	}
+	makeNode := func() *node {
+		n := &node{
+			m:       newMitosis(t),
+			authDoc: &document.Memory{},
+			authRem: &document.Memory{},
+			acctDoc: &document.Memory{},
+			memDoc:  &document.Memory{},
+		}
+		n.auth = aiauth.NewDocumentStore(n.authDoc).WithRemoved(n.authRem)
+		n.accts = accounts.NewStoreWithDocument(n.acctDoc, n.auth)
+		n.memories = filestore.Journal{Document: n.memDoc}
+		n.m.SetClass("credentials", n.auth)
+		n.m.SetClass("accounts", n.accts)
+		n.m.SetClass("memory", memory.Shared{Store: n.memories})
+		return n
+	}
+	owner, mem1, mem2 := makeNode(), makeNode(), makeNode()
+	link := func(a, b *Mitosis) {
+		_ = a.SavePeer(b.PeerID(), "tc1")
+		_ = b.SavePeer(a.PeerID(), "tc1")
+		x, y := net.Pipe()
+		go func() { _, _, _ = a.Connect(ctx, x, "", true) }()
+		if _, _, err := b.Connect(ctx, y, a.PeerID(), false); err != nil {
+			t.Fatal(err)
+		}
+		for a.Connection(b.PeerID()) == nil || b.Connection(a.PeerID()) == nil {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	link(owner.m, mem1.m)
+	link(owner.m, mem2.m)
+
+	admin := func(n *node, body string) {
+		if _, err := n.m.SyncAdmin(ctx, json.RawMessage(body), nil); err != nil {
+			t.Fatalf("sync %s: %v", body, err)
+		}
+	}
+	admin(owner, `{"add":"`+mem1.m.PeerID()+`"}`)
+	admin(owner, `{"add":"`+mem2.m.PeerID()+`"}`)
+	admin(mem1, `{"join":"`+owner.m.PeerID()+`"}`)
+	admin(mem2, `{"join":"`+owner.m.PeerID()+`"}`)
+	group := owner.m.state.Group
+
+	round := func(peers ...*node) {
+		for range 3 {
+			for _, a := range peers {
+				for _, b := range peers {
+					if a != b {
+						if recs, err := a.m.Contacts(b.m.PeerID(), group); err == nil {
+							for _, r := range recs {
+								_, _ = b.m.MergeContact(a.m.PeerID(), r)
+							}
+						}
+					}
+				}
+			}
+			for _, p := range peers {
+				if _, err := p.m.Sync(ctx, nil); err != nil {
+					t.Fatalf("sync failed: %v", err)
+				}
+			}
+		}
+	}
+	memIDs := func(n *node) []string {
+		items, err := n.memories.Query(ctx, memory.Filter{Limit: -1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]string, len(items))
+		for i, it := range items {
+			ids[i] = it.ID
+		}
+		slices.Sort(ids)
+		return ids
+	}
+
+	// Seed owner with memories, credentials, and a named account.
+	_, _ = owner.memories.Append(ctx, memory.Item{ID: "keep", Content: "keep me"})
+	_, _ = owner.memories.Append(ctx, memory.Item{ID: "drop", Content: "drop me"})
+	_, _ = owner.memories.Append(ctx, memory.Item{ID: "race", Content: "v1"})
+	_, _ = owner.auth.Modify(ctx, "openai", func(*aiauth.Credential) (*aiauth.Credential, error) {
+		return aiauth.APIKeyCredential("sk-default"), nil
+	})
+	lea, err := owner.accts.Add(ctx, "openai", "lea", aiauth.APIKeyCredential("sk-lea"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	round(owner, mem1, mem2)
+	if !slices.Equal(memIDs(mem1), []string{"drop", "keep", "race"}) {
+		t.Fatalf("initial sync failed: %v", memIDs(mem1))
+	}
+
+	// (1) Member forget -> gone on owner and stays gone on all members after several rounds.
+	if err := mem1.memories.Delete(ctx, "drop"); err != nil {
+		t.Fatal(err)
+	}
+	round(owner, mem1, mem2)
+	round(owner, mem1, mem2)
+	for name, n := range map[string]*node{"owner": owner, "mem1": mem1, "mem2": mem2} {
+		if !slices.Equal(memIDs(n), []string{"keep", "race"}) {
+			t.Fatalf("%s memories after member forget = %v, want [keep race]", name, memIDs(n))
+		}
+		if rem, err := n.memories.Removed(ctx); err != nil || len(rem) != 0 {
+			t.Fatalf("%s lingering tombstones after sync = %v, %v", name, rem, err)
+		}
+	}
+
+	// (2) Fresh member, offline member with older set, and member whose store was wiped remove nothing.
+	fresh := makeNode()
+	link(owner.m, fresh.m)
+	admin(owner, `{"add":"`+fresh.m.PeerID()+`"}`)
+	admin(fresh, `{"join":"`+owner.m.PeerID()+`"}`)
+	round(owner, fresh)
+	if !slices.Equal(memIDs(fresh), []string{"keep", "race"}) {
+		t.Fatalf("fresh member did not get group items: %v", memIDs(fresh))
+	}
+	// Wiped store on mem1 (data + tombstones gone with it) re-receives everything and removes nothing on owner.
+	_ = document.Replace(ctx, mem1.memDoc, nil)
+	_ = document.Replace(ctx, mem1.authDoc, nil)
+	_ = document.Replace(ctx, mem1.authRem, nil)
+	_ = document.Replace(ctx, mem1.acctDoc, nil)
+	round(owner, mem1)
+	if !slices.Equal(memIDs(owner), []string{"keep", "race"}) || !slices.Equal(memIDs(mem1), []string{"keep", "race"}) {
+		t.Fatalf("wiped member caused removal: owner=%v mem1=%v", memIDs(owner), memIDs(mem1))
+	}
+	// Member back from offline with an older set removes nothing on owner.
+	_, _ = owner.memories.Append(ctx, memory.Item{ID: "newer", Content: "added while mem2 offline"})
+	round(owner)
+	round(owner, mem2)
+	if !slices.Equal(memIDs(owner), []string{"keep", "newer", "race"}) || !slices.Equal(memIDs(mem2), []string{"keep", "newer", "race"}) {
+		t.Fatalf("offline member removed newer item: owner=%v mem2=%v", memIDs(owner), memIDs(mem2))
+	}
+
+	// (3) Owner modifies "race" locally after mem1 removes it -> owner keeps v2, mem1 gets v2.
+	if err := mem1.memories.Delete(ctx, "race"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.memories.Append(ctx, memory.Item{ID: "race", Content: "v2"}); err != nil {
+		t.Fatal(err)
+	}
+	round(owner, mem1)
+	for name, n := range map[string]*node{"owner": owner, "mem1": mem1} {
+		it, err := n.memories.Get(ctx, "race")
+		if err != nil || it.Content != "v2" {
+			t.Fatalf("%s race item = %+v, %v; want v2", name, it, err)
+		}
+	}
+
+	// (4) Member logout of its only credential (leaving auth.json empty) + account removal
+	// removes them on owner and other members, and never keeps the secret in tombstones.
+	if err := mem1.auth.Delete(ctx, "openai"); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a writer that leaves auth.json completely empty after logging out of the last provider.
+	_ = document.Replace(ctx, mem1.authDoc, nil)
+	if err := mem1.accts.Remove(ctx, "openai", lea.ID); err != nil {
+		t.Fatal(err)
+	}
+	if remRaw, _ := mem1.authRem.Read(ctx); strings.Contains(string(remRaw), "sk-default") {
+		t.Fatalf("auth tombstone leaked secret: %s", remRaw)
+	}
+	if acctRaw, _ := mem1.acctDoc.Read(ctx); strings.Contains(string(acctRaw), "sk-lea") {
+		t.Fatalf("accounts tombstone leaked secret: %s", acctRaw)
+	}
+	round(owner, mem1, mem2)
+	round(owner, mem1, mem2)
+	for name, n := range map[string]*node{"owner": owner, "mem1": mem1, "mem2": mem2} {
+		if c, err := n.auth.Read(ctx, "openai"); err != nil || c != nil {
+			t.Fatalf("%s still holds logged-out openai credential: %#v, %v", name, c, err)
+		}
+		if rows, err := n.accts.Accounts(ctx); err != nil || len(rows) != 0 {
+			t.Fatalf("%s still holds removed account lea: %#v, %v", name, rows, err)
+		}
+	}
+
+	// (5) Shareable or Removed error stops the round and removes nothing anywhere.
+	owner.m.SetClass("memory", failingClass{Class: memory.Shared{Store: owner.memories}, shareErr: Fail("unavailable")})
+	if _, err := owner.m.Sync(ctx, nil); err == nil {
+		t.Fatal("owner Sync succeeded despite Shareable error")
+	}
+	owner.m.SetClass("memory", memory.Shared{Store: owner.memories})
+	mem1.m.SetClass("memory", failingClass{Class: memory.Shared{Store: mem1.memories}, removeErr: Fail("unavailable")})
+	if _, err := mem1.m.Sync(ctx, nil); err == nil {
+		t.Fatal("member Sync succeeded despite Removed error")
+	}
+	mem1.m.SetClass("memory", memory.Shared{Store: mem1.memories})
+	round(owner, mem1, mem2)
+	if !slices.Equal(memIDs(owner), []string{"keep", "newer", "race"}) || !slices.Equal(memIDs(mem1), []string{"keep", "newer", "race"}) {
+		t.Fatalf("error round caused removals: owner=%v mem1=%v", memIDs(owner), memIDs(mem1))
+	}
+
+	// (6) A member forgets an entry it handed in, after the owner took it but before the owner's
+	// new vault reaches it: the removal waits for that vault and the entry ends up nowhere.
+	send := func(from, to *node) {
+		recs, err := from.m.Contacts(to.m.PeerID(), group)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range recs {
+			_, _ = to.m.MergeContact(from.m.PeerID(), r)
+		}
+	}
+	syncOnce := func(n *node) {
+		if _, err := n.m.Sync(ctx, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := mem1.memories.Append(ctx, memory.Item{ID: "brief", Content: "added then forgotten"}); err != nil {
+		t.Fatal(err)
+	}
+	syncOnce(mem1)
+	send(mem1, owner)
+	syncOnce(owner)
+	if _, err := owner.memories.Get(ctx, "brief"); err != nil {
+		t.Fatalf("owner did not take the hand-in: %v", err)
+	}
+	if err := mem1.memories.Delete(ctx, "brief"); err != nil {
+		t.Fatal(err)
+	}
+	syncOnce(mem1) // still on the owner's vault from before the hand-in
+	round(owner, mem1, mem2)
+	round(owner, mem1, mem2)
+	for name, n := range map[string]*node{"owner": owner, "mem1": mem1, "mem2": mem2} {
+		if slices.Contains(memIDs(n), "brief") {
+			t.Fatalf("%s holds the forgotten entry: %v", name, memIDs(n))
+		}
+		if rem, err := n.memories.Removed(ctx); err != nil || len(rem) != 0 {
+			t.Fatalf("%s lingering tombstones = %v, %v", name, rem, err)
+		}
 	}
 }

@@ -281,6 +281,16 @@ func testDocuments(t *testing.T, kv KV) {
 	if got := read(store, "/agent/settings.json"); got != `{"defaultProvider":"seed","theme":"dark"}` {
 		t.Fatalf("restarted settings = %q", got)
 	}
+	// An unchanged update must not signal a write, or the Mitosis tab, whose
+	// sync round rewrites the memory journal as is, wakes itself forever.
+	writes := 0
+	store.OnWrite = func(string) { writes++ }
+	if err := store.Document("/agent/settings.json").Update(ctx, func(current []byte) ([]byte, error) { return current, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if writes != 0 {
+		t.Fatalf("unchanged update signalled %d writes", writes)
+	}
 	if err := store.Document("/agent/settings.json").Update(ctx, func([]byte) ([]byte, error) { return nil, nil }); err != nil {
 		t.Fatal(err)
 	}

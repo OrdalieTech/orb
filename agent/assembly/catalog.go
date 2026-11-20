@@ -31,6 +31,7 @@ type CatalogOptions struct {
 	// Accounts is host-supplied: provider-usage switches accounts through it.
 	Accounts          usage.Accounts
 	Memory            memorysdk.Store
+	OnMemoryWrite     func()
 	Mitosis           extensions.Factory
 	MitosisAgentCalls extensions.Factory
 	StreamFn          engine.StreamFn
@@ -161,7 +162,7 @@ func Catalog(options CatalogOptions) map[string]extensions.Factory {
 		"jobs":           jobs.Extension(options.Bash),
 		"activity":       activity.Extension(newActivityView),
 		"permissions":    permissions.Extension(policy, options.Settings, nil),
-		"memory":         memoryExtension(options.Memory, options.AgentDir),
+		"memory":         memoryExtension(options.Memory, options.AgentDir, options.OnMemoryWrite),
 		"memtree":        memtreeExtension(options.Settings),
 		"wake":           wakeRow,
 		"provider-usage": footer.Extension(usage.Client{HTTPClient: options.HTTPClient, Cache: options.UsageCache}, options.Accounts),

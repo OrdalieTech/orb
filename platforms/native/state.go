@@ -26,6 +26,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/engine/harness"
 	"github.com/OrdalieTech/orb/host"
+	"github.com/OrdalieTech/orb/internal/filelock"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
 	nativeaccounts "github.com/OrdalieTech/orb/platforms/native/accounts"
 	nativemitosis "github.com/OrdalieTech/orb/platforms/native/mitosis"
@@ -353,11 +354,19 @@ func (state *State) Settings(cwd, agentDir string, options ...config.Option) (*c
 func (state *State) Auth(agentDir string) (*config.AuthStorage, error) {
 	switch {
 	case state == nil:
-		return config.NewAuthStorage(filepath.Join(agentDir, "auth.json"))
+		storage, err := config.NewAuthStorage(filepath.Join(agentDir, "auth.json"))
+		if err == nil {
+			storage.WithRemoved(filelock.File{Path: filepath.Join(agentDir, "auth-removed.json"), Perm: 0o600, Atomic: true})
+		}
+		return storage, err
 	case state.credentials != nil:
 		return config.NewAuthStorageWithDocument(state.credentials)
 	}
-	return config.NewAuthStorageWithDocument(state.Document(filepath.Join(agentDir, "auth.json")))
+	storage, err := config.NewAuthStorageWithDocument(state.Document(filepath.Join(agentDir, "auth.json")))
+	if err == nil {
+		storage.WithRemoved(state.Document(filepath.Join(agentDir, "auth-removed.json")))
+	}
+	return storage, err
 }
 
 func (state *State) Trust(agentDir string) (*config.ProjectTrustStore, error) {

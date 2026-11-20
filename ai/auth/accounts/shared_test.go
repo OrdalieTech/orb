@@ -3,10 +3,13 @@ package accounts
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai/auth"
 	docport "github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 func TestSharedSyncsNamedAccountsActivatesAndProtectsLocal(t *testing.T) {
@@ -211,5 +214,51 @@ func TestSharedMergeOrderIndependent(t *testing.T) {
 		if r.ID == zen.ID && !r.Active {
 			t.Fatalf("opencode zen not active: %#v", r)
 		}
+	}
+}
+
+type errCredentialStore struct{ auth.CredentialStore }
+
+func (errCredentialStore) Read(context.Context, string) (*auth.Credential, error) {
+	return nil, errors.New("boom")
+}
+
+// A transient error reading a base credential must fail Shareable rather than dropping the
+// default account's display name (which an owner would read as a deletion).
+func TestShareableReturnsErrorOnBaseReadFailure(t *testing.T) {
+	ctx := context.Background()
+	store := NewStoreWithDocument(&memoryDocument{}, errCredentialStore{})
+	if err := store.Rename(ctx, "openai", DefaultID, "Personal"); err != nil {
+		t.Fatal(err)
+	}
+	if shared, err := store.Shareable(ctx); err == nil {
+		t.Fatalf("Shareable succeeded despite base read error: %v", shared)
+	}
+}
+
+func TestAccountRemoveStoresDigestOnlyNoSecret(t *testing.T) {
+	ctx := context.Background()
+	doc := &memoryDocument{}
+	store := NewStoreWithDocument(doc, nil)
+	added, err := store.Add(ctx, "openai", "lea", auth.APIKeyCredential("sk-secret-lea"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.Shareable(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Remove(ctx, "openai", added.ID); err != nil {
+		t.Fatal(err)
+	}
+	raw := string(doc.data)
+	for _, secret := range []string{"sk-secret-lea", `"credential"`} {
+		if strings.Contains(raw, secret) {
+			t.Fatalf("accounts.json retained %q after Remove: %s", secret, raw)
+		}
+	}
+	rem, err := store.Removed(ctx)
+	if err != nil || rem[added.ID] != jsonwire.Digest(before[added.ID]) {
+		t.Fatalf("Removed = %v, %v; want %s", rem, err, jsonwire.Digest(before[added.ID]))
 	}
 }

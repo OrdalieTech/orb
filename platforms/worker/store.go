@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io/fs"
@@ -19,6 +20,7 @@ type Store struct {
 	// of its own; the first update starts from it.
 	defaults map[string][]byte
 	// OnWrite, when set, runs after Update commits a document write or removal.
+	// An update that leaves the content unchanged writes nothing and skips it.
 	OnWrite func(name string)
 	mu      sync.Mutex
 }
@@ -52,6 +54,9 @@ func (d document) Update(ctx context.Context, update func([]byte) ([]byte, error
 	next, err := update(current)
 	switch {
 	case err != nil:
+	case next != nil && bytes.Equal(next, current):
+		d.store.mu.Unlock()
+		return nil
 	case next == nil:
 		err = d.store.files.Remove(ctx, d.name, false, true)
 	default:

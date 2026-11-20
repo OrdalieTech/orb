@@ -33,6 +33,7 @@ import (
 	"github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/oauth"
 	"github.com/OrdalieTech/orb/internal/filelock"
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
 const (
@@ -115,6 +116,7 @@ type oauthState struct {
 	CodeVerifier      string          `json:"codeVerifier,omitempty"`
 	OAuthState        string          `json:"oauthState,omitempty"`
 	Discovery         *discoveryState `json:"discovery,omitempty"`
+	Removed           string          `json:"removed,omitempty"`
 }
 
 // challenge is a server's WWW-Authenticate challenge.
@@ -228,6 +230,7 @@ func (store credentialStore) update(name, serverURL string, change func(*oauthSt
 		if state == nil || state.ServerURL != normalizeServerURL(serverURL) {
 			state = &oauthState{ServerURL: normalizeServerURL(serverURL)}
 		}
+		state.Removed = ""
 		change(state)
 		states[key] = state
 		return true
@@ -240,11 +243,22 @@ func (store credentialStore) remove(name, serverURL string) (bool, error) {
 	removed := false
 	err := store.edit(func(states map[string]*oauthState) bool {
 		for _, candidate := range []string{key, legacy} {
-			if _, ok := states[candidate]; ok {
-				delete(states, candidate)
-				removed = true
-				return true
+			state, ok := states[candidate]
+			if !ok || state == nil {
+				continue
 			}
+			hasLive := state.Tokens != nil || state.ClientInformation != nil || state.TokensExpireAt != nil ||
+				state.CodeVerifier != "" || state.OAuthState != "" || state.Discovery != nil
+			if !hasLive {
+				continue
+			}
+			if val, shareable := shareableLogin(candidate, state); shareable {
+				states[candidate] = &oauthState{ServerURL: state.ServerURL, Removed: jsonwire.Digest(val)}
+			} else {
+				delete(states, candidate)
+			}
+			removed = true
+			return true
 		}
 		return false
 	})

@@ -397,7 +397,7 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 				return reportCLIError(streams.Stderr, err)
 			}
 		}
-		notifyMitosis(ctx)
+		notifyMitosis(ctx, stateFromContext(ctx), "personal")
 		_, _ = fmt.Fprintf(streams.Stdout, "Logged out of %s.\n", provider)
 		return 0
 	}
@@ -412,7 +412,7 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 	}); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
-	notifyMitosis(ctx)
+	notifyMitosis(ctx, stateFromContext(ctx), "personal")
 	_, _ = fmt.Fprintf(streams.Stdout, "Logged in to %s. Credentials saved to %s.\n", provider, authStorageLocation(ctx, agentDir, storage))
 	return 0
 }

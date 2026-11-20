@@ -16,8 +16,10 @@ import (
 	"maps"
 	"math/big"
 	"slices"
+	"strings"
 	"time"
 
+	"github.com/OrdalieTech/orb/internal/jsonwire"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
 )
 
@@ -76,11 +78,13 @@ func (d doc) valid() bool {
 }
 
 // vaultBody is what a vault seals: a class's entries and, from an owner, every entry's version,
-// deletions included, and the hand-in it folded in per member.
+// deletions included, and the hand-in it folded in per member. A member's hand-in may also list
+// entries it explicitly removed, each with the group version it held when removed.
 type vaultBody struct {
 	Entries  map[string]json.RawMessage `json:"entries"`
 	Versions map[string]version         `json:"versions,omitempty"`
 	Handins  map[string]string          `json:"handins,omitempty"`
+	Removed  map[string]version         `json:"removed,omitempty"`
 }
 
 // version is where an entry stands: a Lamport counter, the owner that set it, and its value's
@@ -107,6 +111,16 @@ type Class interface {
 	MergeShared(ctx context.Context, incoming []map[string]json.RawMessage, keepOwn bool, removed []string) ([]string, error)
 }
 
+// RemovalClass is an optional interface a Class may implement to report entries explicitly removed
+// on this device by a user gesture (forget, logout, account or MCP removal), each mapped to the
+// jsonwire.Digest of the last shareable value it held before removal. Tombstones live alongside
+// the data (never storing the removed value itself) so a fresh, offline or wiped device removes
+// nothing.
+type RemovalClass interface {
+	Class
+	Removed(ctx context.Context) (map[string]string, error)
+}
+
 // SetClass shares a data class with the sync group under name; nil stops sharing it.
 func (b *Mitosis) SetClass(name string, c Class) {
 	b.mu.Lock()
@@ -128,10 +142,48 @@ func (b *Mitosis) current() doc {
 }
 
 func (b *Mitosis) leave() {
-	delete(b.state.Scopes, b.state.Group)
+	group := b.state.Group
+	delete(b.state.Scopes, group)
 	b.state.Group, b.state.Owners, b.state.Prior, b.state.GroupVersion, b.state.Versions, b.state.Merged = "", nil, nil, 0, nil, nil
+	b.pruneRecordsLocked()
 	clear(b.vaults)
 	clear(b.sealed)
+}
+
+// pruneRecordsLocked drops contact records for scopes no longer present or peers no longer in
+// their scope (keeping only Prior owners on the sync group for concurrent-version tie-breaking),
+// and drops hand-in tracking for peers no longer in the sync group.
+func (b *Mitosis) pruneRecordsLocked() int {
+	pruned := 0
+	for k := range b.state.Records {
+		scope, peer, ok := strings.Cut(k, "/")
+		members := b.state.Scopes[scope]
+		keep := ok && len(members) > 0 && (slices.Contains(members, peer) || scope == b.state.Group && slices.Contains(b.state.Prior, peer))
+		if !keep {
+			delete(b.state.Records, k)
+			pruned++
+		}
+	}
+	groupMembers := b.state.Scopes[b.state.Group]
+	for k := range b.state.Merged {
+		peer, _, _ := strings.Cut(k, " ")
+		if b.state.Group == "" || !slices.Contains(groupMembers, peer) {
+			delete(b.state.Merged, k)
+			pruned++
+		}
+	}
+	return pruned
+}
+
+// PruneRecords drops contact records and hand-in metadata for devices no longer in their scope.
+func (b *Mitosis) PruneRecords() (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	pruned := b.pruneRecordsLocked()
+	if pruned == 0 {
+		return 0, nil
+	}
+	return pruned, b.save()
 }
 
 // change is an owner's membership change, signed in its next record: add, remove, promote or
@@ -171,6 +223,9 @@ func (b *Mitosis) change(kind, peer string) error {
 	case !slices.Equal(d.Owners, cur.Owners) || !slices.Equal(d.Members, cur.Members):
 		b.state.Prior, b.state.Owners, b.state.GroupVersion = cur.Owners, d.Owners, d.Version
 		b.state.Scopes[b.state.Group] = d.Members
+		if kind == "remove" {
+			b.pruneRecordsLocked()
+		}
 	}
 	b.op = [2]string{kind, peer}
 	return nil
@@ -204,6 +259,7 @@ func (b *Mitosis) adopt() {
 		b.leave()
 	}
 	if adopted {
+		b.pruneRecordsLocked()
 		_ = b.save()
 	}
 	if b.state.Group == "" {
@@ -312,6 +368,22 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 	out, err := b.sync(ctx, endpoints)
 	if kind == "remove" {
 		b.tellRemoved(peer, group)
+		// Drop the departed device's pairing, grants, invitations and group record so leaving or
+		// removing a device (e.g. "Forget this tab") leaves no ghost peers or bloated records.
+		b.mu.Lock()
+		delete(b.state.Peers, peer)
+		b.state.Grants = slices.DeleteFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == peer })
+		for id, inv := range b.state.Invitations {
+			if inv.Claimant == peer {
+				delete(b.state.Invitations, id)
+			}
+		}
+		b.pruneRecordsLocked()
+		saveErr := b.save()
+		b.mu.Unlock()
+		if err == nil {
+			err = saveErr
+		}
 	}
 	return out, err
 }
@@ -409,6 +481,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	opens := map[string][]vaultBody{} // class -> other owners' vaults opened, and who each is sealed to
 	readers := map[string][][]string{}
 	out := bundle{}
+	outRemoved := map[string]map[string]version{}
 	received := map[string][]string{}
 	for name, class := range classes {
 		vs, values, newer := versions[name], map[string]json.RawMessage{}, map[string]bool{}
@@ -448,11 +521,34 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			stale[name] = true
 			continue
 		}
-		// An owner takes what is newer than what it holds; a member takes the whole set, so what
-		// it changed of it comes back to the group's.
+		var localRemoved map[string]string
+		if rc, ok := class.(RemovalClass); ok {
+			var err error
+			if localRemoved, err = rc.Removed(ctx); err != nil {
+				return nil, err
+			}
+		}
+		// A member's tombstone matching the group's current digest is handed in and keeps the
+		// member from re-taking that entry; one whose group version changed elsewhere is dropped
+		// when MergeShared writes the newer value.
+		var handinRemoved map[string]version
+		if !owner {
+			for entry, digest := range localRemoved {
+				if v := vs[entry]; v.D != "" && v.D == digest {
+					if handinRemoved == nil {
+						handinRemoved = map[string]version{}
+					}
+					handinRemoved[entry] = v
+				}
+			}
+		}
+		// An owner takes what is newer than what it holds; a member takes the whole set (except
+		// entries it explicitly removed at the current version), so what it changed of it comes
+		// back to the group's.
 		incoming, removed := map[string]json.RawMessage{}, []string{}
 		for entry, v := range vs {
 			switch {
+			case !owner && handinRemoved[entry].D != "":
 			case !owner && !newer[entry] && v.D != "" && values[entry] != nil:
 				incoming[entry] = values[entry]
 			case !newer[entry]:
@@ -462,11 +558,21 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 				incoming[entry] = values[entry]
 			}
 		}
+		// Clear local tombstones the group already removed (or never held), but on a member only
+		// once an owner says it consumed the hand-in this member publishes: until then, an entry
+		// it handed in may already be the group's and come back in the next owner's vault.
+		settled := owner || current[self+" "+name] == "" || merged[self+" "+name] == current[self+" "+name]
+		for entry := range localRemoved {
+			if settled && vs[entry].D == "" && !slices.Contains(removed, entry) {
+				removed = append(removed, entry)
+			}
+		}
 		changed, err := class.MergeShared(ctx, []map[string]json.RawMessage{incoming}, false, removed)
 		if err != nil {
 			return nil, err
 		}
 		var folded []map[string]json.RawMessage
+		memberRemovals := map[string]version{}
 		for _, s := range handins[name] {
 			if merged[s.peer+" "+name] == s.vault.Digest {
 				continue
@@ -478,6 +584,11 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			}
 			if err == nil && in.Versions == nil { // a former owner's vault is no hand-in
 				folded, merged[s.peer+" "+name] = append(folded, in.Entries), s.vault.Digest
+				for entry, v := range in.Removed { // only a removal of the current version can apply
+					if vs[entry] == v {
+						memberRemovals[entry] = v
+					}
+				}
 			}
 		}
 		if len(folded) > 0 {
@@ -490,6 +601,26 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 		own, err := class.Shareable(ctx)
 		if err != nil {
 			return nil, err
+		}
+		if owner && len(memberRemovals) > 0 {
+			// Apply a member's removal only if the group's version AND this owner's local value
+			// still match what the member removed.
+			var deletes []string
+			for entry, v := range memberRemovals {
+				if cur, ok := own[entry]; ok && v.D != "" && digests(cur) == v.D {
+					deletes = append(deletes, entry)
+				}
+			}
+			if len(deletes) > 0 {
+				c, err := class.MergeShared(ctx, nil, false, deletes)
+				if err != nil {
+					return nil, err
+				}
+				changed = append(changed, c...)
+				if own, err = class.Shareable(ctx); err != nil {
+					return nil, err
+				}
+			}
 		}
 		if owner { // what this owner holds otherwise than its versions say, it versions anew
 			next := uint64(0)
@@ -509,6 +640,9 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			}
 		} else {
 			maps.DeleteFunc(own, func(entry string, value json.RawMessage) bool { return vs[entry].D == digests(value) })
+			if len(handinRemoved) > 0 {
+				outRemoved[name] = handinRemoved
+			}
 		}
 		out[name] = own
 		if len(changed) > 0 {
@@ -548,8 +682,8 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 	total := 0
 	b.handing = false
 	for name, entries := range out {
-		b.handing = b.handing || !owner && len(entries) > 0
-		body := vaultBody{Entries: entries}
+		body := vaultBody{Entries: entries, Removed: outRemoved[name]}
+		b.handing = b.handing || !owner && (len(entries) > 0 || len(body.Removed) > 0)
 		if owner {
 			body.Versions, body.Handins = versions[name], map[string]string{}
 			for _, m := range members {
@@ -647,10 +781,7 @@ type sealed struct {
 	vault pointer
 }
 
-func digests(v json.RawMessage) string {
-	sum := sha256.Sum256(v)
-	return base64.RawURLEncoding.EncodeToString(sum[:])
-}
+func digests(v json.RawMessage) string { return jsonwire.Digest(v) }
 
 // pointers reads the vaults, by class, that peer's record in the group points at: none unless
 // every one is well formed and together they stay within maxVault.

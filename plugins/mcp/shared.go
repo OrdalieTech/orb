@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"maps"
 	"net/netip"
 	"net/url"
@@ -38,16 +39,57 @@ func (s SharedServers) Shareable(ctx context.Context) (map[string]json.RawMessag
 	return out, err
 }
 
+func (s SharedServers) Removed(ctx context.Context) (map[string]string, error) {
+	data, err := s.Document.Read(ctx)
+	if data = bytes.TrimPrefix(data, bom); err != nil || len(bytes.TrimSpace(data)) == 0 {
+		return nil, err
+	}
+	if !json.Valid(data) {
+		return nil, errors.New("not valid JSON")
+	}
+	root, err := orderedMembers(data)
+	if err != nil {
+		return nil, err
+	}
+	servers, err := serverMembers(data)
+	if err != nil {
+		return nil, err
+	}
+	live := map[string]bool{}
+	for _, server := range servers {
+		live[server.name] = true
+	}
+	out := map[string]string{}
+	for name, digest := range removedMembers(root) {
+		if live[name] || digest == "" {
+			continue
+		}
+		out[name] = digest
+	}
+	return out, nil
+}
+
 func (s SharedServers) MergeShared(ctx context.Context, incoming []map[string]json.RawMessage, keepOwn bool, removed []string) ([]string, error) {
 	var changed []string
 	err := s.Document.Update(ctx, func(data []byte) ([]byte, error) {
 		changed = nil
-		next, err := editServerData(data, func(servers []member) ([]member, bool) {
+		next, err := editServerData(data, func(servers []member, tombstones map[string]string) ([]member, bool) {
+			wrote := false
+			dropTombstone := func(name string) {
+				if _, ok := tombstones[name]; ok {
+					delete(tombstones, name)
+					wrote = true
+				}
+			}
 			for _, entries := range incoming {
 				for name, raw := range entries {
 					value, _, ok := shareableServer(name, raw)
+					if !ok {
+						continue
+					}
+					dropTombstone(name)
 					index := slices.IndexFunc(servers, func(server member) bool { return server.name == name })
-					if !ok || index >= 0 && (keepOwn || shared(servers[index]) == nil || bytes.Equal(shared(servers[index]), value)) {
+					if index >= 0 && (keepOwn || shared(servers[index]) == nil || bytes.Equal(shared(servers[index]), value)) {
 						continue
 					}
 					if index >= 0 {
@@ -56,16 +98,21 @@ func (s SharedServers) MergeShared(ctx context.Context, incoming []map[string]js
 						servers = append(servers, member{name: name, value: value})
 					}
 					changed = append(changed, name)
+					wrote = true
 				}
 			}
 			for _, name := range removed {
+				if !keepOwn {
+					dropTombstone(name)
+				}
 				index := slices.IndexFunc(servers, func(server member) bool { return server.name == name })
 				if index >= 0 && !keepOwn && shared(servers[index]) != nil {
 					servers = slices.Delete(servers, index, index+1)
 					changed = append(changed, name)
+					wrote = true
 				}
 			}
-			return servers, len(changed) > 0
+			return servers, wrote
 		})
 		if next == nil || err != nil {
 			return data, err
@@ -106,6 +153,37 @@ func (s SharedLogins) Shareable(ctx context.Context) (map[string]json.RawMessage
 	return out, nil
 }
 
+func (s SharedLogins) Removed(ctx context.Context) (map[string]string, error) {
+	servers, err := readServers(ctx, s.Servers)
+	if err != nil {
+		return nil, err
+	}
+	own := map[string]bool{}
+	for _, server := range servers {
+		var config ServerConfig
+		if shared(server) == nil && json.Unmarshal(server.value, &config) == nil && config.URL != "" {
+			key, _ := credentialKeys(server.name, config.URL)
+			own[key] = true
+		}
+	}
+	data, err := s.Logins.Read(ctx)
+	if err != nil {
+		return nil, err
+	}
+	states, err := parseStates(data)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for key, state := range states {
+		if own[key] || state == nil || state.TokensExpireAt != nil || state.Removed == "" {
+			continue
+		}
+		out[key] = state.Removed
+	}
+	return out, nil
+}
+
 func (s SharedLogins) MergeShared(ctx context.Context, incoming []map[string]json.RawMessage, keepOwn bool, removed []string) ([]string, error) {
 	servers, err := readServers(ctx, s.Servers)
 	if err != nil {
@@ -122,6 +200,7 @@ func (s SharedLogins) MergeShared(ctx context.Context, incoming []map[string]jso
 	var changed []string
 	err = s.Logins.Update(ctx, func(data []byte) ([]byte, error) {
 		changed = nil
+		wrote := false
 		states, err := parseStates(data)
 		if err != nil {
 			return nil, err
@@ -132,11 +211,18 @@ func (s SharedLogins) MergeShared(ctx context.Context, incoming []map[string]jso
 				if own[key] || json.Unmarshal(raw, &next) != nil {
 					continue
 				}
-				next.CodeVerifier, next.OAuthState, next.Discovery = "", "", nil
+				next.CodeVerifier, next.OAuthState, next.Discovery, next.Removed = "", "", nil, ""
 				value, ok := shareableLogin(key, &next)
 				have := states[key]
 				same, held := shareableLogin(key, have)
-				if !ok || held && (bytes.Equal(same, value) || expiry(&next) < expiry(have) || keepOwn && expiry(&next) <= expiry(have)) {
+				if !ok {
+					continue
+				}
+				if have != nil && have.Removed != "" && !held {
+					have.Removed = ""
+					wrote = true
+				}
+				if held && (bytes.Equal(same, value) || expiry(&next) < expiry(have) || keepOwn && expiry(&next) <= expiry(have)) {
 					continue
 				}
 				if have != nil {
@@ -144,15 +230,19 @@ func (s SharedLogins) MergeShared(ctx context.Context, incoming []map[string]jso
 				}
 				states[key] = &next
 				changed = append(changed, key)
+				wrote = true
 			}
 		}
 		for _, key := range removed {
-			if _, ok := states[key]; ok && !keepOwn && !own[key] {
+			if have, ok := states[key]; ok && !keepOwn && !own[key] {
 				delete(states, key)
-				changed = append(changed, key)
+				wrote = true
+				if have != nil && have.TokensExpireAt != nil {
+					changed = append(changed, key)
+				}
 			}
 		}
-		if len(changed) == 0 {
+		if !wrote {
 			return data, nil
 		}
 		encoded, err := json.MarshalIndent(states, "", "  ")
@@ -209,7 +299,7 @@ func shareableLogin(key string, state *oauthState) (json.RawMessage, bool) {
 		return nil, false
 	}
 	shared := *state
-	shared.CodeVerifier, shared.OAuthState, shared.Discovery = "", "", nil
+	shared.CodeVerifier, shared.OAuthState, shared.Discovery, shared.Removed = "", "", nil, ""
 	value, err := json.Marshal(shared)
 	return value, err == nil
 }

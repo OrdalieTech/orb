@@ -80,7 +80,7 @@ func runLoginJSON(ctx context.Context, args []string, streams cliStreams) int {
 		}
 		return fail(err)
 	}
-	notifyMitosis(ctx)
+	notifyMitosis(ctx, stateFromContext(ctx), "personal")
 	out.Emit(map[string]any{"type": "done", "provider": provider, "auth": authType})
 	return 0
 }

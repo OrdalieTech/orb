@@ -468,3 +468,35 @@ func TestTheTaskWidgetOpensOnAClickAndCachesItsLines(t *testing.T) {
 	widget.Render(80)
 	require(t, theme.calls != calls, "a concurrent invalidation let stale lines into the cache")
 }
+
+func TestMemoryOnMemoryWriteFiresAfterCommit(t *testing.T) {
+	ctx := context.Background()
+	agentDir := t.TempDir()
+	writes := 0
+	opts := CatalogOptions{AgentDir: agentDir, OnMemoryWrite: func() { writes++ }}
+
+	remember := pluginTool(t, "memory", "remember", opts, extensions.RunnerOptions{})
+	replace := pluginTool(t, "memory", "replace", opts, extensions.RunnerOptions{})
+	forget := pluginTool(t, "memory", "forget", opts, extensions.RunnerOptions{})
+	recall := pluginTool(t, "memory", "recall", opts, extensions.RunnerOptions{})
+
+	_ = must(remember.Execute(ctx, "1", map[string]any{"target": "memory", "content": "fact one"}, nil))
+	require(t, writes == 1, "writes after remember = %d, want 1", writes)
+
+	// Duplicate remember and read-only recall do not trigger OnMemoryWrite.
+	_ = must(remember.Execute(ctx, "2", map[string]any{"target": "memory", "content": "fact one"}, nil))
+	_ = must(recall.Execute(ctx, "3", map[string]any{"query": "fact"}, nil))
+	require(t, writes == 1, "writes after no-op remember + recall = %d, want 1", writes)
+
+	_ = must(replace.Execute(ctx, "4", map[string]any{"target": "memory", "old_text": "fact one", "content": "fact two"}, nil))
+	require(t, writes == 2, "writes after replace = %d, want 2", writes)
+
+	// Failing forget must not fire OnMemoryWrite.
+	if _, err := forget.Execute(ctx, "5", map[string]any{"query": "missing"}, nil); err == nil {
+		t.Fatal("expected forget of missing item to fail")
+	}
+	require(t, writes == 2, "writes after failed forget = %d, want 2", writes)
+
+	_ = must(forget.Execute(ctx, "6", map[string]any{"query": "fact two"}, nil))
+	require(t, writes == 3, "writes after forget = %d, want 3", writes)
+}
