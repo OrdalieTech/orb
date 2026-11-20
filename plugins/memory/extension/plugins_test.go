@@ -162,11 +162,11 @@ func (store *memoryTestStore) operationSnapshot() []string {
 }
 
 func filterMemoryTestItems(items []memorysdk.Item, contains string, tags []string, limit int) []memorysdk.Item {
-	if limit <= 0 || limit > 100 {
+	if limit == 0 || limit > 100 {
 		limit = 100
 	}
 	var result []memorysdk.Item
-	for index := len(items) - 1; index >= 0 && len(result) < limit; index-- {
+	for index := len(items) - 1; index >= 0 && (limit < 0 || len(result) < limit); index-- {
 		if contains != "" && !strings.Contains(strings.ToLower(items[index].Content), strings.ToLower(contains)) ||
 			!hasMemoryTags(items[index].Tags, tags) {
 			continue
@@ -332,10 +332,21 @@ func TestMemoryProfileMemoryCapacity(t *testing.T) {
 	_ = must(tool.Execute(context.Background(), "remember-memory-full", map[string]any{
 		"target": "memory", "content": strings.Repeat("m", memoryChars),
 	}, nil))
-	_, err := tool.Execute(context.Background(), "remember-memory-overflow", map[string]any{
-		"target": "memory", "content": "x",
-	}, nil)
-	requireError(t, err, "2200/2200")
+	// Exceeding the prompt render budget does not block remember; older items spill to recall.
+	_ = must(tool.Execute(context.Background(), "remember-memory-overflow", map[string]any{
+		"target": "memory", "content": "newer fact",
+	}, nil))
+	items, _ := store.snapshot()
+	require(t, len(items) == 2, "items = %#v", items)
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	var prompt string
+	provider.SetResponses([]faux.ResponseStep{faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+		prompt = *request.SystemPrompt
+		return faux.AssistantMessage("ok"), nil
+	})})
+	session := newMemoryPluginSession(t, provider, Extension(store), nil)
+	mustOK(session.PromptSync(context.Background(), "check prompt"))
+	require(t, strings.Contains(prompt, "newer fact") && strings.Contains(prompt, "(+1 older memory · use recall to search)") && !strings.Contains(prompt, strings.Repeat("m", 50)), "prompt = %q", prompt)
 }
 
 func TestMemoryProfileCapacityAndReplacement(t *testing.T) {
@@ -345,10 +356,6 @@ func TestMemoryProfileCapacityAndReplacement(t *testing.T) {
 	_ = must(remember.Execute(context.Background(), "remember-full", map[string]any{
 		"target": "user", "content": full,
 	}, nil))
-	_, err := remember.Execute(context.Background(), "remember-overflow", map[string]any{
-		"target": "user", "content": "x",
-	}, nil)
-	require(t, err != nil && strings.Contains(err.Error(), "1375/1375") && strings.Contains(err.Error(), "replace or forget"), "overflow error = %v", err)
 	replace := memoryPluginTool(t, store, "replace")
 	result := must(replace.Execute(context.Background(), "replace-full", map[string]any{
 		"target": "user", "old_text": strings.Repeat("é", 20),
