@@ -321,7 +321,9 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 	}
 	// What a new conversation starts with: the settings.json the agent's own settings read.
 	if agentDir != "" {
-		var settings document.Document = filelock.File{Path: filepath.Join(agentDir, "settings.json"), Perm: 0o600, Atomic: true}
+		// In place, as the settings writer does: a settings.json mounted as a single file cannot
+		// be renamed over.
+		var settings document.Document = filelock.File{Path: filepath.Join(agentDir, "settings.json"), Perm: 0o600}
 		if state != nil && !state.Files {
 			settings = state.Document(filepath.Join(agentDir, "settings.json"))
 		}
