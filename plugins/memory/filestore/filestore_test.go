@@ -3,6 +3,7 @@ package filestore
 import (
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -232,6 +233,9 @@ func TestJournalCompactsChurn(t *testing.T) {
 						if err := tx.Delete(ctx, id); err != nil {
 							return err
 						}
+						if err := tx.(memory.RemovalStore).Purge(ctx, id); err != nil {
+							return err
+						}
 					}
 					return nil
 				})
@@ -240,7 +244,22 @@ func TestJournalCompactsChurn(t *testing.T) {
 				}
 			}
 		}
+		gone, err := store.Append(ctx, memory.Item{Time: time.Now(), Content: "forgotten"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Delete(ctx, gone); err != nil {
+			t.Fatal(err)
+		}
+		tombstones, err := store.(memory.RemovalStore).Removed(ctx)
+		if err != nil || len(tombstones) != 1 || tombstones[gone] == "" {
+			t.Fatalf("tombstones = %#v, %v", tombstones, err)
+		}
 		churn()
+		// A pending tombstone outlives compaction, digest only.
+		if after, err := store.(memory.RemovalStore).Removed(ctx); err != nil || !maps.Equal(after, tombstones) {
+			t.Fatalf("tombstones after compaction = %#v, %v; want %#v", after, err, tombstones)
+		}
 		items, err := store.Query(ctx, memory.Filter{Limit: -1})
 		if err != nil || len(items) != 1 || items[0].ID != kept {
 			t.Fatalf("live items = %#v, %v", items, err)
@@ -256,6 +275,10 @@ func TestJournalCompactsChurn(t *testing.T) {
 	}
 	info, err := os.Stat(filepath.Join(dir, "memory.jsonl"))
 	raw, _ := doc.Read(ctx)
+	fileRaw, _ := os.ReadFile(filepath.Join(dir, "memory.jsonl"))
+	if strings.Contains(string(fileRaw)+string(raw), "forgotten") {
+		t.Fatal("a compacted journal kept a forgotten item's content")
+	}
 	if err != nil || info.Size() >= compactAt || len(raw) >= compactAt {
 		t.Fatalf("journals grew to %d and %d bytes (%v), past %d", info.Size(), len(raw), err, compactAt)
 	}

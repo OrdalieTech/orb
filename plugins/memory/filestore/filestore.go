@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -43,6 +45,8 @@ type fileRecord struct {
 	Delete string       `json:"delete,omitempty"`
 	Purge  string       `json:"purge,omitempty"`
 	Batch  []fileRecord `json:"batch,omitempty"`
+	// Digest is a compacted tombstone's digest: the deleted item itself is gone from the journal.
+	Digest string `json:"digest,omitempty"`
 }
 
 type storedItem struct {
@@ -342,10 +346,10 @@ func (store *FileStore) appendRecordsLocked(ctx context.Context, records []fileR
 // live stays bounded by the memory tools.
 const compactAt = 256 << 10
 
-// compacted is the journal holding only its live items, in their order; nil while it is still
-// mostly live.
+// compacted is the journal holding only its live items, in their order, then its tombstones as
+// digests; nil while it is still mostly live.
 func compacted(raw []byte) ([]byte, error) {
-	items, err := readJournal(bytes.NewReader(raw))
+	items, removed, err := readJournalState(bytes.NewReader(raw))
 	if err != nil {
 		return nil, err
 	}
@@ -357,6 +361,13 @@ func compacted(raw []byte) ([]byte, error) {
 	out := []byte{}
 	for i := range live {
 		line, err := journalLine([]fileRecord{{Item: &live[i].Item}})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, line...)
+	}
+	for _, id := range slices.Sorted(maps.Keys(removed)) {
+		line, err := journalLine([]fileRecord{{Delete: id, Digest: removed[id]}})
 		if err != nil {
 			return nil, err
 		}
@@ -448,6 +459,10 @@ func applyFileRecord(items map[string]storedItem, removed map[string]string, rec
 		case current.Purge != "":
 			delete(items, current.Purge)
 			delete(removed, current.Purge)
+		case current.Delete != "" && current.Digest != "":
+			if removed != nil {
+				removed[current.Delete] = current.Digest
+			}
 		case current.Delete != "":
 			if old, ok := items[current.Delete]; ok && removed != nil {
 				if raw, err := json.Marshal(old.Item); err == nil {
