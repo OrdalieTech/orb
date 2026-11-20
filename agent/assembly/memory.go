@@ -1,6 +1,7 @@
 package assembly
 
 import (
+	"context"
 	"path/filepath"
 
 	"github.com/OrdalieTech/orb/agent/config"
@@ -12,7 +13,7 @@ import (
 )
 
 // Storage is opened only when the product enables the memory plugin.
-func memoryExtension(store memory.Store, agentDir string) extensions.Factory {
+func memoryExtension(store memory.Store, agentDir string, onWrite func()) extensions.Factory {
 	return func(api extensions.API) error {
 		activeStore := store
 		if activeStore == nil {
@@ -30,8 +31,77 @@ func memoryExtension(store memory.Store, agentDir string) extensions.Factory {
 				return err
 			}
 		}
+		if onWrite != nil {
+			activeStore = wrapMemoryNotify(activeStore, onWrite)
+		}
 		return memoryextension.Extension(activeStore)(api)
 	}
+}
+
+func wrapMemoryNotify(store memory.Store, onWrite func()) memory.Store {
+	base := notifyingMemory{Store: store, onWrite: onWrite}
+	if ts, ok := store.(memory.TransactionalStore); ok {
+		return notifyingTransactionalMemory{notifyingMemory: base, tx: ts}
+	}
+	return base
+}
+
+type notifyingMemory struct {
+	memory.Store
+	onWrite func()
+}
+
+func (s notifyingMemory) Append(ctx context.Context, item memory.Item) (string, error) {
+	id, err := s.Store.Append(ctx, item)
+	if err == nil {
+		s.onWrite()
+	}
+	return id, err
+}
+
+func (s notifyingMemory) Delete(ctx context.Context, id string) error {
+	err := s.Store.Delete(ctx, id)
+	if err == nil {
+		s.onWrite()
+	}
+	return err
+}
+
+type notifyingTransactionalMemory struct {
+	notifyingMemory
+	tx memory.TransactionalStore
+}
+
+func (s notifyingTransactionalMemory) Transact(ctx context.Context, fn func(memory.Store) error) error {
+	mutated := false
+	err := s.tx.Transact(ctx, func(inner memory.Store) error {
+		return fn(txTracker{Store: inner, mutated: &mutated})
+	})
+	if err == nil && mutated {
+		s.onWrite()
+	}
+	return err
+}
+
+type txTracker struct {
+	memory.Store
+	mutated *bool
+}
+
+func (t txTracker) Append(ctx context.Context, item memory.Item) (string, error) {
+	id, err := t.Store.Append(ctx, item)
+	if err == nil {
+		*t.mutated = true
+	}
+	return id, err
+}
+
+func (t txTracker) Delete(ctx context.Context, id string) error {
+	err := t.Store.Delete(ctx, id)
+	if err == nil {
+		*t.mutated = true
+	}
+	return err
 }
 
 // memtreeExtension reads memtree's settings; the plugin keeps its summaries in the session.

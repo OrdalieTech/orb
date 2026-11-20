@@ -75,11 +75,12 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		hostCompiled = append([]extensions.CompiledExtension(nil), compiledExtensions...)
 	}
 	rows := assembly.Rows(assembly.Options{
-		UsageCache: args.usageCache,
-		Accounts:   args.accounts,
-		Memory:     args.native.Memory(),
-		Policy:     policy,
-		CWD:        cwd, AgentDir: agentDir, Settings: settings,
+		UsageCache:    args.usageCache,
+		Accounts:      args.accounts,
+		Memory:        args.native.Memory(),
+		OnMemoryWrite: debouncedMitosisNotify(args.native, args.MitosisProfile),
+		Policy:        policy,
+		CWD:           cwd, AgentDir: agentDir, Settings: settings,
 		Mitosis: mitosisExtension(args, settings), MitosisManagement: true,
 		MitosisAgentCalls: mitosisagents.Extension(ownerMitosis{args: args, settings: settings}),
 		ClaudeSessions:    claudesessions.Management(settings, agentDir, os.Environ()),

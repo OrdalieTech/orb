@@ -28,17 +28,38 @@ func mitosisAdmin(ctx context.Context, profile string) (*protocol.Conn, error) {
 	return daemon.Admin(ctx, stateFromContext(ctx), profile)
 }
 
-// notifyMitosis asks a running personal Mitosis daemon to schedule a debounced sync round after
-// a local credential or account change; no-op when Mitosis is not running.
-func notifyMitosis(ctx context.Context) {
+// notifyMitosis asks a running Mitosis daemon to schedule a debounced sync round after
+// a local change to a synced class; no-op when Mitosis is not running.
+func notifyMitosis(ctx context.Context, state *native.State, profile string) {
+	if profile == "" {
+		profile = "personal"
+	}
 	callCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
 	defer cancel()
-	client, err := mitosisAdmin(callCtx, "personal")
+	client, err := daemon.Admin(callCtx, state, profile)
 	if err != nil {
 		return
 	}
 	defer func() { _ = client.Close() }()
 	_ = client.Call(callCtx, "notify", struct{}{}, nil)
+}
+
+// debouncedMitosisNotify returns a non-blocking callback that coalesces bursts of local writes
+// (e.g. multiple remember/replace/forget calls in one turn) before waking the Mitosis daemon.
+func debouncedMitosisNotify(state *native.State, profile string) func() {
+	var mu sync.Mutex
+	var timer *time.Timer
+	return func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if timer != nil {
+			timer.Reset(250 * time.Millisecond)
+			return
+		}
+		timer = time.AfterFunc(250*time.Millisecond, func() {
+			notifyMitosis(context.Background(), state, profile)
+		})
+	}
 }
 
 func startMitosis(ctx context.Context, profile string, explicit bool) error {
