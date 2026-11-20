@@ -36,37 +36,99 @@ type Peers struct {
 	mu  sync.Mutex
 	// joining: inviters this Mitosis claimed an invitation from, kept as known peers only once
 	// trusted, so one that never approves is not dialled at every start.
-	joining map[string]string
-	used    sync.Map // peer -> when a call last went to it, so the ring keeps a channel in use
+	joining   map[string]string
+	dialing   map[string]chan struct{}
+	relayed   map[*protocol.Conn]bool // channels opened via a relay (never used as a relay hop)
+	lastRelay string
+	used      sync.Map // peer -> when a call last went to it, so the ring keeps a channel in use
 }
 
 // NewPeers serves b's peers until ctx ends.
 func NewPeers(ctx context.Context, b *Mitosis) *Peers {
-	return &Peers{Mitosis: b, ctx: ctx, joining: map[string]string{}}
+	ps := &Peers{Mitosis: b, ctx: ctx, joining: map[string]string{}, dialing: map[string]chan struct{}{}, relayed: map[*protocol.Conn]bool{}}
+	b.setDial(func(ctx context.Context, peer, locator string) (net.Conn, error) {
+		if ps.Dial == nil {
+			return nil, Fail("unavailable")
+		}
+		return ps.Dial(ctx, peer, locator)
+	})
+	return ps
 }
 
 func (ps *Peers) Peer(ctx context.Context, id, locator string) (*protocol.Conn, error) {
+	return ps.peer(ctx, id, locator, true)
+}
+
+func (ps *Peers) peer(ctx context.Context, id, locator string, allowRelay bool) (*protocol.Conn, error) {
 	if c := ps.Mitosis.Connection(id); c != nil {
 		return c, nil
 	}
+	explicit := locator
 	if locator == "" {
 		ps.mu.Lock()
 		locator = ps.joining[id]
 		ps.mu.Unlock()
 	}
+	var locErr error
 	if locator == "" {
-		var err error
-		locator, err = ps.Mitosis.PeerLocator(id)
-		if err != nil {
-			return nil, err
-		}
+		locator, locErr = ps.Mitosis.PeerLocator(id)
+	}
+	ps.Mitosis.mu.Lock()
+	canRelay := allowRelay && explicit == "" && ps.Mitosis.groupMember(Principal{PeerID: id, Subject: Subject{Kind: "controller"}})
+	ps.Mitosis.mu.Unlock()
+	if locator == "" && !canRelay {
+		return nil, cmp.Or(locErr, Fail("not_found"))
 	}
 	timeout, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	// Deduplicate concurrent dials to the same peer (e.g. fetch + loadThreads at once).
+	for {
+		ps.mu.Lock()
+		if wait := ps.dialing[id]; wait != nil {
+			ps.mu.Unlock()
+			select {
+			case <-wait:
+				if c := ps.Mitosis.Connection(id); c != nil {
+					return c, nil
+				}
+				continue
+			case <-timeout.Done():
+				return nil, Fail("unavailable")
+			}
+		}
+		done := make(chan struct{})
+		ps.dialing[id] = done
+		ps.mu.Unlock()
+		defer func() {
+			ps.mu.Lock()
+			delete(ps.dialing, id)
+			close(done)
+			ps.mu.Unlock()
+		}()
+		break
+	}
+	if c := ps.Mitosis.Connection(id); c != nil {
+		return c, nil
+	}
 	// Dial, unless the peer gets here first: one back from a network cut dials in by itself,
 	// often long before a dial toward it would get through.
 	dialed := make(chan error, 1)
-	go func() { dialed <- ps.dial(timeout, id, locator) }()
+	go func() {
+		var err error
+		if locator != "" && ps.Dial != nil {
+			err = ps.dial(timeout, id, locator)
+			if err == nil || ps.Mitosis.Connection(id) != nil {
+				dialed <- err
+				return
+			}
+		}
+		if canRelay {
+			if relayErr := ps.dialRelayed(timeout, id); relayErr == nil || err == nil {
+				err = relayErr
+			}
+		}
+		dialed <- cmp.Or(err, locErr, Fail("unavailable"))
+	}()
 	tick := time.NewTicker(500 * time.Millisecond)
 	defer tick.Stop()
 	for {
@@ -110,6 +172,93 @@ func (ps *Peers) dial(ctx context.Context, id, locator string) error {
 		}
 	}()
 	return nil
+}
+
+// relayCandidates returns direct (non-relayed) connected sync-group members that may relay a
+// single-hop stream to target, with the last working relay peer first.
+func (ps *Peers) relayCandidates(target string) []string {
+	self := ps.Mitosis.PeerID()
+	ps.Mitosis.mu.Lock()
+	var members []string
+	if ps.Mitosis.state.Group != "" {
+		members = slices.Clone(ps.Mitosis.state.Scopes[ps.Mitosis.state.Group])
+	}
+	ps.Mitosis.mu.Unlock()
+	type link struct {
+		peer string
+		conn *protocol.Conn
+	}
+	var links []link
+	for _, m := range members {
+		if m == self || m == target {
+			continue
+		}
+		if c := ps.Mitosis.Connection(m); c != nil {
+			links = append(links, link{m, c})
+		}
+	}
+	ps.mu.Lock()
+	last := ps.lastRelay
+	var out []string
+	for _, l := range links {
+		if !ps.relayed[l.conn] {
+			out = append(out, l.peer)
+		}
+	}
+	ps.mu.Unlock()
+	if i := slices.Index(out, last); i > 0 {
+		out[0], out[i] = out[i], out[0]
+	}
+	return out
+}
+
+func (ps *Peers) hasDirectGroupLink() bool {
+	return len(ps.relayCandidates("")) > 0
+}
+
+// dialRelayed opens an end-to-end pinned TLS 1.3 channel to id through a connected sync-group
+// member. The relay only forwards opaque ciphertext; id authenticates this peer directly.
+func (ps *Peers) dialRelayed(ctx context.Context, id string) error {
+	var lastErr error
+	for _, relayPeer := range ps.relayCandidates(id) {
+		rConn := ps.Mitosis.Connection(relayPeer)
+		if rConn == nil {
+			continue
+		}
+		var opened struct {
+			StreamID string `json:"stream_id"`
+		}
+		if err := rConn.Call(ctx, "stream.open", map[string]string{"peer_id": id}, &opened); err != nil {
+			lastErr = err
+			continue
+		}
+		if !protocol.ValidID(opened.StreamID) {
+			lastErr = Fail("unavailable")
+			continue
+		}
+		tunnel := newTunnelConn(rConn, opened.StreamID)
+		c, _, err := ps.Mitosis.Connect(ctx, tunnel, id, false)
+		if err != nil {
+			_ = tunnel.Close()
+			if Code(err) == "unauthorized" || Code(err) == "unsupported_version" {
+				return err
+			}
+			lastErr = err
+			continue
+		}
+		ps.mu.Lock()
+		ps.relayed[c] = true
+		ps.lastRelay = relayPeer
+		ps.mu.Unlock()
+		go func() {
+			Keepalive(ps.ctx, c, 4*time.Second)
+			ps.mu.Lock()
+			delete(ps.relayed, c)
+			ps.mu.Unlock()
+		}()
+		return nil
+	}
+	return cmp.Or(lastErr, Fail("unavailable"))
 }
 
 // ringed reports whether the ring links this device to peer: a member of its sync group reached
@@ -462,7 +611,7 @@ func (ps *Peers) Reconcile() {
 					defer func() { <-slots; wg.Done() }()
 					ctx, cancel := context.WithTimeout(ps.ctx, 10*time.Second)
 					defer cancel()
-					c, err := ps.Peer(ctx, peer, "")
+					c, err := ps.peer(ctx, peer, "", !ps.hasDirectGroupLink())
 					if err == nil {
 						err = ps.exchange(ctx, c, scope, peer, versions)
 					}

@@ -732,10 +732,11 @@ func TestGroupMembersSeedNamesAndOfflinePeersBackOff(t *testing.T) {
 				sawOffline = true
 			}
 		}
-		return sawFedora && sawOffline
+		return sawFedora && sawOffline && offlineCalls.Load() > 0
 	})
+	// Let the initial offline probe finish setting retryAt, then verify extra refreshes back off.
+	time.Sleep(50 * time.Millisecond)
 	before := offlineCalls.Load()
-	// Trigger extra refreshes; offline peer should stay in backoff (no new remote calls).
 	app.wakeMachines()
 	time.Sleep(200 * time.Millisecond)
 	app.wakeMachines()

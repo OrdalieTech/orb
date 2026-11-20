@@ -226,7 +226,7 @@ func (a *App) refresh(first bool) {
 	if time.Since(a.threadsAt) > 20*time.Second {
 		a.threadsAt = now
 		for _, m := range a.machines {
-			if m.state == "connected" || !now.Before(m.retryAt) {
+			if m.state == "connected" {
 				go a.loadThreads(m.id)
 			}
 		}

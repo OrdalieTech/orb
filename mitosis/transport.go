@@ -515,6 +515,8 @@ func (b *Mitosis) Handle(ctx context.Context, peer, method string, params json.R
 		return b.SyncAdmin(ctx, JSON(map[string]string{"remove": peer}), nil)
 	case "vault.get":
 		return b.serveVault(peer, params)
+	case "stream.open", "stream.write", "stream.read", "stream.close":
+		return b.handleStream(ctx, peer, method, params)
 	case "peers.list":
 		var p struct {
 			pageRequest

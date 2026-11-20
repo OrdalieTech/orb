@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net"
 	"slices"
 	"strconv"
 	"strings"
@@ -101,6 +102,8 @@ type Mitosis struct {
 	resolved       map[string]resolution // agent.call operations by ledger key, as first resolved
 	watches        map[string]map[uint64]context.CancelFunc
 	watchSeq       uint64
+	dial           func(ctx context.Context, peer, locator string) (net.Conn, error)
+	streams        map[string]*relayedStream
 	notifyTimer    *time.Timer // coalesces local synced-class changes before waking Reconcile
 }
 
@@ -196,13 +199,39 @@ func (b *Mitosis) takeChannelsLocked(peer string) []*protocol.Conn {
 	return out
 }
 
-func closeAccess(conns []*protocol.Conn, cancels []context.CancelFunc) {
-	for _, cancel := range cancels {
+type revocation struct {
+	conns   []*protocol.Conn
+	cancels []context.CancelFunc
+	streams []*relayedStream
+}
+
+func (r *revocation) merge(other revocation) {
+	r.conns = append(r.conns, other.conns...)
+	r.cancels = append(r.cancels, other.cancels...)
+	r.streams = append(r.streams, other.streams...)
+}
+
+func (r revocation) close() {
+	for _, cancel := range r.cancels {
 		cancel()
 	}
-	for _, c := range conns {
+	for _, s := range r.streams {
+		s.close()
+	}
+	for _, c := range r.conns {
 		_ = c.Close()
 	}
+}
+
+func (b *Mitosis) revokePeerLocked(peer string, closeChannels bool) revocation {
+	r := revocation{
+		cancels: b.cancelWatchesLocked(peer),
+		streams: b.takePeerStreamsLocked(peer),
+	}
+	if closeChannels {
+		r.conns = b.takeChannelsLocked(peer)
+	}
+	return r
 }
 
 // hostAllowed: only a controller granted host.launch (explicitly or via the sync group) reaches the machine.
@@ -239,7 +268,7 @@ func Open(store document.Document, create bool) (*Mitosis, error) {
 	if store == nil {
 		return nil, errors.New("mitosis requires explicit storage")
 	}
-	b := &Mitosis{changes: make(chan struct{}, 1), classes: map[string]Class{}, sealed: map[string]sealed{}, resolved: map[string]resolution{}, watches: map[string]map[uint64]context.CancelFunc{}, vaults: map[string][]byte{}, store: store, active: map[string]registration{}, channels: map[string]map[*protocol.Conn]uint64{}, dialled: map[*protocol.Conn]bool{}, boot: protocol.NewID()}
+	b := &Mitosis{changes: make(chan struct{}, 1), classes: map[string]Class{}, sealed: map[string]sealed{}, resolved: map[string]resolution{}, watches: map[string]map[uint64]context.CancelFunc{}, streams: map[string]*relayedStream{}, vaults: map[string][]byte{}, store: store, active: map[string]registration{}, channels: map[string]map[*protocol.Conn]uint64{}, dialled: map[*protocol.Conn]bool{}, boot: protocol.NewID()}
 	raw, err := store.Read(context.Background())
 	if err != nil {
 		return nil, err
@@ -659,11 +688,10 @@ func (b *Mitosis) Block(peer string) error {
 			delete(b.state.Invitations, id)
 		}
 	}
-	conns := b.takeChannelsLocked(peer)
-	cancels := b.cancelWatchesLocked(peer)
+	rev := b.revokePeerLocked(peer, true)
 	err := b.save()
 	b.mu.Unlock()
-	closeAccess(conns, cancels)
+	rev.close()
 	return err
 }
 func (b *Mitosis) Close() error {
@@ -679,11 +707,16 @@ func (b *Mitosis) Close() error {
 	b.channels = map[string]map[*protocol.Conn]uint64{}
 	watches := b.watches
 	b.watches = map[string]map[uint64]context.CancelFunc{}
+	streams := b.streams
+	b.streams = map[string]*relayedStream{}
 	b.mu.Unlock()
 	for _, ws := range watches {
 		for _, cancel := range ws {
 			cancel()
 		}
+	}
+	for _, s := range streams {
+		s.close()
 	}
 	for _, r := range active {
 		_ = r.endpoint.Close()
