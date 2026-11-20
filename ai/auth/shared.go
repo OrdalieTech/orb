@@ -18,7 +18,7 @@ func (store *Store) Shareable(ctx context.Context) (map[string]json.RawMessage, 
 	}
 	out := map[string]json.RawMessage{}
 	for provider, credential := range stored.byProvider {
-		if shareable(credential) {
+		if ShareableCredential(credential) {
 			if out[provider], err = json.Marshal(credential); err != nil {
 				return nil, err
 			}
@@ -39,7 +39,7 @@ func (store *Store) MergeShared(ctx context.Context, incoming []map[string]json.
 		for _, entries := range incoming {
 			for provider, raw := range entries {
 				var next Credential
-				if json.Unmarshal(raw, &next) != nil || !shareable(&next) {
+				if json.Unmarshal(raw, &next) != nil || !ShareableCredential(&next) {
 					continue
 				}
 				have, ok := stored.byProvider[provider]
@@ -57,7 +57,7 @@ func (store *Store) MergeShared(ctx context.Context, incoming []map[string]json.
 			}
 		}
 		for _, provider := range removed {
-			if _, ok := stored.byProvider[provider]; ok && !keepOwn {
+			if have, ok := stored.byProvider[provider]; ok && !keepOwn && ShareableCredential(have) {
 				delete(stored.byProvider, provider)
 				stored.order = slices.DeleteFunc(stored.order, func(p string) bool { return p == provider })
 				changed = append(changed, provider)
@@ -75,8 +75,10 @@ func (store *Store) MergeShared(ctx context.Context, incoming []map[string]json.
 	return changed, store.update(ctx, merge)
 }
 
-func shareable(credential *Credential) bool {
-	if credential.Type != CredentialAPIKey && credential.Type != CredentialOAuth {
+// ShareableCredential reports whether credential may travel across a Mitosis sync group:
+// API keys and OAuth logins with no shell-command ("!…") values and no local CLI config directory.
+func ShareableCredential(credential *Credential) bool {
+	if credential == nil || (credential.Type != CredentialAPIKey && credential.Type != CredentialOAuth) {
 		return false
 	}
 	if credential.Key != nil && strings.HasPrefix(*credential.Key, "!") {
@@ -87,7 +89,7 @@ func shareable(credential *Credential) bool {
 			return false
 		}
 	}
-	return true
+	return len(credential.Extra["claudeConfigDir"]) == 0
 }
 
 func compactJSON(raw []byte) []byte {

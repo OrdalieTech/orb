@@ -18,7 +18,9 @@ type Store struct {
 	// defaults serve a document, keyed by path, while the object has no copy
 	// of its own; the first update starts from it.
 	defaults map[string][]byte
-	mu       sync.Mutex
+	// OnWrite, when set, runs after Update commits a document write or removal.
+	OnWrite func(name string)
+	mu      sync.Mutex
 }
 
 func NewStore(files *FileSystem, defaults map[string][]byte) *Store {
@@ -42,20 +44,25 @@ func (d document) Read(ctx context.Context) ([]byte, error) {
 
 func (d document) Update(ctx context.Context, update func([]byte) ([]byte, error)) error {
 	d.store.mu.Lock()
-	defer d.store.mu.Unlock()
 	current, err := d.Read(ctx)
 	if err != nil {
+		d.store.mu.Unlock()
 		return err
 	}
 	next, err := update(current)
 	switch {
 	case err != nil:
-		return err
 	case next == nil:
-		return d.store.files.Remove(ctx, d.name, false, true)
+		err = d.store.files.Remove(ctx, d.name, false, true)
 	default:
-		return d.store.files.WriteFile(ctx, d.name, next)
+		err = d.store.files.WriteFile(ctx, d.name, next)
 	}
+	onWrite := d.store.OnWrite
+	d.store.mu.Unlock()
+	if err == nil && onWrite != nil {
+		onWrite(d.name)
+	}
+	return err
 }
 
 // Env is the Env port over the Worker's bindings: a lookup of secrets and

@@ -39,6 +39,7 @@ type document struct {
 	Version  int               `json:"version"`
 	Accounts []record          `json:"accounts"`
 	Active   map[string]string `json:"active"`
+	Ambient  map[string]bool   `json:"ambient,omitempty"`
 	Names    map[string]string `json:"names,omitempty"`
 }
 
@@ -112,8 +113,10 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 	if err != nil {
 		return nil, err
 	}
+	hasBase := make(map[string]bool, len(defaults))
 	rows := make([]Account, 0, len(defaults)+len(d.Accounts))
 	for _, a := range defaults {
+		hasBase[a.ProviderID] = true
 		credential, err := s.base.Read(ctx, a.ProviderID)
 		if err != nil {
 			return nil, err
@@ -124,8 +127,14 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 		}
 		rows = append(rows, Account{ID: DefaultID, Provider: a.ProviderID, Name: name, Type: a.Type, Active: d.Active[a.ProviderID] == ""})
 	}
+	autoActive := map[string]bool{}
 	for _, a := range d.Accounts {
-		rows = append(rows, Account{ID: a.ID, Provider: a.Provider, Name: a.Name, Type: a.Credential.Type, Active: d.Active[a.Provider] == a.ID})
+		selected := d.Active[a.Provider]
+		active := selected == a.ID
+		if selected == "" && !d.Ambient[a.Provider] && !hasBase[a.Provider] && !autoActive[a.Provider] {
+			active, autoActive[a.Provider] = true, true
+		}
+		rows = append(rows, Account{ID: a.ID, Provider: a.Provider, Name: a.Name, Type: a.Credential.Type, Active: active})
 	}
 	return rows, nil
 }
@@ -134,7 +143,8 @@ func (s *Store) Add(ctx context.Context, provider, name string, credential *auth
 	if provider == "" || credential == nil || (credential.Type != auth.CredentialAPIKey && credential.Type != auth.CredentialOAuth) {
 		return Account{}, errors.New("provider and credential are required")
 	}
-	name = strings.TrimSpace(name)
+	explicitName := strings.TrimSpace(name)
+	name = explicitName
 	if name == "" {
 		name = credentialName(credential)
 	}
@@ -164,12 +174,17 @@ func (s *Store) Add(ctx context.Context, provider, name string, credential *auth
 		}
 	}
 	err = s.update(ctx, func(d *document) error {
+		delete(d.Ambient, provider)
 		if matchedDefault {
 			result.ID = DefaultID
-			if d.Names == nil {
-				d.Names = map[string]string{}
+			if explicitName != "" {
+				if d.Names == nil {
+					d.Names = map[string]string{}
+				}
+				d.Names[provider] = explicitName
+			} else if existing := d.Names[provider]; existing != "" {
+				result.Name = existing
 			}
-			d.Names[provider] = name
 			delete(d.Active, provider)
 			return nil
 		}
@@ -177,7 +192,10 @@ func (s *Store) Add(ctx context.Context, provider, name string, credential *auth
 			if a.Provider == provider && sameCredential(a.Credential, credential) {
 				result.ID = a.ID
 				d.Accounts[i].Credential = credential.Clone()
-				d.Accounts[i].Name = name
+				if explicitName != "" || d.Accounts[i].Name == "" {
+					d.Accounts[i].Name = name
+				}
+				result.Name = d.Accounts[i].Name
 				d.Active[provider] = a.ID
 				return nil
 			}
@@ -253,11 +271,13 @@ func (s *Store) Select(ctx context.Context, provider, id string) error {
 				return errors.New("account no longer exists")
 			}
 			delete(d.Active, provider)
+			delete(d.Ambient, provider)
 			return nil
 		}
 		for _, a := range d.Accounts {
 			if a.Provider == provider && a.ID == id {
 				d.Active[provider] = id
+				delete(d.Ambient, provider)
 				return nil
 			}
 		}
@@ -270,6 +290,10 @@ func (s *Store) Select(ctx context.Context, provider, id string) error {
 func (s *Store) Deselect(ctx context.Context, provider string) error {
 	return s.update(ctx, func(d *document) error {
 		delete(d.Active, provider)
+		if d.Ambient == nil {
+			d.Ambient = map[string]bool{}
+		}
+		d.Ambient[provider] = true
 		return nil
 	})
 }
@@ -289,16 +313,30 @@ func (s *Store) Remove(ctx context.Context, provider, id string) error {
 
 // ForProvider pins account identity across read/refresh/write. Switching the
 // active account cannot redirect an in-flight OAuth refresh into another one.
-func (s *Store) ForProvider(_ context.Context, provider string) (auth.CredentialStore, error) {
+func (s *Store) ForProvider(ctx context.Context, provider string) (auth.CredentialStore, error) {
 	d, err := s.load()
 	if err != nil {
 		return nil, err
 	}
-	id := d.Active[provider]
-	if id == "" {
+	if id := d.Active[provider]; id != "" {
+		return s.View(provider, id), nil
+	}
+	if d.Ambient[provider] {
 		return s.base, nil
 	}
-	return s.View(provider, id), nil
+	base, err := s.base.Read(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	if base != nil {
+		return s.base, nil
+	}
+	for _, a := range d.Accounts {
+		if a.Provider == provider {
+			return s.View(provider, a.ID), nil
+		}
+	}
+	return s.base, nil
 }
 
 func (s *Store) View(provider, id string) auth.CredentialStore {

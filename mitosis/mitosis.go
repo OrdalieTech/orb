@@ -99,6 +99,7 @@ type Mitosis struct {
 	handing        bool                  // a member's last round handed the owners something the group's set lacks
 	op             [2]string             // this owner's last membership change (change)
 	resolved       map[string]resolution // agent.call operations by ledger key, as first resolved
+	notifyTimer    *time.Timer           // coalesces local synced-class changes before waking Reconcile
 }
 
 // Host serves a peer's machine-level calls — the threads stored on this machine, and starting
@@ -591,6 +592,10 @@ func (b *Mitosis) Block(peer string) error {
 func (b *Mitosis) Close() error {
 	b.mu.Lock()
 	b.closed = true
+	if b.notifyTimer != nil {
+		b.notifyTimer.Stop()
+		b.notifyTimer = nil
+	}
 	active := b.active
 	b.active = map[string]registration{}
 	channels := b.channels
@@ -645,3 +650,29 @@ func cloneInvitation(i Invitation) Invitation {
 }
 
 func (b *Mitosis) Changes() <-chan struct{} { return b.changes }
+
+// Notify schedules a debounced sync round (250 ms) so a local change to a synced class
+// (credentials, accounts, memory, mcp) leaves promptly instead of waiting for the 15 s sweep
+// while coalescing bursts into one round. No-op when not in a sync group.
+func (b *Mitosis) Notify() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed || b.failed || b.state.Group == "" {
+		return
+	}
+	if b.notifyTimer != nil {
+		b.notifyTimer.Reset(250 * time.Millisecond)
+		return
+	}
+	b.notifyTimer = time.AfterFunc(250*time.Millisecond, func() {
+		b.mu.Lock()
+		closed := b.closed || b.failed
+		b.mu.Unlock()
+		if !closed {
+			select {
+			case b.changes <- struct{}{}:
+			default:
+			}
+		}
+	})
+}

@@ -597,4 +597,82 @@ func TestNewRightAfterOpeningRunsInTheNewSession(t *testing.T) {
 	if now == session {
 		t.Fatalf("the message ran in the session it should replace")
 	}
+	if via := c.rows[opened.Tab][0].Via; via != "" {
+		t.Fatalf("message sent via /new was marked via=%q, want empty", via)
+	}
+}
+
+// Approving a pairing from an app admits the paired device to this owner's sync group, as `orb
+// mitosis` does, and a non-owner member (unauthorized) still succeeds at pairing.
+func TestApproveAdmitsToSyncGroup(t *testing.T) {
+	c := newClient()
+	var added atomic.Value
+	app := New(t.Context(), Options{Name: "this Mac", Emit: func(m any) { c.out <- mitosis.JSON(m) }, Call: func(_ context.Context, method string, params, result any) error {
+		switch method {
+		case "status":
+			return json.Unmarshal([]byte(`{"peer_id":"me","pending":[{"invitation_id":"inv1","claimant":"phone","status":"pending"}]}`), result)
+		case "approve":
+			return nil
+		case "sync":
+			if p, ok := params.(map[string]string); ok {
+				added.Store(p["add"])
+			}
+			return nil
+		case "remote":
+			return json.Unmarshal([]byte(`{}`), result)
+		}
+		return nil
+	}})
+	c.until(t, "pending claim", func() bool { return c.state.Claim != nil && c.state.Claim.Claimant == "phone" })
+	app.Do([]byte(`{"id":"a1","do":"approve"}`))
+	c.until(t, "approve reply", func() bool { _, ok := c.replies["a1"]; return ok })
+	if got := c.replies["a1"]; len(got) > 0 {
+		t.Fatalf("unexpected approve error: %s", got)
+	}
+	if got, _ := added.Load().(string); got != "phone" {
+		t.Fatalf("sync add = %q, want phone", got)
+	}
+}
+
+// A connected peer that refuses host.sessions (no host.launch grant, or a Worker/tab) stops
+// reporting Reading once that refusal arrives, so Home does not spin "reading ..." forever.
+func TestConnectedPeerWithoutLaunchStopsReading(t *testing.T) {
+	c := newClient()
+	var machines atomic.Pointer[[]Machine]
+	app := New(t.Context(), Options{Name: "this tab", Emit: func(m any) {
+		raw := mitosis.JSON(m)
+		var h struct {
+			T        string
+			Machines []Machine
+		}
+		if json.Unmarshal(raw, &h) == nil && h.T == "home" {
+			machines.Store(&h.Machines)
+		}
+		c.out <- raw
+	}, Call: func(_ context.Context, method string, params, result any) error {
+		if method == "status" {
+			return json.Unmarshal([]byte(`{"peer_id":"me","peers":["worker"],"peer_states":{"worker":"connected"}}`), result)
+		}
+		if method == "remote" {
+			p := params.(map[string]any)
+			if p["method"] == "host.sessions" {
+				return mitosis.Fail("unauthorized")
+			}
+			return json.Unmarshal([]byte(`{}`), result)
+		}
+		return nil
+	}})
+	app.Do([]byte(`{"do":"visible","on":true}`))
+	c.until(t, "worker no longer reading", func() bool {
+		list := machines.Load()
+		if list == nil {
+			return false
+		}
+		for _, m := range *list {
+			if m.ID == "worker" && m.Connected && !m.Reading && !m.Launch {
+				return true
+			}
+		}
+		return false
+	})
 }

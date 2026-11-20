@@ -2,6 +2,7 @@ package agentmemory
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -49,11 +50,11 @@ func (store *testStore) Query(_ context.Context, filter memorysdk.Filter) ([]mem
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	limit := filter.Limit
-	if limit <= 0 || limit > 100 {
+	if limit == 0 || limit > 100 {
 		limit = 100
 	}
-	result := make([]memorysdk.Item, 0, min(limit, len(store.items)))
-	for index := len(store.items) - 1; index >= 0 && len(result) < limit; index-- {
+	result := make([]memorysdk.Item, 0, len(store.items))
+	for index := len(store.items) - 1; index >= 0 && (limit < 0 || len(result) < limit); index-- {
 		item := store.items[index]
 		if filter.Contains != "" && !strings.Contains(strings.ToLower(item.Content), strings.ToLower(filter.Contains)) ||
 			!containsAll(item.Tags, filter.Tags) {
@@ -253,5 +254,156 @@ func TestRecallFallsBackToWordOverlap(t *testing.T) {
 	items, err := recallItems(context.Background(), store, "kubernetes rollout", nil, 10)
 	if err != nil || len(items) != 0 {
 		t.Fatalf("unrelated query matched %#v (%v)", items, err)
+	}
+}
+
+func TestSyncedOverFullDevicesKeepRememberWorkingAndRecallOlder(t *testing.T) {
+	ctx := context.Background()
+	storeA, err := filestore.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	storeB, err := filestore.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Each device fills MEMORY near 2200 chars and USER near 1375 chars.
+	oldestMem := "Ancient aurora observatory note: " + strings.Repeat("a", 900)
+	if _, err := storeA.Append(ctx, memorysdk.Item{Time: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Content: oldestMem, Tags: []string{memoryTargetTag}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storeA.Append(ctx, memorysdk.Item{Time: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), Content: "Device A second fact: " + strings.Repeat("b", 1000), Tags: []string{memoryTargetTag}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storeA.Append(ctx, memorysdk.Item{Time: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC), Content: "Device A user pref: " + strings.Repeat("u", 1000), Tags: []string{"user", userTargetTag}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storeB.Append(ctx, memorysdk.Item{Time: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), Content: "Device B first fact: " + strings.Repeat("c", 1000), Tags: []string{memoryTargetTag}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storeB.Append(ctx, memorysdk.Item{Time: time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC), Content: "Device B second fact: " + strings.Repeat("d", 1000), Tags: []string{memoryTargetTag}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storeB.Append(ctx, memorysdk.Item{Time: time.Date(2026, 3, 3, 0, 0, 0, 0, time.UTC), Content: "Device B user pref: " + strings.Repeat("v", 1000), Tags: []string{"user", userTargetTag}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Merge B into A as Mitosis sync does: combined MEMORY ~4000 chars, USER ~2000 chars.
+	fromB, err := memorysdk.Shared{Store: storeB}.Shareable(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (memorysdk.Shared{Store: storeA}).MergeShared(ctx, []map[string]json.RawMessage{fromB}, true, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	rt, err := New(storeA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := map[string]engine.AgentTool{}
+	for _, tool := range rt.Tools() {
+		tools[tool.Spec().Name] = tool
+	}
+
+	// remember still works even though both MEMORY and USER exceed their prompt budgets.
+	if _, err := tools["remember"].Execute(ctx, "r1", map[string]any{"target": "memory", "content": "Fresh fact after sync merge."}, nil); err != nil {
+		t.Fatalf("remember failed on over-full merged store: %v", err)
+	}
+	if _, err := tools["remember"].Execute(ctx, "r2", map[string]any{"target": "user", "content": "User likes concise summaries."}, nil); err != nil {
+		t.Fatalf("remember(user) failed on over-full merged store: %v", err)
+	}
+
+	// Rendered prompt stays bounded (newest first) and advertises spilled older memories.
+	if err := rt.Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+	prompt := rt.SystemPrompt("base")
+	if !strings.Contains(prompt, "Fresh fact after sync merge.") || !strings.Contains(prompt, "User likes concise summaries.") {
+		t.Fatalf("newest remembered facts missing from prompt:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "Ancient aurora observatory note") {
+		t.Fatalf("oldest spilled memory should not be rendered inside prompt budget:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "older memories · use recall to search)") && !strings.Contains(prompt, "older memory · use recall to search)") {
+		t.Fatalf("missing spill footer in prompt:\n%s", prompt)
+	}
+
+	// recall finds the spilled oldest memory (both substring and word overlap).
+	res, err := tools["recall"].Execute(ctx, "q1", map[string]any{"query": "aurora"}, nil)
+	if err != nil || !strings.Contains(ai.ContentText(res.Content), "Ancient aurora observatory note") {
+		t.Fatalf("substring recall missed spilled item: %v, %q", err, ai.ContentText(res.Content))
+	}
+	res, err = tools["recall"].Execute(ctx, "q2", map[string]any{"query": "observatory ancient"}, nil)
+	if err != nil || !strings.Contains(ai.ContentText(res.Content), "Ancient aurora observatory note") {
+		t.Fatalf("word-overlap recall missed spilled item: %v, %q", err, ai.ContentText(res.Content))
+	}
+
+	// replace and forget work on spilled older memories too.
+	if _, err := tools["replace"].Execute(ctx, "rep1", map[string]any{
+		"target": "memory", "old_text": "Ancient aurora observatory note", "content": "Updated aurora note.",
+	}, nil); err != nil {
+		t.Fatalf("replace failed on spilled item: %v", err)
+	}
+	if _, err := tools["forget"].Execute(ctx, "f1", map[string]any{"query": "Updated aurora note"}, nil); err != nil {
+		t.Fatalf("forget failed on spilled item: %v", err)
+	}
+}
+
+func TestMemoryStoreCapRefusesWithoutEvicting(t *testing.T) {
+	ctx := context.Background()
+	store := &testStore{}
+	for i := range memoryStoreItemLimit {
+		if _, err := store.Append(ctx, memorysdk.Item{
+			Content: fmt.Sprintf("fact number %03d", i),
+			Tags:    []string{memoryTargetTag},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rt, err := New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := map[string]engine.AgentTool{}
+	for _, tool := range rt.Tools() {
+		tools[tool.Spec().Name] = tool
+	}
+	_, err = tools["remember"].Execute(ctx, "over", map[string]any{"target": "memory", "content": "one too many"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "memory store is full") {
+		t.Fatalf("expected store cap refusal, got %v", err)
+	}
+	all, _ := store.Query(ctx, memorysdk.Filter{Limit: -1})
+	if len(all) != memoryStoreItemLimit {
+		t.Fatalf("store cap evicted items: have %d, want %d", len(all), memoryStoreItemLimit)
+	}
+	// Oldest item (index 0, well past 100) is still searchable and forgettable, freeing space.
+	res, err := tools["recall"].Execute(ctx, "old", map[string]any{"query": "number 000"}, nil)
+	if err != nil || !strings.Contains(ai.ContentText(res.Content), "fact number 000") {
+		t.Fatalf("recall missed oldest item past 100: %v, %q", err, ai.ContentText(res.Content))
+	}
+	if _, err := tools["forget"].Execute(ctx, "drop", map[string]any{"query": "fact number 000"}, nil); err != nil {
+		t.Fatalf("forget oldest item failed: %v", err)
+	}
+	if _, err := tools["remember"].Execute(ctx, "ok", map[string]any{"target": "memory", "content": "fits now"}, nil); err != nil {
+		t.Fatalf("remember after forget failed: %v", err)
+	}
+
+	// Char cap refusal without eviction; shrinking replace still works.
+	charStore := &testStore{}
+	big := strings.Repeat("x", 8000)
+	for i := range 8 {
+		_, _ = charStore.Append(ctx, memorysdk.Item{Content: fmt.Sprintf("block-%d %s", i, big), Tags: []string{memoryTargetTag}})
+	}
+	crt, _ := New(charStore)
+	ctools := map[string]engine.AgentTool{}
+	for _, tool := range crt.Tools() {
+		ctools[tool.Spec().Name] = tool
+	}
+	if _, err := ctools["remember"].Execute(ctx, "c-over", map[string]any{"target": "memory", "content": strings.Repeat("y", 2000)}, nil); err == nil || !strings.Contains(err.Error(), "memory store is full") {
+		t.Fatalf("expected char cap refusal, got %v", err)
+	}
+	if _, err := ctools["replace"].Execute(ctx, "c-shrink", map[string]any{"target": "memory", "old_text": "block-0", "content": "short"}, nil); err != nil {
+		t.Fatalf("shrinking replace at char cap failed: %v", err)
 	}
 }

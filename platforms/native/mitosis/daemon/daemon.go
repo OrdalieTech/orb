@@ -310,6 +310,7 @@ func Run(ctx context.Context, state *native.State, profile, version string, web 
 	}
 	if credentials, err := state.Auth(agentDir); err == nil && agentDir != "" {
 		b.SetClass("credentials", credentials)
+		b.SetClass("accounts", state.Accounts(agentDir, credentials))
 	}
 	// The MCP plugin reads its files from the agent directory on every host, so these stay files.
 	if agentDir != "" {

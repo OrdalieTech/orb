@@ -425,3 +425,45 @@ func serve(t *testing.T, instance *Instance, commands ...string) []string {
 	}
 	return responses
 }
+
+// TestSetDefaultModelPersistsAcrossNewSessionAndRestart checks that choosing a default model on a
+// Worker/browser tab persists in settings.json so /new sessions (including after a restart) start
+// on the chosen model and thinking level rather than falling back to the previous default.
+func TestSetDefaultModelPersistsAcrossNewSessionAndRestart(t *testing.T) {
+	ctx := t.Context()
+	kv := &memKV{data: map[string][]byte{}}
+	modelsJSON := []byte(`{"providers":{"fake":{"baseUrl":"http://127.0.0.1:9/v1","api":"openai-completions","apiKey":"k","models":[{"id":"first","name":"First","reasoning":true},{"id":"second","name":"Second","reasoning":true}]}}}`)
+	open := func() *Instance {
+		instance, err := Open(ctx, Options{KV: kv, Models: modelsJSON, Settings: []byte(`{"defaultProvider":"fake","defaultModel":"first"}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return instance
+	}
+	first := open()
+	if got := first.Session().State().Model; got == nil || got.Provider != "fake" || got.ID != "first" {
+		t.Fatalf("initial model = %+v, want fake/first", got)
+	}
+	if err := first.SetDefaultModel(ctx, "fake", "second", "high"); err != nil {
+		t.Fatal(err)
+	}
+	if def, err := first.DefaultModels(); err != nil || def.Default != "fake/second" || def.Thinking != "high" {
+		t.Fatalf("DefaultModels = %+v, %v", def, err)
+	}
+	if _, err := first.NewSessionContext(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	if st := first.Session().State(); st.Model == nil || st.Model.Provider != "fake" || st.Model.ID != "second" || st.ThinkingLevel != "high" {
+		t.Fatalf("after /new: model=%+v thinking=%q, want fake/second high", st.Model, st.ThinkingLevel)
+	}
+	first.Dispose()
+
+	second := open()
+	defer second.Dispose()
+	if _, err := second.NewSessionContext(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	if st := second.Session().State(); st.Model == nil || st.Model.Provider != "fake" || st.Model.ID != "second" || st.ThinkingLevel != "high" {
+		t.Fatalf("after reopen + /new: model=%+v thinking=%q, want fake/second high", st.Model, st.ThinkingLevel)
+	}
+}

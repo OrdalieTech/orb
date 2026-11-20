@@ -3,6 +3,7 @@ package accounts
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -53,6 +54,21 @@ func TestOAuthIdentityKeepsAccountsSeparateAndRefreshesExisting(t *testing.T) {
 	if err != nil || len(rows) != 2 {
 		t.Fatal("unexpected account count", err)
 	}
+	// Re-signing in without passing a name (as orb login --json does) preserves the account's name.
+	relogged, err := store.Add(t.Context(), "openai-codex", "", auth.OAuthCredential("renewed-refresh-2", token("work", "pro"), 10))
+	if err != nil || relogged.ID != first.ID || relogged.Name != "Work" {
+		t.Fatalf("re-login erased account name: %#v, %v", relogged, err)
+	}
+	// Same for a named default account in auth.json.
+	base := auth.NewMemoryStore(map[string]*auth.Credential{"openai-codex": auth.OAuthCredential("base-r", token("base", "plus"), 0)})
+	withBase := NewStoreWithDocument(&memoryDocument{}, base)
+	if err := withBase.Rename(t.Context(), "openai-codex", DefaultID, "Main"); err != nil {
+		t.Fatal(err)
+	}
+	reloggedBase, err := withBase.Add(t.Context(), "openai-codex", "", auth.OAuthCredential("base-r2", token("base", "plus"), 20))
+	if err != nil || reloggedBase.ID != DefaultID || reloggedBase.Name != "Main" {
+		t.Fatalf("re-login erased default account name: %#v, %v", reloggedBase, err)
+	}
 }
 
 // A credential held by another program (a CLI's own sign-in) has no token to
@@ -60,7 +76,8 @@ func TestOAuthIdentityKeepsAccountsSeparateAndRefreshesExisting(t *testing.T) {
 // its default source even when Orb stores no default.
 func TestExternalAccountNamesItselfAndDeselects(t *testing.T) {
 	ctx := context.Background()
-	store := NewStoreWithDocument(&memoryDocument{}, nil)
+	doc := &memoryDocument{}
+	store := NewStoreWithDocument(doc, nil)
 	credential := &auth.Credential{Type: auth.CredentialOAuth}
 	credential.SetExtra("label", []byte(`"second@example.com · Max"`))
 	added, err := store.Add(ctx, "external", "", credential)
@@ -76,6 +93,32 @@ func TestExternalAccountNamesItselfAndDeselects(t *testing.T) {
 	}
 	if current, err := store.Read(ctx, "external"); err != nil || current != nil {
 		t.Fatalf("deselected provider still reads %#v, %v", current, err)
+	}
+	// On-disk compatibility with 0.25.0: Deselect never writes DefaultID into Active, so an older
+	// binary that validates Active entries against Accounts (and ignores unknown fields) reads it.
+	var older struct {
+		Version  int               `json:"version"`
+		Accounts []record          `json:"accounts"`
+		Active   map[string]string `json:"active"`
+	}
+	if err := json.Unmarshal(doc.data, &older); err != nil {
+		t.Fatalf("unmarshal accounts.json: %v", err)
+	}
+	seen := map[string]string{}
+	for _, a := range older.Accounts {
+		seen[a.ID] = a.Provider
+	}
+	for provider, id := range older.Active {
+		if id == DefaultID || seen[id] != provider {
+			t.Fatalf("active[%q] = %q violates 0.25.0 rule: %s", provider, id, doc.data)
+		}
+	}
+	// Selecting the named account again clears ambient and reactivates it.
+	if err := store.Select(ctx, "external", added.ID); err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := store.Accounts(ctx); err != nil || len(rows) != 1 || !rows[0].Active {
+		t.Fatalf("after re-select = %#v, %v", rows, err)
 	}
 }
 

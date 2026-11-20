@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/providers"
 	"github.com/OrdalieTech/orb/platforms/native"
+	"github.com/OrdalieTech/orb/plugins/claudesessions"
 )
 
 type credentialPrintKind string
@@ -349,16 +351,19 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 	if err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
+	accountStore := stateFromContext(ctx).Accounts(agentDir, storage)
 	if args.Command == "logout" && provider == "" {
 		// Bare `orb logout` lists the stored credentials instead of silently
 		// picking a provider; removal always names its target explicitly.
-		stored, err := storage.List(ctx)
+		rows, err := accountStore.Accounts(ctx)
 		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
-		names := make([]string, 0, len(stored))
-		for _, credential := range stored {
-			names = append(names, credential.ProviderID)
+		names := make([]string, 0, len(rows))
+		for _, row := range rows {
+			if !slices.Contains(names, row.Provider) {
+				names = append(names, row.Provider)
+			}
 		}
 		_, _ = fmt.Fprintln(streams.Stderr, "usage: orb logout <provider>")
 		if len(names) == 0 {
@@ -369,9 +374,30 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 		return 1
 	}
 	if args.Command == "logout" {
-		if err := storage.Delete(ctx, provider); err != nil {
+		rows, err := accountStore.Accounts(ctx)
+		if err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
+		removed := false
+		for _, row := range rows {
+			if row.Provider == provider && row.Active {
+				book := accountBook{store: accountStore, agentDir: agentDir}
+				if provider == claudesessions.Name {
+					book.settings, _ = stateFromContext(ctx).Settings(agentDir, agentDir)
+				}
+				if err := book.remove(ctx, provider, row.ID); err != nil {
+					return reportCLIError(streams.Stderr, err)
+				}
+				removed = true
+				break
+			}
+		}
+		if !removed {
+			if err := storage.Delete(ctx, provider); err != nil {
+				return reportCLIError(streams.Stderr, err)
+			}
+		}
+		notifyMitosis(ctx)
 		_, _ = fmt.Fprintf(streams.Stdout, "Logged out of %s.\n", provider)
 		return 0
 	}
@@ -386,6 +412,7 @@ func runAuthCommand(ctx context.Context, args CLIArgs, streams cliStreams) int {
 	}); err != nil {
 		return reportCLIError(streams.Stderr, err)
 	}
+	notifyMitosis(ctx)
 	_, _ = fmt.Fprintf(streams.Stdout, "Logged in to %s. Credentials saved to %s.\n", provider, authStorageLocation(ctx, agentDir, storage))
 	return 0
 }

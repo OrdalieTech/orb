@@ -109,8 +109,25 @@ func (b accountBook) use(ctx context.Context, provider, id string) error {
 	return b.store.Select(ctx, provider, id)
 }
 
+func (b accountBook) remove(ctx context.Context, provider, id string) error {
+	var removed *aiauth.Credential
+	if provider == claudesessions.Name {
+		removed, _ = b.store.View(provider, id).Read(ctx, provider)
+	}
+	if err := b.store.Remove(ctx, provider, id); err != nil {
+		return err
+	}
+	if b.settings != nil && removed != nil {
+		claudesessions.ForgetAccount(b.settings, b.agentDir, os.Environ(), removed)
+	}
+	return nil
+}
+
 func (b accountBook) usage(ctx context.Context, provider, id string) (usage.Snapshot, error) {
 	if provider == claudesessions.Name {
+		if b.settings == nil || !b.settings.GetPlugins()[claudesessions.Name] {
+			return usage.Snapshot{}, usage.ErrUnavailable
+		}
 		var credential *aiauth.Credential
 		if id != "ambient" {
 			var err error

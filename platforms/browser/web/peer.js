@@ -91,7 +91,7 @@ export async function openPeer({ wasm, storage, name = "browser", env = {}, emit
 // with what openPeer's return; emit(frame) gets each RPC frame as text, the frames going over
 // at most every 16 ms, so a fast stream crosses in a few messages rather than thousands; run(code, names, call),
 // code mode, runs in the page, where its sandboxed frame lives, and its calls come back here.
-export function spawnPeer({ wasm, storage, env = {}, emit = () => {}, exit = () => {}, run }) {
+export function spawnPeer({ wasm, storage, name = "browser", env = {}, emit = () => {}, exit = () => {}, run }) {
   const worker = new Worker(import.meta.url, { type: "module" }), calls = new Map();
   let next = 0;
   const call = (method, ...args) => new Promise((resolve, reject) => {
@@ -110,7 +110,7 @@ export function spawnPeer({ wasm, storage, env = {}, emit = () => {}, exit = () 
     "error" in data ? reject(new Error(data.error)) : resolve(data.value);
   };
   worker.onerror = () => exit(1);
-  worker.postMessage({ boot: { wasm, storage, env, code: !!run } }, [wasm]);
+  worker.postMessage({ boot: { wasm, storage, name, env, code: !!run } }, [wasm]);
   return new Proxy({}, { get: (_, method) => (...args) => call(method, ...args) });
 }
 
@@ -125,9 +125,9 @@ if (typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScop
   };
   self.onmessage = async ({ data }) => {
     if (data.boot) {
-      const { wasm, storage, env, code } = data.boot;
+      const { wasm, storage, name, env, code } = data.boot;
       booted = import("./wasm_exec.js").then(() => import("./helpers.js")).then(() => openPeer({
-        wasm, storage: indexedStorage(storage), env,
+        wasm, storage: indexedStorage(storage), name, env,
         emit: (array, length) => {
           frames.push(decoder.decode(array.subarray(0, length)));
           if (performance.now() - flushed > 16) flush();

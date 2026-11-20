@@ -287,6 +287,11 @@ func (a *App) slow(in intent) func() (any, error) {
 				err = a.o.Call(ctx, "block", map[string]string{"peer_id": claim.Claimant}, nil)
 			} else if err = a.o.Call(ctx, "approve", map[string]string{"invitation_id": claim.Invitation, "claimant": claim.Claimant}, nil); mitosis.Code(err) == "identity_conflict" {
 				err = errors.New("two devices used this code, so someone else saw it: not paired · invite again where only you see the code")
+			} else if err == nil {
+				// As orb mitosis does: admit the paired device to this owner's sync group (if any, or create one).
+				if addErr := a.o.Call(ctx, "sync", map[string]string{"add": claim.Claimant}, nil); addErr != nil && mitosis.Code(addErr) != "unauthorized" && mitosis.Code(addErr) != "unavailable" {
+					err = addErr
+				}
 			}
 			a.wakeMachines()
 			return nil, err
