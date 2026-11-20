@@ -470,7 +470,11 @@ changes outside the kernel are cherry-picked on merit, never ported by obligatio
   until a group exists. A device that boots unattended can decrypt its own vault, which is accepted
   as the cost of autonomy; a low-trust host belongs in a group of its own, with capped credentials.
   Owner, 2026-11-16; memory and vaults by digest added at the owner's request, 2026-11-17; several
-  owners, 2026-11-17; MCP servers and sign-ins at the owner's request, 2026-11-18.
+  owners, 2026-11-17; MCP servers and sign-ins at the owner's request, 2026-11-18; sync-group
+  controller access (equivalent to `FullGrant`, derived live from current membership, with a
+  single-hop end-to-end TLS stream relay for peers that cannot directly dial a member's locator
+  such as browser tabs, keeping plain discovery scopes, agent-subject grants and 0.25/0.26 explicit
+  grants unchanged), owner-approved 2026-11-20.
 
 ## Divergence ledger
 
