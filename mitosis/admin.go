@@ -75,13 +75,14 @@ func (b *Mitosis) Admin(ctx context.Context, method string, params json.RawMessa
 			PeerStates map[string]string   `json:"peer_states"`
 			PeerNames  map[string]string   `json:"peer_names,omitempty"`
 			PeerID     string              `json:"peer_id"`
+			Group      string              `json:"group_id,omitempty"`
 			BootID     string              `json:"mitosis_boot_id"`
 			Scopes     map[string][]string `json:"scopes"`
 			Grants     []Grant             `json:"grants"`
 			Instances  []Instance          `json:"instances"`
 			Pending    []Invitation        `json:"pending"`
 			Peers      []string            `json:"peers"`
-		}{states, names, self, b.boot, b.state.Scopes, b.state.Grants, instances, pending, peers}), nil
+		}{states, names, self, b.state.Group, b.boot, b.state.Scopes, b.state.Grants, instances, pending, peers}), nil
 	case "enroll":
 		var p struct {
 			Alias string `json:"alias"`

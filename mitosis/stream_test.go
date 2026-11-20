@@ -294,6 +294,13 @@ func TestStreamRelayEnforcesMembershipLimitsAndRevocation(t *testing.T) {
 	if left != 0 {
 		t.Fatalf("relay leaked %d streams after removal", left)
 	}
+	// Once tab takes in its removal, it says it is no longer Fedora's peer, not that a thread ended.
+	if _, err := tab.Sync(ctx, nil); Code(err) != "not_found" {
+		t.Fatalf("tab still in a group after its removal: %v", err)
+	}
+	if _, err := tabPeers.Remote(ctx, fedora.PeerID(), "conversation.describe", struct{}{}); Code(err) != "not_a_peer" {
+		t.Fatalf("call from a removed tab = %v, want not_a_peer", err)
+	}
 }
 
 func TestStreamRelayInteropWithOlderRelayAndTarget(t *testing.T) {

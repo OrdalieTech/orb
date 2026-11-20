@@ -651,7 +651,8 @@ func TestConnectedPeerWithoutLaunchStopsReading(t *testing.T) {
 		c.out <- raw
 	}, Call: func(_ context.Context, method string, params, result any) error {
 		if method == "status" {
-			return json.Unmarshal([]byte(`{"peer_id":"me","peers":["worker"],"peer_states":{"worker":"connected"}}`), result)
+			return json.Unmarshal([]byte(`{"peer_id":"me","peers":["old","worker"],"peer_states":{"old":"connected","worker":"connected"},
+				"group_id":"g","scopes":{"g":["me","old"]}}`), result)
 		}
 		if method == "remote" {
 			p := params.(map[string]any)
@@ -663,17 +664,20 @@ func TestConnectedPeerWithoutLaunchStopsReading(t *testing.T) {
 		return nil
 	}})
 	app.Do([]byte(`{"do":"visible","on":true}`))
-	c.until(t, "worker no longer reading", func() bool {
+	// A paired machine refusing this app only follows; a group member refusing it runs an Orb
+	// from before group access, and says so.
+	c.until(t, "worker and old no longer reading", func() bool {
 		list := machines.Load()
 		if list == nil {
 			return false
 		}
+		done := 0
 		for _, m := range *list {
-			if m.ID == "worker" && m.Connected && !m.Reading && !m.Launch {
-				return true
+			if m.Connected && !m.Reading && !m.Launch && (m.ID == "worker" && !m.Outdated || m.ID == "old" && m.Outdated) {
+				done++
 			}
 		}
-		return false
+		return done == 2
 	})
 }
 

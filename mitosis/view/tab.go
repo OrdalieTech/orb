@@ -281,6 +281,9 @@ func (t *tab) describe() bool {
 		// Unreachable is a network matter; not found means the Orb itself ended over there.
 		t.gone = mitosis.Code(err) == "not_found" && t.info.Target.Session != ""
 		t.Status = map[bool]string{true: ended, false: "offline · read-only · reconnecting"}[t.gone || t.Peer == a.self]
+		if mitosis.Code(err) == "not_a_peer" {
+			t.Status = a.launchError(err).Error()
+		}
 		return false
 	}
 	if d.Target.Session != t.session {
@@ -536,6 +539,9 @@ func (t *tab) call(method string, args any) {
 	switch {
 	case err != nil:
 		t.Status = err.Error()
+		if mitosis.Code(err) == "not_a_peer" {
+			t.Status = a.launchError(err).Error()
+		}
 		if mitosis.Code(err) == "not_found" {
 			t.gone, t.Status = true, ended
 		}

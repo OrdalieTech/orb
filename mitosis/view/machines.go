@@ -23,8 +23,9 @@ type Machine struct {
 	Connected bool      `json:"connected,omitempty"`
 	Reading   bool      `json:"reading,omitempty"` // connected, first thread read still in flight
 	Version   string    `json:"version,omitempty"`
-	Launch    bool      `json:"launch,omitempty"` // it lets this app start Orb there
-	Hue       int       `json:"hue,omitempty"`    // 1 to 6 for a peer, its own while hues last; 0 for this machine
+	Launch    bool      `json:"launch,omitempty"`   // it lets this app start Orb there
+	Outdated  bool      `json:"outdated,omitempty"` // in this app's sync group, but its Orb predates group access
+	Hue       int       `json:"hue,omitempty"`      // 1 to 6 for a peer, its own while hues last; 0 for this machine
 	Running   []Running `json:"running,omitempty"`
 	Folders   []Folder  `json:"folders,omitempty"`
 }
@@ -67,6 +68,7 @@ type machine struct {
 	instances                        []instance // the conversations its Orbs run
 	threads                          []thread
 	launch, fetching, read, loadDone bool      // read: its running Orbs were read; loadDone: host.sessions answered or refused
+	member, outdated                 bool      // in this app's sync group; outdated: a member refusing it all the same
 	retryAt                          time.Time // backoff for offline/unreachable machines on background refresh
 }
 
@@ -157,6 +159,8 @@ func (a *App) refresh(first bool) {
 		Peers   []string             `json:"peers"`
 		States  map[string]string    `json:"peer_states"`
 		Names   map[string]string    `json:"peer_names"`
+		Group   string               `json:"group_id"`
+		Scopes  map[string][]string  `json:"scopes"`
 		Pending []mitosis.Invitation `json:"pending"`
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 25*time.Second)
@@ -183,6 +187,7 @@ func (a *App) refresh(first bool) {
 		if m == nil {
 			m = &machine{id: id}
 		}
+		m.member = s.Group != "" && slices.Contains(s.Scopes[s.Group], id)
 		if m.host == "" && s.Names[id] != "" {
 			m.host = s.Names[id]
 		}
@@ -330,7 +335,7 @@ func (a *App) loadThreads(peer string) {
 	case m == nil:
 		return
 	case err == nil:
-		m.threads, m.launch, m.version, m.loadDone, m.retryAt = found, true, version, true, time.Time{}
+		m.threads, m.launch, m.version, m.loadDone, m.outdated, m.retryAt = found, true, version, true, false, time.Time{}
 		if peer != a.self {
 			m.state = "connected"
 			if host != "" {
@@ -338,7 +343,8 @@ func (a *App) loadThreads(peer string) {
 			}
 		}
 	case mitosis.Code(err) == "unauthorized", mitosis.Code(err) == "method_not_found":
-		m.threads, m.launch, m.loadDone, m.retryAt = nil, false, true, time.Time{}
+		// A member of the group lets every other one in, unless its Orb predates that (0.25).
+		m.threads, m.launch, m.loadDone, m.outdated, m.retryAt = nil, false, true, m.member, time.Time{}
 	default:
 		if m.state != "connected" {
 			m.retryAt = time.Now().Add(30 * time.Second)
@@ -355,7 +361,7 @@ func (a *App) machinesState() ([]Machine, []Entry) {
 	hues := hues(a.machines, a.self)
 	for _, m := range a.machines {
 		name := a.name(m)
-		out := Machine{ID: m.id, Name: name, Self: m.id == a.self, Connected: m.state == "connected", Reading: m.id != a.self && m.state == "connected" && !m.loadDone, Version: m.version, Launch: m.launch, Hue: hues[m.id]}
+		out := Machine{ID: m.id, Name: name, Self: m.id == a.self, Connected: m.state == "connected", Reading: m.id != a.self && m.state == "connected" && !m.loadDone, Version: m.version, Launch: m.launch, Outdated: m.outdated, Hue: hues[m.id]}
 		for _, i := range m.instances {
 			what := cmp.Or(a.tabTitle(m.id, i.session), i.title)
 			for _, th := range m.threads {
@@ -482,6 +488,8 @@ func (a *App) launchError(err error) error {
 		return fmt.Errorf("this device does not let %s start Orb · on it, run  orb mitosis trust %s", a.o.Name, a.self)
 	case "not_found":
 		return errors.New("no such folder or thread there")
+	case "not_a_peer":
+		return errors.New("this device is no longer in a sync group with that machine, nor paired with it")
 	case "resource_exhausted":
 		return errors.New("every Orb that machine can start is in the middle of a turn · try again when one finishes")
 	case "busy":

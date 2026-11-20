@@ -74,9 +74,14 @@ func (ps *Peers) peer(ctx context.Context, id, locator string, allowRelay bool) 
 		locator, locErr = ps.Mitosis.PeerLocator(id)
 	}
 	ps.Mitosis.mu.Lock()
-	canRelay := allowRelay && explicit == "" && ps.Mitosis.groupMember(Principal{PeerID: id, Subject: Subject{Kind: "controller"}})
+	member := ps.Mitosis.groupMember(Principal{PeerID: id, Subject: Subject{Kind: "controller"}})
 	ps.Mitosis.mu.Unlock()
+	canRelay := allowRelay && explicit == "" && member
 	if locator == "" && !canRelay {
+		if !member {
+			// Neither paired with it nor in its sync group, or no longer: removed from the group, say.
+			return nil, Fail("not_a_peer")
+		}
 		return nil, cmp.Or(locErr, Fail("not_found"))
 	}
 	timeout, cancel := context.WithTimeout(ctx, 20*time.Second)
