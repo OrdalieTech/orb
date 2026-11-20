@@ -39,6 +39,7 @@ type document struct {
 	Version  int               `json:"version"`
 	Accounts []record          `json:"accounts"`
 	Active   map[string]string `json:"active"`
+	Ambient  map[string]bool   `json:"ambient,omitempty"`
 	Names    map[string]string `json:"names,omitempty"`
 }
 
@@ -79,7 +80,7 @@ func decodeDocument(data []byte) (document, error) {
 		seen[a.ID] = a.Provider
 	}
 	for provider, id := range d.Active {
-		if id != DefaultID && seen[id] != provider {
+		if seen[id] != provider {
 			return d, errors.New("selected account is missing")
 		}
 	}
@@ -124,14 +125,13 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 		if name == "" {
 			name = credentialName(credential)
 		}
-		active := d.Active[a.ProviderID] == "" || d.Active[a.ProviderID] == DefaultID
-		rows = append(rows, Account{ID: DefaultID, Provider: a.ProviderID, Name: name, Type: a.Type, Active: active})
+		rows = append(rows, Account{ID: DefaultID, Provider: a.ProviderID, Name: name, Type: a.Type, Active: d.Active[a.ProviderID] == ""})
 	}
 	autoActive := map[string]bool{}
 	for _, a := range d.Accounts {
 		selected := d.Active[a.Provider]
 		active := selected == a.ID
-		if selected == "" && !hasBase[a.Provider] && !autoActive[a.Provider] {
+		if selected == "" && !d.Ambient[a.Provider] && !hasBase[a.Provider] && !autoActive[a.Provider] {
 			active, autoActive[a.Provider] = true, true
 		}
 		rows = append(rows, Account{ID: a.ID, Provider: a.Provider, Name: a.Name, Type: a.Credential.Type, Active: active})
@@ -174,6 +174,7 @@ func (s *Store) Add(ctx context.Context, provider, name string, credential *auth
 		}
 	}
 	err = s.update(ctx, func(d *document) error {
+		delete(d.Ambient, provider)
 		if matchedDefault {
 			result.ID = DefaultID
 			if explicitName != "" {
@@ -270,11 +271,13 @@ func (s *Store) Select(ctx context.Context, provider, id string) error {
 				return errors.New("account no longer exists")
 			}
 			delete(d.Active, provider)
+			delete(d.Ambient, provider)
 			return nil
 		}
 		for _, a := range d.Accounts {
 			if a.Provider == provider && a.ID == id {
 				d.Active[provider] = id
+				delete(d.Ambient, provider)
 				return nil
 			}
 		}
@@ -286,7 +289,11 @@ func (s *Store) Select(ctx context.Context, provider, id string) error {
 // before any account was chosen, whether or not Orb stores one.
 func (s *Store) Deselect(ctx context.Context, provider string) error {
 	return s.update(ctx, func(d *document) error {
-		d.Active[provider] = DefaultID
+		delete(d.Active, provider)
+		if d.Ambient == nil {
+			d.Ambient = map[string]bool{}
+		}
+		d.Ambient[provider] = true
 		return nil
 	})
 }
@@ -311,12 +318,11 @@ func (s *Store) ForProvider(ctx context.Context, provider string) (auth.Credenti
 	if err != nil {
 		return nil, err
 	}
-	id := d.Active[provider]
-	if id == DefaultID {
-		return s.base, nil
-	}
-	if id != "" {
+	if id := d.Active[provider]; id != "" {
 		return s.View(provider, id), nil
+	}
+	if d.Ambient[provider] {
+		return s.base, nil
 	}
 	base, err := s.base.Read(ctx, provider)
 	if err != nil {
