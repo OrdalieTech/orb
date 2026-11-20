@@ -1035,4 +1035,19 @@ func TestSyncMemberEditsEditableClass(t *testing.T) {
 	if got, mine := classes[owner][1].get("model"), classes[member][1].get("model"); got != "newer" || mine != "newer" {
 		t.Fatalf("after a stale member change: owner %q member %q, want the owner's later change on both", got, mine)
 	}
+	// So does a member's new entry when the owner set the same one before taking the hand-in, and
+	// a new entry the owner lacks reaches it.
+	classes[member][1].set("level", "high")
+	classes[member][1].set("theme", "dark")
+	if _, err := member.Sync(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	classes[owner][1].set("level", "low")
+	round()
+	if got, mine := classes[owner][1].get("level"), classes[member][1].get("level"); got != "low" || mine != "low" {
+		t.Fatalf("after a member's late new entry: owner %q member %q, want the owner's on both", got, mine)
+	}
+	if got := classes[owner][1].get("theme"); got != "dark" {
+		t.Fatalf("owner's new entry from the member = %q, want dark", got)
+	}
 }

@@ -561,7 +561,9 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 			}
 			edited = map[string]version{}
 			for entry, value := range mine {
-				if v := vs[entry]; !newer[entry] && v.D != "" && digests(value) != v.D {
+				// A change of the group's value, or an entry the group does not hold (never set, or
+				// removed): either way it carries the version it was made over.
+				if v := vs[entry]; !newer[entry] && digests(value) != v.D {
 					edited[entry] = v
 				}
 			}
@@ -619,7 +621,7 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 					}
 					entries = maps.Clone(in.Entries)
 					for entry, v := range in.Edited {
-						if vs[entry] != v || held[entry] == nil || digests(held[entry]) != v.D {
+						if vs[entry] != v || held[entry] == nil && v.D != "" || held[entry] != nil && digests(held[entry]) != v.D {
 							delete(entries, entry)
 						}
 					}
