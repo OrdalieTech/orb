@@ -123,12 +123,12 @@ func (ps *Peers) ringed(peer string) bool {
 }
 
 func (ps *Peers) paired(id string) bool {
-	raw, err := ps.Mitosis.Admin(ps.ctx, "peers", JSON(struct{}{}))
-	var status struct {
-		Peers  []string          `json:"peers"`
-		States map[string]string `json:"peer_states"`
+	ps.Mitosis.mu.Lock()
+	defer ps.Mitosis.mu.Unlock()
+	if ps.Mitosis.closed || ps.Mitosis.failed || ps.Mitosis.state.Blocked[id] {
+		return false
 	}
-	return err == nil && json.Unmarshal(raw, &status) == nil && slices.Contains(status.Peers, id) && status.States[id] != "blocked"
+	return ps.Mitosis.state.Peers[id] != "" || ps.Mitosis.hasExplicitGrantLocked(id)
 }
 func (ps *Peers) Remote(ctx context.Context, id, method string, p any) (json.RawMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -381,7 +381,7 @@ func (ps *Peers) Greet() {
 	// greeting, links the members of this device's sync group.
 	for {
 		for _, peer := range status.Peers {
-			if status.States[peer] == "blocked" || peer == ps.Mitosis.PeerID() || ps.Mitosis.Connection(peer) != nil || ps.ringed(peer) {
+			if status.States[peer] == "blocked" || peer == ps.Mitosis.PeerID() || ps.Mitosis.Connection(peer) != nil || ps.ringed(peer) || !ps.paired(peer) {
 				continue
 			}
 			go func() {
@@ -489,7 +489,7 @@ func (ps *Peers) Reconcile() {
 		for _, members := range status.Scopes {
 			for _, p := range members {
 				used, _ := ps.used.Load(p)
-				if !dials[p] && (ps.ringed(p) || !slices.Contains(status.Peers, p)) && (used == nil || time.Since(used.(time.Time)) > time.Minute) {
+				if !dials[p] && (ps.ringed(p) || !ps.paired(p)) && (used == nil || time.Since(used.(time.Time)) > time.Minute) {
 					ps.Mitosis.Hangup(p)
 				}
 			}

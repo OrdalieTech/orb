@@ -14,6 +14,7 @@ import (
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
 	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/internal/document"
+	"github.com/OrdalieTech/orb/mitosis/protocol"
 	"github.com/OrdalieTech/orb/plugins/memory"
 	"github.com/OrdalieTech/orb/plugins/memory/filestore"
 )
@@ -1049,5 +1050,232 @@ func TestSyncMemberEditsEditableClass(t *testing.T) {
 	}
 	if got := classes[owner][1].get("theme"); got != "dark" {
 		t.Fatalf("owner's new entry from the member = %q, want dark", got)
+	}
+}
+
+type watchEndpoint struct {
+	session string
+	started chan struct{}
+}
+
+func (e *watchEndpoint) Invoke(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	switch method {
+	case "instances.describe":
+		return JSON(map[string]any{
+			"name":    "chat",
+			"cwd":     "/work",
+			"target":  map[string]string{"session_id": e.session, "session_revision": "1"},
+			"methods": []string{"inspect", "prompt"},
+		}), nil
+	case "call":
+		return JSON(map[string]any{"status": "completed"}), nil
+	case "events.subscribe":
+		var req struct {
+			Params struct {
+				Wait bool `json:"wait"`
+			} `json:"params"`
+		}
+		_ = json.Unmarshal(params, &req)
+		if req.Params.Wait {
+			if e.started != nil {
+				select {
+				case e.started <- struct{}{}:
+				default:
+				}
+			}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return JSON(map[string]any{"events": []any{}, "cursor": "c1"}), nil
+	default:
+		return JSON(struct{}{}), nil
+	}
+}
+func (e *watchEndpoint) Close() error { return nil }
+
+// Being a current, unblocked member of the sync group grants FullGrant controller authority
+// (agent.* + host.launch) on every group member with no per-machine grant; plain scopes and
+// agent subjects stay denied, status lists group members with their names, and losing membership
+// cancels active events.subscribe waits and closes channels unless an explicit grant stands.
+func TestSyncGroupGrantsControllerAccessAndRevokesLive(t *testing.T) {
+	ctx := t.Context()
+	owner, fedora, lab, direct := newMitosis(t), newMitosis(t), newMitosis(t), newMitosis(t)
+	for _, x := range []*Mitosis{owner, fedora, lab, direct} {
+		t.Cleanup(func() { _ = x.Close() })
+		x.SetClass("credentials", aiauth.NewDocumentStore(&document.Memory{}))
+	}
+	fedora.SetName("Fedora")
+	lab.SetName("lab-3")
+
+	// Owner pairs with each device and adds them to its sync group; fedora and lab never pair.
+	for _, m := range []*Mitosis{fedora, lab, direct} {
+		_ = owner.SavePeer(m.PeerID(), "tc1")
+		_ = m.SavePeer(owner.PeerID(), "tc1")
+		a, b := net.Pipe()
+		go func() { _, _, _ = owner.Connect(ctx, a, "", true) }()
+		if _, _, err := m.Connect(ctx, b, owner.PeerID(), false); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := owner.Admin(ctx, "sync", JSON(map[string]string{"add": m.PeerID()})); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.Admin(ctx, "sync", JSON(map[string]string{"join": owner.PeerID()})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// direct ALSO holds an explicit pairwise grant on fedora, independent of the sync group.
+	if err := fedora.AddGrant(FullGrant(direct.PeerID())); err != nil {
+		t.Fatal(err)
+	}
+
+	group := groupID(owner.PeerID())
+	syncAll := func(nodes ...*Mitosis) {
+		for range 2 {
+			for _, to := range nodes {
+				for _, from := range nodes {
+					if from == to {
+						continue
+					}
+					recs, _ := from.Contacts(to.PeerID(), group)
+					for _, r := range recs {
+						_, _ = to.MergeContact(from.PeerID(), r)
+					}
+				}
+				_, _ = to.Sync(ctx, nil)
+			}
+		}
+	}
+	syncAll(owner, fedora, lab, direct)
+
+	// Attach an instance and host handler on fedora.
+	inst, cred, err := fedora.Enroll("work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	watchStarted := make(chan struct{}, 2)
+	ep := &watchEndpoint{session: "sess-1", started: watchStarted}
+	if _, err := fedora.Attach(inst.ID, cred, protocol.NewID(), ep); err != nil {
+		t.Fatal(err)
+	}
+	fedora.SetHost(func(_ context.Context, p Principal, method string, _ json.RawMessage) (json.RawMessage, error) {
+		return JSON(map[string]string{"method": method, "caller": p.PeerID}), nil
+	})
+
+	// lab has zero explicit grants on fedora, yet gets FullGrant controller authority via the group.
+	if slices.ContainsFunc(fedora.state.Grants, func(g Grant) bool { return g.Principal.PeerID == lab.PeerID() }) {
+		t.Fatal("lab unexpectedly holds an explicit grant on fedora")
+	}
+	raw, err := fedora.Handle(ctx, lab.PeerID(), "mitosis.ping", JSON(struct{}{}))
+	if err != nil || !strings.Contains(string(raw), `"Fedora"`) {
+		t.Fatalf("ping from group member: %s %v", raw, err)
+	}
+	raw, err = fedora.Handle(ctx, lab.PeerID(), "agent.describe", JSON(struct{}{}))
+	if err != nil || !strings.Contains(string(raw), `"sess-1"`) {
+		t.Fatalf("agent.describe from group member: %s %v", raw, err)
+	}
+	if _, err = fedora.Handle(ctx, lab.PeerID(), "agent.call", JSON(AgentCall{SessionID: "sess-1", Method: "prompt", Args: JSON(map[string]string{"text": "hi"})})); err != nil {
+		t.Fatalf("agent.call from group member: %v", err)
+	}
+	raw, err = fedora.Handle(ctx, lab.PeerID(), "host.sessions", JSON(struct{}{}))
+	if err != nil || !strings.Contains(string(raw), lab.PeerID()) {
+		t.Fatalf("host.sessions from group member: %s %v", raw, err)
+	}
+	// Nothing beyond FullGrant: unknown permissions and agent subjects stay denied.
+	if fedora.Allowed(lab.Principal(), inst.ID, "admin.wipe") {
+		t.Fatal("group member allowed unknown permission")
+	}
+	agentPrincipal := Principal{PeerID: lab.PeerID(), Subject: Subject{Kind: "agent"}}
+	if fedora.Allowed(agentPrincipal, inst.ID, "agent.prompt") {
+		t.Fatal("group membership leaked to agent subject")
+	}
+	// Plain discovery scopes still grant no execution authority.
+	outsider := newMitosis(t)
+	t.Cleanup(func() { _ = outsider.Close() })
+	if err := fedora.SetScope(protocol.NewID(), []string{fedora.PeerID(), outsider.PeerID()}); err != nil {
+		t.Fatal(err)
+	}
+	if fedora.Allowed(outsider.Principal(), inst.ID, "agent.list") {
+		t.Fatal("plain discovery scope granted execution")
+	}
+	if _, err := fedora.Handle(ctx, outsider.PeerID(), "host.sessions", JSON(struct{}{})); Code(err) != "unauthorized" {
+		t.Fatalf("plain scope host call: %v", err)
+	}
+
+	// status on fedora lists non-paired group member lab and carries its display name.
+	raw, err = fedora.Admin(ctx, "status", JSON(struct{}{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st struct {
+		Peers     []string          `json:"peers"`
+		PeerNames map[string]string `json:"peer_names"`
+	}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(st.Peers, lab.PeerID()) || st.PeerNames[lab.PeerID()] != "lab-3" {
+		t.Fatalf("status missing group member or name: peers=%v names=%v", st.Peers, st.PeerNames)
+	}
+
+	// Open a channel and a blocking events.subscribe wait from lab on fedora.
+	c1, c2 := net.Pipe()
+	go func() { _, _, _ = fedora.Connect(ctx, c1, "", true) }()
+	labConn, _, err := lab.Connect(ctx, c2, fedora.PeerID(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	subErr := make(chan error, 1)
+	go func() {
+		var out json.RawMessage
+		subErr <- labConn.Call(ctx, "events.subscribe", map[string]any{"session_id": "sess-1", "cursor": "c1", "wait": true}, &out)
+	}()
+	select {
+	case <-watchStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("events.subscribe wait did not start")
+	}
+
+	// Owner removes lab; fedora adopts the removal -> active wait ends and channel closes immediately.
+	if _, err := owner.Admin(ctx, "sync", JSON(map[string]string{"remove": lab.PeerID()})); err != nil {
+		t.Fatal(err)
+	}
+	syncAll(owner, fedora, direct)
+	select {
+	case err := <-subErr:
+		if err == nil {
+			t.Fatal("events.subscribe succeeded after removal")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("open events.subscribe outlived membership removal")
+	}
+	select {
+	case <-labConn.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("channel for removed non-paired member stayed open")
+	}
+	if fedora.Allowed(lab.Principal(), inst.ID, "agent.list") {
+		t.Fatal("removed member retained access")
+	}
+	if _, err := fedora.Handle(ctx, lab.PeerID(), "host.sessions", JSON(struct{}{})); Code(err) != "unauthorized" {
+		t.Fatalf("removed member host call: %v", err)
+	}
+
+	// Removing direct from the group does NOT drop direct's explicit pairwise grant on fedora,
+	// though an in-flight watch still resets and Block cuts everything.
+	if _, err := owner.Admin(ctx, "sync", JSON(map[string]string{"remove": direct.PeerID()})); err != nil {
+		t.Fatal(err)
+	}
+	syncAll(owner, fedora)
+	if !fedora.Allowed(direct.Principal(), inst.ID, "agent.prompt") {
+		t.Fatal("adopt dropped explicit pairwise grant on non-owner member")
+	}
+	if _, err := fedora.Handle(ctx, direct.PeerID(), "host.sessions", JSON(struct{}{})); err != nil {
+		t.Fatalf("explicit pairwise host grant broken after group removal: %v", err)
+	}
+	if err := fedora.Block(direct.PeerID()); err != nil {
+		t.Fatal(err)
+	}
+	if fedora.Allowed(direct.Principal(), inst.ID, "agent.prompt") {
+		t.Fatal("blocked peer retained access")
 	}
 }

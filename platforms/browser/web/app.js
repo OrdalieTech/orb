@@ -892,9 +892,9 @@ const pages = {
     const syncNow = () => tab.admin("sync").then(() => { toast("synced"); openPage("mitosis"); }, error => showError(error.message));
     const members = syncGroup?.members || [], owners = new Set(syncGroup?.owners || []), names = syncGroup?.names || {};
     return [node("h2", "Mitosis"), note("peer to peer"),
-      label("paired devices"),
+      label("devices"),
       ...(home.machines.filter(m => !m.self).length ? home.machines.filter(m => !m.self).map(m => row(m.name, [m.connected ? "connected" : "offline", m.version && `orb ${m.version}`, m.launch ? "starts conversations" : "follows only"].filter(Boolean).join(" · "),
-        button("rename", () => rename(m.name, name => { send({ do: "rename", machine: m.id, name }); setTimeout(retry("mitosis"), 300); }), "plain"))) : [note("no devices paired yet")]),
+        button("rename", () => rename(m.name, name => { send({ do: "rename", machine: m.id, name }); setTimeout(retry("mitosis"), 300); }), "plain"))) : [note("no devices yet")]),
       el("div", "actions", button("+ pair a device", pairAnother)),
       ...(syncGroup?.group_id ? [label(`sync group · ${syncGroup.in_sync ? "in sync" : "syncing"} · ${members.length} device${members.length === 1 ? "" : "s"}`),
         ...members.map(id => {

@@ -66,7 +66,8 @@ type machine struct {
 	id, host, version, state         string
 	instances                        []instance // the conversations its Orbs run
 	threads                          []thread
-	launch, fetching, read, loadDone bool // read: its running Orbs were read; loadDone: host.sessions answered or refused
+	launch, fetching, read, loadDone bool      // read: its running Orbs were read; loadDone: host.sessions answered or refused
+	retryAt                          time.Time // backoff for offline/unreachable machines on background refresh
 }
 
 type instance struct {
@@ -155,6 +156,7 @@ func (a *App) refresh(first bool) {
 		PeerID  string               `json:"peer_id"`
 		Peers   []string             `json:"peers"`
 		States  map[string]string    `json:"peer_states"`
+		Names   map[string]string    `json:"peer_names"`
 		Pending []mitosis.Invitation `json:"pending"`
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 25*time.Second)
@@ -180,6 +182,12 @@ func (a *App) refresh(first bool) {
 		m := a.machine(id)
 		if m == nil {
 			m = &machine{id: id}
+		}
+		if m.host == "" && s.Names[id] != "" {
+			m.host = s.Names[id]
+		}
+		if state == "connected" {
+			m.retryAt = time.Time{}
 		}
 		if m.state != "connected" || len(m.instances) == 0 {
 			// A device that just connected has its threads read now, not at the next periodic read.
@@ -208,16 +216,19 @@ func (a *App) refresh(first bool) {
 	if !a.visible && !first {
 		return
 	}
+	now := time.Now()
 	for _, m := range a.machines {
-		if !m.fetching {
+		if !m.fetching && (m.state == "connected" || !now.Before(m.retryAt)) {
 			m.fetching = true
 			go a.fetch(m.id)
 		}
 	}
 	if time.Since(a.threadsAt) > 20*time.Second {
-		a.threadsAt = time.Now()
+		a.threadsAt = now
 		for _, m := range a.machines {
-			go a.loadThreads(m.id)
+			if m.state == "connected" || !now.Before(m.retryAt) {
+				go a.loadThreads(m.id)
+			}
 		}
 	}
 }
@@ -245,10 +256,16 @@ func (a *App) fetch(peer string) {
 		if m := a.machine(peer); m != nil {
 			m.fetching = false
 			if err == nil {
-				m.instances, m.read = found, true
-				if len(found) > 0 {
+				wasUp := m.state == "connected"
+				m.instances, m.read, m.retryAt = found, true, time.Time{}
+				if len(found) > 0 || peer != a.self {
 					m.state = "connected"
 				}
+				if !wasUp && peer != a.self && !m.loadDone {
+					go a.loadThreads(peer)
+				}
+			} else if m.state != "connected" {
+				m.retryAt = time.Now().Add(30 * time.Second)
 			}
 		}
 		a.flush()
@@ -313,12 +330,19 @@ func (a *App) loadThreads(peer string) {
 	case m == nil:
 		return
 	case err == nil:
-		m.threads, m.launch, m.version, m.loadDone = found, true, version, true
-		if peer != a.self && host != "" {
-			m.host = host
+		m.threads, m.launch, m.version, m.loadDone, m.retryAt = found, true, version, true, time.Time{}
+		if peer != a.self {
+			m.state = "connected"
+			if host != "" {
+				m.host = host
+			}
 		}
 	case mitosis.Code(err) == "unauthorized", mitosis.Code(err) == "method_not_found":
-		m.threads, m.launch, m.loadDone = nil, false, true
+		m.threads, m.launch, m.loadDone, m.retryAt = nil, false, true, time.Time{}
+	default:
+		if m.state != "connected" {
+			m.retryAt = time.Now().Add(30 * time.Second)
+		}
 	}
 	a.flush()
 }

@@ -676,3 +676,71 @@ func TestConnectedPeerWithoutLaunchStopsReading(t *testing.T) {
 		return false
 	})
 }
+
+// Non-paired sync-group members appear in Home with names seeded from peer_names, dial on demand
+// to populate threads and peer count, and back off when offline instead of hammering remote.
+func TestGroupMembersSeedNamesAndOfflinePeersBackOff(t *testing.T) {
+	c := newClient()
+	var machines atomic.Pointer[[]Machine]
+	var offlineCalls atomic.Int32
+	app := New(t.Context(), Options{Name: "this tab", Emit: func(m any) {
+		raw := mitosis.JSON(m)
+		var h struct {
+			T        string
+			Machines []Machine
+		}
+		if json.Unmarshal(raw, &h) == nil && h.T == "home" {
+			machines.Store(&h.Machines)
+		}
+		c.out <- raw
+	}, Call: func(_ context.Context, method string, params, result any) error {
+		if method == "status" {
+			return json.Unmarshal([]byte(`{
+				"peer_id":"me",
+				"peers":["fedora","offline"],
+				"peer_states":{"fedora":"disconnected","offline":"disconnected"},
+				"peer_names":{"fedora":"Fedora","offline":"lab-3"}
+			}`), result)
+		}
+		if method == "remote" {
+			p := params.(map[string]any)
+			if p["peer_id"] == "offline" {
+				offlineCalls.Add(1)
+				return mitosis.Fail("unavailable")
+			}
+			if p["peer_id"] == "fedora" {
+				if p["method"] == "host.sessions" {
+					return json.Unmarshal([]byte(`{"host":"Fedora","items":[{"session_id":"s1","name":"build","cwd":"/src","modified":10}]}`), result)
+				}
+				return json.Unmarshal([]byte(`{}`), result)
+			}
+		}
+		return nil
+	}})
+	app.Do([]byte(`{"do":"visible","on":true}`))
+	c.until(t, "group members loaded", func() bool {
+		list := machines.Load()
+		if list == nil || len(c.home) != 1 || c.home[0].Title != "build" || c.state.Summary != "ready · 1 peer" {
+			return false
+		}
+		var sawFedora, sawOffline bool
+		for _, m := range *list {
+			if m.ID == "fedora" && m.Name == "Fedora" && m.Connected && m.Launch {
+				sawFedora = true
+			}
+			if m.ID == "offline" && m.Name == "lab-3" && !m.Connected {
+				sawOffline = true
+			}
+		}
+		return sawFedora && sawOffline
+	})
+	before := offlineCalls.Load()
+	// Trigger extra refreshes; offline peer should stay in backoff (no new remote calls).
+	app.wakeMachines()
+	time.Sleep(200 * time.Millisecond)
+	app.wakeMachines()
+	time.Sleep(200 * time.Millisecond)
+	if after := offlineCalls.Load(); after != before {
+		t.Fatalf("offline peer hammered during backoff: before=%d after=%d", before, after)
+	}
+}

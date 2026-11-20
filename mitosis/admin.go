@@ -32,6 +32,7 @@ func (b *Mitosis) Admin(ctx context.Context, method string, params json.RawMessa
 				pending = append(pending, i.Invitation)
 			}
 		}
+		self := b.PeerID()
 		peers := []string{}
 		for id := range b.state.Peers {
 			peers = append(peers, id)
@@ -39,6 +40,25 @@ func (b *Mitosis) Admin(ctx context.Context, method string, params json.RawMessa
 		for _, g := range b.state.Grants {
 			if !slices.Contains(peers, g.Principal.PeerID) {
 				peers = append(peers, g.Principal.PeerID)
+			}
+		}
+		var names map[string]string
+		if b.state.Group != "" {
+			for _, id := range b.state.Scopes[b.state.Group] {
+				if id == self {
+					continue
+				}
+				if !slices.Contains(peers, id) {
+					peers = append(peers, id)
+				}
+				if r, ok := b.state.Records[b.state.Group+"/"+id]; ok {
+					if c, err := r.Verify(); err == nil && c.Name != "" {
+						if names == nil {
+							names = map[string]string{}
+						}
+						names[id] = c.Name
+					}
+				}
 			}
 		}
 		slices.Sort(peers)
@@ -53,6 +73,7 @@ func (b *Mitosis) Admin(ctx context.Context, method string, params json.RawMessa
 		}
 		return JSON(struct {
 			PeerStates map[string]string   `json:"peer_states"`
+			PeerNames  map[string]string   `json:"peer_names,omitempty"`
 			PeerID     string              `json:"peer_id"`
 			BootID     string              `json:"mitosis_boot_id"`
 			Scopes     map[string][]string `json:"scopes"`
@@ -60,7 +81,7 @@ func (b *Mitosis) Admin(ctx context.Context, method string, params json.RawMessa
 			Instances  []Instance          `json:"instances"`
 			Pending    []Invitation        `json:"pending"`
 			Peers      []string            `json:"peers"`
-		}{states, b.PeerID(), b.boot, b.state.Scopes, b.state.Grants, instances, pending, peers}), nil
+		}{states, names, self, b.boot, b.state.Scopes, b.state.Grants, instances, pending, peers}), nil
 	case "enroll":
 		var p struct {
 			Alias string `json:"alias"`

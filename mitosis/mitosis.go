@@ -99,7 +99,9 @@ type Mitosis struct {
 	handing        bool                  // a member's last round handed the owners something the group's set lacks
 	op             [2]string             // this owner's last membership change (change)
 	resolved       map[string]resolution // agent.call operations by ledger key, as first resolved
-	notifyTimer    *time.Timer           // coalesces local synced-class changes before waking Reconcile
+	watches        map[string]map[uint64]context.CancelFunc
+	watchSeq       uint64
+	notifyTimer    *time.Timer // coalesces local synced-class changes before waking Reconcile
 }
 
 // Host serves a peer's machine-level calls — the threads stored on this machine, and starting
@@ -126,12 +128,89 @@ func (b *Mitosis) owner(p Principal) bool {
 	return p.Subject.Kind == "controller" && p.PeerID == b.PeerID()
 }
 
-// hostAllowed: only a controller granted host.launch reaches the machine.
+// groupPermissions is the authority a current, unblocked sync-group member holds on every
+// member of the group: identical to FullGrant (agent.* and host.launch), nothing more.
+var groupPermissions = FullGrant("").Permissions
+
+// groupMember reports whether p is a controller of a current, unblocked member of this Mitosis's
+// sync group. Plain discovery scopes grant no execution authority, and an agent subject still
+// requires its own explicit grant.
+func (b *Mitosis) groupMember(p Principal) bool {
+	return p.Subject.Kind == "controller" &&
+		!b.failed && !b.closed && !b.state.Blocked[p.PeerID] &&
+		b.state.Group != "" &&
+		slices.Contains(b.state.Scopes[b.state.Group], b.PeerID()) &&
+		slices.Contains(b.state.Scopes[b.state.Group], p.PeerID)
+}
+
+// groupPermits reports whether p holds permission through current sync-group membership
+// (equivalent to FullGrant). An empty permission asks whether p holds any group access.
+func (b *Mitosis) groupPermits(p Principal, permission string) bool {
+	return b.groupMember(p) && (permission == "" || slices.Contains(groupPermissions, permission))
+}
+
+func (b *Mitosis) hasExplicitGrantLocked(peer string) bool {
+	return slices.ContainsFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == peer })
+}
+
+// watch registers an active events.subscribe wait for peer so losing membership or being blocked
+// cancels it immediately.
+func (b *Mitosis) watch(ctx context.Context, peer string) (context.Context, func()) {
+	wctx, cancel := context.WithCancel(ctx)
+	b.mu.Lock()
+	b.watchSeq++
+	id := b.watchSeq
+	if b.watches[peer] == nil {
+		b.watches[peer] = map[uint64]context.CancelFunc{}
+	}
+	b.watches[peer][id] = cancel
+	b.mu.Unlock()
+	return wctx, func() {
+		cancel()
+		b.mu.Lock()
+		delete(b.watches[peer], id)
+		if len(b.watches[peer]) == 0 {
+			delete(b.watches, peer)
+		}
+		b.mu.Unlock()
+	}
+}
+
+func (b *Mitosis) cancelWatchesLocked(peer string) []context.CancelFunc {
+	ws := b.watches[peer]
+	delete(b.watches, peer)
+	cancels := make([]context.CancelFunc, 0, len(ws))
+	for _, cancel := range ws {
+		cancels = append(cancels, cancel)
+	}
+	return cancels
+}
+
+func (b *Mitosis) takeChannelsLocked(peer string) []*protocol.Conn {
+	cs := b.channels[peer]
+	delete(b.channels, peer)
+	out := make([]*protocol.Conn, 0, len(cs))
+	for c := range cs {
+		out = append(out, c)
+	}
+	return out
+}
+
+func closeAccess(conns []*protocol.Conn, cancels []context.CancelFunc) {
+	for _, cancel := range cancels {
+		cancel()
+	}
+	for _, c := range conns {
+		_ = c.Close()
+	}
+}
+
+// hostAllowed: only a controller granted host.launch (explicitly or via the sync group) reaches the machine.
 func (b *Mitosis) hostAllowed(p Principal) bool {
 	if b.failed || b.closed || b.state.Blocked[p.PeerID] || p.Subject.Kind != "controller" {
 		return false
 	}
-	if b.owner(p) {
+	if b.owner(p) || b.groupPermits(p, "host.launch") {
 		return true
 	}
 	for _, g := range b.state.Grants {
@@ -160,7 +239,7 @@ func Open(store document.Document, create bool) (*Mitosis, error) {
 	if store == nil {
 		return nil, errors.New("mitosis requires explicit storage")
 	}
-	b := &Mitosis{changes: make(chan struct{}, 1), classes: map[string]Class{}, sealed: map[string]sealed{}, resolved: map[string]resolution{}, vaults: map[string][]byte{}, store: store, active: map[string]registration{}, channels: map[string]map[*protocol.Conn]uint64{}, dialled: map[*protocol.Conn]bool{}, boot: protocol.NewID()}
+	b := &Mitosis{changes: make(chan struct{}, 1), classes: map[string]Class{}, sealed: map[string]sealed{}, resolved: map[string]resolution{}, watches: map[string]map[uint64]context.CancelFunc{}, vaults: map[string][]byte{}, store: store, active: map[string]registration{}, channels: map[string]map[*protocol.Conn]uint64{}, dialled: map[*protocol.Conn]bool{}, boot: protocol.NewID()}
 	raw, err := store.Read(context.Background())
 	if err != nil {
 		return nil, err
@@ -313,7 +392,7 @@ func (b *Mitosis) allowed(p Principal, id, permission, destination string) bool 
 		return false
 	}
 	_, ok := b.state.Instances[id]
-	if destination == "" && (!ok || b.owner(p)) {
+	if destination == "" && (!ok || b.owner(p) || b.groupPermits(p, permission)) {
 		return ok
 	}
 	return slices.ContainsFunc(b.state.Grants, func(g Grant) bool {
@@ -580,13 +659,11 @@ func (b *Mitosis) Block(peer string) error {
 			delete(b.state.Invitations, id)
 		}
 	}
-	channels := b.channels[peer]
-	delete(b.channels, peer)
+	conns := b.takeChannelsLocked(peer)
+	cancels := b.cancelWatchesLocked(peer)
 	err := b.save()
 	b.mu.Unlock()
-	for c := range channels {
-		_ = c.Close()
-	}
+	closeAccess(conns, cancels)
 	return err
 }
 func (b *Mitosis) Close() error {
@@ -600,7 +677,14 @@ func (b *Mitosis) Close() error {
 	b.active = map[string]registration{}
 	channels := b.channels
 	b.channels = map[string]map[*protocol.Conn]uint64{}
+	watches := b.watches
+	b.watches = map[string]map[uint64]context.CancelFunc{}
 	b.mu.Unlock()
+	for _, ws := range watches {
+		for _, cancel := range ws {
+			cancel()
+		}
+	}
 	for _, r := range active {
 		_ = r.endpoint.Close()
 	}
