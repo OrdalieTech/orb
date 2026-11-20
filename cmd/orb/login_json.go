@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	aiauth "github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/ai/auth/accounts"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 )
 
@@ -67,7 +68,7 @@ func runLoginJSON(ctx context.Context, args []string, streams cliStreams) int {
 		base, _ := storage.Read(ctx, provider)
 		if base == nil && provider != claudesessions.Name {
 			if _, err = storage.Modify(ctx, provider, func(*aiauth.Credential) (*aiauth.Credential, error) { return credential, nil }); err == nil {
-				err = book.store.Deselect(ctx, provider)
+				err = book.store.Select(ctx, provider, accounts.DefaultID)
 			}
 		} else {
 			_, err = book.store.Add(ctx, provider, "", credential)

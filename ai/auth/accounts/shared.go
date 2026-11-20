@@ -61,20 +61,9 @@ func (s *Store) Shareable(ctx context.Context) (map[string]json.RawMessage, erro
 
 // MergeShared folds in named accounts and display names a sync group shared and returns the keys
 // it changed. Local-only credentials (such as Claude Code config directories) are never accepted,
-// overwritten or dropped. When a synced account arrives for a provider that has no default
-// credential in auth.json and no active selection yet, it becomes active so the provider works at
-// once on the receiving device.
+// overwritten or dropped. Selection stays local: no automatic Active entry is persisted on merge,
+// so receiving accounts and credentials in either order yields the same active account.
 func (s *Store) MergeShared(ctx context.Context, incoming []map[string]json.RawMessage, keepOwn bool, removed []string) ([]string, error) {
-	basePresent := map[string]bool{}
-	hasBase := func(provider string) bool {
-		if have, checked := basePresent[provider]; checked {
-			return have
-		}
-		c, err := s.base.Read(ctx, provider)
-		have := err == nil && c != nil
-		basePresent[provider] = have
-		return have
-	}
 	var changed []string
 	merge := func(d *document) error {
 		changed = nil
@@ -131,9 +120,6 @@ func (s *Store) MergeShared(ctx context.Context, incoming []map[string]json.RawM
 					continue
 				}
 				d.Accounts = append(d.Accounts, record{ID: key, Provider: next.Provider, Name: name, Credential: next.Credential.Clone()})
-				if d.Active[next.Provider] == "" && !hasBase(next.Provider) {
-					d.Active[next.Provider] = key
-				}
 				changed = append(changed, key)
 			}
 		}
@@ -154,14 +140,6 @@ func (s *Store) MergeShared(ctx context.Context, incoming []map[string]json.RawM
 				d.Accounts = slices.Delete(d.Accounts, i, i+1)
 				if d.Active[provider] == key {
 					delete(d.Active, provider)
-					if !hasBase(provider) {
-						for _, a := range d.Accounts {
-							if a.Provider == provider {
-								d.Active[provider] = a.ID
-								break
-							}
-						}
-					}
 				}
 				changed = append(changed, key)
 			}

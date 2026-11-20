@@ -79,7 +79,7 @@ func decodeDocument(data []byte) (document, error) {
 		seen[a.ID] = a.Provider
 	}
 	for provider, id := range d.Active {
-		if seen[id] != provider {
+		if id != DefaultID && seen[id] != provider {
 			return d, errors.New("selected account is missing")
 		}
 	}
@@ -112,8 +112,10 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 	if err != nil {
 		return nil, err
 	}
+	hasBase := make(map[string]bool, len(defaults))
 	rows := make([]Account, 0, len(defaults)+len(d.Accounts))
 	for _, a := range defaults {
+		hasBase[a.ProviderID] = true
 		credential, err := s.base.Read(ctx, a.ProviderID)
 		if err != nil {
 			return nil, err
@@ -122,10 +124,17 @@ func (s *Store) Accounts(ctx context.Context) ([]Account, error) {
 		if name == "" {
 			name = credentialName(credential)
 		}
-		rows = append(rows, Account{ID: DefaultID, Provider: a.ProviderID, Name: name, Type: a.Type, Active: d.Active[a.ProviderID] == ""})
+		active := d.Active[a.ProviderID] == "" || d.Active[a.ProviderID] == DefaultID
+		rows = append(rows, Account{ID: DefaultID, Provider: a.ProviderID, Name: name, Type: a.Type, Active: active})
 	}
+	autoActive := map[string]bool{}
 	for _, a := range d.Accounts {
-		rows = append(rows, Account{ID: a.ID, Provider: a.Provider, Name: a.Name, Type: a.Credential.Type, Active: d.Active[a.Provider] == a.ID})
+		selected := d.Active[a.Provider]
+		active := selected == a.ID
+		if selected == "" && !hasBase[a.Provider] && !autoActive[a.Provider] {
+			active, autoActive[a.Provider] = true, true
+		}
+		rows = append(rows, Account{ID: a.ID, Provider: a.Provider, Name: a.Name, Type: a.Credential.Type, Active: active})
 	}
 	return rows, nil
 }
@@ -277,7 +286,7 @@ func (s *Store) Select(ctx context.Context, provider, id string) error {
 // before any account was chosen, whether or not Orb stores one.
 func (s *Store) Deselect(ctx context.Context, provider string) error {
 	return s.update(ctx, func(d *document) error {
-		delete(d.Active, provider)
+		d.Active[provider] = DefaultID
 		return nil
 	})
 }
@@ -297,16 +306,31 @@ func (s *Store) Remove(ctx context.Context, provider, id string) error {
 
 // ForProvider pins account identity across read/refresh/write. Switching the
 // active account cannot redirect an in-flight OAuth refresh into another one.
-func (s *Store) ForProvider(_ context.Context, provider string) (auth.CredentialStore, error) {
+func (s *Store) ForProvider(ctx context.Context, provider string) (auth.CredentialStore, error) {
 	d, err := s.load()
 	if err != nil {
 		return nil, err
 	}
 	id := d.Active[provider]
-	if id == "" {
+	if id == DefaultID {
 		return s.base, nil
 	}
-	return s.View(provider, id), nil
+	if id != "" {
+		return s.View(provider, id), nil
+	}
+	base, err := s.base.Read(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	if base != nil {
+		return s.base, nil
+	}
+	for _, a := range d.Accounts {
+		if a.Provider == provider {
+			return s.View(provider, a.ID), nil
+		}
+	}
+	return s.base, nil
 }
 
 func (s *Store) View(provider, id string) auth.CredentialStore {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai/auth"
+	docport "github.com/OrdalieTech/orb/internal/document"
 )
 
 func TestSharedSyncsNamedAccountsActivatesAndProtectsLocal(t *testing.T) {
@@ -107,5 +108,108 @@ func TestSharedSyncsNamedAccountsActivatesAndProtectsLocal(t *testing.T) {
 	// A remote removal never drops a local-only claude account on the Mac.
 	if changed, err := mac.MergeShared(ctx, nil, false, []string{claude.ID}); err != nil || len(changed) != 0 {
 		t.Fatalf("mac removed local claude account: changed=%v err=%v", changed, err)
+	}
+}
+
+// TestSharedMergeOrderIndependent proves syncing "accounts" before "credentials" and syncing
+// "credentials" before "accounts" converge on the exact same active account: the default wins
+// whenever auth.json has one, the first named account is active when auth.json has none, and an
+// explicit user Select still persists across later merges.
+func TestSharedMergeOrderIndependent(t *testing.T) {
+	ctx := context.Background()
+	ownerAuthDoc := &docport.Memory{}
+	ownerAuth := auth.NewDocumentStore(ownerAuthDoc)
+	_, _ = ownerAuth.Modify(ctx, "openai", func(*auth.Credential) (*auth.Credential, error) {
+		return auth.APIKeyCredential("sk-default"), nil
+	})
+	ownerAccts := NewStoreWithDocument(&memoryDocument{}, ownerAuth)
+	lea, err := ownerAccts.Add(ctx, "openai", "lea", auth.APIKeyCredential("sk-lea"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zen, err := ownerAccts.Add(ctx, "opencode", "opencode zen", auth.APIKeyCredential("sk-zen"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedCreds, err := ownerAuth.Shareable(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedAccts, err := ownerAccts.Shareable(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(accountsFirst bool) ([]Account, string, string) {
+		credStore := auth.NewDocumentStore(&docport.Memory{})
+		acctStore := NewStoreWithDocument(&memoryDocument{}, credStore)
+		if accountsFirst {
+			if _, err := acctStore.MergeShared(ctx, []map[string]json.RawMessage{sharedAccts}, false, nil); err != nil {
+				t.Fatal(err)
+			}
+			// Before credentials arrive, lea is usable as the only openai account.
+			if c, err := acctStore.Read(ctx, "openai"); err != nil || c == nil || *c.Key != "sk-lea" {
+				t.Fatalf("before credentials arrived: openai = %#v, %v", c, err)
+			}
+			if _, err := credStore.MergeShared(ctx, []map[string]json.RawMessage{sharedCreds}, false, nil); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			if _, err := credStore.MergeShared(ctx, []map[string]json.RawMessage{sharedCreds}, false, nil); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := acctStore.MergeShared(ctx, []map[string]json.RawMessage{sharedAccts}, false, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+		rows, err := acctStore.Accounts(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		openAI, err := acctStore.Read(ctx, "openai")
+		if err != nil || openAI == nil {
+			t.Fatalf("openai Read = %#v, %v", openAI, err)
+		}
+		openCode, err := acctStore.Read(ctx, "opencode")
+		if err != nil || openCode == nil {
+			t.Fatalf("opencode Read = %#v, %v", openCode, err)
+		}
+		// Explicit user selection persists even when base credential exists.
+		if err := acctStore.Select(ctx, "openai", lea.ID); err != nil {
+			t.Fatal(err)
+		}
+		if c, err := acctStore.Read(ctx, "openai"); err != nil || c == nil || *c.Key != "sk-lea" {
+			t.Fatalf("explicit Select(lea) did not persist: %#v, %v", c, err)
+		}
+		return rows, *openAI.Key, *openCode.Key
+	}
+
+	rowsA, openAIA, openCodeA := run(true)
+	rowsB, openAIB, openCodeB := run(false)
+	if openAIA != "sk-default" || openAIB != "sk-default" {
+		t.Fatalf("openai active key differed by sync order: accountsFirst=%q credsFirst=%q", openAIA, openAIB)
+	}
+	if openCodeA != "sk-zen" || openCodeB != "sk-zen" {
+		t.Fatalf("opencode active key differed by sync order: accountsFirst=%q credsFirst=%q", openCodeA, openCodeB)
+	}
+	if len(rowsA) != len(rowsB) || len(rowsA) != 3 {
+		t.Fatalf("row counts differed: %#v vs %#v", rowsA, rowsB)
+	}
+	for i := range rowsA {
+		if rowsA[i] != rowsB[i] {
+			t.Fatalf("row %d differed by sync order: accountsFirst=%#v credsFirst=%#v", i, rowsA[i], rowsB[i])
+		}
+	}
+	// Verify opencode zen is active and lea is inactive once default arrived.
+	for _, r := range rowsA {
+		if r.ID == DefaultID && r.Provider == "openai" && !r.Active {
+			t.Fatalf("openai default not active: %#v", r)
+		}
+		if r.ID == lea.ID && r.Active {
+			t.Fatalf("openai lea unexpectedly active: %#v", r)
+		}
+		if r.ID == zen.ID && !r.Active {
+			t.Fatalf("opencode zen not active: %#v", r)
+		}
 	}
 }
