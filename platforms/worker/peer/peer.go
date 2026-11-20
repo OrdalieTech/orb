@@ -78,7 +78,7 @@ func Memory(store orbhost.Store) memory.Store {
 func Accounts(store orbhost.Store) *accounts.Store {
 	return accounts.NewStoreWithDocument(
 		store.Document(path.Join(worker.AgentDir, "accounts.json")),
-		aiauth.NewDocumentStore(store.Document(path.Join(worker.AgentDir, "auth.json"))),
+		aiauth.NewDocumentStore(store.Document(path.Join(worker.AgentDir, "auth.json"))).WithRemoved(store.Document(path.Join(worker.AgentDir, "auth-removed.json"))),
 	)
 }
 
@@ -93,7 +93,7 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 	if alias != "" {
 		b.SetName(alias)
 	}
-	creds := aiauth.NewDocumentStore(store.Document(path.Join(worker.AgentDir, "auth.json")))
+	creds := aiauth.NewDocumentStore(store.Document(path.Join(worker.AgentDir, "auth.json"))).WithRemoved(store.Document(path.Join(worker.AgentDir, "auth-removed.json")))
 	b.SetClass("credentials", creds)
 	b.SetClass("accounts", accounts.NewStoreWithDocument(store.Document(path.Join(worker.AgentDir, "accounts.json")), creds))
 	b.SetClass("memory", memory.Shared{Store: Memory(store)})
@@ -101,6 +101,7 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 		ws.OnWrite = func(name string) {
 			switch name {
 			case path.Join(worker.AgentDir, "auth.json"),
+				path.Join(worker.AgentDir, "auth-removed.json"),
 				path.Join(worker.AgentDir, "accounts.json"),
 				path.Join(worker.AgentDir, "memory", "memory.jsonl"):
 				b.Notify()

@@ -28,8 +28,57 @@ type Memory struct {
 func (db *DB) Memory(namespace string) *Memory { return &Memory{db, autocommit{db}, namespace} }
 
 var _ memory.TransactionalStore = (*Memory)(nil)
+var _ memory.RemovalStore = (*Memory)(nil)
+
+const memoryRemovedKey = "memory/removed.json"
+
+func (store *Memory) inTx() bool {
+	_, auto := store.connection.(autocommit)
+	return !auto
+}
+
+func (store *Memory) loadRemoved(ctx context.Context) (map[string]memory.Item, error) {
+	var raw []byte
+	err := store.connection.QueryRowContext(ctx, "SELECT content FROM documents WHERE namespace=? AND key=?", store.namespace, memoryRemovedKey).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) || len(raw) == 0 {
+		return map[string]memory.Item{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]memory.Item
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = map[string]memory.Item{}
+	}
+	return out, nil
+}
+
+func (store *Memory) saveRemoved(ctx context.Context, removed map[string]memory.Item) error {
+	if len(removed) == 0 {
+		_, err := store.connection.ExecContext(ctx, "DELETE FROM documents WHERE namespace=? AND key=?", store.namespace, memoryRemovedKey)
+		return err
+	}
+	data, err := json.Marshal(removed)
+	if err != nil {
+		return err
+	}
+	_, err = store.connection.ExecContext(ctx, "INSERT OR REPLACE INTO documents VALUES(?,?,?)", store.namespace, memoryRemovedKey, data)
+	return err
+}
 
 func (store *Memory) Append(ctx context.Context, item memory.Item) (string, error) {
+	if !store.inTx() {
+		var id string
+		err := store.Transact(ctx, func(tx memory.Store) error {
+			var err error
+			id, err = tx.Append(ctx, item)
+			return err
+		})
+		return id, err
+	}
 	if item.ID == "" {
 		id, err := uuidv7.Generate(time.Now())
 		if err != nil {
@@ -44,8 +93,20 @@ func (store *Memory) Append(ctx context.Context, item memory.Item) (string, erro
 	if err != nil {
 		return "", err
 	}
-	_, err = store.connection.ExecContext(ctx, "INSERT OR REPLACE INTO memory_items VALUES(?,?,?,?)", store.namespace, item.ID, item.Time.UTC().Format("2006-01-02T15:04:05.000000000Z"), data)
-	return item.ID, err
+	if _, err = store.connection.ExecContext(ctx, "INSERT OR REPLACE INTO memory_items VALUES(?,?,?,?)", store.namespace, item.ID, item.Time.UTC().Format("2006-01-02T15:04:05.000000000Z"), data); err != nil {
+		return "", err
+	}
+	removed, err := store.loadRemoved(ctx)
+	if err != nil {
+		return "", err
+	}
+	if _, had := removed[item.ID]; had {
+		delete(removed, item.ID)
+		if err = store.saveRemoved(ctx, removed); err != nil {
+			return "", err
+		}
+	}
+	return item.ID, nil
 }
 func (store *Memory) Get(ctx context.Context, id string) (memory.Item, error) {
 	var data []byte
@@ -57,8 +118,57 @@ func (store *Memory) Get(ctx context.Context, id string) (memory.Item, error) {
 	return item, err
 }
 func (store *Memory) Delete(ctx context.Context, id string) error {
-	_, err := store.connection.ExecContext(ctx, "DELETE FROM memory_items WHERE namespace=? AND id=?", store.namespace, id)
-	return err
+	if !store.inTx() {
+		return store.Transact(ctx, func(tx memory.Store) error { return tx.Delete(ctx, id) })
+	}
+	old, getErr := store.Get(ctx, id)
+	if _, err := store.connection.ExecContext(ctx, "DELETE FROM memory_items WHERE namespace=? AND id=?", store.namespace, id); err != nil {
+		return err
+	}
+	if getErr == nil {
+		removed, err := store.loadRemoved(ctx)
+		if err != nil {
+			return err
+		}
+		removed[id] = old
+		return store.saveRemoved(ctx, removed)
+	}
+	return nil
+}
+func (store *Memory) Purge(ctx context.Context, id string) error {
+	if !store.inTx() {
+		return store.Transact(ctx, func(tx memory.Store) error { return tx.(memory.RemovalStore).Purge(ctx, id) })
+	}
+	if _, err := store.connection.ExecContext(ctx, "DELETE FROM memory_items WHERE namespace=? AND id=?", store.namespace, id); err != nil {
+		return err
+	}
+	removed, err := store.loadRemoved(ctx)
+	if err != nil {
+		return err
+	}
+	if _, had := removed[id]; had {
+		delete(removed, id)
+		return store.saveRemoved(ctx, removed)
+	}
+	return nil
+}
+func (store *Memory) Removed(ctx context.Context) (map[string]memory.Item, error) {
+	removed, err := store.loadRemoved(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(removed) == 0 {
+		return nil, nil
+	}
+	// Filter out any ID currently present in memory_items.
+	live, err := store.Query(ctx, memory.Filter{Limit: -1})
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range live {
+		delete(removed, item.ID)
+	}
+	return removed, nil
 }
 func (store *Memory) Query(ctx context.Context, filter memory.Filter) ([]memory.Item, error) {
 	query := "SELECT payload FROM memory_items WHERE namespace=?"

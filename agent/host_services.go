@@ -67,6 +67,7 @@ func newModelRegistry(h *host.Host, agentDir string) (*config.ModelRegistry, err
 	if err != nil {
 		return nil, err
 	}
+	auth.WithRemoved(h.Document("auth-removed.json"))
 	credentials := accounts.NewStoreWithDocument(h.Document("accounts.json"), auth)
 	var options []config.ModelRegistryOption
 	if h.Env != nil {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/ai/auth"
+	"github.com/OrdalieTech/orb/plugins/memory"
 )
 
 func TestDocumentsCommitRollbackAndConcurrentWriters(t *testing.T) {
@@ -354,5 +355,46 @@ func TestMigrationProcessCrashBeforeCutover(t *testing.T) {
 	}
 	if done, err := db.Migrated(ctx, "crash"); err != nil || !done {
 		t.Fatalf("restart did not finish: %v %v", done, err)
+	}
+}
+
+func TestMemoryRemovalTombstones(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(ctx, filepath.Join(root, "orb.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	store := db.Memory("agent")
+	if _, err := store.Append(ctx, memory.Item{ID: "m1", Content: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Delete(ctx, "m1"); err != nil {
+		t.Fatal(err)
+	}
+	rem, err := store.Removed(ctx)
+	if err != nil || rem["m1"].Content != "first" {
+		t.Fatalf("Removed after Delete = %+v, %v", rem, err)
+	}
+	// Local re-add clears tombstone.
+	if _, err := store.Append(ctx, memory.Item{ID: "m1", Content: "again"}); err != nil {
+		t.Fatal(err)
+	}
+	if rem, err := store.Removed(ctx); err != nil || len(rem) != 0 {
+		t.Fatalf("Removed after re-add = %+v, %v", rem, err)
+	}
+	// Delete again, then Purge drops both item and tombstone.
+	if err := store.Delete(ctx, "m1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Purge(ctx, "m1"); err != nil {
+		t.Fatal(err)
+	}
+	if rem, err := store.Removed(ctx); err != nil || len(rem) != 0 {
+		t.Fatalf("Removed after Purge = %+v, %v", rem, err)
 	}
 }

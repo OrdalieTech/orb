@@ -372,7 +372,8 @@ func AddServer(path, name string, config ServerConfig) (bool, error) {
 		return false, err
 	}
 	replaced := false
-	return replaced, editServers(path, func(servers []member) ([]member, bool) {
+	return replaced, editServers(path, func(servers []member, removed map[string]json.RawMessage) ([]member, bool) {
+		delete(removed, name)
 		index := slices.IndexFunc(servers, func(entry member) bool { return entry.name == name })
 		if replaced = index >= 0; replaced {
 			servers[index].value = encoded
@@ -388,11 +389,14 @@ func RemoveServer(path, name string) (bool, error) {
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
-	removed := false
-	return removed, editServers(path, func(servers []member) ([]member, bool) {
+	found := false
+	return found, editServers(path, func(servers []member, removed map[string]json.RawMessage) ([]member, bool) {
 		index := slices.IndexFunc(servers, func(entry member) bool { return entry.name == name })
-		if removed = index >= 0; !removed {
+		if found = index >= 0; !found {
 			return servers, false
+		}
+		if val := shared(servers[index]); val != nil {
+			removed[name] = val
 		}
 		return slices.Delete(servers, index, index+1), true
 	})
@@ -404,10 +408,10 @@ type member struct {
 }
 
 // editServers reads an mcp.json (empty when missing), lets edit change its
-// mcpServers and writes it back with its indentation; other content is kept.
-// It takes the lock a sync group's merge takes, and readers, which take none, see the old file or
-// the new one.
-func editServers(path string, edit func([]member) ([]member, bool)) error {
+// mcpServers and removed tombstones, and writes it back with its indentation;
+// other content is kept. It takes the lock a sync group's merge takes, and
+// readers, which take none, see the old file or the new one.
+func editServers(path string, edit func([]member, map[string]json.RawMessage) ([]member, bool)) error {
 	return filelock.File{Path: path, Perm: 0o600, Atomic: true}.Update(context.Background(), func(data []byte) ([]byte, error) {
 		next, err := editServerData(data, edit)
 		if err != nil {
@@ -421,7 +425,7 @@ func editServers(path string, edit func([]member) ([]member, bool)) error {
 }
 
 // editServerData is editServers on an mcp.json's content; nil means unchanged.
-func editServerData(data []byte, edit func([]member) ([]member, bool)) ([]byte, error) {
+func editServerData(data []byte, edit func([]member, map[string]json.RawMessage) ([]member, bool)) ([]byte, error) {
 	if data = bytes.TrimPrefix(data, bom); len(bytes.TrimSpace(data)) == 0 {
 		data = []byte("{}")
 	}
@@ -433,7 +437,8 @@ func editServerData(data []byte, edit func([]member) ([]member, bool)) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	servers, changed := edit(servers)
+	removed := removedMembers(root)
+	servers, changed := edit(servers, removed)
 	if !changed {
 		return nil, nil
 	}
@@ -442,6 +447,19 @@ func editServerData(data []byte, edit func([]member) ([]member, bool)) ([]byte, 
 		root[index].value = encoded
 	} else {
 		root = append(root, member{name: "mcpServers", value: encoded})
+	}
+	if len(removed) == 0 {
+		root = slices.DeleteFunc(root, func(entry member) bool { return entry.name == "removed" })
+	} else {
+		remEncoded, err := json.Marshal(removed)
+		if err != nil {
+			return nil, err
+		}
+		if index := slices.IndexFunc(root, func(entry member) bool { return entry.name == "removed" }); index >= 0 {
+			root[index].value = remEncoded
+		} else {
+			root = append(root, member{name: "removed", value: remEncoded})
+		}
 	}
 	indent := "  "
 	if match := regexp.MustCompile(`(?m)^([ \t]+)\S`).FindSubmatch(data); match != nil {
@@ -453,6 +471,25 @@ func editServerData(data []byte, edit func([]member) ([]member, bool)) ([]byte, 
 	}
 	output.WriteByte('\n')
 	return output.Bytes(), nil
+}
+
+func removedMembers(root []member) map[string]json.RawMessage {
+	out := map[string]json.RawMessage{}
+	for _, entry := range root {
+		if entry.name == "removed" {
+			var parsed map[string]json.RawMessage
+			if json.Unmarshal(entry.value, &parsed) == nil {
+				for k, v := range parsed {
+					var compact bytes.Buffer
+					if json.Compact(&compact, v) == nil {
+						out[k] = compact.Bytes()
+					}
+				}
+			}
+			break
+		}
+	}
+	return out
 }
 
 func serverMembers(data []byte) ([]member, error) {

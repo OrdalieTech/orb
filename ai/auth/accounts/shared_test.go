@@ -3,6 +3,7 @@ package accounts
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/OrdalieTech/orb/ai/auth"
@@ -211,5 +212,24 @@ func TestSharedMergeOrderIndependent(t *testing.T) {
 		if r.ID == zen.ID && !r.Active {
 			t.Fatalf("opencode zen not active: %#v", r)
 		}
+	}
+}
+
+type errCredentialStore struct{ auth.CredentialStore }
+
+func (errCredentialStore) Read(context.Context, string) (*auth.Credential, error) {
+	return nil, errors.New("boom")
+}
+
+// A transient error reading a base credential must fail Shareable rather than dropping the
+// default account's display name (which an owner would read as a deletion).
+func TestShareableReturnsErrorOnBaseReadFailure(t *testing.T) {
+	ctx := context.Background()
+	store := NewStoreWithDocument(&memoryDocument{}, errCredentialStore{})
+	if err := store.Rename(ctx, "openai", DefaultID, "Personal"); err != nil {
+		t.Fatal(err)
+	}
+	if shared, err := store.Shareable(ctx); err == nil {
+		t.Fatalf("Shareable succeeded despite base read error: %v", shared)
 	}
 }

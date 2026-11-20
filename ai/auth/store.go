@@ -13,10 +13,21 @@ import (
 	"github.com/OrdalieTech/orb/internal/jsonwire"
 )
 
-// Store keeps credentials in a document shaped like upstream's auth.json.
-type Store struct{ document document.Document }
+// Store keeps credentials in a document shaped like upstream's auth.json, with an optional
+// companion document recording explicit deletions (logout) for Mitosis sync without altering
+// auth.json's pi-compatible format.
+type Store struct {
+	document document.Document
+	removed  document.Document
+}
 
 func NewDocumentStore(document document.Document) *Store { return &Store{document: document} }
+
+// WithRemoved attaches a document alongside auth.json to record explicit deletions for Mitosis sync.
+func (store *Store) WithRemoved(removed document.Document) *Store {
+	store.removed = removed
+	return store
+}
 
 func NewMemoryStore(initial map[string]*Credential) *Store {
 	store := NewDocumentStore(&document.Memory{})
@@ -65,6 +76,7 @@ func (store *Store) List(ctx context.Context) ([]CredentialInfo, error) {
 }
 
 func (store *Store) Modify(ctx context.Context, provider string, modify ModifyFunc) (result *Credential, err error) {
+	wrote := false
 	err = store.update(ctx, func(stored *credentials) (bool, error) {
 		current, exists := stored.byProvider[provider]
 		next, err := modify(current)
@@ -80,13 +92,19 @@ func (store *Store) Modify(ctx context.Context, provider string, modify ModifyFu
 		}
 		stored.byProvider[provider] = next
 		result = next.Clone()
+		wrote = true
 		return true, nil
 	})
+	if err == nil && wrote {
+		_ = store.clearRemoved(ctx, []string{provider})
+	}
 	return result, err
 }
 
 func (store *Store) Delete(ctx context.Context, provider string) error {
-	return store.update(ctx, func(stored *credentials) (bool, error) {
+	var old *Credential
+	err := store.update(ctx, func(stored *credentials) (bool, error) {
+		old = stored.byProvider[provider]
 		delete(stored.byProvider, provider)
 		for index, item := range stored.order {
 			if item == provider {
@@ -96,6 +114,12 @@ func (store *Store) Delete(ctx context.Context, provider string) error {
 		}
 		return true, nil
 	})
+	if err == nil && old != nil && ShareableCredential(old) {
+		if raw, mErr := json.Marshal(old); mErr == nil {
+			_ = store.recordRemoved(ctx, provider, raw)
+		}
+	}
+	return err
 }
 
 func (store *Store) update(ctx context.Context, change func(*credentials) (bool, error)) error {

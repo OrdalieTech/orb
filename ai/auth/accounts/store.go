@@ -36,11 +36,12 @@ type record struct {
 }
 
 type document struct {
-	Version  int               `json:"version"`
-	Accounts []record          `json:"accounts"`
-	Active   map[string]string `json:"active"`
-	Ambient  map[string]bool   `json:"ambient,omitempty"`
-	Names    map[string]string `json:"names,omitempty"`
+	Version  int                        `json:"version"`
+	Accounts []record                   `json:"accounts"`
+	Active   map[string]string          `json:"active"`
+	Ambient  map[string]bool            `json:"ambient,omitempty"`
+	Names    map[string]string          `json:"names,omitempty"`
+	Removed  map[string]json.RawMessage `json:"removed,omitempty"`
 }
 
 type Store struct {
@@ -182,6 +183,7 @@ func (s *Store) Add(ctx context.Context, provider, name string, credential *auth
 					d.Names = map[string]string{}
 				}
 				d.Names[provider] = explicitName
+				delete(d.Removed, defaultNamePrefix+provider)
 			} else if existing := d.Names[provider]; existing != "" {
 				result.Name = existing
 			}
@@ -197,11 +199,13 @@ func (s *Store) Add(ctx context.Context, provider, name string, credential *auth
 				}
 				result.Name = d.Accounts[i].Name
 				d.Active[provider] = a.ID
+				delete(d.Removed, a.ID)
 				return nil
 			}
 		}
 		d.Accounts = append(d.Accounts, record{ID: result.ID, Provider: provider, Name: name, Credential: credential.Clone()})
 		d.Active[provider] = result.ID
+		delete(d.Removed, result.ID)
 		return nil
 	})
 	return result, err
@@ -249,12 +253,25 @@ func (s *Store) Rename(ctx context.Context, provider, id, name string) error {
 		}
 		key := accountNameKey(provider, id)
 		if name == "" {
+			if id == DefaultID && d.Names[key] != "" {
+				if base, err := s.base.Read(ctx, provider); err == nil && auth.ShareableCredential(base) {
+					if raw, err := json.Marshal(sharedName{Name: d.Names[key]}); err == nil {
+						if d.Removed == nil {
+							d.Removed = map[string]json.RawMessage{}
+						}
+						d.Removed[defaultNamePrefix+provider] = raw
+					}
+				}
+			}
 			delete(d.Names, key)
 		} else {
 			if d.Names == nil {
 				d.Names = map[string]string{}
 			}
 			d.Names[key] = name
+			if id == DefaultID {
+				delete(d.Removed, defaultNamePrefix+provider)
+			}
 		}
 		return nil
 	})
@@ -303,6 +320,17 @@ func (s *Store) Remove(ctx context.Context, provider, id string) error {
 		return s.base.Delete(ctx, provider)
 	}
 	return s.update(ctx, func(d *document) error {
+		for _, a := range d.Accounts {
+			if a.Provider == provider && a.ID == id && auth.ShareableCredential(a.Credential) {
+				if raw, err := json.Marshal(sharedRecord{Provider: a.Provider, Name: a.Name, Credential: a.Credential}); err == nil {
+					if d.Removed == nil {
+						d.Removed = map[string]json.RawMessage{}
+					}
+					d.Removed[a.ID] = raw
+				}
+				break
+			}
+		}
 		d.Accounts = slices.DeleteFunc(d.Accounts, func(a record) bool { return a.Provider == provider && a.ID == id })
 		if d.Active[provider] == id {
 			delete(d.Active, provider)
