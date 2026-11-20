@@ -420,3 +420,39 @@ func TestReconcileSkipsRelayWhenDirectGroupMemberConnected(t *testing.T) {
 		t.Fatalf("expected 1 relayed dial on demand, got %d", relayedDials.Load())
 	}
 }
+
+func TestRelayRunsAfterDirectDialHangs(t *testing.T) {
+	ctx := t.Context()
+	mac, fedora, tab := newMitosis(t), newMitosis(t), newMitosis(t)
+	for _, x := range []*Mitosis{mac, fedora, tab} {
+		t.Cleanup(func() { _ = x.Close() })
+	}
+	fedora.SetName("Fedora")
+	group := setupGroup(t, mac, fedora, tab)
+	if _, err := fedora.Sync(ctx, []Locator{{Transport: "tailcat/1", Locator: "tc-fedora"}}); err != nil {
+		t.Fatal(err)
+	}
+	recs, _ := fedora.Contacts(mac.PeerID(), group)
+	for _, r := range recs {
+		_, _ = mac.MergeContact(fedora.PeerID(), r)
+		_, _ = tab.MergeContact(mac.PeerID(), r)
+	}
+	tab.Hangup(fedora.PeerID())
+	fedora.Hangup(tab.PeerID())
+	macPeers := NewPeers(ctx, mac)
+	macPeers.Dial = func(context.Context, string, string) (net.Conn, error) {
+		a, b := net.Pipe()
+		go func() { _, _, _ = fedora.Connect(ctx, b, "", true) }()
+		return a, nil
+	}
+	// The saved locator never answers: the direct dial runs until its context ends.
+	tabPeers := NewPeers(ctx, tab)
+	tabPeers.Dial = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	raw, err := tabPeers.Remote(ctx, fedora.PeerID(), "mitosis.ping", struct{}{})
+	if err != nil || !strings.Contains(string(raw), `"Fedora"`) {
+		t.Fatalf("relay after a hanging direct dial: %s %v", raw, err)
+	}
+}

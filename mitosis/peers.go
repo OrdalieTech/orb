@@ -116,7 +116,13 @@ func (ps *Peers) peer(ctx context.Context, id, locator string, allowRelay bool) 
 	go func() {
 		var err error
 		if locator != "" && ps.Dial != nil {
-			err = ps.dial(timeout, id, locator)
+			// A locator that never answers must leave the relay time to run.
+			direct, stop := timeout, context.CancelFunc(func() {})
+			if canRelay {
+				direct, stop = context.WithTimeout(timeout, 8*time.Second)
+			}
+			err = ps.dial(direct, id, locator)
+			stop()
 			if err == nil || ps.Mitosis.Connection(id) != nil {
 				dialed <- err
 				return
