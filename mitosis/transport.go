@@ -304,6 +304,9 @@ func (b *Mitosis) Known(peer string) bool {
 			return true
 		}
 	}
+	if b.state.Group != "" && slices.Contains(b.state.Prior, peer) {
+		return true
+	}
 	for _, members := range b.state.Scopes {
 		if slices.Contains(members, peer) {
 			return true

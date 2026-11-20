@@ -541,7 +541,10 @@ func TestSyncMixedClassPeersConvergeWithoutFlapping(t *testing.T) {
 	}
 
 	// A member removing itself (e.g. "Forget this tab") leaves locally and asks a connected owner
-	// to drop it from the group so no ghost member remains.
+	// to drop it from the group along with its pairing, grants and group record so no debris remains.
+	if err := newerOwner.AddGrant(FullGrant(tabMember.PeerID())); err != nil {
+		t.Fatal(err)
+	}
 	admin(tabMember, `{"remove":"`+tabMember.PeerID()+`"}`)
 	if tabMember.state.Group != "" {
 		t.Fatalf("member still in group after removing itself: %q", tabMember.state.Group)
@@ -549,9 +552,43 @@ func TestSyncMixedClassPeersConvergeWithoutFlapping(t *testing.T) {
 	if slices.Contains(newerOwner.state.Scopes[group], tabMember.PeerID()) {
 		t.Fatalf("connected owner still lists departed member %s", tabMember.PeerID())
 	}
+	if _, ok := newerOwner.state.Peers[tabMember.PeerID()]; ok {
+		t.Fatalf("connected owner kept pairing for departed member %s", tabMember.PeerID())
+	}
+	if slices.ContainsFunc(newerOwner.state.Grants, func(g Grant) bool { return g.Principal.PeerID == tabMember.PeerID() }) {
+		t.Fatalf("connected owner kept grant for departed member %s", tabMember.PeerID())
+	}
+	if _, ok := newerOwner.state.Records[group+"/"+tabMember.PeerID()]; ok {
+		t.Fatalf("connected owner kept group record for departed member %s", tabMember.PeerID())
+	}
 	round(olderOwner, newerOwner)
 	if slices.Contains(olderOwner.state.Scopes[group], tabMember.PeerID()) {
 		t.Fatalf("other owner still lists departed member %s after sync", tabMember.PeerID())
+	}
+	if _, ok := olderOwner.state.Records[group+"/"+tabMember.PeerID()]; ok {
+		t.Fatalf("other owner kept group record for departed member %s after adopt", tabMember.PeerID())
+	}
+
+	// Pre-existing ghost records for devices no longer in the group are dropped by prune (retire)
+	// and refused if an older peer tries to re-inject them via MergeContact.
+	ghost := newMitosis(t)
+	_ = ghost.SetScope(group, []string{ghost.PeerID()})
+	ghostRec, err := ghost.PublishContact(group, "ghost", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newerOwner.MergeContact(olderOwner.PeerID(), ghostRec); Code(err) != "unauthorized" {
+		t.Fatalf("MergeContact accepted ghost record for non-member: %v", err)
+	}
+	newerOwner.mu.Lock()
+	newerOwner.state.Records[group+"/"+ghost.PeerID()] = ghostRec
+	newerOwner.mu.Unlock()
+	raw, err := newerOwner.Admin(ctx, "retire", json.RawMessage(`{}`))
+	if err != nil || !strings.Contains(string(raw), `"records":1`) {
+		t.Fatalf("retire (prune) did not drop ghost record: %s, %v", raw, err)
+	}
+	if _, ok := newerOwner.state.Records[group+"/"+ghost.PeerID()]; ok {
+		t.Fatal("ghost record remained after prune")
 	}
 }
 

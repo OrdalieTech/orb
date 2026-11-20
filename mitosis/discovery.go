@@ -125,8 +125,9 @@ func (b *Mitosis) MergeContact(sender string, r Record) (bool, error) {
 	members := b.state.Scopes[c.Scope]
 	// A member takes its sync group owners' records from anyone, so it catches up while they are
 	// away, and those of the owners before, so a version of theirs that won still reaches it.
+	// Reject records for peers no longer in the scope so older peers cannot resurrect ghosts.
 	relayed := c.Scope == b.state.Group && slices.Contains(slices.Concat(b.state.Owners, b.state.Prior), c.Peer)
-	if b.state.Blocked[sender] || b.state.Blocked[c.Peer] || !slices.Contains(members, sender) && !relayed {
+	if b.state.Blocked[sender] || b.state.Blocked[c.Peer] || (!slices.Contains(members, sender) || !slices.Contains(members, c.Peer)) && !relayed {
 		return false, Fail("unauthorized")
 	}
 	k := c.Scope + "/" + c.Peer
@@ -174,9 +175,10 @@ func (b *Mitosis) contacts(peer, scope string) (map[string]Record, error) {
 	if b.closed || b.failed || b.state.Blocked[peer] || !slices.Contains(b.state.Scopes[scope], peer) {
 		return nil, Fail("unauthorized")
 	}
+	members := b.state.Scopes[scope]
 	out := map[string]Record{}
 	for k, r := range b.state.Records {
-		if id, ok := strings.CutPrefix(k, scope+"/"); ok {
+		if id, ok := strings.CutPrefix(k, scope+"/"); ok && (slices.Contains(members, id) || scope == b.state.Group && slices.Contains(b.state.Prior, id)) {
 			out[id] = r
 		}
 	}

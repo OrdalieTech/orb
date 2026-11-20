@@ -16,6 +16,7 @@ import (
 	"maps"
 	"math/big"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
@@ -141,10 +142,48 @@ func (b *Mitosis) current() doc {
 }
 
 func (b *Mitosis) leave() {
-	delete(b.state.Scopes, b.state.Group)
+	group := b.state.Group
+	delete(b.state.Scopes, group)
 	b.state.Group, b.state.Owners, b.state.Prior, b.state.GroupVersion, b.state.Versions, b.state.Merged = "", nil, nil, 0, nil, nil
+	b.pruneRecordsLocked()
 	clear(b.vaults)
 	clear(b.sealed)
+}
+
+// pruneRecordsLocked drops contact records for scopes no longer present or peers no longer in
+// their scope (keeping only Prior owners on the sync group for concurrent-version tie-breaking),
+// and drops hand-in tracking for peers no longer in the sync group.
+func (b *Mitosis) pruneRecordsLocked() int {
+	pruned := 0
+	for k := range b.state.Records {
+		scope, peer, ok := strings.Cut(k, "/")
+		members := b.state.Scopes[scope]
+		keep := ok && len(members) > 0 && (slices.Contains(members, peer) || scope == b.state.Group && slices.Contains(b.state.Prior, peer))
+		if !keep {
+			delete(b.state.Records, k)
+			pruned++
+		}
+	}
+	groupMembers := b.state.Scopes[b.state.Group]
+	for k := range b.state.Merged {
+		peer, _, _ := strings.Cut(k, " ")
+		if b.state.Group == "" || !slices.Contains(groupMembers, peer) {
+			delete(b.state.Merged, k)
+			pruned++
+		}
+	}
+	return pruned
+}
+
+// PruneRecords drops contact records and hand-in metadata for devices no longer in their scope.
+func (b *Mitosis) PruneRecords() (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	pruned := b.pruneRecordsLocked()
+	if pruned == 0 {
+		return 0, nil
+	}
+	return pruned, b.save()
 }
 
 // change is an owner's membership change, signed in its next record: add, remove, promote or
@@ -184,6 +223,9 @@ func (b *Mitosis) change(kind, peer string) error {
 	case !slices.Equal(d.Owners, cur.Owners) || !slices.Equal(d.Members, cur.Members):
 		b.state.Prior, b.state.Owners, b.state.GroupVersion = cur.Owners, d.Owners, d.Version
 		b.state.Scopes[b.state.Group] = d.Members
+		if kind == "remove" {
+			b.pruneRecordsLocked()
+		}
 	}
 	b.op = [2]string{kind, peer}
 	return nil
@@ -217,6 +259,7 @@ func (b *Mitosis) adopt() {
 		b.leave()
 	}
 	if adopted {
+		b.pruneRecordsLocked()
 		_ = b.save()
 	}
 	if b.state.Group == "" {
@@ -325,6 +368,22 @@ func (b *Mitosis) SyncAdmin(ctx context.Context, params json.RawMessage, endpoin
 	out, err := b.sync(ctx, endpoints)
 	if kind == "remove" {
 		b.tellRemoved(peer, group)
+		// Drop the departed device's pairing, grants, invitations and group record so leaving or
+		// removing a device (e.g. "Forget this tab") leaves no ghost peers or bloated records.
+		b.mu.Lock()
+		delete(b.state.Peers, peer)
+		b.state.Grants = slices.DeleteFunc(b.state.Grants, func(g Grant) bool { return g.Principal.PeerID == peer })
+		for id, inv := range b.state.Invitations {
+			if inv.Claimant == peer {
+				delete(b.state.Invitations, id)
+			}
+		}
+		b.pruneRecordsLocked()
+		saveErr := b.save()
+		b.mu.Unlock()
+		if err == nil {
+			err = saveErr
+		}
 	}
 	return out, err
 }
