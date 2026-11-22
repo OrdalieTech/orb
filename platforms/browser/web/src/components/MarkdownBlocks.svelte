@@ -129,16 +129,16 @@
     border-left: 2px solid var(--rupture);
   }
   .md-code {
-    padding: 0 5px;
+    padding: 0 4px;
     font-size: 0.92em;
-    border-radius: 2px;
+    border-radius: 0;
     background: var(--recessed);
     border: 1px solid var(--rule);
   }
   .md-pre-wrap {
     margin: 10px 0;
     border: 1px solid var(--fg);
-    border-radius: var(--pane);
+    border-radius: 0;
     background: var(--raised);
     overflow: hidden;
   }
@@ -146,7 +146,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 5px 10px;
+    padding: 4px 10px;
     background: var(--fg);
     color: var(--bg);
   }
@@ -166,8 +166,8 @@
     text-transform: uppercase;
     color: var(--bg);
     background: transparent;
-    border: 1px solid color-mix(in srgb, var(--bg) 45%, transparent);
-    border-radius: 2px;
+    border: 1px solid color-mix(in srgb, var(--bg) 50%, transparent);
+    border-radius: 0;
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
@@ -175,7 +175,7 @@
   }
   .md-pre {
     margin: 0;
-    padding: 11px 13px;
+    padding: 10px 12px;
     overflow-x: auto;
     font-size: 12.5px;
     line-height: 1.5;
@@ -190,7 +190,7 @@
     margin: 10px 0;
     overflow-x: auto;
     border: 1px solid var(--fg);
-    border-radius: var(--pane);
+    border-radius: 0;
     background: var(--raised);
   }
   .md-table {

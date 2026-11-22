@@ -133,10 +133,9 @@
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    background: var(--recessed);
-    border-top: 1px solid var(--rule-strong);
-    box-shadow: 0 -8px 28px var(--shade);
-    animation: drawer-in 210ms var(--ease);
+    background: var(--bg);
+    border-top: 2px solid var(--fg);
+    animation: drawer-in 140ms var(--ease);
   }
   .term-head {
     display: flex;

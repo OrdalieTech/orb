@@ -23,25 +23,24 @@ import (
 var ordalieSVG []byte
 var ordalie = ui.MustParseSVG(ordalieSVG)
 
-// Ordalie tokens, as on Android (ui/Theme.kt) and Web: teenage engineering high-contrast Swiss
-// studio light & OP-XY pitch-black OLED dark, International Orange (#FF4D00), Pattern Blue.
+// Ordalie tokens, as on Android (ui/Theme.kt) and Web: raw console × Evangelion NERV × teenage
+// engineering — drafting sheet light & pitch-black OLED dark, signal vermilion (#FF3D00), Pattern Blue.
 var (
 	texte    = ui.Hex("#FFFFFF")
-	rupture  = ui.Hex("#FF4D00")
-	blue     = ui.Hex("#0047AB")
-	charcoal = ui.Hex("#0A0A0A")
+	rupture  = ui.Hex("#FF3D00")
+	blue     = ui.Hex("#003CB3")
+	charcoal = ui.Hex("#090909")
 )
 
-// palette is high-contrast studio paper & white cards in light, true OLED black in dark.
-// Rules are crisp 1px borders; recessed holds telemetry readouts, raised holds floating cards.
+// palette is raw technical manual paper in light, pitch-black OLED console in dark.
 type palette struct{ bg, fg, mute, meta, rule, raised, hover, recessed ui.Color }
 
 var (
-	light = palette{ui.Hex("#F2F2EE"), charcoal, ui.Hex("#333330"), ui.Hex("#5C5C57"), ui.Hex("#C6C6C0"), ui.Hex("#FFFFFF"), ui.Hex("#E2E2DC"), ui.Hex("#E5E5DF")}
-	dark  = palette{ui.Hex("#050505"), ui.Hex("#FFFFFF"), ui.Hex("#C4C4C0"), ui.Hex("#8A8A85"), ui.Hex("#2C2C2E"), ui.Hex("#0F0F10"), ui.Hex("#1E1E21"), ui.Hex("#161618")}
+	light = palette{ui.Hex("#EFECE6"), charcoal, ui.Hex("#2C2C2A"), ui.Hex("#52514C"), ui.Hex("#B4B1A9"), ui.Hex("#F8F7F3"), ui.Hex("#DEDAD0"), ui.Hex("#E3E0D8")}
+	dark  = palette{ui.Hex("#000000"), ui.Hex("#F2F2ED"), ui.Hex("#B8B8B0"), ui.Hex("#7E7E76"), ui.Hex("#2E2E2C"), ui.Hex("#0A0A0A"), ui.Hex("#1A1A18"), ui.Hex("#121211")}
 	// A peer's hue (1 to 6, as the view assigns them; 0, this computer, takes the ink): six vivid
-	// OP-1 rotary encoder LED tones apart from International Orange, light then dark.
-	hues = [][2]string{{"#0057FF", "#2997FF"}, {"#008F5D", "#00E599"}, {"#D97706", "#FFC400"}, {"#6D28D9", "#B388FF"}, {"#16803C", "#5CE65C"}, {"#DB2777", "#FF5CA8"}}
+	// hardware channel LED tones apart from signal vermilion, light then dark.
+	hues = [][2]string{{"#0047FF", "#2E9BFF"}, {"#00875A", "#00E58B"}, {"#CC6B00", "#FFB000"}, {"#6528D7", "#B185FF"}, {"#177E2E", "#4CE052"}, {"#C81E78", "#FF4DA6"}}
 )
 
 // One scale, denser than the phone's: title 18 · body 14 · small 13 · label 10; three weights:
@@ -51,7 +50,7 @@ var (
 const (
 	title, body, small, labelSize = 18, 14, 13, 10
 	medium, strong                = 500, 600
-	soft, pane                    = 3, 4 // tight machined radii: keys & inputs, hardware panels
+	soft, pane                    = 0, 0 // raw 90-degree console geometry
 	margin                        = 16
 	mono                          = "Ubuntu Sans Mono"
 )

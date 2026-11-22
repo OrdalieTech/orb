@@ -355,16 +355,15 @@
   }
   .transcript:focus-visible { outline: 0; }
   .chat-col {
-    max-width: 740px;
+    max-width: 780px;
     margin-inline: auto;
   }
   .earlier-btn {
     display: flex;
-    margin: 0 auto 16px;
-    font-family: var(--font-mono);
+    margin: 0 auto 14px;
     font-size: 11.5px;
-    padding: 5px 14px;
-    border-radius: var(--pill);
+    padding: 4px 12px;
+    border-radius: 0;
   }
   .empty-state {
     display: flex;
@@ -373,10 +372,9 @@
     justify-content: center;
     gap: 12px;
     padding: 64px 0;
-    font-family: var(--font-mono);
     font-size: var(--label);
-    font-weight: 500;
-    letter-spacing: 0.1em;
+    font-weight: 700;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--meta);
     animation: view-in var(--t-med) var(--ease);
@@ -384,7 +382,7 @@
   .empty-mark {
     width: 24px;
     height: 24px;
-    background: var(--rule-strong);
+    background: var(--rule);
     mask: url(ordalie.svg) center / contain no-repeat;
   }
   .virt-row {
@@ -398,27 +396,26 @@
     display: block;
     width: 8px;
     height: 16px;
-    border-radius: 2px;
+    border-radius: 0;
     background: var(--rupture);
-    animation: led-breathe 1.0s ease-in-out infinite;
+    animation: led-step 0.9s steps(1) infinite;
   }
   .status-line {
-    font-family: var(--font-mono);
     font-size: 12px;
     color: var(--meta);
     padding-top: 6px;
   }
   .jump-live {
     position: absolute;
-    right: 22px;
-    bottom: 14px;
-    padding: 5px 12px;
-    border-radius: var(--pill);
-    font-family: var(--font-mono);
+    right: 20px;
+    bottom: 12px;
+    padding: 4px 10px;
+    border-radius: 0;
     font-size: 11px;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    box-shadow: 0 4px 16px var(--shade-lg);
+    background: var(--fg);
+    color: var(--bg);
     animation: drop-in var(--t-fast) var(--ease);
     z-index: 2;
   }

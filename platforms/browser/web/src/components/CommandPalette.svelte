@@ -276,40 +276,37 @@
     place-items: center;
     padding: var(--margin);
     background: var(--backdrop);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    animation: backdrop-in 140ms var(--ease);
+    animation: backdrop-in 100ms var(--ease);
   }
   .sheet {
-    width: min(460px, 100%);
+    width: min(480px, 100%);
     max-height: min(560px, 82dvh);
     display: flex;
     flex-direction: column;
-    padding: 14px;
+    padding: 12px;
     border: 1px solid var(--fg);
-    border-radius: var(--pane);
+    border-radius: 0;
     background: var(--raised);
-    box-shadow: 0 18px 48px var(--shade);
-    animation: sheet-in 150ms var(--ease);
+    animation: sheet-in 120ms var(--ease);
   }
-  .sheet.wide { width: min(580px, 100%); }
+  .sheet.wide { width: min(600px, 100%); }
   .sheet-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 2px 4px 12px;
+    padding: 0 2px 10px;
   }
   .sheet-in {
     width: 100%;
-    margin-bottom: 10px;
-    padding: 9px 12px;
+    margin-bottom: 8px;
+    padding: 8px 10px;
     border: 1px solid var(--rule);
-    border-radius: 9px;
-    background: var(--recessed);
+    border-radius: 0;
+    background: var(--bg);
     font-size: var(--small);
-    transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+    transition: border-color var(--t-fast) var(--ease);
   }
-  .sheet-in:focus-visible { outline: 0; border-color: var(--fg); background: var(--raised); }
+  .sheet-in:focus-visible { outline: 0; border-color: var(--fg); }
   .sheet-list {
     flex: 1;
     min-height: 0;
@@ -320,14 +317,15 @@
     align-items: center;
     gap: 10px;
     width: 100%;
-    padding: 9px 10px;
+    padding: 7px 9px;
     border: 0;
-    border-radius: 8px;
+    border-bottom: 1px solid var(--rule-soft);
+    border-radius: 0;
     background: none;
     text-align: left;
     font-size: var(--small);
     cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .sheet-row.on { background: var(--fg); color: var(--bg); }
   .sheet-row.on .sr-det { color: color-mix(in srgb, var(--bg) 72%, transparent); }
@@ -388,10 +386,9 @@
     z-index: 50;
     display: grid;
     place-items: center;
-    background: rgba(10, 11, 12, 0.88);
-    backdrop-filter: blur(10px);
+    background: rgba(0, 0, 0, 0.92);
     overflow: auto;
-    animation: backdrop-in 150ms var(--ease);
+    animation: backdrop-in 110ms var(--ease);
   }
   .img-bar {
     position: fixed;
@@ -404,8 +401,8 @@
   .img-backdrop img {
     max-width: 92vw;
     max-height: 88dvh;
-    border-radius: 8px;
-    transition: transform 160ms var(--ease);
+    border: 1px solid var(--rule);
+    transition: transform 120ms var(--ease);
     cursor: zoom-in;
   }
 </style>

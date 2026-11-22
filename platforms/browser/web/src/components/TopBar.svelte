@@ -29,7 +29,7 @@
     aria-label="Home"
   >
     <i class="orb-dot" aria-hidden="true"></i>
-    <b>ORB</b>
+    <b class="stretch">ORB</b>
   </button>
 
   <div class="tab-strip scroll">
@@ -135,93 +135,98 @@
 <style>
   .topbar {
     display: flex;
-    align-items: center;
-    gap: 5px;
-    height: 44px;
+    align-items: stretch;
+    gap: 0;
+    height: 38px;
     flex-shrink: 0;
-    padding: 0 12px;
+    padding: 0;
     background: var(--bg);
-    border-bottom: 1px solid var(--rule);
+    border-bottom: 1px solid var(--fg);
     z-index: 5;
   }
   .orb-mark {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    height: 26px;
-    padding: 0 9px;
-    margin-right: 4px;
-    border: 1px solid var(--rule);
-    border-radius: var(--soft);
-    background: var(--raised);
+    gap: 8px;
+    padding: 0 14px;
+    border: 0;
+    border-right: 1px solid var(--rule);
+    background: transparent;
     cursor: pointer;
     flex-shrink: 0;
-    transition:
-      background-color var(--t-fast) var(--ease),
-      border-color var(--t-fast) var(--ease),
-      color var(--t-fast) var(--ease),
-      transform 80ms var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .orb-mark:active { transform: translateY(1px); }
   .orb-dot {
     width: 7px;
     height: 7px;
-    border-radius: 1px;
     background: var(--rupture);
   }
   .orb-mark b {
-    font-size: 11.5px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
+    font-size: 11px;
+    line-height: 14px;
+    letter-spacing: 0.1em;
     color: var(--fg);
   }
   .orb-mark.on {
     background: var(--fg);
-    border-color: var(--fg);
+    border-right-color: var(--fg);
   }
   .orb-mark.on b { color: var(--bg); }
 
   .tab-strip {
     display: flex;
-    align-items: center;
-    gap: 4px;
+    align-items: stretch;
+    gap: 0;
     min-width: 0;
     overflow-x: auto;
     scrollbar-width: none;
   }
   .tab-chip {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     flex-shrink: 1;
-    min-width: 76px;
-    max-width: 215px;
-    height: 26px;
-    padding: 0 4px 0 9px;
-    border: 1px solid var(--rule-soft);
-    border-radius: var(--soft);
+    min-width: 84px;
+    max-width: 220px;
+    padding: 0 6px 0 12px;
+    border: 0;
+    border-right: 1px solid var(--rule);
     background: transparent;
     color: var(--mute);
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
     user-select: none;
-    transition:
-      background-color var(--t-fast) var(--ease),
-      border-color var(--t-fast) var(--ease),
-      color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .tab-chip.on {
     color: var(--bg);
     font-weight: 700;
     background: var(--fg);
-    border-color: var(--fg);
+    border-right-color: var(--fg);
+  }
+  .tab-chip.on::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 2px;
+    background: var(--rupture);
   }
   .tab-chip.secondary {
-    background: var(--raised);
+    background: var(--recessed);
     color: var(--fg);
-    border-color: var(--fg);
-    border-style: dashed;
+  }
+  .tab-chip.secondary::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 2px;
+    background: var(--amber);
   }
   .tab-label {
     flex: 1;
@@ -231,7 +236,7 @@
     text-overflow: ellipsis;
   }
   .tab-asks {
-    font-size: 9.5px;
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -239,8 +244,7 @@
   }
   .tab-unread {
     padding: 0 5px;
-    border-radius: 2px;
-    font-size: 10px;
+    font-size: 10.5px;
     font-weight: 700;
     color: #FFFFFF;
     background: var(--rupture);
@@ -248,11 +252,10 @@
   .tab-x {
     display: grid;
     place-items: center;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     flex-shrink: 0;
     border: 0;
-    border-radius: 2px;
     background: none;
     color: inherit;
     font-size: 14px;
@@ -265,40 +268,37 @@
   .bar-btn {
     display: grid;
     place-items: center;
-    min-width: 26px;
-    height: 26px;
-    padding: 0 6px;
+    min-width: 36px;
+    padding: 0 9px;
     flex-shrink: 0;
-    border: 1px solid transparent;
-    border-radius: var(--soft);
+    border: 0;
+    border-left: 1px solid var(--rule);
     background: transparent;
     color: var(--mute);
     cursor: pointer;
-    transition:
-      background-color var(--t-fast) var(--ease),
-      border-color var(--t-fast) var(--ease),
-      color var(--t-fast) var(--ease),
-      transform 80ms var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .bar-btn:active { transform: translateY(1px); }
   .bar-btn.plus {
+    border-left: 0;
+    border-right: 1px solid var(--rule);
     font-size: 16px;
-    font-weight: 600;
-    padding: 0;
-    border-color: var(--rule);
+    font-weight: 700;
     color: var(--fg);
   }
   .bar-btn.on {
     background: var(--fg);
-    border-color: var(--fg);
     color: var(--bg);
   }
   .bar-right {
     display: flex;
-    align-items: center;
-    gap: 5px;
+    align-items: stretch;
+    gap: 0;
     margin-left: auto;
     flex-shrink: 0;
+  }
+  .bar-right .sync-bay {
+    height: auto;
+    padding: 0 10px;
   }
 
   .grid-ico {
@@ -310,7 +310,6 @@
     width: 5px;
     height: 5px;
     border: 1.4px solid currentColor;
-    border-radius: 0;
   }
   .grid-ico.filled i { background: currentColor; }
 
@@ -322,11 +321,10 @@
     width: 6px;
     height: 11px;
     border: 1.4px solid currentColor;
-    border-radius: 0;
   }
 
   .menu-lines {
-    width: 15px;
+    width: 14px;
     height: 10px;
     background:
       linear-gradient(currentColor 0 0) top / 100% 1.6px no-repeat,
@@ -340,7 +338,6 @@
     .tab-chip:hover:not(.on),
     .bar-btn:hover:not(.on) {
       background: var(--hover);
-      border-color: var(--rule);
       color: var(--fg);
     }
     .tab-chip:hover .tab-x { opacity: 1; }

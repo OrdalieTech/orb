@@ -134,9 +134,9 @@
     align-items: center;
     gap: 10px;
     width: 100%;
-    max-width: calc(760px + 2 * var(--margin));
+    max-width: calc(780px + 2 * var(--margin));
     margin: 0 auto;
-    padding: 7px var(--margin) 6px;
+    padding: 6px var(--margin);
     font-size: 11.5px;
     color: var(--meta);
     border-bottom: 1px solid var(--rule);
@@ -170,9 +170,9 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 2px 7px;
+    padding: 1px 7px;
     border: 1px solid var(--rule);
-    border-radius: var(--soft);
+    border-radius: 0;
     background: var(--raised);
     font-size: 11px;
     font-weight: 600;
@@ -184,22 +184,22 @@
   .strip-pill .jp {
     font-size: 10px;
     letter-spacing: 0.04em;
-    color: var(--meta);
+    color: var(--amber);
   }
   .strip-pill.alarm {
     border-color: var(--rupture);
     color: var(--rupture);
   }
   .strip-cost {
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: 600;
     color: var(--mute);
     flex-shrink: 0;
   }
   .strip-term {
-    padding: 2px 7px;
+    padding: 1px 7px;
     border: 1px solid var(--fg);
-    border-radius: var(--soft);
+    border-radius: 0;
     background: var(--raised);
     font-size: 11.5px;
     font-weight: 700;
@@ -215,7 +215,6 @@
   .strip-close {
     padding: 0 5px;
     border: 0;
-    border-radius: var(--soft);
     background: none;
     color: var(--mute);
     font-size: 15px;
@@ -270,11 +269,10 @@
     width: 100%;
     padding: 5px 10px;
     margin: 2px 0;
-    border: 1px solid var(--rule-soft);
-    border-radius: var(--soft);
+    border: 1px solid var(--rule);
+    border-radius: 0;
     background: var(--recessed);
     text-align: left;
-    font-family: var(--font-mono);
     font-size: 11.5px;
     color: var(--mute);
     white-space: pre-wrap;

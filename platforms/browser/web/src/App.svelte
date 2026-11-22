@@ -295,35 +295,34 @@
   .toast {
     position: fixed;
     left: 50%;
-    bottom: 96px;
+    bottom: 92px;
     z-index: 30;
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 8px 14px;
+    padding: 7px 12px;
     font-size: var(--small);
-    font-weight: 500;
+    font-weight: 700;
     color: var(--bg);
     background: var(--fg);
-    border-radius: var(--pill);
+    border: 1px solid var(--fg);
+    border-radius: 0;
     transform: translateX(-50%);
-    box-shadow: 0 10px 30px var(--shade-lg);
-    animation: toast-in var(--t-med) var(--ease);
+    animation: toast-in var(--t-fast) var(--ease);
   }
   @keyframes toast-in {
-    from { opacity: 0; transform: translate(-50%, 10px) scale(0.97); }
-    to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+    from { opacity: 0; transform: translate(-50%, 6px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
   }
   .toast-undo {
-    padding: 2px 9px;
-    border: 1px solid color-mix(in srgb, var(--bg) 35%, transparent);
-    border-radius: var(--pill);
+    padding: 1px 8px;
+    border: 1px solid var(--bg);
+    border-radius: 0;
     background: none;
     color: var(--bg);
     font-size: 11.5px;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease);
   }
   .toast-undo:hover { background: color-mix(in srgb, var(--bg) 16%, transparent); }
 </style>

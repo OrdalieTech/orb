@@ -195,11 +195,10 @@
   </div>
 
   <div class="title-card">
-    <span class="card-idx">00</span>
-    <span class="card-title">New session</span>
+    <b class="stretch">NEW SESSION</b>
     <i class="card-pip" aria-hidden="true"></i>
     <button type="button" class="kbd-hint" onclick={() => (orb.shortcutsOpen = true)} title="Keyboard shortcuts">
-      <kbd>?</kbd> shortcuts
+      <kbd>?</kbd> keys
     </button>
   </div>
 
@@ -213,45 +212,41 @@
     display: flex;
     flex-direction: column;
     width: 100%;
-    max-width: calc(760px + 2 * var(--margin));
+    max-width: calc(780px + 2 * var(--margin));
     margin: 0 auto;
     padding: 14px var(--margin) 0;
     animation: view-in var(--t-med) var(--ease);
   }
 
-  /* High-contrast MAGI × TE hardware module cards */
+  /* NERV MAGI joined schematic matrix — flush shared 1px borders, NOT floating cards */
   .magi {
     display: flex;
-    gap: 8px;
+    gap: 0;
     overflow-x: auto;
     scrollbar-width: none;
     flex-shrink: 0;
+    border: 1px solid var(--fg);
+    background: var(--raised);
   }
   .magi-unit {
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    flex: 1 0 148px;
-    max-width: 230px;
-    padding: 9px 11px;
+    gap: 4px;
+    flex: 1 0 150px;
+    padding: 8px 11px;
     text-align: left;
-    border: 1px solid var(--rule);
-    border-radius: var(--pane);
-    background: var(--raised);
+    border: 0;
+    border-right: 1px solid var(--rule);
+    background: transparent;
     cursor: pointer;
-    transition:
-      border-color var(--t-fast) var(--ease),
-      background-color var(--t-fast) var(--ease),
-      color var(--t-fast) var(--ease),
-      transform 80ms var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
+  .magi-unit:last-child { border-right: 0; }
   .magi-unit.on {
-    border-color: var(--fg);
     background: var(--fg);
     color: var(--bg);
   }
-  .magi-unit:active { transform: translateY(1px); }
   .magi-top {
     display: flex;
     align-items: center;
@@ -261,7 +256,7 @@
   .magi-name {
     font-size: 11px;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     color: inherit;
     overflow: hidden;
@@ -277,17 +272,16 @@
   .magi-unit.on .magi-bot { color: color-mix(in srgb, var(--bg) 75%, transparent); }
   .magi-bot b {
     margin-left: auto;
-    font-size: 10px;
+    font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 0.06em;
-    color: var(--mute);
+    color: var(--amber);
   }
   .magi-unit.on .magi-bot b { color: var(--rupture); }
-  .magi-unit.down .magi-bot { color: var(--rupture); }
+  .magi-unit.down .magi-bot,
+  .magi-unit.down .magi-bot b { color: var(--rupture); }
   @media (hover: hover) {
-    .magi-unit:hover:not(.on) {
-      border-color: var(--fg);
-    }
+    .magi-unit:hover:not(.on) { background: var(--hover); }
   }
 
   .summary-bar {
@@ -295,11 +289,11 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 8px 2px 4px;
+    padding: 7px 0 4px;
     flex-shrink: 0;
   }
   .summary {
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--meta);
   }
@@ -311,10 +305,9 @@
     align-items: center;
     gap: 8px;
     width: 100%;
-    padding: 7px 10px;
-    margin-top: 6px;
+    padding: 6px 10px;
+    margin-top: 4px;
     border: 1px solid var(--fg);
-    border-radius: var(--soft);
     background: var(--raised);
     text-align: left;
     font-size: var(--small);
@@ -329,59 +322,67 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    margin: 8px calc(-1 * var(--margin)) 0;
+    margin: 6px calc(-1 * var(--margin)) 0;
     padding: 6px var(--margin) 18px;
     mask-image: linear-gradient(transparent, #000 8px, #000 calc(100% - 14px), transparent);
   }
   .home-section {
-    margin-bottom: 22px;
+    margin-bottom: 20px;
   }
   .hud-action {
     margin-left: auto;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 2px 6px;
-    border: 1px solid transparent;
-    border-radius: var(--soft);
+    padding: 1px 6px;
+    border: 0;
     background: none;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--mute);
     cursor: pointer;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    letter-spacing: 0.08em;
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
-    .hud-action:hover { border-color: var(--rule); background: var(--raised); color: var(--fg); }
+    .hud-action:hover { background: var(--fg); color: var(--bg); }
   }
 
+  /* Flush joined console cells for open sessions — zero Cardocalypse */
   .open-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-    gap: 8px;
-    margin-top: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 0;
+    margin-top: 0;
+    border-left: 1px solid var(--rule);
+    border-right: 1px solid var(--rule);
   }
   .open-card {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 10px 11px;
-    border: 1px solid var(--rule);
-    border-radius: var(--pane);
+    gap: 3px;
+    padding: 9px 11px;
+    border: 0;
+    border-right: 1px solid var(--rule-soft);
+    border-bottom: 1px solid var(--rule);
     background: var(--raised);
     cursor: pointer;
-    transition:
-      border-color var(--t-fast) var(--ease),
-      transform 80ms var(--ease);
+    transition: background-color var(--t-fast) var(--ease);
   }
-  .open-card.busy { border-color: var(--fg); }
-  .open-card.asks { border-color: var(--rupture); }
-  .open-card.asleep { opacity: 0.62; }
-  .open-card:active { transform: translateY(1px); }
+  .open-card.busy {
+    background: var(--recessed);
+  }
+  .open-card.asks {
+    background: var(--rupture);
+    color: #FFFFFF;
+  }
+  .open-card.asks .oc-meta,
+  .open-card.asks .oc-tail,
+  .open-card.asks .oc-x { color: #FFFFFF; }
+  .open-card.asleep { opacity: 0.58; }
   @media (hover: hover) {
-    .open-card:hover { border-color: var(--fg); }
+    .open-card:hover:not(.asks) { background: var(--hover); }
     .open-card:hover .oc-x { opacity: 1; }
   }
   .oc-head {
@@ -406,9 +407,8 @@
     font-size: 14px;
     cursor: pointer;
     opacity: 0;
-    transition: opacity var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    transition: opacity var(--t-fast) var(--ease);
   }
-  .oc-x:hover { color: var(--fg); }
   .oc-meta {
     font-size: 11px;
     color: var(--meta);
@@ -427,35 +427,33 @@
   .thread-search {
     margin-left: auto;
     width: 190px;
-    padding: 3px 9px;
+    padding: 2px 8px;
     font-size: 12px;
     text-transform: none;
     letter-spacing: 0;
     border: 1px solid var(--rule);
-    border-radius: var(--soft);
-    background: var(--raised);
+    border-radius: 0;
+    background: var(--bg);
     transition: border-color var(--t-fast) var(--ease);
   }
   .thread-search:focus-visible { outline: 0; border-color: var(--fg); }
 
   .entries {
-    margin-top: 8px;
-    border-top: 1px solid var(--rule);
+    margin-top: 0;
   }
   .entry-row {
     display: flex;
     align-items: center;
     gap: 10px;
     width: 100%;
-    padding: 9px 8px;
+    padding: 8px 6px;
     border: 0;
     border-bottom: 1px solid var(--rule-soft);
-    border-radius: 0;
     background: transparent;
     text-align: left;
     font-size: var(--body);
     cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease), padding-left var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .entry-title {
     flex: 1;
@@ -467,53 +465,47 @@
   .entry-row.open .entry-title { font-weight: 700; }
   .entry-meta {
     flex-shrink: 0;
-    font-size: 11.5px;
+    font-size: 12px;
     color: var(--meta);
   }
   .entry-meta.asks { color: var(--rupture); font-weight: 700; }
   @media (hover: hover) {
     .entry-row:hover {
-      background: var(--hover);
-      padding-left: 12px;
+      background: var(--fg);
+      color: var(--bg);
     }
+    .entry-row:hover .entry-meta:not(.asks) { color: color-mix(in srgb, var(--bg) 72%, transparent); }
   }
   .reading {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 20px 0;
+    padding: 18px 0;
   }
-  .empty-msg { padding: 20px 0; }
+  .empty-msg { padding: 18px 0; }
 
-  /* Crisp TE high-contrast session deck bar */
+  /* Authentic NERV Evangelion stretched title card */
   .title-card {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    align-items: flex-end;
+    gap: 9px;
     flex-shrink: 0;
-    padding: 10px 2px 4px;
+    height: 54px;
+    padding: 8px 2px 3px;
     border-top: 1px solid var(--fg);
   }
-  .card-idx {
-    padding: 1px 5px;
-    border-radius: 2px;
-    background: var(--fg);
-    color: var(--bg);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-  }
-  .card-title {
-    font-size: 11.5px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--fg);
+  .title-card b {
+    font-size: 20px;
+    line-height: 24px;
+    letter-spacing: 0.04em;
+    transform: scaleY(1.85);
+    transform-origin: 0 100%;
+    animation: wipe 220ms 30ms var(--ease) backwards;
   }
   .card-pip {
-    width: 6px;
-    height: 6px;
-    border-radius: 1px;
+    width: 8px;
+    height: 8px;
+    margin-bottom: 4px;
     background: var(--rupture);
   }
   .kbd-hint {
@@ -523,7 +515,6 @@
     gap: 6px;
     padding: 2px 6px;
     border: 0;
-    border-radius: var(--soft);
     background: none;
     font-size: 11px;
     color: var(--mute);
@@ -531,7 +522,7 @@
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
-    .kbd-hint:hover { background: var(--hover); color: var(--fg); }
+    .kbd-hint:hover { background: var(--fg); color: var(--bg); }
   }
   @media (max-width: 600px) {
     .kbd-hint { display: none; }

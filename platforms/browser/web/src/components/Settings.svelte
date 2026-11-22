@@ -296,7 +296,7 @@
           <div class="row">
             <div class="row-main">
               <strong>theme</strong>
-              <p class="meta">Studio Light · OP-XY OLED Dark</p>
+              <p class="meta">Drafting Light · OLED Black Dark</p>
             </div>
             <div class="seg">
               {#each ["auto", "light", "dark"] as mode}
@@ -801,35 +801,33 @@
   .sidebar {
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    width: 224px;
+    gap: 0;
+    width: 220px;
     flex-shrink: 0;
-    padding: 18px 12px;
-    border-right: 1px solid var(--rule);
+    padding: 0;
+    border-right: 1px solid var(--fg);
     background: var(--bg);
   }
-  .side-head { padding: 0 10px 16px; }
-  .side-head h1 { font-size: var(--title); margin-bottom: 3px; }
+  .side-head { padding: 14px 14px 12px; border-bottom: 1px solid var(--rule); }
+  .side-head h1 { font-size: var(--title); margin-bottom: 2px; }
   .side-item {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 7px 10px;
-    border: 1px solid transparent;
-    border-radius: var(--soft);
+    padding: 10px 14px;
+    border: 0;
+    border-bottom: 1px solid var(--rule-soft);
+    border-radius: 0;
     background: none;
     text-align: left;
     font-size: var(--small);
     font-weight: 600;
     color: var(--mute);
     cursor: pointer;
-    transition:
-      background-color var(--t-fast) var(--ease),
-      border-color var(--t-fast) var(--ease),
-      color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .side-idx {
-    font-size: 10px;
+    font-size: 10.5px;
     font-weight: 700;
     color: var(--meta);
   }
@@ -837,11 +835,12 @@
     color: var(--bg);
     font-weight: 700;
     background: var(--fg);
-    border-color: var(--fg);
   }
   .side-item.on .side-idx { color: var(--rupture); }
   .back-btn {
     margin-top: auto;
+    border-top: 1px solid var(--rule);
+    border-bottom: 0;
     justify-content: space-between;
   }
   @media (hover: hover) {
@@ -896,12 +895,11 @@
   }
   .row-btns { display: flex; gap: 6px; flex-shrink: 0; }
 
-  /* Stark high-contrast TE segmented switch */
+  /* Stark 0px TE segmented console switch */
   .seg {
     display: inline-flex;
     border: 1px solid var(--fg);
-    border-radius: var(--soft);
-    overflow: hidden;
+    border-radius: 0;
   }
   .seg button {
     padding: 4px 11px;
@@ -923,34 +921,37 @@
   .mini-magi {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 10px;
+    gap: 0;
+    margin-top: 8px;
+    border: 1px solid var(--rule);
+    width: fit-content;
   }
   .mini-card {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 7px 11px;
-    border: 1px solid var(--rule);
-    border-radius: var(--pane);
+    padding: 6px 11px;
+    border: 0;
+    border-right: 1px solid var(--rule);
     background: var(--raised);
     font-size: 12px;
   }
+  .mini-card:last-child { border-right: 0; }
   .mini-card span { display: flex; align-items: center; gap: 7px; font-weight: 600; }
-  .mini-card b { font-size: 10px; font-weight: 700; color: var(--meta); }
+  .mini-card b { font-size: 10px; font-weight: 700; color: var(--amber); }
   .mini-card.down b { color: var(--rupture); }
 
   .chips {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     margin: 14px 0 10px;
   }
   .chip {
     padding: 4px 10px;
     border: 1px solid var(--rule);
-    border-radius: var(--soft);
+    border-radius: 0;
     background: var(--raised);
     font-size: 12px;
     font-weight: 600;
@@ -968,10 +969,10 @@
 
   .search-in {
     width: 100%;
-    padding: 8px 10px;
+    padding: 7px 10px;
     margin: 4px 0 10px;
     border: 1px solid var(--rule);
-    border-radius: var(--soft);
+    border-radius: 0;
     background: var(--raised);
     font-size: var(--small);
     transition: border-color var(--t-fast) var(--ease);
@@ -993,7 +994,6 @@
   }
   .q-track {
     height: 6px;
-    border-radius: 0;
     background: var(--recessed);
     border: 1px solid var(--rule);
     overflow: hidden;
@@ -1001,9 +1001,8 @@
   .q-track i {
     display: block;
     height: 100%;
-    border-radius: 0;
     background: var(--fg);
-    transition: width 220ms var(--ease);
+    transition: width 180ms var(--ease);
   }
   .quota.alarm .q-track i { background: var(--rupture); }
   .quota.alarm .q-pct { color: var(--rupture); font-weight: 700; }
@@ -1016,7 +1015,7 @@
     margin-top: 14px;
     padding: 16px;
     border: 1px solid var(--fg);
-    border-radius: var(--pane);
+    border-radius: 0;
     background: var(--raised);
   }
   .code-big {
@@ -1037,11 +1036,10 @@
   .ans-row input {
     flex: 1;
     min-width: 0;
-    padding: 9px 12px;
+    padding: 8px 10px;
     border: 1px solid var(--rule);
-    border-radius: 9px;
-    background: var(--recessed);
-    font-family: var(--font-mono);
+    border-radius: 0;
+    background: var(--bg);
     font-size: 13px;
   }
   .ans-row input:focus-visible { outline: 0; border-color: var(--fg); background: var(--raised); }

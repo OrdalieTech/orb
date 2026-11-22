@@ -108,45 +108,43 @@
   .pair-card {
     padding: 22px;
     border: 1px solid var(--fg);
-    border-radius: var(--pane);
+    border-radius: 0;
     background: var(--raised);
   }
   h1 {
     margin: 10px 0 8px;
     font-size: 21px;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.02em;
   }
-  .sub { color: var(--mute); font-size: var(--small); line-height: 1.55; }
+  .sub { color: var(--mute); font-size: var(--small); line-height: 1.5; }
   .cmd {
     display: inline-block;
     margin: 12px 0;
-    padding: 8px 13px;
-    border: 1px solid var(--rule);
-    border-radius: 8px;
+    padding: 7px 12px;
+    border: 1px solid var(--fg);
+    border-radius: 0;
     background: var(--recessed);
-    font-family: var(--font-mono);
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 700;
   }
   .code-in {
     display: block;
     width: 100%;
     margin: 14px 0 12px;
-    padding: 10px 12px;
+    padding: 9px 11px;
     resize: none;
-    font-family: var(--font-mono);
     font-size: 12px;
     border: 1px solid var(--rule);
-    border-radius: 9px;
-    background: var(--recessed);
-    transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+    border-radius: 0;
+    background: var(--bg);
+    transition: border-color var(--t-fast) var(--ease);
   }
-  .code-in:focus-visible { outline: 0; border-color: var(--fg); background: var(--raised); }
+  .code-in:focus-visible { outline: 0; border-color: var(--fg); }
   .preview {
     margin-bottom: 14px;
-    padding: 12px 14px;
-    border: 1px solid var(--rule);
-    border-radius: 10px;
+    padding: 11px 13px;
+    border: 1px solid var(--fg);
+    border-radius: 0;
     background: var(--recessed);
     animation: drop-in var(--t-fast) var(--ease);
   }

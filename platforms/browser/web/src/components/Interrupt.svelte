@@ -256,7 +256,7 @@
     padding: 10px 14px;
     color: var(--ink);
     border: 1px solid var(--ink);
-    border-radius: var(--soft);
+    border-radius: 0;
     background: none;
     outline: 0;
   }
@@ -264,7 +264,7 @@
   .int-send {
     padding: 10px 16px;
     border: 1px solid var(--ink);
-    border-radius: var(--soft);
+    border-radius: 0;
     background: var(--ink);
     color: var(--rupture);
     font-weight: 700;

@@ -135,31 +135,36 @@
   .row-you {
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
-    gap: 6px;
-    padding: 22px 0 14px 48px;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 18px 0 12px 0;
   }
   .via {
-    font-family: var(--font-mono);
     font-size: var(--label);
-    font-weight: 600;
-    letter-spacing: 0.08em;
+    font-weight: 700;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--hue1);
   }
   .you-bubble {
     margin: 0;
-    padding: 9px 13px;
+    width: 100%;
+    padding: 8px 12px;
     white-space: pre-wrap;
-    border-radius: var(--pane);
-    background: var(--raised);
-    border: 1px solid var(--fg);
-    max-width: 100%;
+    border-radius: 0;
+    background: var(--recessed);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
     line-height: 1.5;
   }
+  .you-bubble::before {
+    content: "> ";
+    font-weight: 700;
+    color: var(--rupture);
+  }
   .tok-skill {
-    padding: 1px 6px;
-    border-radius: 2px;
+    padding: 0 5px;
+    border-radius: 0;
     font-weight: 700;
     color: #FFFFFF;
     background: var(--rupture);
@@ -210,7 +215,7 @@
     padding: 4px 6px;
     margin: 0 -6px;
     border: 0;
-    border-radius: var(--soft);
+    border-radius: 0;
     background: none;
     text-align: left;
     cursor: pointer;
@@ -264,17 +269,12 @@
   }
   .pic-btn {
     padding: 0;
-    border: 1px solid var(--rule);
-    border-radius: 9px;
+    border: 1px solid var(--fg);
+    border-radius: 0;
     overflow: hidden;
     background: var(--raised);
     cursor: zoom-in;
     flex-shrink: 0;
-    transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
-  }
-  .pic-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px var(--shade);
   }
   .pic-btn img {
     display: block;
@@ -284,9 +284,9 @@
   .pic-ph {
     width: 96px;
     height: 112px;
-    border-radius: 9px;
+    border-radius: 0;
     background: var(--recessed);
-    border: 1px solid var(--rule-soft);
+    border: 1px solid var(--rule);
     flex-shrink: 0;
   }
 </style>

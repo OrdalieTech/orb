@@ -361,19 +361,22 @@
     </div>
   {/if}
 
-  <textarea
-    bind:this={textarea}
-    class="prompt-input scroll"
-    rows="2"
-    maxlength="16384"
-    value={draft}
-    oninput={onInput}
-    onkeyup={onKeyUp}
-    onkeydown={onKeyDown}
-    onpaste={onPaste}
-    placeholder={tab ? (busy ? "steer or queue a message" : "What next?") : "What should we work on?"}
-    aria-label="Message"
-  ></textarea>
+  <div class="input-row">
+    <span class="prompt-sigil" aria-hidden="true">&gt;</span>
+    <textarea
+      bind:this={textarea}
+      class="prompt-input scroll"
+      rows="2"
+      maxlength="16384"
+      value={draft}
+      oninput={onInput}
+      onkeyup={onKeyUp}
+      onkeydown={onKeyDown}
+      onpaste={onPaste}
+      placeholder={tab ? (busy ? "steer or queue a message" : "command or prompt...") : "start session..."}
+      aria-label="Message"
+    ></textarea>
+  </div>
 
   <div class="deck-bar">
     <button
@@ -443,29 +446,45 @@
   .prompt-deck {
     position: relative;
     flex-shrink: 0;
-    width: calc(100% - 2 * var(--margin) + 12px);
-    max-width: 772px;
-    margin: 8px auto max(16px, env(safe-area-inset-bottom));
-    padding: 12px 10px 9px;
+    width: calc(100% - 2 * var(--margin));
+    max-width: 780px;
+    margin: 6px auto max(12px, env(safe-area-inset-bottom));
+    padding: 0;
     border: 1px solid var(--fg);
-    border-radius: var(--pane);
+    border-radius: 0;
     background: var(--raised);
     transition: border-color var(--t-fast) var(--ease);
   }
   .prompt-deck:focus-within {
-    box-shadow: 0 0 0 1px var(--fg);
+    border-color: var(--fg);
+  }
+  .prompt-deck:focus-within .prompt-sigil {
+    color: var(--rupture);
   }
   .prompt-deck.dragging {
     border-color: var(--rupture);
-    box-shadow: 0 0 0 2px var(--rupture);
+  }
+  .input-row {
+    display: flex;
+    align-items: flex-start;
+    padding: 10px 12px 6px 10px;
+    gap: 8px;
+  }
+  .prompt-sigil {
+    font-weight: 700;
+    line-height: 1.5;
+    color: var(--meta);
+    user-select: none;
+    transition: color var(--t-fast) var(--ease);
   }
   .prompt-input {
     display: block;
+    flex: 1;
     width: 100%;
-    min-height: 2.6em;
+    min-height: 2.5em;
     max-height: min(14lh, 30dvh);
     field-sizing: content;
-    padding: 0 10px 8px;
+    padding: 0 0 4px;
     border: 0;
     resize: none;
     background: none;
@@ -481,23 +500,24 @@
   .deck-bar {
     display: flex;
     align-items: center;
-    gap: 5px;
-    padding: 7px 2px 0 4px;
+    gap: 4px;
+    padding: 5px 8px;
     border-top: 1px solid var(--rule);
+    background: var(--bg);
   }
   .deck-chip {
     display: flex;
     align-items: center;
     gap: 7px;
     min-width: 0;
-    height: 28px;
+    height: 26px;
     padding: 0 8px;
     border: 1px solid transparent;
-    border-radius: var(--soft);
+    border-radius: 0;
     background: none;
     cursor: pointer;
     font-size: 12px;
-    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .deck-chip.aim {
     flex: 0 1 auto;
@@ -530,7 +550,6 @@
   }
   .meter i {
     width: 3px;
-    border-radius: 0;
     background: var(--rule);
     transition: background-color var(--t-med) var(--ease);
   }
@@ -545,24 +564,23 @@
   .deck-icon {
     display: grid;
     place-items: center;
-    width: 28px;
-    height: 28px;
+    width: 26px;
+    height: 26px;
     flex-shrink: 0;
     border: 1px solid var(--rule);
-    border-radius: var(--soft);
-    background: var(--bg);
+    border-radius: 0;
+    background: var(--raised);
     color: var(--fg);
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), transform 80ms var(--ease);
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .deck-icon:active:enabled { transform: translateY(1px); }
   .deck-queue {
     padding: 4px 9px;
     border: 1px solid var(--fg);
-    border-radius: var(--soft);
-    background: var(--bg);
+    border-radius: 0;
+    background: var(--raised);
     color: var(--fg);
     font-size: 11.5px;
     font-weight: 700;
@@ -571,9 +589,8 @@
   }
   @media (hover: hover) {
     .deck-chip:hover:enabled {
-      background: var(--hover);
-      border-color: var(--rule);
-      color: var(--fg);
+      background: var(--fg);
+      color: var(--bg);
     }
     .deck-icon:hover:enabled,
     .deck-queue:hover {
@@ -583,29 +600,26 @@
     }
   }
 
-  /* Iconic high-contrast circular TE Orange/Black action key */
+  /* The ONE circular element in the entire console: iconic TE Orange hardware record/send key */
   .te-action {
     display: grid;
     place-items: center;
     width: var(--round);
     height: var(--round);
     flex-shrink: 0;
+    margin-left: 4px;
     padding: 0;
     border: 0;
     border-radius: 50%;
     cursor: pointer;
     color: #FFFFFF;
     background: var(--rupture);
-    transition:
-      transform 90ms var(--ease),
-      background-color var(--t-fast) var(--ease),
-      color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .te-action:hover:enabled {
     background: var(--fg);
     color: var(--bg);
   }
-  .te-action:active:enabled { transform: scale(0.92); }
   .te-action:disabled {
     opacity: 1;
     background: var(--recessed);
@@ -619,47 +633,48 @@
   }
   .te-action::before {
     content: "";
-    width: 54%;
-    height: 54%;
+    width: 52%;
+    height: 52%;
     background: currentColor;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 13.5V3.5M2.75 8.25 8 3l5.25 5.25' fill='none' stroke='black' stroke-width='3' stroke-miterlimit='8'/%3E%3C/svg%3E") center / contain no-repeat;
   }
   .te-action.stop::before {
     width: 34%;
     height: 34%;
-    border-radius: 1px;
+    border-radius: 0;
     mask: none;
   }
 
   .palette {
     position: absolute;
-    left: 0;
-    right: 0;
-    bottom: calc(100% + 6px);
+    left: -1px;
+    right: -1px;
+    bottom: calc(100% + 4px);
     max-height: 260px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    padding: 4px;
+    padding: 0;
     border: 1px solid var(--fg);
-    border-radius: var(--pane);
+    border-radius: 0;
     background: var(--raised);
     z-index: 6;
-    animation: drop-in 110ms var(--ease);
+    animation: drop-in 90ms var(--ease);
   }
   .pal-row {
     display: flex;
     align-items: baseline;
     gap: 12px;
-    padding: 6px 9px;
+    padding: 6px 10px;
     border: 0;
-    border-radius: var(--soft);
+    border-bottom: 1px solid var(--rule-soft);
     background: none;
     text-align: left;
     cursor: pointer;
     font-size: var(--small);
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
+  .pal-row:last-child { border-bottom: 0; }
   .pal-row b { font-weight: 700; flex-shrink: 0; }
   .pal-row span { color: var(--meta); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .pal-row.on { background: var(--fg); color: var(--bg); }

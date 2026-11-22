@@ -78,7 +78,7 @@
     padding: 3px 4px;
     margin: 0 -4px;
     border: 0;
-    border-radius: var(--soft);
+    border-radius: 0;
     background: none;
     text-align: left;
     cursor: pointer;
@@ -126,12 +126,12 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    margin: 5px 0 8px 18px;
-    padding: 10px 12px;
+    margin: 4px 0 6px 18px;
+    padding: 9px 11px;
     border: 1px solid var(--fg);
-    border-radius: var(--pane);
+    border-radius: 0;
     background: var(--raised);
-    animation: drop-in 110ms var(--ease);
+    animation: drop-in 90ms var(--ease);
   }
   .pane-lbl {
     font-family: var(--font-mono);

@@ -89,30 +89,32 @@
   }
   .ov-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0;
     max-width: 1120px;
     margin: 0 auto;
+    border-top: 1px solid var(--fg);
+    border-left: 1px solid var(--fg);
   }
   .ov-card {
     display: flex;
     flex-direction: column;
-    height: 226px;
+    height: 224px;
     padding: 12px 13px;
-    border: 1px solid var(--rule);
-    border-radius: var(--pane);
+    border: 0;
+    border-right: 1px solid var(--fg);
+    border-bottom: 1px solid var(--fg);
+    border-radius: 0;
     background: var(--raised);
     cursor: pointer;
-    transition:
-      border-color var(--t-fast) var(--ease),
-      transform 80ms var(--ease);
+    transition: background-color var(--t-fast) var(--ease);
   }
-  .ov-card.busy { border-color: var(--fg); }
-  .ov-card.asks { border-color: var(--rupture); }
-  .ov-card.asleep { opacity: 0.58; }
-  .ov-card:active { transform: translateY(1px); }
+  .ov-card.busy { background: var(--recessed); }
+  .ov-card.asks { background: var(--rupture); color: #FFFFFF; }
+  .ov-card.asks .ov-sub, .ov-card.asks .ov-tail pre, .ov-card.asks .ov-foot, .ov-card.asks .ov-x { color: #FFFFFF; }
+  .ov-card.asleep { opacity: 0.56; }
   @media (hover: hover) {
-    .ov-card:hover { border-color: var(--fg); }
+    .ov-card:hover:not(.asks) { background: var(--hover); }
   }
   .ov-top {
     display: flex;
@@ -130,7 +132,7 @@
   }
   .ov-unread {
     padding: 0 5px;
-    border-radius: 2px;
+    border-radius: 0;
     font-size: 10px;
     font-weight: 700;
     background: var(--rupture);
@@ -207,17 +209,19 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    min-height: 100px;
-    border: 1px dashed var(--rule-strong);
-    border-radius: var(--pane);
-    background: transparent;
+    min-height: 224px;
+    border: 0;
+    border-right: 1px solid var(--fg);
+    border-bottom: 1px solid var(--fg);
+    border-radius: 0;
+    background: var(--bg);
     color: var(--mute);
     font-size: var(--small);
-    font-weight: 500;
+    font-weight: 700;
     cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
-    .ov-new:hover { background: var(--hover); border-color: var(--fg); color: var(--fg); }
+    .ov-new:hover { background: var(--fg); color: var(--bg); }
   }
 </style>

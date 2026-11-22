@@ -8,23 +8,23 @@ typealias NativeImage = UIImage
 /// iPhone runs no Orb of its own yet, and starts them on the machines it is paired with.
 let device = "this iPhone", local = false
 
-/// Ordalie tokens, as on Android (ui/Theme.kt), Desktop and Web: teenage engineering high-contrast
-/// studio light & OP-XY OLED dark, International Orange (#FF4D00), and Pattern Blue for remote Orbs.
+/// Ordalie tokens, as on Android (ui/Theme.kt), Desktop and Web: raw console × Evangelion × teenage
+/// engineering — drafting sheet light & pitch-black OLED dark, signal vermilion (#FF3D00).
 enum Ink {
-    static let bg = tone(0xF2F2EE, 0x050505)
-    static let fg = tone(0x0A0A0A, 0xFFFFFF)
-    static let mute = tone(0x333330, 0xC4C4C0)
-    static let meta = tone(0x5C5C57, 0x8A8A85)
-    static let rule = tone(0xC6C6C0, 0x2C2C2E)
-    static let raised = tone(0xFFFFFF, 0x0F0F10)
-    static let rupture = Color(rgb: 0xFF4D00)
-    static let blue = Color(rgb: 0x0047AB)
+    static let bg = tone(0xEFECE6, 0x000000)
+    static let fg = tone(0x090909, 0xF2F2ED)
+    static let mute = tone(0x2C2C2A, 0xB8B8B0)
+    static let meta = tone(0x52514C, 0x7E7E76)
+    static let rule = tone(0xB4B1A9, 0x2E2E2C)
+    static let raised = tone(0xF8F7F3, 0x0A0A0A)
+    static let rupture = Color(rgb: 0xFF3D00)
+    static let blue = Color(rgb: 0x003CB3)
     static let paper = Color(rgb: 0xFFFFFF)
 
     /// A peer's hue, as the view assigns it (1 to 6; this machine, 0, takes the ink): six vivid
-    /// OP-1 rotary encoder LED tones apart from International Orange.
+    /// hardware channel LED tones apart from signal vermilion.
     static func hue(_ n: Int) -> Color {
-        let tones: [(UInt32, UInt32)] = [(0x0057FF, 0x2997FF), (0x008F5D, 0x00E599), (0xD97706, 0xFFC400), (0x6D28D9, 0xB388FF), (0x16803C, 0x5CE65C), (0xDB2777, 0xFF5CA8)]
+        let tones: [(UInt32, UInt32)] = [(0x0047FF, 0x2E9BFF), (0x00875A, 0x00E58B), (0xCC6B00, 0xFFB000), (0x6528D7, 0xB185FF), (0x177E2E, 0x4CE052), (0xC81E78, 0xFF4DA6)]
         return n > 0 ? tone(tones[(n - 1) % tones.count].0, tones[(n - 1) % tones.count].1) : fg
     }
 

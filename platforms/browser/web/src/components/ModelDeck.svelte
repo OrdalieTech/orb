@@ -271,21 +271,18 @@
     place-items: center;
     padding: var(--margin);
     background: var(--backdrop);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    animation: backdrop-in 140ms var(--ease);
+    animation: backdrop-in 100ms var(--ease);
   }
   .deck {
-    width: min(470px, 100%);
+    width: min(480px, 100%);
     max-height: min(620px, 84dvh);
     display: flex;
     flex-direction: column;
     padding: 14px;
     border: 1px solid var(--fg);
-    border-radius: var(--pane);
+    border-radius: 0;
     background: var(--raised);
-    box-shadow: 0 18px 48px var(--shade);
-    animation: sheet-in 150ms var(--ease);
+    animation: sheet-in 120ms var(--ease);
   }
   .deck-head {
     display: flex;
@@ -308,17 +305,17 @@
     margin-bottom: 10px;
   }
   .place-chip {
-    padding: 4px 11px;
+    padding: 4px 10px;
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 600;
     border: 1px solid var(--rule);
-    border-radius: var(--pill);
+    border-radius: 0;
     background: var(--raised);
     color: var(--mute);
     cursor: pointer;
     transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .place-chip:hover:not(.on) { border-color: var(--rule-strong); color: var(--fg); }
+  .place-chip:hover:not(.on) { border-color: var(--fg); color: var(--fg); }
   .place-chip.on {
     color: var(--bg);
     background: var(--fg);
@@ -326,15 +323,15 @@
   }
   .deck-filter {
     width: 100%;
-    padding: 9px 12px;
+    padding: 8px 10px;
     margin-bottom: 8px;
     border: 1px solid var(--rule);
-    border-radius: 9px;
-    background: var(--recessed);
+    border-radius: 0;
+    background: var(--bg);
     font-size: var(--small);
-    transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+    transition: border-color var(--t-fast) var(--ease);
   }
-  .deck-filter:focus-visible { outline: 0; border-color: var(--fg); background: var(--raised); }
+  .deck-filter:focus-visible { outline: 0; border-color: var(--fg); }
 
   .deck-list {
     flex: 1;
@@ -344,10 +341,9 @@
   }
   .sec-lbl {
     margin: 12px 6px 4px;
-    font-family: var(--font-mono);
     font-size: var(--label);
-    font-weight: 500;
-    letter-spacing: 0.08em;
+    font-weight: 700;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--meta);
   }
@@ -356,15 +352,15 @@
     align-items: center;
     gap: 10px;
     width: 100%;
-    padding: 8px 10px;
+    padding: 7px 9px;
     border: 0;
-    border-radius: 8px;
+    border-bottom: 1px solid var(--rule-soft);
+    border-radius: 0;
     background: none;
     text-align: left;
-    font-family: var(--font-mono);
     font-size: 12.5px;
     cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .mdl-row span {
     flex: 1;
@@ -409,8 +405,7 @@
   .lvl-seg {
     display: flex;
     border: 1px solid var(--fg);
-    border-radius: var(--soft);
-    overflow: hidden;
+    border-radius: 0;
   }
   .lvl-seg button {
     flex: 1;
