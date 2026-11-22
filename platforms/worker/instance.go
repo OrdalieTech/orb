@@ -81,11 +81,13 @@ type Instance struct {
 	tools    ToolsFunc
 	extend   func(*config.SettingsManager, host.Store) map[string]extensions.Factory
 
-	mu           sync.Mutex
-	session      *agent.AgentSession
-	control      *agent.SessionControl
-	observers    map[uint64]func(*agent.AgentSession)
-	nextObserver uint64
+	mu               sync.Mutex
+	session          *agent.AgentSession
+	control          *agent.SessionControl
+	observers        map[uint64]func(*agent.AgentSession)
+	nextObserver     uint64
+	codexRefreshedAt int64
+	codexToken       string
 }
 
 // Open restores the object's files and documents and resumes its current

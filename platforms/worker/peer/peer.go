@@ -103,8 +103,10 @@ func Open(instance *worker.Instance, alias string) (*Peer, error) {
 			switch name {
 			case path.Join(worker.AgentDir, "auth.json"),
 				path.Join(worker.AgentDir, "auth-removed.json"),
-				path.Join(worker.AgentDir, "accounts.json"),
-				path.Join(worker.AgentDir, "memory", "memory.jsonl"),
+				path.Join(worker.AgentDir, "accounts.json"):
+				b.Notify()
+				go func() { _ = instance.RefreshModels(context.Background(), false) }()
+			case path.Join(worker.AgentDir, "memory", "memory.jsonl"),
 				path.Join(worker.AgentDir, "settings.json"):
 				b.Notify()
 			}

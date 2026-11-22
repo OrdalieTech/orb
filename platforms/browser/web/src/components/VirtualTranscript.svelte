@@ -293,6 +293,13 @@
     if (expandedMap.get(key)) expandedMap.delete(key);
     else expandedMap.set(key, true);
   }
+
+  let statusWorking = $derived(
+    status === "sending…" || status === "opening the thread…" || status === "reconnecting",
+  );
+  let statusAlarm = $derived(
+    !!status && !statusWorking && !status.startsWith("asleep") && !status.startsWith("offline"),
+  );
 </script>
 
 <div class="transcript-shell">
@@ -321,6 +328,11 @@
           {#if !loaded}
             <i class="led round live"></i>
             <span>loading…</span>
+          {:else if statusWorking}
+            <i class="led round live"></i>
+            <span>{status}</span>
+          {:else if statusAlarm}
+            <p class="status-banner alarm" role="alert">{status}</p>
           {:else if asleep}
             <span>asleep · a message wakes it</span>
           {:else}
@@ -342,8 +354,8 @@
         {#if streaming}
           <span class="caret" aria-hidden="true"></span>
         {/if}
-        {#if status}
-          <p class="status-line">{status}</p>
+        {#if status && (rows.length > 0 || (!statusWorking && !statusAlarm))}
+          <p class="status-line" class:alarm={statusAlarm}>{status}</p>
         {/if}
       </div>
     </div>
@@ -421,6 +433,23 @@
     font-size: 12px;
     color: var(--meta);
     padding-top: 6px;
+    white-space: pre-wrap;
+  }
+  .status-line.alarm {
+    color: var(--rupture);
+    font-weight: 600;
+  }
+  .status-banner {
+    max-width: 540px;
+    padding: 10px 14px;
+    border: 1px solid color-mix(in srgb, var(--rupture) 40%, transparent);
+    border-radius: var(--radius-sm);
+    background: var(--rupture-soft);
+    font-size: var(--small);
+    font-weight: 500;
+    line-height: 1.5;
+    text-align: left;
+    white-space: pre-wrap;
   }
   .jump-live {
     position: absolute;

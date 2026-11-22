@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall/js"
+	"time"
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
@@ -157,6 +158,14 @@ func open(object js.Value) js.Value {
 				if err := instance.SetDefaultModel(context.Background(), args[0].String(), args[1].String(), level); err != nil {
 					return nil, err
 				}
+			} else if !instance.HasModelStore(context.Background()) {
+				// First model list before the background catalog fetch completed: wait briefly so
+				// newly released models (models.dev + live Codex) appear immediately when opening Ctrl+M.
+				ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+				_ = instance.RefreshModels(ctx, false)
+				cancel()
+			} else {
+				go func() { _ = instance.RefreshModels(context.Background(), false) }()
 			}
 			out, err := instance.DefaultModels()
 			if err != nil {
@@ -271,6 +280,7 @@ func open(object js.Value) js.Value {
 		mitosis.mu.Lock()
 		mitosis.instance = instance
 		mitosis.mu.Unlock()
+		go func() { _ = instance.RefreshModels(ctx, false) }()
 		go func() {
 			code := instance.Serve(ctx, &commandReader{commands: commands}, &frameWriter{emit: object.Get("emit")}, os.Stderr)
 			stopped.Store(true)

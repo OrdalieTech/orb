@@ -233,6 +233,17 @@ func (runtime *SessionRuntime) AvailableModels() []ai.Model {
 	return append(make([]ai.Model, 0, len(models)), models...)
 }
 
+// ModelRevision returns the underlying model registry's revision so followers notice catalog refreshes.
+func (runtime *SessionRuntime) ModelRevision() uint64 {
+	if runtime == nil {
+		return 0
+	}
+	if rev, ok := runtime.modelRegistry.(interface{ Revision() uint64 }); ok {
+		return rev.Revision()
+	}
+	return 0
+}
+
 func (runtime *SessionRuntime) IsCompacting() bool {
 	if runtime == nil {
 		return false

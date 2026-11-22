@@ -366,6 +366,7 @@ func (t *tab) describe() bool {
 	if t.queued != "" && t.session != "" && t.session != t.queuedFrom {
 		text := t.queued
 		t.queued = ""
+		t.Status = "sending…"
 		go t.call("prompt", map[string]string{"text": t.invoking(text)})
 	}
 	return true
@@ -502,6 +503,9 @@ func (t *tab) events(waits bool) {
 		t.cursor, t.stale = "", true
 		return
 	}
+	if len(r.Events) > 0 && t.Status == "sending…" {
+		t.Status = ""
+	}
 	for _, e := range r.Events {
 		var info struct{ Type, Name string }
 		if json.Unmarshal(e.Data, &info) == nil && info.Type == "session_info_changed" && info.Name != "" {
@@ -521,21 +525,34 @@ func (t *tab) events(waits bool) {
 // plugins change) before this side noticed. A call leaving the Orb on another session (a new or
 // switched one) moves the tab there.
 func (t *tab) call(method string, args any) {
+	t.callOnce(method, args, false)
+}
+
+func (t *tab) callOnce(method string, args any, retried bool) {
 	a := t.a
 	a.mu.Lock()
 	if t.info.Target.Session == "" {
 		a.mu.Unlock()
 		return
 	}
-	call := mitosis.AgentCall{SessionID: t.session, Method: method, OperationID: protocol.NewID(),
+	session := t.session
+	startItems := len(t.tr.items)
+	call := mitosis.AgentCall{SessionID: session, Method: method, OperationID: protocol.NewID(),
 		Expected: mitosis.Expected{Generation: t.info.Generation, Revision: t.info.Target.Revision}, Args: mitosis.JSON(args)}
 	a.mu.Unlock()
 	var r struct {
-		SessionID string `json:"session_id"`
+		SessionID   string `json:"session_id"`
+		OperationID string `json:"operation_id"`
+		Status      string `json:"status"`
 	}
 	err := t.remote("agent.call", call, &r)
+	if err != nil && !retried && mitosis.Code(err) == "stale_target" && method != "cancel" && method != "input.reply" {
+		if t.describe() {
+			t.callOnce(method, args, true)
+			return
+		}
+	}
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	switch {
 	case err != nil:
 		t.Status = err.Error()
@@ -546,12 +563,117 @@ func (t *tab) call(method string, args any) {
 			t.gone, t.Status = true, ended
 		}
 		a.flush()
+		a.mu.Unlock()
+		return
 	case r.SessionID != "" && r.SessionID != t.session:
 		t.session, t.cursor, t.from, t.Loaded, t.stale = r.SessionID, "", -1, false, true
 		t.tr.clear()
+		if t.cancelPoll != nil {
+			t.cancelPoll()
+		}
 		t.wakeUp()
 		a.flush()
+		a.mu.Unlock()
+		return
 	}
+	a.mu.Unlock()
+	// Async calls (prompt, steer, follow_up, session.model, etc.) return "accepted" before
+	// preflight or dispatch runs; watch the receipt briefly so failures never leave the tab silent.
+	if r.OperationID != "" && (r.Status == "accepted" || r.Status == "running") {
+		go t.watchOp(method, args, cmp.Or(r.SessionID, session), r.OperationID, startItems, retried)
+	}
+}
+
+func (t *tab) watchOp(method string, args any, session, opID string, startItems int, retried bool) {
+	a := t.a
+	waits := []time.Duration{120 * time.Millisecond, 200 * time.Millisecond, 350 * time.Millisecond, 600 * time.Millisecond, time.Second}
+	deadline := time.Now().Add(15 * time.Second)
+	for i := 0; time.Now().Before(deadline); i++ {
+		wait := waits[min(i, len(waits)-1)]
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-t.done:
+			return
+		case <-time.After(wait):
+		}
+		a.mu.Lock()
+		sameSession := t.session == session
+		progressed := len(t.tr.items) > startItems
+		a.mu.Unlock()
+		if !sameSession {
+			return
+		}
+		// Once a prompt actually appends to the transcript (past PromptPreflight), engine events report any later errors.
+		if method == "prompt" && progressed {
+			return
+		}
+		var op struct {
+			Status string          `json:"status"`
+			Error  string          `json:"error"`
+			Result json.RawMessage `json:"result"`
+		}
+		err := t.remote("operations.get", map[string]string{"session_id": session, "operation_id": opID}, &op)
+		if err != nil {
+			if code := mitosis.Code(err); code == "not_found" || code == "method_not_found" || code == "unauthorized" {
+				return
+			}
+			continue
+		}
+		switch op.Status {
+		case "accepted", "running":
+			continue
+		case "failed":
+			if op.Error == "stale_target" && !retried && method != "cancel" && method != "input.reply" {
+				if t.describe() {
+					t.callOnce(method, args, true)
+					return
+				}
+			}
+			var detail struct {
+				Message string `json:"message"`
+			}
+			_ = json.Unmarshal(op.Result, &detail)
+			msg := strings.TrimSpace(detail.Message)
+			if msg == "" {
+				msg = opErrorMessage(method, op.Error)
+			}
+			a.mu.Lock()
+			if t.session == session {
+				t.Status = msg
+				a.flush()
+			}
+			a.mu.Unlock()
+			return
+		default:
+			a.mu.Lock()
+			if t.session == session && t.Status == "sending…" {
+				t.Status = ""
+				a.flush()
+			}
+			a.mu.Unlock()
+			return
+		}
+	}
+}
+
+func opErrorMessage(method, code string) string {
+	switch code {
+	case "busy":
+		return "a turn is already running"
+	case "stale_target":
+		return "session changed — send again"
+	case "unauthorized":
+		return "this device does not allow that action"
+	case "not_found":
+		return "not found on that device"
+	case "invalid_params":
+		return "invalid request"
+	}
+	if method == "prompt" || method == "steer" || method == "follow_up" {
+		return "could not send message — check model and provider credentials"
+	}
+	return fmt.Sprintf("%s failed (%s)", method, cmp.Or(code, "unavailable"))
 }
 
 // read is a read-only call on the Orb, answered at once.
@@ -587,6 +709,7 @@ func (t *tab) prompt(text string) {
 		args := t.execution(map[string]any{"text": t.invoking(text)})
 		go t.call("follow_up", args)
 	default:
+		t.Status = "sending…"
 		args := map[string]string{"text": t.invoking(text)}
 		go func() {
 			t.call("prompt", args)

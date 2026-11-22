@@ -26,6 +26,7 @@ type mitosisPeer struct {
 	name     string
 	dial     bool
 	mu       sync.Mutex
+	openMu   sync.Mutex
 	instance *worker.Instance
 	self     *peer.Peer
 	stop     context.CancelFunc
@@ -34,20 +35,33 @@ type mitosisPeer struct {
 }
 
 func (b *mitosisPeer) open(context.Context) (*peer.Peer, error) {
+	b.openMu.Lock()
+	defer b.openMu.Unlock()
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if b.self != nil {
-		return b.self, nil
+		self := b.self
+		b.mu.Unlock()
+		return self, nil
 	}
-	if b.instance == nil {
+	instance := b.instance
+	b.mu.Unlock()
+	if instance == nil {
 		return nil, errors.New("orb-worker: the object's Orb has stopped")
 	}
-	self, err := peer.Open(b.instance, b.name)
+	self, err := peer.Open(instance, b.name)
 	if err != nil {
 		return nil, err
 	}
 	ctx, stop := context.WithCancel(context.Background())
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		stop()
+		_ = self.Close()
+		return nil, errors.New("orb-worker: the object's Orb has stopped")
+	}
 	b.self, b.stop = self, stop
+	b.mu.Unlock()
 	if !b.dial {
 		go self.Follow(ctx)
 		return self, nil

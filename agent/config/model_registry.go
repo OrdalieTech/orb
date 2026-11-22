@@ -162,6 +162,13 @@ func (registry *ModelRegistry) RefreshAuth() error {
 	return registry.refreshSnapshot(base, config, authProviders)
 }
 
+// Revision increments each time the registry's loaded models or credentials change.
+func (registry *ModelRegistry) Revision() uint64 {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	return registry.revision
+}
+
 func (registry *ModelRegistry) readCredentials() (map[string]*aiauth.Credential, error) {
 	if registry.credentials == nil {
 		return cloneCredentials(readStoredCredentials(filepath.Join(registry.agentDir, "auth.json"))), nil

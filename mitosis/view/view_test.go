@@ -799,3 +799,137 @@ func TestInlineAttach(t *testing.T) {
 		t.Fatalf("unexpected remote attach (%q, %q)", remoteName, string(remoteChunks))
 	}
 }
+
+// A prompt that fails asynchronously during preflight (e.g. no model selected or missing API key)
+// surfaces the error in tab.Status instead of leaving the conversation silently stuck on "ready".
+func TestFailedPromptSurfacesErrorInsteadOfReady(t *testing.T) {
+	ctx := t.Context()
+	b, err := mitosis.Open(&document.Memory{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = b.Close() })
+	peers := mitosis.NewPeers(ctx, b)
+	cwd := t.TempDir()
+	manager, _ := session.InMemory(cwd)
+	// No model and no credentials: PromptControlled fails preflight with "No model selected." / "No API key found".
+	host, err := agent.NewAgentSessionRuntime(ctx, agent.AgentSessionOptions{CWD: cwd, AgentDir: t.TempDir(), SessionManager: manager, Resources: &agent.Resources{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { host.Dispose(context.Background()) })
+	enrolled, token, err := b.Enroll("empty-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := attach.Attach(ctx, host, attach.Options{InstanceID: enrolled.ID, Store: &document.Memory{}, Authorize: b.Authorize})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+	gen, err := b.Attach(enrolled.ID, token, protocol.NewID(), mitosis.NewLocal(a.Invoke))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = a.SetGeneration(gen)
+	c := newClient()
+	app := New(ctx, Options{
+		Call: func(ctx context.Context, method string, params, result any) error {
+			raw, err := peers.Admin(ctx, method, mitosis.JSON(params))
+			if err != nil || result == nil {
+				return err
+			}
+			return json.Unmarshal(raw, result)
+		},
+		Name: "this tab",
+		Emit: func(m any) { c.out <- mitosis.JSON(m) },
+	})
+	app.Do([]byte(`{"do":"hello","budget":4}`))
+	app.Do([]byte(`{"do":"visible","on":true}`))
+	sess := host.Session().Manager().GetSessionID()
+	c.until(t, "instance visible", func() bool {
+		return slices.ContainsFunc(c.home, func(e Entry) bool { return e.Key == "i:"+sess })
+	})
+	app.Do([]byte(`{"id":"o1","do":"open","key":"i:` + sess + `"}`))
+	c.until(t, "tab opened", func() bool { return c.replies["o1"] != nil })
+	var opened struct{ Tab string }
+	_ = json.Unmarshal(c.replies["o1"], &opened)
+	app.Do([]byte(`{"do":"show","tabs":["` + opened.Tab + `"]}`))
+	c.until(t, "tab loaded", func() bool { return c.tab(opened.Tab).Loaded })
+
+	app.Do([]byte(`{"do":"send","tab":"` + opened.Tab + `","text":"hello?"}`))
+	c.until(t, "prompt failure surfaced in Status", func() bool {
+		st := c.tab(opened.Tab).Status
+		return st != "" && st != "sending…"
+	})
+	if st := c.tab(opened.Tab).Status; !strings.Contains(st, "No model selected") && !strings.Contains(st, "No API key found") {
+		t.Fatalf("status = %q, want model/auth preflight error", st)
+	}
+}
+
+// A prompt whose revision went stale (e.g. a concurrent model change bumped session_revision)
+// automatically re-describes and retries once instead of vanishing silently.
+func TestStaleTargetPromptRetriesOnce(t *testing.T) {
+	c := newClient()
+	var promptCalls atomic.Int32
+	var revision atomic.Int32
+	revision.Store(1)
+	app := New(t.Context(), Options{
+		Emit: func(m any) { c.out <- mitosis.JSON(m) },
+		Name: "this tab",
+		Call: func(_ context.Context, method string, params, result any) error {
+			if method == "status" {
+				return json.Unmarshal([]byte(`{"peer_id":"me","peers":[],"peer_states":{}}`), result)
+			}
+			if method != "remote" {
+				return nil
+			}
+			p := params.(map[string]any)
+			switch p["method"] {
+			case "agent.describe":
+				return json.Unmarshal([]byte(`{"items":[{"session_id":"s1","cwd":"/work","state":"idle"}]}`), result)
+			case "conversation.describe":
+				rev := fmt.Sprintf("%d", revision.Load())
+				return json.Unmarshal([]byte(`{"registration_generation":"1","waits":false,"target":{"session_id":"s1","session_revision":"`+rev+`"}}`), result)
+			case "events.subscribe":
+				return json.Unmarshal([]byte(`{"snapshot_id":"snap","messages":[],"cursor":"c1","events":[],"state":"p1"}`), result)
+			case "agent.call":
+				call := p["params"].(mitosis.AgentCall)
+				if call.Method == "prompt" {
+					n := promptCalls.Add(1)
+					if n == 1 {
+						revision.Store(2)
+						return json.Unmarshal([]byte(`{"operation_id":"op-stale","status":"accepted","session_id":"s1"}`), result)
+					}
+					if call.Expected.Revision != "2" {
+						t.Errorf("retry expected revision 2, got %q", call.Expected.Revision)
+					}
+					return json.Unmarshal([]byte(`{"operation_id":"op-ok","status":"accepted","session_id":"s1"}`), result)
+				}
+			case "operations.get":
+				opID := p["params"].(map[string]string)["operation_id"]
+				if opID == "op-stale" {
+					return json.Unmarshal([]byte(`{"status":"failed","error":"stale_target"}`), result)
+				}
+				return json.Unmarshal([]byte(`{"status":"succeeded"}`), result)
+			}
+			return json.Unmarshal([]byte(`{}`), result)
+		},
+	})
+	app.Do([]byte(`{"do":"hello","budget":4}`))
+	app.Do([]byte(`{"do":"visible","on":true}`))
+	c.until(t, "s1 visible", func() bool {
+		return slices.ContainsFunc(c.home, func(e Entry) bool { return e.Key == "i:s1" })
+	})
+	app.Do([]byte(`{"id":"o1","do":"open","key":"i:s1"}`))
+	c.until(t, "opened", func() bool { return c.replies["o1"] != nil })
+	var opened struct{ Tab string }
+	_ = json.Unmarshal(c.replies["o1"], &opened)
+	app.Do([]byte(`{"do":"show","tabs":["` + opened.Tab + `"]}`))
+	c.until(t, "loaded", func() bool { return c.tab(opened.Tab).Loaded })
+
+	app.Do([]byte(`{"do":"send","tab":"` + opened.Tab + `","text":"retry me"}`))
+	c.until(t, "prompt retried and succeeded", func() bool {
+		return promptCalls.Load() == 2 && c.tab(opened.Tab).Status == ""
+	})
+}

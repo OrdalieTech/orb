@@ -4,12 +4,16 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"net/http"
 	"slices"
+	"time"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
+	"github.com/OrdalieTech/orb/ai/auth/oauth"
+	aimodels "github.com/OrdalieTech/orb/ai/models"
 )
 
 // ToolsFunc supplies extra tools for each session the object starts, decided
@@ -164,4 +168,70 @@ func (instance *Instance) SetDefaultModel(ctx context.Context, provider, id, lev
 		_ = session.SetModelAndThinking(ctx, m, ptr)
 	}
 	return nil
+}
+
+// HasModelStore reports whether models-store.json has already been populated in this object's Store.
+func (instance *Instance) HasModelStore(ctx context.Context) bool {
+	if instance == nil || instance.Host == nil {
+		return false
+	}
+	raw, err := instance.Host.Document("models-store.json").Read(ctx)
+	return err == nil && len(raw) > 2
+}
+
+// RefreshModels updates models-store.json from models.dev and (when signed into openai-codex)
+// ChatGPT's live Codex model list, reloads the registry, and upgrades an unknown/missing session
+// model if one is now available. Uses http.DefaultClient (which browser tabs relay via Mitosis).
+func (instance *Instance) RefreshModels(ctx context.Context, force bool) error {
+	return instance.refreshModels(ctx, force, "", "")
+}
+
+func (instance *Instance) refreshModels(ctx context.Context, force bool, modelsURL, codexURL string) error {
+	if instance == nil || instance.Host == nil || instance.registry == nil {
+		return nil
+	}
+	timeoutCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	opts := aimodels.RefreshOptions{
+		StoreDocument: instance.Host.Document("models-store.json"),
+		Client:        http.DefaultClient,
+		UserAgent:     aimodels.OrbUserAgent("worker"),
+		Force:         force,
+		URL:           modelsURL,
+	}
+	_, refreshErr := aimodels.Refresh(timeoutCtx, opts)
+	// Reload credentials first so a freshly synced openai-codex OAuth token is visible to RefreshCodex.
+	_ = instance.registry.RefreshAuth()
+	if auth, err := instance.registry.ResolveProviderAuth(timeoutCtx, "openai-codex", nil); err == nil && auth != nil && auth.Auth.APIKey != nil && *auth.Auth.APIKey != "" {
+		token := *auth.Auth.APIKey
+		now := time.Now().UnixMilli()
+		instance.mu.Lock()
+		skipCodex := !force && instance.codexToken == token && now-instance.codexRefreshedAt < int64(15*time.Minute/time.Millisecond)
+		instance.mu.Unlock()
+		if !skipCodex {
+			codexOpts := opts
+			codexOpts.URL = codexURL
+			if codexErr := aimodels.RefreshCodex(timeoutCtx, codexOpts, token, oauth.OpenAICodexAccountID(token)); codexErr == nil {
+				instance.mu.Lock()
+				instance.codexToken = token
+				instance.codexRefreshedAt = now
+				instance.mu.Unlock()
+			}
+		}
+	}
+	if err := instance.registry.Reload(); err != nil {
+		return err
+	}
+	if session := instance.Session(); session != nil {
+		session.RefreshCurrentModelFromRegistry(instance.registry)
+		cur := session.Agent().Model()
+		if cur == nil || agent.IsUnknownModel(cur) {
+			if settings, err := instance.Settings(); err == nil {
+				if def := agent.DefaultModel(instance.registry, settings); def != nil {
+					_ = session.SetModelAndThinking(timeoutCtx, *def, nil)
+				}
+			}
+		}
+	}
+	return refreshErr
 }

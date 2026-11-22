@@ -690,7 +690,15 @@ func (a *Attachment) validateArgs(c mitosis.Call) error {
 	return nil
 }
 func (a *Attachment) dispatch(r mitosis.Request) {
-	fail := func(err error) { _, _ = a.ledger.Set(r, "failed", nil, controlCode(err)) }
+	fail := func(err error) {
+		var detail json.RawMessage
+		if err != nil {
+			if msg := strings.TrimSpace(err.Error()); msg != "" {
+				detail = mitosis.JSON(map[string]string{"message": msg})
+			}
+		}
+		_, _ = a.ledger.Set(r, "failed", detail, controlCode(err))
+	}
 	if !a.options.Authorize(r) {
 		fail(mitosis.Fail("unauthorized"))
 		return
@@ -1069,7 +1077,7 @@ func (a *Attachment) pulse() string {
 			limits = u.CheckedAt.String()
 		}
 	}
-	sum := sha256.Sum256([]byte(strings.Join([]string{t.SessionID, t.Revision, t.ExecutionID, input, name, model, string(state.ThinkingLevel), limits, string(mitosis.JSON(s.Slots()))}, "\x00")))
+	sum := sha256.Sum256([]byte(strings.Join([]string{t.SessionID, t.Revision, t.ExecutionID, input, name, model, string(state.ThinkingLevel), limits, strconv.FormatUint(s.ModelRevision(), 10), string(mitosis.JSON(s.Slots()))}, "\x00")))
 	return base64.RawURLEncoding.EncodeToString(sum[:12])
 }
 
