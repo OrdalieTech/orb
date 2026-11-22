@@ -22,24 +22,24 @@ import (
 var ordalieSVG []byte
 var ordalie = ui.MustParseSVG(ordalieSVG)
 
-// Ordalie tokens, as on Android (ui/Theme.kt) and Web: raw console × Evangelion NERV × teenage
-// engineering — drafting sheet light & pitch-black OLED dark, signal vermilion (#FF3D00), Pattern Blue.
+// Ordalie tokens, as on Android (ui/Theme.kt), Apple (Theme.swift) and Web: pure teenage
+// engineering (OP-1 field warm aluminum light & OP-XY matte-black dark) × Evangelion NERV.
 var (
 	texte    = ui.Hex("#FFFFFF")
-	rupture  = ui.Hex("#FF3D00")
-	blue     = ui.Hex("#003CB3")
-	charcoal = ui.Hex("#090909")
+	rupture  = ui.Hex("#EB431E")
+	blue     = ui.Hex("#0044CC")
+	charcoal = ui.Hex("#161614")
 )
 
-// palette is raw technical manual paper in light, pitch-black OLED console in dark.
+// palette is OP-1 field bead-blasted aluminum paper in light, OP-XY matte-black in dark.
 type palette struct{ bg, fg, mute, meta, rule, raised, hover, recessed ui.Color }
 
 var (
-	light = palette{ui.Hex("#EFECE6"), charcoal, ui.Hex("#2C2C2A"), ui.Hex("#52514C"), ui.Hex("#B4B1A9"), ui.Hex("#F8F7F3"), ui.Hex("#DEDAD0"), ui.Hex("#E3E0D8")}
-	dark  = palette{ui.Hex("#000000"), ui.Hex("#F2F2ED"), ui.Hex("#B8B8B0"), ui.Hex("#7E7E76"), ui.Hex("#2E2E2C"), ui.Hex("#0A0A0A"), ui.Hex("#1A1A18"), ui.Hex("#121211")}
+	light = palette{ui.Hex("#ECEBE6"), charcoal, ui.Hex("#4E4D48"), ui.Hex("#76746E"), ui.Hex("#D1CEC6"), ui.Hex("#F5F4F0"), ui.Hex("#DFDDD5"), ui.Hex("#E2E0D9")}
+	dark  = palette{ui.Hex("#0C0C0C"), ui.Hex("#EAE9E4"), ui.Hex("#9E9D97"), ui.Hex("#6D6C67"), ui.Hex("#292926"), ui.Hex("#141413"), ui.Hex("#222220"), ui.Hex("#1B1B19")}
 	// A peer's hue (1 to 6, as the view assigns them; 0, this computer, takes the ink): six vivid
 	// hardware channel LED tones apart from signal vermilion, light then dark.
-	hues = [][2]string{{"#0047FF", "#2E9BFF"}, {"#00875A", "#00E58B"}, {"#CC6B00", "#FFB000"}, {"#6528D7", "#B185FF"}, {"#177E2E", "#4CE052"}, {"#C81E78", "#FF4DA6"}}
+	hues = [][2]string{{"#0052E0", "#3E9BFF"}, {"#008256", "#12D687"}, {"#B86800", "#E5A00D"}, {"#6534CC", "#AC85FF"}, {"#1B7A34", "#4BD65A"}, {"#BE2574", "#F554A4"}}
 )
 
 // One scale, denser than the phone's: title 18 · body 14 · small 13 · label 10; three weights:
@@ -49,7 +49,7 @@ var (
 const (
 	title, body, small, labelSize = 18, 14, 13, 10
 	medium, strong                = 500, 600
-	soft, pane                    = 0, 0 // raw 90-degree console geometry
+	soft, pane                    = 2, 3 // machined teenage engineering aluminum chamfer
 	margin                        = 16
 	mono                          = "Ubuntu Sans Mono"
 )

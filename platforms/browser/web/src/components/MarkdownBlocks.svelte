@@ -131,14 +131,14 @@
   .md-code {
     padding: 0 4px;
     font-size: 0.92em;
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     background: var(--recessed);
     border: 1px solid var(--rule);
   }
   .md-pre-wrap {
     margin: 10px 0;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
     background: var(--raised);
     overflow: hidden;
   }
@@ -147,27 +147,28 @@
     align-items: center;
     justify-content: space-between;
     padding: 4px 10px;
-    background: var(--fg);
-    color: var(--bg);
+    background: var(--recessed);
+    border-bottom: 1px solid var(--rule);
+    color: var(--mute);
   }
   .md-lang {
     font-size: 11.5px;
     font-weight: 700;
-    color: var(--bg);
+    color: var(--mute);
   }
   .md-copy {
     cursor: pointer;
     padding: 1px 8px;
     font-size: 11px;
     font-weight: 600;
-    color: var(--bg);
+    color: var(--mute);
     background: transparent;
-    border: 1px solid color-mix(in srgb, var(--bg) 50%, transparent);
-    border-radius: 0;
-    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-sm);
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
-    .md-copy:hover { background: var(--bg); color: var(--fg); }
+    .md-copy:hover { background: var(--fg); border-color: var(--fg); color: var(--bg); }
   }
   .md-pre {
     margin: 0;
@@ -185,8 +186,8 @@
   .md-table-wrap {
     margin: 10px 0;
     overflow-x: auto;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
     background: var(--raised);
   }
   .md-table {

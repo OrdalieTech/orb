@@ -535,6 +535,7 @@ func (a *App) open(key string) (any, error) {
 			}
 		}
 		a.balance()
+		a.flush()
 	}
 	a.mu.Unlock()
 	if t != nil {

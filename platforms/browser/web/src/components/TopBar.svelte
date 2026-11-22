@@ -70,7 +70,7 @@
     {/each}
   </div>
 
-  <button type="button" class="bar-btn plus" onclick={() => orb.focus("")} title="New conversation (Alt+N)" aria-label="New conversation">+</button>
+  <button type="button" class="bar-btn plus" onclick={() => orb.focus("")} title="New session (Ctrl+N)" aria-label="New session">+</button>
 
   <div class="bar-right">
     {#if contextShare > 0 && !orb.overview}
@@ -88,9 +88,9 @@
       type="button"
       class="bar-btn cmd-k"
       onclick={() => (orb.paletteOpen = true)}
-      title="Command palette (Ctrl/⌘+K)"
+      title="Command palette (Ctrl+P / ⌘K)"
     >
-      <kbd>⌘K</kbd>
+      <kbd>^P</kbd>
     </button>
 
     {#if tabs.length > 0}
@@ -140,7 +140,7 @@
     flex-shrink: 0;
     padding: 0;
     background: var(--bg);
-    border-bottom: 1px solid var(--fg);
+    border-bottom: 1px solid var(--rule);
     z-index: 5;
   }
   .orb-mark {
@@ -148,7 +148,7 @@
     align-items: center;
     padding: 0 14px;
     border: 0;
-    border-right: 1px solid var(--rule);
+    border-right: 1px solid var(--rule-soft);
     background: transparent;
     cursor: pointer;
     flex-shrink: 0;
@@ -161,10 +161,10 @@
     color: var(--fg);
   }
   .orb-mark.on {
-    background: var(--fg);
-    border-right-color: var(--fg);
+    background: var(--raised);
+    border-right-color: var(--rule);
   }
-  .orb-mark.on b { color: var(--bg); }
+  .orb-mark.on b { color: var(--fg); }
 
   .tab-strip {
     display: flex;
@@ -184,7 +184,7 @@
     max-width: 220px;
     padding: 0 6px 0 12px;
     border: 0;
-    border-right: 1px solid var(--rule);
+    border-right: 1px solid var(--rule-soft);
     background: transparent;
     color: var(--mute);
     font-size: 12px;
@@ -194,10 +194,10 @@
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .tab-chip.on {
-    color: var(--bg);
+    color: var(--fg);
     font-weight: 700;
-    background: var(--fg);
-    border-right-color: var(--fg);
+    background: var(--raised);
+    border-right-color: var(--rule);
   }
   .tab-chip.on::before {
     content: "";
@@ -239,7 +239,7 @@
     color: var(--meta);
   }
   .tab-chip.on .tab-unread {
-    color: color-mix(in srgb, var(--bg) 72%, transparent);
+    color: var(--mute);
   }
   .tab-x {
     display: grid;

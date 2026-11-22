@@ -172,7 +172,7 @@
     gap: 6px;
     padding: 1px 7px;
     border: 1px solid var(--rule);
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     background: var(--raised);
     font-size: 11px;
     font-weight: 600;
@@ -198,15 +198,15 @@
   }
   .strip-term {
     padding: 1px 7px;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-sm);
     background: var(--raised);
     font-size: 11.5px;
     font-weight: 700;
     color: var(--fg);
     cursor: pointer;
     flex-shrink: 0;
-    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .strip-term.on {
     color: var(--bg);

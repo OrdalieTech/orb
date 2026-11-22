@@ -571,6 +571,9 @@ func (a *app) shortcuts(c *ui.Context) {
 	} else {
 		// ⌃M: Return to a shell, so not in one.
 		on(ui.Ctrl, ui.KeyM, func() { a.chooseModel(o.tab(a.tab), true) })
+		// TUI parity: Shift+Tab cycles reasoning level; Ctrl+O expands/collapses tool outputs.
+		on(ui.Shift, ui.KeyTab, a.cycleReasoning)
+		on(ui.Ctrl, ui.KeyO, a.toggleToolOutputs)
 	}
 	on(cmd, ui.KeyN, a.newSession)
 	on(cmd, ui.KeyK, a.openPalette)
@@ -620,6 +623,55 @@ func (a *app) shortcuts(c *ui.Context) {
 				a.show(x.tabs[i])
 			}
 		})
+	}
+}
+
+// cycleReasoning steps through the active conversation's thinking levels (TUI Shift+Tab).
+func (a *app) cycleReasoning() {
+	t := a.o.tab(a.tab)
+	if t == nil || len(t.Levels) < 2 {
+		return
+	}
+	next := t.Levels[(slices.Index(t.Levels, t.Thinking)+1)%len(t.Levels)]
+	a.o.send("thinking", "tab", t.ID, "name", next)
+}
+
+// toggleToolOutputs expands or collapses all tool runs in the active conversation (TUI Ctrl+O).
+func (a *app) toggleToolOutputs() {
+	if a.tab == "" {
+		return
+	}
+	rows := a.o.rows[a.tab]
+	anyOpen := false
+	for _, r := range rows {
+		if r.Kind != "run" {
+			continue
+		}
+		if a.expanded[a.tab+"\x00"+r.Key] {
+			anyOpen = true
+			break
+		}
+		for _, x := range r.Actions {
+			if a.expanded[a.tab+"\x00"+x.Key] {
+				anyOpen = true
+				break
+			}
+		}
+	}
+	expand := !anyOpen
+	for _, r := range rows {
+		if r.Kind != "run" {
+			continue
+		}
+		a.expanded[a.tab+"\x00"+r.Key] = expand
+		for _, x := range r.Actions {
+			key := a.tab + "\x00" + x.Key
+			a.expanded[key] = expand
+			if expand && a.details[key] == nil {
+				k := key
+				then(a.o, func(d map[string]string, err error) { a.details[k] = d }, "detail", "tab", a.tab, "key", x.Key)
+			}
+		}
 	}
 }
 

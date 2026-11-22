@@ -135,6 +135,9 @@ function createOrbStore() {
   let terminalTab = $state("");
   let viewerImage = $state(null); // { src, tabId, ref }
   let pickerState = $state(null); // { title, options, field, value, hint, resolve }
+  let inlinePaletteOpen = $state(false);
+  let toolsToggleSeq = $state(0);
+  let toolsDefaultExpanded = $state(false);
 
   // Toast
   let toastState = $state(null); // { text, undo }
@@ -160,9 +163,9 @@ function createOrbStore() {
   let joinedAt = 0;
   let isBench = false;
 
-  // rAF-coalesced frame batching from peer.wasm worker
-  let pendingState = null;
-  let pendingHome = null;
+  // rAF-coalesced batching for high-frequency streaming row patches from peer.wasm worker.
+  // State and home frames apply synchronously in wire order so reply callbacks (start/open/waitOnline)
+  // always observe the updated tab list before focus() runs.
   const pendingRows = new Map(); // tabId -> list of { at, rows }
   let flushScheduled = false;
 
@@ -207,61 +210,59 @@ function createOrbStore() {
     });
   }
 
-  function flushIncoming() {
+  function flushRows() {
     flushScheduled = false;
-    if (pendingHome) {
-      home = pendingHome;
-      pendingHome = null;
+    if (pendingRows.size === 0) return;
+    const nextMap = { ...rowsByTab };
+    for (const [tabId, patches] of pendingRows) {
+      let arr = nextMap[tabId] ? nextMap[tabId].slice() : [];
+      for (const p of patches) {
+        const incoming = p.rows || [];
+        if (p.at <= arr.length) arr.length = p.at;
+        for (let i = 0; i < incoming.length; i++) arr.push(incoming[i]);
+      }
+      nextMap[tabId] = arr;
     }
-    if (pendingState) {
-      const next = { ...pendingState, tabs: pendingState.tabs || [] };
-      state = next;
-      pendingState = null;
+    pendingRows.clear();
+    rowsByTab = nextMap;
+  }
 
-      // Prune rows for closed tabs
-      const tabIds = new Set(next.tabs.map(t => t.id));
-      let pruned = false;
-      for (const id of Object.keys(rowsByTab)) {
-        if (!tabIds.has(id)) {
-          delete rowsByTab[id];
-          pruned = true;
-        }
+  function applyState(m) {
+    const next = { ...m, tabs: m.tabs || [] };
+    state = next;
+
+    // Prune rows for closed tabs
+    const tabIds = new Set(next.tabs.map(t => t.id));
+    let pruned = false;
+    for (const id of Object.keys(rowsByTab)) {
+      if (!tabIds.has(id)) {
+        delete rowsByTab[id];
+        pendingRows.delete(id);
+        pruned = true;
       }
-      if (pruned) rowsByTab = { ...rowsByTab };
-
-      if (restoreTab && tabIds.has(restoreTab)) {
-        focus(restoreTab);
-      }
-      restoreTab = "";
-      if (shown && !tabIds.has(shown)) focus("");
-      if (splitTab && !tabIds.has(splitTab)) splitTab = "";
-      if (terminalTab && !tabIds.has(terminalTab)) terminalTab = "";
-
-      for (const w of waitingOnline.splice(0)) {
-        const found = next.tabs.find(t => t.id === w.id);
-        if (found?.online) w.resolve();
-        else waitingOnline.push(w);
-      }
-
-      updateTitle();
     }
-    if (pendingRows.size > 0) {
-      const nextMap = { ...rowsByTab };
-      for (const [tabId, patches] of pendingRows) {
-        let arr = nextMap[tabId] ? nextMap[tabId].slice() : [];
-        for (const p of patches) {
-          if (p.at <= arr.length) arr.length = p.at;
-          for (let i = 0; i < p.rows.length; i++) arr.push(p.rows[i]);
-        }
-        nextMap[tabId] = arr;
-      }
-      pendingRows.clear();
-      rowsByTab = nextMap;
+    if (pruned) rowsByTab = { ...rowsByTab };
+
+    if (restoreTab && tabIds.has(restoreTab)) {
+      focus(restoreTab);
     }
+    restoreTab = "";
+    if (shown && !tabIds.has(shown)) focus("");
+    if (splitTab && !tabIds.has(splitTab)) splitTab = "";
+    if (terminalTab && !tabIds.has(terminalTab)) terminalTab = "";
+
+    for (const w of waitingOnline.splice(0)) {
+      const found = next.tabs.find(t => t.id === w.id);
+      if (found?.online) w.resolve();
+      else waitingOnline.push(w);
+    }
+
+    updateTitle();
   }
 
   function heard(m) {
     if (m.t === "reply") {
+      flushRows();
       const cb = replies.get(m.id);
       replies.delete(m.id);
       cb?.(m);
@@ -271,21 +272,25 @@ function createOrbStore() {
       notify(m);
       return;
     }
-    if (m.t === "state") pendingState = m;
-    else if (m.t === "home") pendingHome = m;
-    else if (m.t === "rows") {
+    if (m.t === "state") {
+      applyState(m);
+      return;
+    }
+    if (m.t === "home") {
+      home = m;
+      return;
+    }
+    if (m.t === "rows") {
       let q = pendingRows.get(m.tab);
       if (!q) {
         q = [];
         pendingRows.set(m.tab, q);
       }
-      q.push({ at: m.at, rows: m.rows });
-    } else {
-      return;
-    }
-    if (!flushScheduled) {
-      flushScheduled = true;
-      requestAnimationFrame(flushIncoming);
+      q.push({ at: m.at, rows: m.rows || [] });
+      if (!flushScheduled) {
+        flushScheduled = true;
+        requestAnimationFrame(flushRows);
+      }
     }
   }
 
@@ -506,20 +511,23 @@ function createOrbStore() {
   }
 
   async function submitMessage(tabId, text, mode = "send") {
-    const t = tabId ? getTab(tabId) : null;
-    const trimmed = text.trim();
-    if (t?.busy && !trimmed) {
-      send({ do: "abort", tab: t.id });
-      return true;
-    }
-    if (!trimmed) return false;
-    showError("");
-    pushHistory(trimmed);
-    if (typeof Notification !== "undefined" && Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {});
-    }
-    const name = /^\/(\S+)/.exec(trimmed)?.[1];
     try {
+      const t = tabId ? getTab(tabId) : null;
+      const trimmed = (text || "").trim();
+      if (t?.busy && !trimmed) {
+        send({ do: "abort", tab: t.id });
+        return true;
+      }
+      if (!trimmed) return false;
+      if (!tab) throw new Error("Orb is still connecting — try again in a moment");
+      showError("");
+      pushHistory(trimmed);
+      if (typeof Notification !== "undefined" && Notification.permission === "default") {
+        try {
+          Promise.resolve(Notification.requestPermission()).catch(() => {});
+        } catch {}
+      }
+      const name = /^\/(\S+)/.exec(trimmed)?.[1];
       if (t?.busy && mode !== "queue" && !(state.commands || []).some(c => c.name === name)) {
         send({ do: "steer", tab: t.id, text: trimmed });
         return true;
@@ -535,14 +543,18 @@ function createOrbStore() {
       handleOutcome(await ask("send", { tab: t.id, text: trimmed }));
       return true;
     } catch (err) {
-      showError(err.message);
+      showError(err?.message || String(err));
       throw err;
     }
   }
 
   function handleOutcome(r) {
     if (r?.copy) {
-      navigator.clipboard?.writeText(r.copy).then(() => showToast("copied the last answer"));
+      try {
+        Promise.resolve(navigator.clipboard?.writeText(r.copy))
+          .then(() => showToast("copied the last answer"))
+          .catch(() => {});
+      } catch {}
     }
     if (r?.nav) {
       if (r.nav === "model") openModelDeck();
@@ -672,6 +684,12 @@ function createOrbStore() {
     const next = levels[(levels.indexOf(def.thinking) + 1) % levels.length];
     setDefaultModel(m.id, def.default, next);
     showToast(`default reasoning · ${next}`);
+  }
+
+  function toggleToolsExpanded() {
+    toolsDefaultExpanded = !toolsDefaultExpanded;
+    toolsToggleSeq++;
+    showToast(toolsDefaultExpanded ? "tool outputs expanded" : "tool outputs collapsed");
   }
 
   function openModelDeck(explicitTab = null) {
@@ -1077,6 +1095,10 @@ function createOrbStore() {
     get viewerImage() { return viewerImage; },
     set viewerImage(v) { viewerImage = v; },
     get pickerState() { return pickerState; },
+    get inlinePaletteOpen() { return inlinePaletteOpen; },
+    set inlinePaletteOpen(v) { inlinePaletteOpen = v; },
+    get toolsToggleSeq() { return toolsToggleSeq; },
+    get toolsDefaultExpanded() { return toolsDefaultExpanded; },
     get toastState() { return toastState; },
     get defaultsByPeer() { return defaultsByPeer; },
     get providersByPeer() { return providersByPeer; },
@@ -1117,6 +1139,7 @@ function createOrbStore() {
     setDefaultModel,
     switchAccount,
     cycleReasoning,
+    toggleToolsExpanded,
     openModelDeck,
     openSettings,
     pick,

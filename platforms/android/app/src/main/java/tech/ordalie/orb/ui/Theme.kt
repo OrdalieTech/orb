@@ -13,25 +13,25 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import tech.ordalie.orb.R
 
-/** Ordalie tokens: raw console × Evangelion × teenage engineering — drafting light & pitch-black OLED dark. */
+/** Ordalie tokens: pure teenage engineering (OP-1 field light & OP-XY matte-black dark) × Evangelion. */
 object Ink {
     val Texte = Color(0xFFFFFFFF)
-    val Rupture = Color(0xFFFF3D00)
-    val Blue = Color(0xFF003CB3)
-    val Charcoal = Color(0xFF090909)
+    val Rupture = Color(0xFFEB431E)
+    val Blue = Color(0xFF0044CC)
+    val Charcoal = Color(0xFF161614)
 }
 
 @Immutable
 data class Palette(val bg: Color, val fg: Color, val mute: Color, val meta: Color, val rule: Color, val raised: Color)
 
-/** Raw technical manual light & pitch-black OLED console dark. */
-val LightPalette = Palette(Color(0xFFEFECE6), Ink.Charcoal, Color(0xFF2C2C2A), Color(0xFF52514C), Color(0xFFB4B1A9), Color(0xFFF8F7F3))
-val DarkPalette = Palette(Color(0xFF000000), Color(0xFFF2F2ED), Color(0xFFB8B8B0), Color(0xFF7E7E76), Color(0xFF2E2E2C), Color(0xFF0A0A0A))
+/** OP-1 field bead-blasted aluminum paper light & OP-XY matte-black dark. */
+val LightPalette = Palette(Color(0xFFECEBE6), Ink.Charcoal, Color(0xFF4E4D48), Color(0xFF76746E), Color(0xFFD1CEC6), Color(0xFFF5F4F0))
+val DarkPalette = Palette(Color(0xFF0C0C0C), Color(0xFFEAE9E4), Color(0xFF9E9D97), Color(0xFF6D6C67), Color(0xFF292926), Color(0xFF141413))
 val LocalPalette = staticCompositionLocalOf { LightPalette }
 
 /** A peer's hue (1 to 6, as the view assigns them; 0, this phone, takes the ink): six vivid hardware
  *  channel LED tones apart from signal vermilion, as on desktop and web. */
-private val Hues = listOf(0xFF0047FF to 0xFF2E9BFF, 0xFF00875A to 0xFF00E58B, 0xFFCC6B00 to 0xFFFFB000, 0xFF6528D7 to 0xFFB185FF, 0xFF177E2E to 0xFF4CE052, 0xFFC81E78 to 0xFFFF4DA6)
+private val Hues = listOf(0xFF0052E0 to 0xFF3E9BFF, 0xFF008256 to 0xFF12D687, 0xFFB86800 to 0xFFE5A00D, 0xFF6534CC to 0xFFAC85FF, 0xFF1B7A34 to 0xFF4BD65A, 0xFFBE2574 to 0xFFF554A4)
 @Composable
 fun hue(n: Int, phone: Color = p.mute): Color = if (n <= 0) phone else Hues[(n - 1) % Hues.size].let { (light, dark) -> Color(if (p == DarkPalette) dark else light) }
 val p: Palette @Composable get() = LocalPalette.current
@@ -46,9 +46,9 @@ val Regular = FontWeight.Normal
 val Medium = FontWeight.Medium
 val Strong = FontWeight.SemiBold
 
-/** Sharp raw console geometry: 0dp corners throughout. */
-val Soft = RoundedCornerShape(0.dp)
-val Pane = RoundedCornerShape(0.dp)
+/** Machined teenage engineering chamfer: 2dp / 3dp precision geometry. */
+val Soft = RoundedCornerShape(2.dp)
+val Pane = RoundedCornerShape(3.dp)
 val Margin = 16.dp
 
 /** The display's corner radius, as the platform reports it; none where the screen is square. */

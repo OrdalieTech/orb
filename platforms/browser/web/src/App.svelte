@@ -35,122 +35,253 @@
     return tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable;
   }
 
-  function onGlobalKeyDown(e) {
-    // Let active modal / interrupt handle its own keys first
-    if (askingTab || orb.pickerState || orb.viewerImage || orb.explorerPeer || orb.modelDeckOpen || orb.paletteOpen || orb.shortcutsOpen) {
-      return;
+  function hasTextSelection(target) {
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+      return target.selectionStart !== target.selectionEnd;
     }
+    const sel = window.getSelection?.();
+    return !!sel && !sel.isCollapsed;
+  }
 
+  function altMatches(e, letter, code) {
+    return e.key.toLowerCase() === letter || e.code === code;
+  }
+
+  function closeTopOverlay() {
+    if (orb.viewerImage) { orb.viewerImage = null; return true; }
+    if (orb.pickerState) { orb.pickerState.resolve(null); return true; }
+    if (orb.shortcutsOpen) { orb.shortcutsOpen = false; orb.bumpFocus(); return true; }
+    if (orb.paletteOpen) { orb.paletteOpen = false; orb.bumpFocus(); return true; }
+    if (orb.modelDeckOpen) { orb.modelDeckOpen = false; orb.bumpFocus(); return true; }
+    if (orb.explorerPeer) { orb.explorerPeer = ""; orb.bumpFocus(); return true; }
+    if (orb.terminalTab) { orb.terminalTab = ""; orb.bumpFocus(); return true; }
+    if (askingTab) { orb.send({ do: "answer", tab: askingTab.id, value: null }); return true; }
+    return false;
+  }
+
+  function onGlobalKeyDown(e) {
+    const key = (e.key || "").toLowerCase();
     const code = e.code;
     const alt = e.altKey && !e.ctrlKey && !e.metaKey;
     const mod = (e.ctrlKey || e.metaKey) && !e.altKey;
     const ctrlOnly = e.ctrlKey && !e.metaKey && !e.altKey;
+    const inApp = orb.screen === "app";
+    const inAppOrSettings = inApp || orb.screen === "settings";
+
+    // Deterministic capture-phase Escape stack: ALWAYS closes the topmost overlay regardless of focus.
+    if (e.key === "Escape") {
+      if (closeTopOverlay()) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (orb.screen === "settings") {
+        e.preventDefault();
+        orb.screen = "app";
+        orb.bumpFocus();
+        return;
+      }
+      if (orb.overview) {
+        e.preventDefault();
+        orb.toggleOverview();
+        return;
+      }
+      if (orb.inlinePaletteOpen) {
+        // Let PromptBox dismiss its inline /command or @file palette first.
+        return;
+      }
+      const active = orb.getTab(orb.activeTabId());
+      if (active?.busy) {
+        // TUI parity (app.interrupt): Esc stops the active turn.
+        e.preventDefault();
+        orb.send({ do: "abort", tab: active.id });
+        return;
+      }
+      if (orb.shown) {
+        e.preventDefault();
+        orb.focus("");
+      }
+      return;
+    }
+
+    // Primary TUI palette & model toggles work even from Settings or another non-blocking modal
+    // (layout-independent e.key match so AZERTY Ctrl+M / Ctrl+P work reliably).
+    if (!askingTab && !orb.pickerState && !orb.viewerImage && inAppOrSettings) {
+      if ((ctrlOnly && key === "p") || (mod && (key === "k" || key === "p"))) {
+        e.preventDefault();
+        if (orb.screen === "settings") orb.screen = "app";
+        orb.modelDeckOpen = false;
+        orb.shortcutsOpen = false;
+        orb.explorerPeer = "";
+        orb.paletteOpen = !orb.paletteOpen;
+        if (!orb.paletteOpen) orb.bumpFocus();
+        return;
+      }
+      if ((ctrlOnly && key === "m") || (alt && !e.shiftKey && altMatches(e, "m", "KeyM"))) {
+        e.preventDefault();
+        if (orb.screen === "settings") orb.screen = "app";
+        orb.paletteOpen = false;
+        orb.shortcutsOpen = false;
+        orb.explorerPeer = "";
+        if (orb.modelDeckOpen) {
+          orb.modelDeckOpen = false;
+          orb.bumpFocus();
+        } else {
+          orb.openModelDeck();
+        }
+        return;
+      }
+      if (mod && (key === "," || code === "Comma")) {
+        e.preventDefault();
+        closeTopOverlay();
+        if (orb.screen === "settings") {
+          orb.screen = "app";
+          orb.bumpFocus();
+        } else {
+          orb.openSettings("general", orb.defaultPeer());
+        }
+        return;
+      }
+    }
+
+    // Let active modal / interrupt handle its own navigation keys (↑/↓/Enter/etc.)
+    if (askingTab || orb.pickerState || orb.viewerImage || orb.explorerPeer || orb.modelDeckOpen || orb.paletteOpen || orb.shortcutsOpen) {
+      return;
+    }
+
+    if (!inApp) return;
+
+    const tabs = orb.state.tabs || [];
+    const active = orb.getTab(orb.activeTabId());
 
     // ? opens Keyboard Shortcuts when not typing in an input
-    if (e.key === "?" && !isEditable(e.target) && orb.screen === "app") {
+    if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey && !isEditable(e.target)) {
       e.preventDefault();
       orb.shortcutsOpen = true;
       return;
     }
 
-    // Global modifiers (work even from inside textarea!)
-    if (mod && (code === "KeyK" || code === "KeyP") && orb.screen === "app") {
+    // Shift+Tab: cycle reasoning / thinking level (TUI app.thinking.cycle)
+    if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
-      orb.paletteOpen = true;
-      return;
-    }
-    if (mod && code === "Comma" && (orb.screen === "app" || orb.screen === "settings")) {
-      e.preventDefault();
-      if (orb.screen === "settings") orb.screen = "app";
-      else orb.openSettings("general", orb.defaultPeer());
-      return;
-    }
-    if (ctrlOnly && code === "KeyM" && orb.screen === "app") {
-      e.preventDefault();
-      orb.openModelDeck();
+      orb.cycleReasoning();
       return;
     }
 
-    if (orb.screen === "app" && alt) {
-      const tabs = orb.state.tabs || [];
-      const active = orb.getTab(orb.activeTabId());
+    // Ctrl+Tab / Ctrl+Shift+Tab: step conversations
+    if (e.key === "Tab" && e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      orb.stepTab(e.shiftKey ? -1 : 1);
+      return;
+    }
 
-      if (code === "KeyH" || code === "Digit0" || code === "KeyN") {
+    // TUI-aligned Ctrl+<key> bindings (layout-independent via e.key)
+    if (ctrlOnly) {
+      if (key === "o") {
+        e.preventDefault();
+        orb.toggleToolsExpanded();
+        return;
+      }
+      if (key === "n") {
         e.preventDefault();
         orb.focus("");
         return;
       }
-      if (code === "KeyG") {
-        e.preventDefault();
-        orb.toggleOverview();
-        return;
-      }
-      if (code === "KeyD") {
-        e.preventDefault();
-        orb.toggleSplit();
-        return;
-      }
-      if (code === "KeyW" && active) {
-        e.preventDefault();
-        orb.closeTab(active);
-        return;
-      }
-      if (code === "KeyT" && e.shiftKey) {
-        e.preventDefault();
-        orb.reopenClosed();
-        return;
-      }
-      if (code === "KeyM" && e.shiftKey) {
-        e.preventDefault();
-        orb.cycleReasoning();
-        return;
-      }
-      if (code === "KeyM") {
-        e.preventDefault();
-        orb.openModelDeck();
-        return;
-      }
-      if (code === "KeyL") {
-        e.preventDefault();
-        orb.bumpFocus();
-        return;
-      }
-      if (code === "KeyR" && active) {
+      if (key === "r" && active) {
         e.preventDefault();
         orb.renamePrompt(active.title, name => orb.send({ do: "rename", tab: active.id, name }));
         return;
       }
-      if (code === "KeyJ" && active?.remote) {
+      if (key === "x" && active && !hasTextSelection(e.target)) {
+        e.preventDefault();
+        orb.submitMessage(active.id, "/copy").catch(() => {});
+        return;
+      }
+      if (key === "g") {
+        e.preventDefault();
+        orb.toggleOverview();
+        return;
+      }
+      if (key === "j" && active?.remote) {
         e.preventDefault();
         orb.terminalTab = orb.terminalTab === active.id ? "" : active.id;
         return;
       }
-      if (code === "Period" && active) {
+    }
+
+    // Alt+<key> aliases (safe fallback for browser-reserved Ctrl keys on Linux/Windows)
+    if (alt) {
+      if (altMatches(e, "h", "KeyH") || code === "Digit0" || altMatches(e, "n", "KeyN")) {
+        e.preventDefault();
+        orb.focus("");
+        return;
+      }
+      if (altMatches(e, "g", "KeyG")) {
+        e.preventDefault();
+        orb.toggleOverview();
+        return;
+      }
+      if (altMatches(e, "d", "KeyD")) {
+        e.preventDefault();
+        orb.toggleSplit();
+        return;
+      }
+      if (altMatches(e, "w", "KeyW") && active) {
+        e.preventDefault();
+        orb.closeTab(active);
+        return;
+      }
+      if (altMatches(e, "t", "KeyT") && e.shiftKey) {
+        e.preventDefault();
+        orb.reopenClosed();
+        return;
+      }
+      if (altMatches(e, "m", "KeyM") && e.shiftKey) {
+        e.preventDefault();
+        orb.cycleReasoning();
+        return;
+      }
+      if (altMatches(e, "l", "KeyL")) {
+        e.preventDefault();
+        orb.bumpFocus();
+        return;
+      }
+      if (altMatches(e, "r", "KeyR") && active) {
+        e.preventDefault();
+        orb.renamePrompt(active.title, name => orb.send({ do: "rename", tab: active.id, name }));
+        return;
+      }
+      if (altMatches(e, "j", "KeyJ") && active?.remote) {
+        e.preventDefault();
+        orb.terminalTab = orb.terminalTab === active.id ? "" : active.id;
+        return;
+      }
+      if ((key === "." || code === "Period") && active) {
         e.preventDefault();
         orb.send({ do: "abort", tab: active.id });
         return;
       }
-      if (code === "KeyC" && e.shiftKey && active) {
+      if (altMatches(e, "c", "KeyC") && e.shiftKey && active) {
         e.preventDefault();
-        orb.submitMessage(active.id, "/copy");
+        orb.submitMessage(active.id, "/copy").catch(() => {});
         return;
       }
-      if (code === "BracketRight") {
+      if (key === "]" || code === "BracketRight") {
         e.preventDefault();
         orb.stepTab(1);
         return;
       }
-      if (code === "BracketLeft") {
+      if (key === "[" || code === "BracketLeft") {
         e.preventDefault();
         orb.stepTab(-1);
         return;
       }
-      if (code === "Slash") {
+      if (key === "/" || key === "?" || code === "Slash") {
         e.preventDefault();
         orb.shortcutsOpen = true;
         return;
       }
-      const digit = /^Digit([1-9])$/.exec(code)?.[1];
+      const digit = /^Digit([1-9])$/.exec(code)?.[1] || (/^[1-9]$/.test(key) ? key : "");
       if (digit) {
         e.preventDefault();
         const target = digit === "9" ? tabs.at(-1) : tabs[Number(digit) - 1];
@@ -158,23 +289,10 @@
         return;
       }
     }
-
-    if (e.key === "Escape") {
-      if (orb.screen === "settings") {
-        orb.screen = "app";
-        orb.bumpFocus();
-      } else if (orb.terminalTab) {
-        orb.terminalTab = "";
-      } else if (orb.overview) {
-        orb.toggleOverview();
-      } else if (orb.shown) {
-        orb.focus("");
-      }
-    }
   }
 
-  window.addEventListener("keydown", onGlobalKeyDown);
-  onDestroy(() => window.removeEventListener("keydown", onGlobalKeyDown));
+  window.addEventListener("keydown", onGlobalKeyDown, true);
+  onDestroy(() => window.removeEventListener("keydown", onGlobalKeyDown, true));
 </script>
 
 {#if orb.screen === "boot"}
@@ -306,7 +424,7 @@
     color: var(--bg);
     background: var(--fg);
     border: 1px solid var(--fg);
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     transform: translateX(-50%);
     animation: toast-in var(--t-fast) var(--ease);
   }
@@ -316,8 +434,8 @@
   }
   .toast-undo {
     padding: 1px 8px;
-    border: 1px solid var(--bg);
-    border-radius: 0;
+    border: 1px solid color-mix(in srgb, var(--bg) 55%, transparent);
+    border-radius: var(--radius-sm);
     background: none;
     color: var(--bg);
     font-size: 11.5px;

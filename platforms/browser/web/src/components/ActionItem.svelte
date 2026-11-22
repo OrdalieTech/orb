@@ -128,8 +128,8 @@
     gap: 6px;
     margin: 4px 0 6px 18px;
     padding: 9px 11px;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-sm);
     background: var(--raised);
     animation: drop-in 90ms var(--ease);
   }

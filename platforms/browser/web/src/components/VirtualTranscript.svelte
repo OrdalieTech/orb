@@ -1,6 +1,7 @@
 <script>
   import { onDestroy, onMount, tick } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
+  import { orb } from "../lib/store.svelte.js";
   import TranscriptRow from "./TranscriptRow.svelte";
 
   let {
@@ -28,6 +29,24 @@
 
   // Persistent expanded state for actions & run groups inside this tab.
   const expandedMap = new SvelteMap();
+
+  // Ctrl+O (TUI app.tools.expand): expand or collapse all tool runs & actions in this tab.
+  let lastToolsSeq = orb.toolsToggleSeq;
+  $effect(() => {
+    const seq = orb.toolsToggleSeq;
+    if (seq === lastToolsSeq) return;
+    lastToolsSeq = seq;
+    const expand = orb.toolsDefaultExpanded;
+    expandedMap.clear();
+    if (expand) {
+      for (const r of rows) {
+        if (r.kind === "run") {
+          expandedMap.set(r.k, true);
+          for (const a of r.actions || []) expandedMap.set(a.k, true);
+        }
+      }
+    }
+  });
 
   function estimateRowHeight(row) {
     if (!row) return 36;
@@ -363,7 +382,7 @@
     margin: 0 auto 14px;
     font-size: 11.5px;
     padding: 4px 12px;
-    border-radius: 0;
+    border-radius: var(--radius-sm);
   }
   .empty-state {
     display: flex;
@@ -408,7 +427,7 @@
     right: 20px;
     bottom: 12px;
     padding: 4px 10px;
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     font-size: 12px;
     background: var(--fg);
     color: var(--bg);

@@ -62,9 +62,8 @@ fun ColumnScope.Home(c: Ctx) {
 @Composable
 private fun TitleCard() = Column(Modifier.fillMaxWidth().padding(start = Margin + 4.dp, end = Margin, top = 6.dp, bottom = 10.dp)) {
     Rule()
-    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.Bottom) {
         Stretch("NEW SESSION", 36.dp, p.fg)
-        Box(Modifier.padding(bottom = 2.dp).size(7.dp).background(Ink.Rupture))
     }
 }
 
@@ -87,11 +86,11 @@ private fun Magi(c: Ctx, device: String, pick: (String) -> Unit) {
             val yes = up && (!m.self || current)
             val ink = if (yes) p.mute else Ink.Rupture
             val on = device == m.id
-            Column(Modifier.then(if (fit) Modifier.weight(1f) else Modifier.width(128.dp)).clip(RoundedCornerShape(4.dp)).background(if (on) p.raised else Color.Transparent)
-                .border(1.dp, if (on) p.fg else p.rule.copy(alpha = 0.8f), RoundedCornerShape(4.dp)).press { pick(m.id) }.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Column(Modifier.then(if (fit) Modifier.weight(1f) else Modifier.width(128.dp)).clip(Pane).background(if (on) p.raised else Color.Transparent)
+                .border(1.dp, if (on) p.mute else p.rule, Pane).press { pick(m.id) }.padding(horizontal = 8.dp, vertical = 6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Where(v.hue(m.id))
-                    T(if (m.self) "this phone" else m.name, label = true, color = if (on) p.fg else p.mute, lines = 1)
+                    T(if (m.self) "this phone" else m.name, size = 12.sp, weight = Strong, color = if (on) p.fg else p.mute, lines = 1)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     T(if (!up) (if (m.self) "starting…" else "offline") else if (!yes) "update" else "${m.running.size} running", Modifier.weight(1f), size = 12.sp, color = ink, lines = 1)

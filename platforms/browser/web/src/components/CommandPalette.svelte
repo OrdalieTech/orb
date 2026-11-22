@@ -12,9 +12,11 @@
     const q = palQuery.trim().toLowerCase();
     const items = [
       { group: "navigate", label: "Home", detail: "all devices & threads", kbd: "Alt+H", run: () => orb.focus("") },
-      { group: "navigate", label: "Overview grid", detail: "live cards of open tabs", kbd: "Alt+G", run: () => orb.toggleOverview() },
+      { group: "navigate", label: "Overview grid", detail: "live cards of open tabs", kbd: "Ctrl+G", run: () => orb.toggleOverview() },
       { group: "navigate", label: "Toggle split view", detail: "two conversations side by side", kbd: "Alt+D", run: () => orb.toggleSplit() },
-      { group: "navigate", label: "Model & reasoning deck", detail: "switch model or effort", kbd: "Alt+M", run: () => orb.openModelDeck() },
+      { group: "navigate", label: "Model & reasoning deck", detail: "switch model or effort", kbd: "Ctrl+M", run: () => orb.openModelDeck() },
+      { group: "navigate", label: "Cycle reasoning level", detail: "step thinking effort", kbd: "Shift+Tab", run: () => orb.cycleReasoning() },
+      { group: "navigate", label: "Toggle tool outputs", detail: "expand or collapse tool runs", kbd: "Ctrl+O", run: () => orb.toggleToolsExpanded() },
       { group: "navigate", label: "Settings · General", detail: "theme, defaults, shortcuts", kbd: "⌘,", run: () => orb.openSettings("general", orb.defaultPeer()) },
       { group: "navigate", label: "Settings · Providers", detail: "accounts, quotas, sign-in", run: () => orb.openSettings("providers", orb.defaultPeer()) },
       { group: "navigate", label: "Settings · Plugins", detail: "toggle capabilities", run: () => orb.openSettings("plugins", orb.defaultPeer()) },
@@ -81,6 +83,9 @@
   let pickFilter = $state("");
   let pickAt = $state(0);
   let pickInput = $state(null);
+  let pickBackdrop = $state(null);
+  let shortcutsBackdrop = $state(null);
+  let imgBackdrop = $state(null);
 
   let pickShown = $derived.by(() => {
     const pk = orb.pickerState;
@@ -94,7 +99,18 @@
     if (pk) {
       pickFilter = pk.field ? pk.value || "" : "";
       pickAt = Math.max(0, (pk.options || []).findIndex(o => o.on));
-      requestAnimationFrame(() => pickInput?.focus());
+      requestAnimationFrame(() => (pickInput || pickBackdrop)?.focus());
+    }
+  });
+
+  $effect(() => {
+    if (orb.shortcutsOpen) requestAnimationFrame(() => shortcutsBackdrop?.focus());
+  });
+
+  $effect(() => {
+    if (orb.viewerImage) {
+      imgZoom = 1;
+      requestAnimationFrame(() => imgBackdrop?.focus());
     }
   });
 
@@ -116,9 +132,6 @@
 
   // 3. Zoomable Image Viewer
   let imgZoom = $state(1);
-  $effect(() => {
-    if (orb.viewerImage) imgZoom = 1;
-  });
 </script>
 
 <!-- Command Palette (Cmd/Ctrl+K) -->
@@ -167,7 +180,7 @@
 {#if orb.pickerState}
   {@const pk = orb.pickerState}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div class="backdrop" role="dialog" aria-modal="true" aria-label={pk.title} tabindex="-1" onclick={e => { if (e.target === e.currentTarget) pk.resolve(null); }} onkeydown={onPickKey}>
+  <div bind:this={pickBackdrop} class="backdrop" role="dialog" aria-modal="true" aria-label={pk.title} tabindex="-1" onclick={e => { if (e.target === e.currentTarget) pk.resolve(null); }} onkeydown={onPickKey}>
     <div class="sheet">
       <div class="sheet-head">
         <span class="hud-label"><span class="idx">·</span><span>{pk.title}</span></span>
@@ -211,7 +224,7 @@
 <!-- Keyboard Shortcuts Reference (?) -->
 {#if orb.shortcutsOpen}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div class="backdrop" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" tabindex="-1" onclick={e => { if (e.target === e.currentTarget) orb.shortcutsOpen = false; }} onkeydown={e => { if (e.key === "Escape" || e.key === "?") orb.shortcutsOpen = false; }}>
+  <div bind:this={shortcutsBackdrop} class="backdrop" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" tabindex="-1" onclick={e => { if (e.target === e.currentTarget) orb.shortcutsOpen = false; }} onkeydown={e => { if (e.key === "Escape" || e.key === "?") orb.shortcutsOpen = false; }}>
     <div class="sheet wide">
       <div class="sheet-head">
         <span class="hud-label"><span class="idx">KBD</span><span>keyboard shortcuts</span></span>
@@ -238,6 +251,7 @@
 {#if orb.viewerImage}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
+    bind:this={imgBackdrop}
     class="img-backdrop"
     role="dialog"
     aria-modal="true"
@@ -284,8 +298,8 @@
     display: flex;
     flex-direction: column;
     padding: 12px;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
     background: var(--raised);
     animation: sheet-in 120ms var(--ease);
   }
@@ -301,12 +315,12 @@
     margin-bottom: 8px;
     padding: 8px 10px;
     border: 1px solid var(--rule);
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     background: var(--bg);
     font-size: var(--small);
     transition: border-color var(--t-fast) var(--ease);
   }
-  .sheet-in:focus-visible { outline: 0; border-color: var(--fg); }
+  .sheet-in:focus-visible { outline: 0; border-color: var(--rule-focus); }
   .sheet-list {
     flex: 1;
     min-height: 0;

@@ -40,14 +40,14 @@ fun Rule(modifier: Modifier = Modifier, color: Color = p.rule) = Box(modifier.fi
 enum class ChipKind { Inverted, Outline, Quiet }
 
 @Composable
-fun Chip(label: String, kind: ChipKind = ChipKind.Outline, modifier: Modifier = Modifier, caps: Boolean = true) {
+fun Chip(label: String, kind: ChipKind = ChipKind.Outline, modifier: Modifier = Modifier, caps: Boolean = false) {
     val (bg, fg, edge) = when (kind) {
         ChipKind.Inverted -> Triple(p.fg, p.bg, p.fg)
-        ChipKind.Outline -> Triple(Color.Transparent, p.fg, p.fg)
+        ChipKind.Outline -> Triple(Color.Transparent, p.fg, p.rule)
         ChipKind.Quiet -> Triple(Color.Transparent, p.mute, p.rule)
     }
     Box(modifier.clip(Soft).background(bg).border(1.dp, edge, Soft).padding(horizontal = 8.dp, vertical = 2.dp)) {
-        if (caps) T(label, label = true, color = fg) else T(label, size = 13.sp, color = fg, weight = Medium)
+        if (caps) T(label, label = true, color = fg) else T(label, size = 12.sp, color = fg, weight = Medium)
     }
 }
 

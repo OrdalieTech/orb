@@ -134,7 +134,7 @@
     display: flex;
     flex-direction: column;
     background: var(--bg);
-    border-top: 2px solid var(--fg);
+    border-top: 1px solid var(--rule);
     animation: drawer-in 140ms var(--ease);
   }
   .term-head {

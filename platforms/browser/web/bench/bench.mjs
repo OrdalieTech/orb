@@ -249,6 +249,95 @@ try {
     };
   }
 
+  // Interactive E2E assertions: TUI shortcuts (incl. AZERTY Ctrl+M), global Esc on every modal,
+  // and sending messages even when Notification.requestPermission() returns undefined (Safari).
+  await cdp.eval(`localStorage.clear()`);
+  await cdp.send("Page.navigate", { url: `${url}/?bench=1&rows=200&open=heavy` });
+  await cdp.eval(`new Promise((r, no) => { const dl = Date.now() + 8000; const c = () => document.querySelector(".virt-row") ? r() : Date.now() > dl ? no(new Error("timeout")) : setTimeout(c, 25); c(); })`);
+  const interactive = await cdp.eval(`(async () => {
+    const wait = (ms = 60) => new Promise(r => setTimeout(r, ms));
+    const press = (key, opts = {}) => {
+      const target = document.activeElement || document.body;
+      target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...opts }));
+    };
+
+    // 1. Ctrl+M on AZERTY keyboard (e.code === "Semicolon", e.key === "m") opens Model Deck; Esc closes even when blurred.
+    press("m", { code: "Semicolon", ctrlKey: true });
+    await wait();
+    const azertyModelOpened = !!document.querySelector(".deck");
+    document.activeElement?.blur?.();
+    press("Escape", { code: "Escape" });
+    await wait();
+    const modelClosedOnEsc = !document.querySelector(".deck");
+
+    // 2. Ctrl+P opens Command Palette; Esc closes.
+    press("p", { code: "KeyP", ctrlKey: true });
+    await wait();
+    const ctrlPOpened = !!document.querySelector(".sheet.wide");
+    document.activeElement?.blur?.();
+    press("Escape", { code: "Escape" });
+    await wait();
+    const palClosedOnEsc = !document.querySelector(".sheet.wide");
+
+    // 3. ? opens Keyboard Shortcuts (even with no input inside); Esc closes reliably.
+    document.activeElement?.blur?.();
+    press("?", { code: "Slash", shiftKey: true });
+    await wait();
+    const shortcutsOpened = document.body.innerText.includes("TUI Core");
+    press("Escape", { code: "Escape" });
+    await wait();
+    const shortcutsClosedOnEsc = !document.body.innerText.includes("TUI Core");
+
+    // 4. Shift+Tab cycles reasoning level.
+    const beforeLit = document.querySelectorAll(".meter i.lit").length;
+    press("Tab", { code: "Tab", shiftKey: true });
+    await wait();
+    const afterLit = document.querySelectorAll(".meter i.lit").length;
+    const shiftTabCycled = beforeLit !== afterLit;
+
+    // 5. Ctrl+O expands & collapses tool outputs.
+    press("o", { code: "KeyO", ctrlKey: true });
+    await wait(100);
+    const expandedCount = document.querySelectorAll(".act-pane, .run-body").length;
+    press("o", { code: "KeyO", ctrlKey: true });
+    await wait(100);
+    const collapsedCount = document.querySelectorAll(".act-pane, .run-body").length;
+
+    // 6. Sending a message works even when Notification.requestPermission() returns undefined (Safari).
+    const origNotif = window.Notification;
+    Object.defineProperty(window, "Notification", {
+      configurable: true,
+      value: { permission: "default", requestPermission: () => undefined },
+    });
+    const ta = document.querySelector(".prompt-input");
+    ta.focus();
+    ta.value = "bench send test safari";
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    await wait();
+    ta.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
+    await wait(120);
+    const sentCleared = ta.value === "";
+    const sentRendered = (document.querySelector(".transcript")?.innerText || "").includes("bench send test safari");
+    Object.defineProperty(window, "Notification", { configurable: true, value: origNotif });
+
+    return {
+      azertyModelOpened,
+      modelClosedOnEsc,
+      ctrlPOpened,
+      palClosedOnEsc,
+      shortcutsOpened,
+      shortcutsClosedOnEsc,
+      shiftTabCycled,
+      ctrlOToggled: expandedCount > 0 && collapsedCount === 0,
+      sentCleared,
+      sentRendered,
+    };
+  })()`);
+  results.interactive = interactive;
+  for (const [k, v] of Object.entries(interactive)) {
+    if (!v) throw new Error(`Interactive assertion failed: ${k} = ${v}`);
+  }
+
   console.log(JSON.stringify(results, null, 2));
 
   // Optional visual screenshots (light & dark, Home, Chat, Overview, Interrupt, Settings)

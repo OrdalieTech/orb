@@ -102,7 +102,7 @@
           <span class="idx">01</span>
           <span>open · {openTabs.length}</span>
           <button type="button" class="hud-action" onclick={() => orb.toggleOverview()}>
-            overview <kbd>Alt+G</kbd>
+            overview <kbd>^G</kbd>
           </button>
         </div>
         <div class="open-grid">
@@ -217,14 +217,15 @@
     animation: view-in var(--t-med) var(--ease);
   }
 
-  /* NERV MAGI joined schematic matrix — flush shared 1px borders, NOT floating cards */
+  /* NERV MAGI joined schematic matrix — flush shared quiet hairlines */
   .magi {
     display: flex;
     gap: 0;
     overflow-x: auto;
     scrollbar-width: none;
     flex-shrink: 0;
-    border: 1px solid var(--fg);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
     background: var(--raised);
   }
   .magi-unit {
@@ -236,15 +237,16 @@
     padding: 8px 11px;
     text-align: left;
     border: 0;
-    border-right: 1px solid var(--rule);
+    border-right: 1px solid var(--rule-soft);
     background: transparent;
     cursor: pointer;
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .magi-unit:last-child { border-right: 0; }
   .magi-unit.on {
-    background: var(--fg);
-    color: var(--bg);
+    background: var(--recessed);
+    color: var(--fg);
+    box-shadow: inset 0 -2px 0 var(--fg);
   }
   .magi-top {
     display: flex;
@@ -266,7 +268,7 @@
     font-size: 11.5px;
     color: var(--meta);
   }
-  .magi-unit.on .magi-bot { color: color-mix(in srgb, var(--bg) 75%, transparent); }
+  .magi-unit.on .magi-bot { color: var(--mute); }
   .magi-bot b {
     margin-left: auto;
     font-size: 10.5px;
@@ -274,7 +276,7 @@
     letter-spacing: 0.06em;
     color: var(--amber);
   }
-  .magi-unit.on .magi-bot b { color: var(--rupture); }
+  .magi-unit.on .magi-bot b { color: var(--amber); }
   .magi-unit.down .magi-bot,
   .magi-unit.down .magi-bot b { color: var(--rupture); }
   @media (hover: hover) {
@@ -304,7 +306,8 @@
     width: 100%;
     padding: 6px 10px;
     margin-top: 4px;
-    border: 1px solid var(--fg);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-sm);
     background: var(--raised);
     text-align: left;
     font-size: var(--small);
@@ -427,11 +430,11 @@
     text-transform: none;
     letter-spacing: 0;
     border: 1px solid var(--rule);
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     background: var(--bg);
     transition: border-color var(--t-fast) var(--ease);
   }
-  .thread-search:focus-visible { outline: 0; border-color: var(--fg); }
+  .thread-search:focus-visible { outline: 0; border-color: var(--rule-focus); }
 
   .entries {
     margin-top: 0;
@@ -466,10 +469,9 @@
   .entry-meta.asks { color: var(--rupture); font-weight: 700; }
   @media (hover: hover) {
     .entry-row:hover {
-      background: var(--fg);
-      color: var(--bg);
+      background: var(--hover);
+      color: var(--fg);
     }
-    .entry-row:hover .entry-meta:not(.asks) { color: color-mix(in srgb, var(--bg) 72%, transparent); }
   }
   .reading {
     display: flex;
@@ -487,7 +489,7 @@
     flex-shrink: 0;
     height: 54px;
     padding: 8px 2px 3px;
-    border-top: 1px solid var(--fg);
+    border-top: 1px solid var(--rule);
   }
   .title-card b {
     font-size: 20px;

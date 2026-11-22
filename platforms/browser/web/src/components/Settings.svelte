@@ -296,7 +296,7 @@
           <div class="row">
             <div class="row-main">
               <strong>theme</strong>
-              <p class="meta">Drafting Light · OLED Black Dark</p>
+              <p class="meta">Light (warm aluminum) · Dark (matte black)</p>
             </div>
             <div class="seg">
               {#each ["auto", "light", "dark"] as mode}
@@ -805,7 +805,7 @@
     width: 220px;
     flex-shrink: 0;
     padding: 0;
-    border-right: 1px solid var(--fg);
+    border-right: 1px solid var(--rule);
     background: var(--bg);
   }
   .side-head { padding: 14px 14px 12px; border-bottom: 1px solid var(--rule); }
@@ -890,11 +890,12 @@
   }
   .row-btns { display: flex; gap: 6px; flex-shrink: 0; }
 
-  /* Stark 0px TE segmented console switch */
+  /* Machined TE segmented switch */
   .seg {
     display: inline-flex;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
   }
   .seg button {
     padding: 4px 11px;
@@ -946,7 +947,7 @@
   .chip {
     padding: 4px 10px;
     border: 1px solid var(--rule);
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     background: var(--raised);
     font-size: 12px;
     font-weight: 600;
@@ -954,7 +955,7 @@
     cursor: pointer;
     transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .chip:hover:not(.on) { border-color: var(--fg); color: var(--fg); }
+  .chip:hover:not(.on) { border-color: var(--rule-focus); color: var(--fg); }
   .chip.on {
     color: var(--bg);
     background: var(--fg);
@@ -967,12 +968,12 @@
     padding: 7px 10px;
     margin: 4px 0 10px;
     border: 1px solid var(--rule);
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     background: var(--raised);
     font-size: var(--small);
     transition: border-color var(--t-fast) var(--ease);
   }
-  .search-in:focus-visible { outline: 0; border-color: var(--fg); }
+  .search-in:focus-visible { outline: 0; border-color: var(--rule-focus); }
 
   .acct-block, .plugin-block {
     padding-bottom: 8px;
@@ -1009,8 +1010,8 @@
     gap: 10px;
     margin-top: 14px;
     padding: 16px;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
     background: var(--raised);
   }
   .code-big {

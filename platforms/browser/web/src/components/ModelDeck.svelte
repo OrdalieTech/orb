@@ -279,8 +279,8 @@
     display: flex;
     flex-direction: column;
     padding: 14px;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
     background: var(--raised);
     animation: sheet-in 120ms var(--ease);
   }
@@ -309,13 +309,13 @@
     font-size: 12px;
     font-weight: 600;
     border: 1px solid var(--rule);
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     background: var(--raised);
     color: var(--mute);
     cursor: pointer;
     transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .place-chip:hover:not(.on) { border-color: var(--fg); color: var(--fg); }
+  .place-chip:hover:not(.on) { border-color: var(--rule-focus); color: var(--fg); }
   .place-chip.on {
     color: var(--bg);
     background: var(--fg);
@@ -326,12 +326,12 @@
     padding: 8px 10px;
     margin-bottom: 8px;
     border: 1px solid var(--rule);
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     background: var(--bg);
     font-size: var(--small);
     transition: border-color var(--t-fast) var(--ease);
   }
-  .deck-filter:focus-visible { outline: 0; border-color: var(--fg); }
+  .deck-filter:focus-visible { outline: 0; border-color: var(--rule-focus); }
 
   .deck-list {
     flex: 1;
@@ -399,8 +399,9 @@
   .lvl-head small { font-size: 12px; color: var(--mute); }
   .lvl-seg {
     display: flex;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
   }
   .lvl-seg button {
     flex: 1;

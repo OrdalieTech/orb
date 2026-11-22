@@ -41,7 +41,6 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 					wipe(card, v, pal.bg)
 					a.carded = v == 1
 				}
-				ui.Box(c).Size(9, 9).Background(rupture).Margin(0, 0, 3)
 			})
 			a.launching(c)
 		})

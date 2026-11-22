@@ -777,6 +777,7 @@ func (a *app) generalScreen(c *ui.Context) {
 			{map[bool]string{true: "⌃Tab · ⌃⇧Tab", false: "Ctrl+Tab · Ctrl+Shift+Tab"}[runtime.GOOS == "darwin"], "next · previous tab"},
 			{keys("1") + "…" + keys("8") + " · " + keys("9"), "a tile's tabs · its last"}, {keys("⇧↩"), "zoom the tile"},
 			{keys("=") + " · " + keys("-") + " · " + keys("0"), "zoom in · out · actual size"}, {map[bool]string{true: "⌃M", false: "Ctrl+M"}[runtime.GOOS == "darwin"], "model and reasoning"},
+			{"⇧Tab", "cycle reasoning"}, {map[bool]string{true: "⌃O", false: "Ctrl+O"}[runtime.GOOS == "darwin"], "expand · collapse tool outputs"},
 			{keys("J"), "the conversation's terminal"}, {keys("."), "stop the turn"}, {keys(","), "settings"},
 		} {
 			ui.Row(c.Key(k[1])).FillWidth().PaddingY(3).Gap(12).AlignItems(ui.Center).Children(func() {

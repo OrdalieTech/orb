@@ -196,8 +196,8 @@
     max-height: min(580px, 82dvh);
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
     background: var(--raised);
     overflow: hidden;
     animation: sheet-in 120ms var(--ease);
@@ -235,12 +235,12 @@
     margin: 0 14px 10px;
     padding: 8px 10px;
     border: 1px solid var(--rule);
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     background: var(--bg);
     font-size: var(--small);
     transition: border-color var(--t-fast) var(--ease);
   }
-  .exp-input:focus-visible { outline: 0; border-color: var(--fg); }
+  .exp-input:focus-visible { outline: 0; border-color: var(--rule-focus); }
 
   .exp-list {
     flex: 1;

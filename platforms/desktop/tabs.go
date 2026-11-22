@@ -17,17 +17,17 @@ import (
 func (a *app) tabChips(c *ui.Context, x *tile) {
 	o, pal := a.o, p(c)
 	chip := func(key string, on bool, body func(hovered bool)) ui.Element {
-		e := ui.Row(c.Key(key)).Height(30).Padding(0, 6, 0, 10).Gap(7).Radius(7).Shrink(1).MinWidth(0).AlignItems(ui.Center)
+		e := ui.Row(c.Key(key)).Height(30).Padding(0, 6, 0, 10).Gap(7).Radius(soft).Shrink(1).MinWidth(0).AlignItems(ui.Center)
 		hovered := e.Hovered()
 		if on {
-			e.Background(pal.raised)
+			e.Background(pal.raised).Border(1, pal.rule)
 		} else {
 			hover(e, pal.hover)
 		}
 		return e.Children(func() { body(hovered) })
 	}
 	closeX := func(tip string) bool {
-		return press(ui.Row(c).Size(18, 18).Radius(4).Justify(ui.Center).Children(func() { ui.Text(c, "×").FontSize(14).TextColor(pal.meta) }).Tooltip(tip))
+		return press(ui.Row(c).Size(18, 18).Radius(soft).Justify(ui.Center).Children(func() { ui.Text(c, "×").FontSize(14).TextColor(pal.meta) }).Tooltip(tip))
 	}
 	// ORB, first in the window's first tile as on the phone, is Home: a new session, the
 	// conversations open, every thread.
@@ -93,7 +93,7 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 				case t.Ask != nil:
 					ui.Text(c, "asks").FontSize(12).TextColor(rupture)
 				case t.Unread > 0 && !on:
-					ui.Text(c, map[bool]string{true: "99+", false: strconv.Itoa(t.Unread)}[t.Unread > 99]).Padding(0, 5).Radius(7).Background(pal.fg).TextColor(pal.bg).FontSize(labelSize + 1).FontWeight(strong)
+					ui.Text(c, "("+map[bool]string{true: "99+", false: strconv.Itoa(t.Unread)}[t.Unread > 99]+")").TextColor(pal.meta).FontSize(labelSize + 1).FontWeight(strong)
 				}
 				// Its × has its place always, as a browser's tab: shown on it or under the pointer.
 				if on || hovered {

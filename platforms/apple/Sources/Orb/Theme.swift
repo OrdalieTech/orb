@@ -8,23 +8,23 @@ typealias NativeImage = UIImage
 /// iPhone runs no Orb of its own yet, and starts them on the machines it is paired with.
 let device = "this iPhone", local = false
 
-/// Ordalie tokens, as on Android (ui/Theme.kt), Desktop and Web: raw console × Evangelion × teenage
-/// engineering — drafting sheet light & pitch-black OLED dark, signal vermilion (#FF3D00).
+/// Ordalie tokens, as on Android (ui/Theme.kt), Desktop and Web: pure teenage engineering
+/// (OP-1 field aluminum light & OP-XY matte-black dark) × Evangelion NERV.
 enum Ink {
-    static let bg = tone(0xEFECE6, 0x000000)
-    static let fg = tone(0x090909, 0xF2F2ED)
-    static let mute = tone(0x2C2C2A, 0xB8B8B0)
-    static let meta = tone(0x52514C, 0x7E7E76)
-    static let rule = tone(0xB4B1A9, 0x2E2E2C)
-    static let raised = tone(0xF8F7F3, 0x0A0A0A)
-    static let rupture = Color(rgb: 0xFF3D00)
-    static let blue = Color(rgb: 0x003CB3)
+    static let bg = tone(0xECEBE6, 0x0C0C0C)
+    static let fg = tone(0x161614, 0xEAE9E4)
+    static let mute = tone(0x4E4D48, 0x9E9D97)
+    static let meta = tone(0x76746E, 0x6D6C67)
+    static let rule = tone(0xD1CEC6, 0x292926)
+    static let raised = tone(0xF5F4F0, 0x141413)
+    static let rupture = tone(0xEB431E, 0xFF4E26)
+    static let blue = tone(0x0044CC, 0x2968FF)
     static let paper = Color(rgb: 0xFFFFFF)
 
     /// A peer's hue, as the view assigns it (1 to 6; this machine, 0, takes the ink): six vivid
     /// hardware channel LED tones apart from signal vermilion.
     static func hue(_ n: Int) -> Color {
-        let tones: [(UInt32, UInt32)] = [(0x0047FF, 0x2E9BFF), (0x00875A, 0x00E58B), (0xCC6B00, 0xFFB000), (0x6528D7, 0xB185FF), (0x177E2E, 0x4CE052), (0xC81E78, 0xFF4DA6)]
+        let tones: [(UInt32, UInt32)] = [(0x0052E0, 0x3E9BFF), (0x008256, 0x12D687), (0xB86800, 0xE5A00D), (0x6534CC, 0xAC85FF), (0x1B7A34, 0x4BD65A), (0xBE2574, 0xF554A4)]
         return n > 0 ? tone(tones[(n - 1) % tones.count].0, tones[(n - 1) % tones.count].1) : fg
     }
 
@@ -73,12 +73,12 @@ extension NativeFont {
     }
 }
 
-/// A label: small caps in medium weight, for the names of regions and states.
+/// A clean section label in normal case, matching Web and Desktop.
 struct Caps: View {
     let text: String
     var color = Ink.meta
     init(_ text: String, color: Color = Ink.meta) { self.text = text; self.color = color }
-    var body: some View { Text(text.uppercased()).font(.mono(Size.label, .medium)).tracking(0.3).foregroundStyle(color) }
+    var body: some View { Text(text).font(.mono(Size.small, .semibold)).foregroundStyle(color) }
 }
 
 /// The EVA title card: Ubuntu Sans Mono Bold stretched 1.9 times as tall. Reserved for events and identities.

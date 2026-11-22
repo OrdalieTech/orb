@@ -149,25 +149,32 @@
   });
 
   $effect(() => {
+    orb.inlinePaletteOpen = paletteChoices.length > 0;
     if (paletteChoices.length === 0) chosen = -1;
     else if (chosen < 0 || chosen >= paletteChoices.length) chosen = /^\/\S*$/.test(draft) ? 0 : -1;
+    return () => {
+      orb.inlinePaletteOpen = false;
+    };
   });
 
   async function submit(mode = "send") {
-    const text = draft.trim();
+    const raw = textarea?.value ?? draft;
+    const text = raw.trim();
     if (tab?.busy && !text) {
       orb.send({ do: "abort", tab: tab.id });
       return;
     }
     if (!text) return;
     draft = "";
+    if (textarea) textarea.value = "";
     orb.setDraft(tabKey, "");
     histIdx = -1;
     dismissed = null;
     onSent();
     try {
       await orb.submitMessage(tab?.id || "", text, mode);
-    } catch {
+    } catch (err) {
+      if (!orb.error) orb.showError(err?.message || String(err));
       if (!draft) {
         draft = text;
         orb.setDraft(tabKey, text);
@@ -368,7 +375,7 @@
       class="prompt-input scroll"
       rows="2"
       maxlength="16384"
-      value={draft}
+      bind:value={draft}
       oninput={onInput}
       onkeyup={onKeyUp}
       onkeydown={onKeyDown}
@@ -394,7 +401,7 @@
       type="button"
       class="deck-chip model"
       onclick={() => orb.openModelDeck(tab)}
-      title="Model and reasoning (Alt+M)"
+      title="Model and reasoning (Ctrl+M · Shift+Tab cycles reasoning)"
     >
       <span class="model-name">{modelLabel} ▾</span>
       {#if shownLevels.length > 0}
@@ -437,7 +444,7 @@
       class:stop={busy && !hasText}
       disabled={!hasText && !busy}
       aria-label={busy && !hasText ? "Stop" : busy ? "Steer" : "Send"}
-      title={busy && !hasText ? "Stop (Alt+.)" : busy ? "Steer (Enter)" : "Send (Enter · Shift+Enter newline)"}
+      title={busy && !hasText ? "Stop (Esc)" : busy ? "Steer (Enter)" : "Send (Enter · Shift+Enter newline)"}
     ></button>
   </div>
 </form>
@@ -450,13 +457,13 @@
     max-width: 780px;
     margin: 6px auto max(12px, env(safe-area-inset-bottom));
     padding: 0;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
     background: var(--raised);
     transition: border-color var(--t-fast) var(--ease);
   }
   .prompt-deck:focus-within {
-    border-color: var(--fg);
+    border-color: var(--rule-focus);
   }
   .prompt-deck:focus-within .prompt-sigil {
     color: var(--rupture);
@@ -502,8 +509,9 @@
     align-items: center;
     gap: 4px;
     padding: 5px 8px;
-    border-top: 1px solid var(--rule);
+    border-top: 1px solid var(--rule-soft);
     background: var(--bg);
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
   }
   .deck-chip {
     display: flex;
@@ -513,7 +521,7 @@
     height: 26px;
     padding: 0 8px;
     border: 1px solid transparent;
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     background: none;
     cursor: pointer;
     font-size: 12px;
@@ -568,7 +576,7 @@
     height: 26px;
     flex-shrink: 0;
     border: 1px solid var(--rule);
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     background: var(--raised);
     color: var(--fg);
     font-size: 13px;
@@ -578,14 +586,14 @@
   }
   .deck-queue {
     padding: 4px 9px;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule-focus);
+    border-radius: var(--radius-sm);
     background: var(--raised);
     color: var(--fg);
     font-size: 11.5px;
     font-weight: 700;
     cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
     .deck-chip:hover:enabled {
@@ -655,8 +663,8 @@
     display: flex;
     flex-direction: column;
     padding: 0;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
     background: var(--raised);
     z-index: 6;
     animation: drop-in 90ms var(--ease);

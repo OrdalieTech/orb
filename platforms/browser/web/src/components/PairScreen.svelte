@@ -104,8 +104,8 @@
   }
   .pair-card {
     padding: 22px;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
     background: var(--raised);
   }
   h1 {
@@ -118,8 +118,8 @@
     display: inline-block;
     margin: 12px 0;
     padding: 7px 12px;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-sm);
     background: var(--recessed);
     font-size: 13px;
     font-weight: 700;
@@ -132,16 +132,16 @@
     resize: none;
     font-size: 12px;
     border: 1px solid var(--rule);
-    border-radius: 0;
+    border-radius: var(--radius-sm);
     background: var(--bg);
     transition: border-color var(--t-fast) var(--ease);
   }
-  .code-in:focus-visible { outline: 0; border-color: var(--fg); }
+  .code-in:focus-visible { outline: 0; border-color: var(--rule-focus); }
   .preview {
     margin-bottom: 14px;
     padding: 11px 13px;
-    border: 1px solid var(--fg);
-    border-radius: 0;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-sm);
     background: var(--recessed);
     animation: drop-in var(--t-fast) var(--ease);
   }

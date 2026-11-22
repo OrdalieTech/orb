@@ -1,7 +1,7 @@
-/* Ordalie — Raw Console × Evangelion (NERV MAGI) × teenage engineering (OP-XY / EP-133)
-   Zero shadcn cards. Zero rounded bubbles. Zero drop shadows. Zero glassmorphism.
-   Pure 90° precision geometry (0px radius; circular hardware action key only),
-   high-contrast monochrome + NERV/TE Signal Orange (#FF4400) + MAGI Amber + Ubuntu Sans Mono. */
+/* Ordalie — Pure teenage engineering (OP-1 field / OP-XY) × Evangelion (NERV MAGI)
+   Anodized warm aluminum paper light & matte-black dark, quiet architectural hairlines,
+   microscopic 2px/3px machined chamfers (circular hardware action key only),
+   zero shadows, zero glassmorphism, zero colored decorative chips, zero uppercase eyebrows. */
 
 @font-face {
   font-family: "Ubuntu Sans Mono";
@@ -13,33 +13,35 @@
 :root {
   --font-mono: "Ubuntu Sans Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Light — Raw technical manual / TE drafting sheet */
-  --bg: #EFECE6;
-  --fg: #090909;
-  --mute: #2C2C2A;
-  --meta: #52514C;
-  --rule: #B4B1A9;
-  --rule-strong: #090909;
-  --rule-soft: #D6D3CB;
-  --raised: #F8F7F3;
-  --recessed: #E3E0D8;
-  --hover: #DEDAD0;
-  --backdrop: rgba(9, 9, 9, 0.62);
+  /* Light — OP-1 field bead-blasted warm aluminum paper */
+  --bg: #ECEBE6;
+  --fg: #161614;
+  --mute: #4E4D48;
+  --meta: #76746E;
+  --rule: #D1CEC6;
+  --rule-focus: #8B8880;
+  --rule-strong: #161614;
+  --rule-soft: #E0DDD6;
+  --raised: #F5F4F0;
+  --recessed: #E2E0D9;
+  --hover: #DFDDD5;
+  --backdrop: rgba(22, 22, 20, 0.44);
 
-  /* Signal colors: TE/NERV Vermilion Orange, MAGI Amber, Pattern Blue */
-  --rupture: #FF3D00;
-  --amber: #C46B00;
-  --blue: #003CB3;
+  /* Signal colors: TE Field Vermilion, NERV MAGI Amber, Pattern Blue */
+  --rupture: #EB431E;
+  --rupture-soft: rgba(235, 67, 30, 0.10);
+  --amber: #B86800;
+  --blue: #0044CC;
   --paper-ink: #FFFFFF;
 
   /* Hardware peer channel LEDs */
-  --hue0: #090909;
-  --hue1: #0047FF;
-  --hue2: #00875A;
-  --hue3: #CC6B00;
-  --hue4: #6528D7;
-  --hue5: #177E2E;
-  --hue6: #C81E78;
+  --hue0: #161614;
+  --hue1: #0052E0;
+  --hue2: #008256;
+  --hue3: #B86800;
+  --hue4: #6534CC;
+  --hue5: #1B7A34;
+  --hue6: #BE2574;
 
   /* Scale — crisp dense technical readout */
   --title: 18px;
@@ -48,11 +50,13 @@
   --label: 11px;
   --round: 30px;
   --margin: 16px;
+  --radius-sm: 2px;
+  --radius-md: 3px;
 
   /* Crisp mechanical transitions — zero bounce, zero float */
   --ease: cubic-bezier(0.2, 0, 0, 1);
-  --t-fast: 85ms;
-  --t-med: 145ms;
+  --t-fast: 90ms;
+  --t-med: 150ms;
 
   color-scheme: light dark;
   font: 400 var(--body)/1.48 var(--font-mono);
@@ -64,54 +68,58 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    /* Dark — Raw NERV MAGI / OP-XY pitch-black OLED console */
-    --bg: #000000;
-    --fg: #F2F2ED;
-    --mute: #B8B8B0;
-    --meta: #7E7E76;
-    --rule: #2E2E2C;
-    --rule-strong: #F2F2ED;
-    --rule-soft: #1B1B1A;
-    --raised: #0A0A0A;
-    --recessed: #121211;
-    --hover: #1A1A18;
-    --backdrop: rgba(0, 0, 0, 0.78);
-    --rupture: #FF4D00;
-    --amber: #FFB000;
-    --blue: #1B5BFF;
-    --hue0: #F2F2ED;
-    --hue1: #2E9BFF;
-    --hue2: #00E58B;
-    --hue3: #FFB000;
-    --hue4: #B185FF;
-    --hue5: #4CE052;
-    --hue6: #FF4DA6;
+    /* Dark — OP-XY light-absorbing matte-black anodized aluminum */
+    --bg: #0C0C0C;
+    --fg: #EAE9E4;
+    --mute: #9E9D97;
+    --meta: #6D6C67;
+    --rule: #292926;
+    --rule-focus: #56554F;
+    --rule-strong: #EAE9E4;
+    --rule-soft: #1D1D1B;
+    --raised: #141413;
+    --recessed: #1B1B19;
+    --hover: #222220;
+    --backdrop: rgba(0, 0, 0, 0.68);
+    --rupture: #FF4E26;
+    --rupture-soft: rgba(255, 78, 38, 0.14);
+    --amber: #E5A00D;
+    --blue: #2968FF;
+    --hue0: #EAE9E4;
+    --hue1: #3E9BFF;
+    --hue2: #12D687;
+    --hue3: #E5A00D;
+    --hue4: #AC85FF;
+    --hue5: #4BD65A;
+    --hue6: #F554A4;
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #000000;
-  --fg: #F2F2ED;
-  --mute: #B8B8B0;
-  --meta: #7E7E76;
-  --rule: #2E2E2C;
-  --rule-strong: #F2F2ED;
-  --rule-soft: #1B1B1A;
-  --raised: #0A0A0A;
-  --recessed: #121211;
-  --hover: #1A1A18;
-  --backdrop: rgba(0, 0, 0, 0.78);
-  --rupture: #FF4D00;
-  --amber: #FFB000;
-  --blue: #1B5BFF;
-  --hue0: #F2F2ED;
-  --hue1: #2E9BFF;
-  --hue2: #00E58B;
-  --hue3: #FFB000;
-  --hue4: #B185FF;
-  --hue5: #4CE052;
-  --hue6: #FF4DA6;
+  --bg: #0C0C0C;
+  --fg: #EAE9E4;
+  --mute: #9E9D97;
+  --meta: #6D6C67;
+  --rule: #292926;
+  --rule-focus: #56554F;
+  --rule-strong: #EAE9E4;
+  --rule-soft: #1D1D1B;
+  --raised: #141413;
+  --recessed: #1B1B19;
+  --hover: #222220;
+  --backdrop: rgba(0, 0, 0, 0.68);
+  --rupture: #FF4E26;
+  --rupture-soft: rgba(255, 78, 38, 0.14);
+  --amber: #E5A00D;
+  --blue: #2968FF;
+  --hue0: #EAE9E4;
+  --hue1: #3E9BFF;
+  --hue2: #12D687;
+  --hue3: #E5A00D;
+  --hue4: #AC85FF;
+  --hue5: #4BD65A;
+  --hue6: #F554A4;
 }
 
 :root[data-theme="light"] {
@@ -150,7 +158,7 @@ h1, h2, h3, h4 {
 }
 button, textarea, input { font: inherit; color: inherit; }
 
-/* Raw 90° mechanical console buttons — zero radius, zero shadow */
+/* Machined mechanical keycap buttons — quiet hairline, microscopic chamfer, zero shadow */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -160,9 +168,9 @@ button, textarea, input { font: inherit; color: inherit; }
   padding: 5px 11px;
   font-size: var(--small);
   font-weight: 700;
-  letter-spacing: 0.02em;
-  border: 1px solid var(--fg);
-  border-radius: 0;
+  letter-spacing: 0.01em;
+  border: 1px solid var(--rule-focus);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--fg);
   transition:
@@ -229,7 +237,7 @@ button, textarea, input { font: inherit; color: inherit; }
   outline-offset: 1px;
 }
 
-/* Raw flat key legend [K] */
+/* Flat hardware keycap legend */
 kbd {
   display: inline-flex;
   align-items: center;
@@ -237,13 +245,13 @@ kbd {
   padding: 0 5px;
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   line-height: 1.45;
-  color: var(--fg);
+  color: var(--mute);
   background: var(--recessed);
   border: 1px solid var(--rule);
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
 }
 

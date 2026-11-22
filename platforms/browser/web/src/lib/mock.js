@@ -444,6 +444,22 @@ export function createMockPeer({ emit, rowCount = 2000 }) {
         emitRows(m.tab, 0, next);
         return;
       }
+      if (m.do === "thinking") {
+        const t = tabs.find(x => x.id === m.tab);
+        if (t && m.name) {
+          t.thinking = m.name;
+          emitState();
+        }
+        return;
+      }
+      if (m.do === "model") {
+        const t = tabs.find(x => x.id === m.tab);
+        if (t && m.name) {
+          t.model = m.name;
+          emitState();
+        }
+        return;
+      }
       if (m.do === "answer") {
         tabs[0].ask = null;
         emitState();

@@ -93,8 +93,8 @@
     gap: 0;
     max-width: 1120px;
     margin: 0 auto;
-    border-top: 1px solid var(--fg);
-    border-left: 1px solid var(--fg);
+    border-top: 1px solid var(--rule);
+    border-left: 1px solid var(--rule);
   }
   .ov-card {
     display: flex;
@@ -102,8 +102,8 @@
     height: 224px;
     padding: 12px 13px;
     border: 0;
-    border-right: 1px solid var(--fg);
-    border-bottom: 1px solid var(--fg);
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
     border-radius: 0;
     background: var(--raised);
     cursor: pointer;
