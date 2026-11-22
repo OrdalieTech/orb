@@ -61,8 +61,8 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 		}
 		if len(recent) > 0 && o.state.Up && !small {
 			reading(c).MaxWidth(680).Margin(36, ui.Auto, 0).PaddingX(margin).Children(func() {
-				ui.Row(c).FillWidth().Margin(0, 0, 6).Children(func() {
-					label(c, "latest").TextColor(pal.meta).Grow(1)
+				ui.Row(c).FillWidth().Margin(0, 0, 6).AlignItems(ui.Center).Children(func() {
+					hudLabel(c, 2, "latest", "").Grow(1)
 					if link(c, "all threads", keys("K")) {
 						a.openPalette()
 					}
@@ -137,8 +137,8 @@ func (a *app) openCards(c *ui.Context) {
 		tabs = tabs[:few]
 	}
 	reading(c).MaxWidth(680).Margin(36, ui.Auto, 0).PaddingX(margin).Children(func() {
-		ui.Row(c).FillWidth().Margin(0, 0, 6).Children(func() {
-			label(c, fmt.Sprintf("open · %d", len(o.state.Tabs))).TextColor(pal.meta).Grow(1)
+		ui.Row(c).FillWidth().Margin(0, 0, 6).AlignItems(ui.Center).Children(func() {
+			hudLabel(c, 1, fmt.Sprintf("open · %d", len(o.state.Tabs)), "").Grow(1)
 			if len(o.state.Tabs) > few {
 				more := map[bool]string{true: "fewer", false: fmt.Sprintf("all %d", len(o.state.Tabs))}[a.allOpen]
 				if link(c, more, "") {
@@ -148,7 +148,13 @@ func (a *app) openCards(c *ui.Context) {
 		})
 		ui.Grid(c).FillWidth().Columns(map[bool]int{true: 2, false: 3}[a.narrow]).Gap(8).Children(func() {
 			for _, t := range tabs {
-				card := ui.Column(c.Key(t.ID)).Height(78).Padding(9, 10).Gap(3).Radius(10).Border(1, pal.rule).Clip()
+				border := pal.rule
+				if t.Ask != nil {
+					border = rupture
+				} else if t.Busy {
+					border = pal.fg
+				}
+				card := ui.Column(c.Key(t.ID)).Height(78).Padding(9, 10).Gap(3).Radius(pane).Background(pal.raised).Border(1, border).Clip()
 				hovered := card.Hovered()
 				hover(card, pal.hover)
 				card.Children(func() {

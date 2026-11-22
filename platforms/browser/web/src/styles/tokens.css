@@ -1,0 +1,326 @@
+/* Ordalie × Evangelion × Teenage Engineering design system
+   Machined Field Paper & OP-XY Instrument Charcoal · Signal Vermilion · Ubuntu Sans Mono.
+   Minimal, clean, hardware-precise: 1px hairlines, recessed telemetry readouts, tactile keycaps. */
+
+@font-face {
+  font-family: "Ubuntu Sans Mono";
+  src: url(ubuntu_sans_mono.ttf);
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --bg: #E5E7E1;
+  --fg: #1E211F;
+  --mute: #464B47;
+  --meta: #636964;
+  --rule: #A6ACA6;
+  --rule-soft: color-mix(in srgb, var(--rule) 55%, transparent);
+  --raised: #EFF1EC;
+  --recessed: #DADED7;
+  --hover: #D7DBD3;
+  --shade: #00000014;
+  --key-rim: #00000022;
+
+  --rupture: #D94326;
+  --blue: #173E78;
+  --paper-ink: #FAF9F6;
+
+  --hue0: var(--mute);
+  --hue1: #2558A8;
+  --hue2: #167A6E;
+  --hue3: #A36A0B;
+  --hue4: #6843AD;
+  --hue5: #3D781E;
+  --hue6: #9E3A84;
+
+  --title: 18px;
+  --body: 15px;
+  --small: 13px;
+  --label: 10px;
+  --round: 30px;
+  --soft: 4px;
+  --pane: 8px;
+  --margin: 16px;
+  --ease: cubic-bezier(.23, 1, .32, 1);
+
+  color-scheme: light dark;
+  font: 400 var(--body)/1.45 "Ubuntu Sans Mono", ui-monospace, monospace;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161817;
+    --fg: #E2E6DF;
+    --mute: #A4ABA5;
+    --meta: #7F8680;
+    --rule: #3D433F;
+    --raised: #1F2220;
+    --recessed: #111312;
+    --hover: #2A2E2B;
+    --shade: #00000066;
+    --key-rim: #00000080;
+    --rupture: #F05232;
+    --blue: #2255A4;
+    --hue1: #6899E6;
+    --hue2: #4CC4B3;
+    --hue3: #E0A83E;
+    --hue4: #A989E6;
+    --hue5: #87C452;
+    --hue6: #DB78C2;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #161817;
+  --fg: #E2E6DF;
+  --mute: #A4ABA5;
+  --meta: #7F8680;
+  --rule: #3D433F;
+  --raised: #1F2220;
+  --recessed: #111312;
+  --hover: #2A2E2B;
+  --shade: #00000066;
+  --key-rim: #00000080;
+  --rupture: #F05232;
+  --blue: #2255A4;
+  --hue1: #6899E6;
+  --hue2: #4CC4B3;
+  --hue3: #E0A83E;
+  --hue4: #A989E6;
+  --hue5: #87C452;
+  --hue6: #DB78C2;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+@media (max-width: 600px) {
+  :root {
+    --title: 19px;
+    --label: 11px;
+    --round: 34px;
+  }
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+p { margin: 0; }
+h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -.02em; }
+button, textarea, input { font: inherit; color: inherit; }
+
+/* Tactile hardware button (TE keycap feel) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 7px 13px;
+  font-size: var(--small);
+  font-weight: 600;
+  border: 1px solid var(--fg);
+  border-radius: var(--soft);
+  background: var(--raised);
+  box-shadow: 0 1px 0 var(--key-rim);
+  transition: transform 90ms var(--ease), background-color 120ms, box-shadow 90ms;
+}
+.btn:active:enabled {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+.btn.inverted {
+  color: var(--bg);
+  background: var(--fg);
+  border-color: var(--fg);
+}
+.btn.danger {
+  color: var(--rupture);
+  border-color: var(--rupture);
+  background: transparent;
+}
+.btn.subtle {
+  border-color: var(--rule);
+  color: var(--mute);
+  background: transparent;
+  box-shadow: none;
+}
+.btn.plain {
+  border: 0;
+  padding: 4px 6px;
+  background: transparent;
+  box-shadow: none;
+  font-weight: 500;
+  color: var(--mute);
+}
+@media (hover: hover) {
+  .btn.subtle:hover:enabled,
+  .btn.plain:hover:enabled {
+    background: var(--hover);
+    color: var(--fg);
+  }
+}
+:disabled {
+  opacity: .42;
+  cursor: default;
+}
+:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 1px;
+}
+
+/* Miniature TE hardware keycap legend */
+kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 5px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  line-height: 1.4;
+  color: var(--meta);
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* Numbered NERV × TE section header: 01 · LABEL */
+.hud-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--label);
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--meta);
+}
+.hud-label .idx {
+  color: var(--rupture);
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.hud-label .tail {
+  margin-left: auto;
+  font-weight: 500;
+  color: var(--meta);
+}
+
+.meta {
+  font-size: var(--small);
+  color: var(--meta);
+  overflow-wrap: anywhere;
+}
+.alarm {
+  color: var(--rupture) !important;
+}
+
+/* NERV stretched title typography (spent sparingly: ORB mark, NEW SESSION, interrupts) */
+.stretch {
+  display: block;
+  flex-shrink: 0;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: scale(var(--squeeze, 1), 1.9);
+  transform-origin: 0 50%;
+}
+
+/* Hardware square LED indicator */
+.led {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 1px;
+  background: var(--hue, var(--mute));
+}
+.led.round {
+  border-radius: 50%;
+}
+.led.live {
+  animation: led-pulse 1.3s steps(1) infinite;
+}
+.led.asks {
+  background: var(--rupture);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--rupture) 65%, transparent);
+}
+
+/* Segmented 10-bar hardware meter (sync rate / context) */
+.sync-bay {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  background: var(--recessed);
+  border: 1px solid var(--rule-soft);
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--meta);
+}
+.sync-bars {
+  display: inline-flex;
+  gap: 2px;
+}
+.sync-bars i {
+  width: 3px;
+  height: 9px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--rule) 45%, transparent);
+  transition: background-color 120ms var(--ease);
+}
+.sync-bars i.lit {
+  background: var(--fg);
+}
+.sync-bay.alarm {
+  border-color: color-mix(in srgb, var(--rupture) 65%, transparent);
+  color: var(--rupture);
+}
+.sync-bay.alarm .sync-bars i.lit {
+  background: var(--rupture);
+}
+
+/* Thin hardware scrollbars */
+.scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+
+@keyframes led-pulse {
+  50% { opacity: .24; }
+}
+@keyframes wipe {
+  from { clip-path: inset(0 100% 0 0); }
+}
+@keyframes appear {
+  from { opacity: 0; transform: translateY(4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
+}

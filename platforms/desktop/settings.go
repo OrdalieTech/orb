@@ -299,9 +299,9 @@ func quota(c *ui.Context, w Window) {
 	if w.Left < 15 {
 		ink = rupture
 	}
-	ui.Row(c).FillWidth().PaddingStart(20).Gap(10).Children(func() {
+	ui.Row(c).FillWidth().PaddingStart(20).Gap(10).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, w.Name).Width(84).FontSize(small).TextColor(pal.meta).SingleLine()
-		ui.Box(c).Grow(1).Basis(0).Height(4).Radius(2).Background(pal.rule).Clip().Children(func() {
+		ui.Box(c).Grow(1).Basis(0).Height(6).Radius(2).Background(pal.recessed).Border(1, pal.rule.Alpha(0.55)).Clip().Children(func() {
 			ui.Box(c).FillHeight().WidthPercent(float32(math.Max(0, math.Min(100, w.Left)))).Background(ink)
 		})
 		ui.Text(c, fmt.Sprintf("%d%%", int(math.Round(w.Left)))).Width(44).FontSize(small).FontWeight(medium).TextColor(ink)
@@ -749,7 +749,7 @@ func (a *app) up() func() {
 func (a *app) generalScreen(c *ui.Context) {
 	pal := p(c)
 	page(c, func() { header(c, "General", "new conversations, machines, keys", nil, nil) }, func() {
-		label(c, "new conversations").Padding(14, 0, 2).TextColor(pal.meta)
+		hudLabel(c, 1, "new conversations", "").Padding(14, 0, 2)
 		d := a.starts()
 		if d == nil {
 			d = &Tab{} // read as it shows
@@ -767,9 +767,9 @@ func (a *app) generalScreen(c *ui.Context) {
 				a.chooseModel(nil, false)
 			}
 		}
-		label(c, "machines").Padding(18, 0, 4).TextColor(pal.meta)
+		hudLabel(c, 2, "machines", "").Padding(18, 0, 4)
 		a.magi(c)
-		label(c, "keys").Padding(18, 0, 4).TextColor(pal.meta)
+		hudLabel(c, 3, "keys", "").Padding(18, 0, 4)
 		for _, k := range [][2]string{
 			{keys("K") + " · " + keys("P"), "go to a conversation, a thread"}, {keys("T") + " · " + keys("N"), "new tab"}, {keys("W"), "close the tab (it runs on)"},
 			{keys("⇧T"), "reopen the tab closed last"}, {keys("⇧W"), "close the tile"}, {keys("D") + " · " + keys("⇧D"), "split right · down"},
@@ -779,8 +779,8 @@ func (a *app) generalScreen(c *ui.Context) {
 			{keys("=") + " · " + keys("-") + " · " + keys("0"), "zoom in · out · actual size"}, {map[bool]string{true: "⌃M", false: "Ctrl+M"}[runtime.GOOS == "darwin"], "model and reasoning"},
 			{keys("J"), "the conversation's terminal"}, {keys("."), "stop the turn"}, {keys(","), "settings"},
 		} {
-			ui.Row(c.Key(k[1])).FillWidth().PaddingY(2).Gap(12).Children(func() {
-				ui.Text(c, k[0]).Width(map[bool]float32{true: 120, false: 170}[runtime.GOOS == "darwin"]).FontSize(small).FontWeight(medium).TextColor(pal.fg)
+			ui.Row(c.Key(k[1])).FillWidth().PaddingY(3).Gap(12).AlignItems(ui.Center).Children(func() {
+				ui.Row(c).Width(map[bool]float32{true: 132, false: 180}[runtime.GOOS == "darwin"]).Children(func() { keycap(c, k[0]) })
 				ui.Text(c, k[1]).FontSize(small).TextColor(pal.mute)
 			})
 		}

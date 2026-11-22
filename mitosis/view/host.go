@@ -129,21 +129,37 @@ func (a *App) slow(in intent) func() (any, error) {
 		return call(func() (any, error) { return a.delete(in.Key) })
 	case "attach":
 		// A file of this device a message cites: another machine gets a copy, in pieces a frame
-		// holds, and the message cites the copy.
+		// holds, and the message cites the copy. Hosts without disk paths (browser tabs) pass
+		// inline bytes in Data with Name instead of Path.
 		return call(func() (any, error) {
 			if machine == self {
-				return map[string]string{"path": in.Path}, nil
+				if in.Path != "" {
+					return map[string]string{"path": in.Path}, nil
+				}
+				if a.o.WriteFile == nil {
+					return nil, errors.New("this host cannot store attached files")
+				}
+				p, err := a.o.WriteFile(filepath.Base(cmp.Or(in.Name, "attachment")), in.Data)
+				return map[string]string{"path": p}, err
 			}
-			data, err := a.o.ReadFile(in.Path)
-			if err != nil {
-				return nil, err
+			var data []byte
+			name := filepath.Base(in.Path)
+			if in.Path == "" {
+				data = in.Data
+				name = filepath.Base(cmp.Or(in.Name, "attachment"))
+			} else {
+				var err error
+				data, err = a.o.ReadFile(in.Path)
+				if err != nil {
+					return nil, err
+				}
 			}
 			var r struct {
 				Path string `json:"path"`
 			}
 			for at := 0; at == 0 || at < len(data); at += attachPiece {
 				piece := data[at:min(at+attachPiece, len(data))]
-				if err := host("host.attach", "take a file", map[string]any{"name": filepath.Base(in.Path), "path": r.Path, "data": piece}, &r); err != nil {
+				if err := host("host.attach", "take a file", map[string]any{"name": name, "path": r.Path, "data": piece}, &r); err != nil {
 					return nil, err
 				}
 			}

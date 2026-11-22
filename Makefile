@@ -15,13 +15,14 @@ check: build lint test portability
 include platforms/worker/worker.mk
 
 BROWSER_PORT ?= 8787
-.PHONY: browser-build browser-serve browser-dist
+.PHONY: browser-build browser-serve browser-dist browser-bench
 browser-build:
 	rm -rf .tools/browser && mkdir -p .tools/browser
+	# Build the static Svelte 5 web app (flat assets into .tools/browser).
+	cd platforms/browser/web && (test -d node_modules || npm ci --no-audit --no-fund --loglevel=error) && npx vite build --outDir "$(CURDIR)/.tools/browser" --emptyOutDir=false
 	# The tab as a full Mitosis peer (peer.js) runs the Worker runtime.
 	$(GO_ENV) CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -trimpath -ldflags=-s -o .tools/browser/peer.wasm ./cmd/orb-worker
-	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" platforms/worker/deploy/helpers.js .tools/browser/
-	cp platforms/browser/web/* .tools/browser/
+	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" platforms/worker/deploy/helpers.js platforms/browser/web/peer.js .tools/browser/
 	# The apps' face and mark: the page takes them from Android and the desktop, never a copy.
 	cp platforms/android/app/src/main/res/font/ubuntu_sans_mono.ttf platforms/desktop/ordalie.svg .tools/browser/
 	# Gzipped, as the page fetches them: peer.wasm is over the 25 MiB a static host such as Cloudflare Pages takes.
@@ -32,13 +33,16 @@ browser-build:
 # wasm, and only index.html, which points there, changes in place.
 VERSION ?= $(shell git describe --tags --always)
 browser-dist: browser-build
-	cd .tools && dir="$(VERSION)-$$(cat browser/* | shasum -a 256 | cut -c1-12)" && rm -rf browser-dist && \
-	mkdir -p "browser-dist/$$dir" && cp browser/* "browser-dist/$$dir/" && \
+	cd .tools && dir="$(VERSION)-$$(find browser -type f | sort | xargs cat | shasum -a 256 | cut -c1-12)" && rm -rf browser-dist && \
+	mkdir -p "browser-dist/$$dir" && cp -R browser/. "browser-dist/$$dir/" && \
 	sed "s|<head>|&<base href=\"$$dir/\">|" browser/index.html > browser-dist/index.html && \
 	tar -czf "orb_$(VERSION)_browser.tar.gz" -C browser-dist .
 
 browser-serve: browser-build
 	python3 -m http.server $(BROWSER_PORT) --bind 127.0.0.1 --directory .tools/browser
+
+browser-bench: browser-build
+	node platforms/browser/web/bench/bench.mjs --dir .tools/browser
 
 build:
 	$(GO_ENV) CGO_ENABLED=0 go build ./...

@@ -38,6 +38,9 @@ type Options struct {
 	SaveNames func([]byte)
 	// ReadFile reads a file of this device, one a message cites, to copy it to another machine.
 	ReadFile func(path string) ([]byte, error)
+	// WriteFile stores an inline-attached file on this host (for hosts without disk paths, like a browser tab)
+	// and returns the path to cite in a prompt.
+	WriteFile func(name string, data []byte) (string, error)
 	// Latest is the newest Orb release, "" when unknown.
 	Latest func(ctx context.Context) string
 	// Name is what this machine is called in the app ("this phone"); CWD is where a new
@@ -153,6 +156,7 @@ type intent struct {
 	Auth     string   `json:"auth"`
 	Level    string   `json:"level"`
 	Path     string   `json:"path"`
+	Data     []byte   `json:"data"`
 }
 
 // Do runs one intent. Those that wait on a machine run on their own; the rest apply at once and

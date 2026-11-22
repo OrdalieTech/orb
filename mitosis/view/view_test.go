@@ -749,3 +749,53 @@ func TestGroupMembersSeedNamesAndOfflinePeersBackOff(t *testing.T) {
 		t.Fatalf("offline peer hammered during backoff: before=%d after=%d", before, after)
 	}
 }
+
+func TestInlineAttach(t *testing.T) {
+	c := newClient()
+	var wroteName string
+	var wroteData []byte
+	var remoteChunks []byte
+	var remoteName string
+	app := New(t.Context(), Options{
+		Emit: func(m any) { c.out <- mitosis.JSON(m) },
+		WriteFile: func(name string, data []byte) (string, error) {
+			wroteName, wroteData = name, append([]byte(nil), data...)
+			return "attachments/" + name, nil
+		},
+		Call: func(_ context.Context, method string, params, result any) error {
+			if method == "status" {
+				return json.Unmarshal([]byte(`{"peer_id":"me","peers":["box"],"peer_states":{"box":"connected"}}`), result)
+			}
+			if method == "remote" {
+				p := params.(map[string]any)
+				if p["method"] == "host.attach" {
+					args := p["params"].(map[string]any)
+					remoteName = args["name"].(string)
+					remoteChunks = append(remoteChunks, args["data"].([]byte)...)
+					return json.Unmarshal([]byte(`{"path":"/tmp/orb-attach/shot.png"}`), result)
+				}
+				return json.Unmarshal([]byte(`{}`), result)
+			}
+			return nil
+		},
+	})
+	c.until(t, "self loaded", func() bool { return c.state.Self == "me" })
+
+	app.Do([]byte(`{"id":"a1","do":"attach","machine":"me","name":"notes.txt","data":"aGVsbG8="}`))
+	c.until(t, "local attach reply", func() bool { return len(c.replies["a1"]) > 0 })
+	if strings.Contains(string(c.replies["a1"]), "error:") {
+		t.Fatalf("local inline attach failed: %s", c.replies["a1"])
+	}
+	if wroteName != "notes.txt" || string(wroteData) != "hello" {
+		t.Fatalf("unexpected WriteFile(%q, %q)", wroteName, string(wroteData))
+	}
+
+	app.Do([]byte(`{"id":"a2","do":"attach","machine":"box","name":"shot.png","data":"d29ybGQ="}`))
+	c.until(t, "remote attach reply", func() bool { return len(c.replies["a2"]) > 0 })
+	if strings.Contains(string(c.replies["a2"]), "error:") {
+		t.Fatalf("remote inline attach failed: %s", c.replies["a2"])
+	}
+	if remoteName != "shot.png" || string(remoteChunks) != "world" {
+		t.Fatalf("unexpected remote attach (%q, %q)", remoteName, string(remoteChunks))
+	}
+}

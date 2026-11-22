@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- The browser page (`platforms/browser/web/`) is now a static Svelte 5 application built with Vite and styled with a refined Evangelion × teenage engineering design system shared with the desktop, Android and Apple apps (Field Paper light / OP-XY Charcoal dark, Signal Vermilion accents, tight machined radii, recessed gauges, tactile `<kbd>` keycaps, and numbered HUD section labels). Heavy conversations stay flat in memory and smooth at 60 fps via dynamic-height transcript virtualization (182 DOM nodes and ~17 ms scroll/stream frames measured up to 10,000 rows in headless Chromium). Feature parity with the native apps adds inline file attachments (drag/drop, picker and clipboard paste over Mitosis `do: "attach"`), interactive remote folder explorer (`host.dirs`), lazy-loaded remote terminal drawer (`@xterm/xterm` over `host.terminal.*`), Overview live session grid, side-by-side split view, remote `update` trigger, sync-now control, and full keyboard navigation (`⌘K`/`Ctrl+K`, `⌘T`/`⌘W`/`⌘1-9`, `⌘\` split, `⌘O` overview, `⌘J` terminal, `⌘,` settings, `?` shortcuts).
+
 ## [0.27.0] - 2026-11-20
 
 One sync group is one set of machines: being in the group is enough to see and drive the conversations of every machine in it, a browser tab included, with no pairing code per machine, and leaving the group takes that access away at once. The default model, its reasoning and the plugin switches travel with the group too, and a member's change reaches every device in under a second.

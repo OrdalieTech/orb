@@ -23,25 +23,26 @@ import (
 var ordalieSVG []byte
 var ordalie = ui.MustParseSVG(ordalieSVG)
 
-// Ordalie tokens, as on Android (ui/Theme.kt): soft ink on sage paper, one rupture, a blue kept for
-// remote Orbs acting here.
+// Ordalie tokens, as on Android (ui/Theme.kt) and Web: Field Paper & OP-XY charcoal ink,
+// Evangelion × teenage engineering signal vermilion, and Pattern Blue for remote Orbs acting here.
 var (
 	texte    = ui.Hex("#FAF9F6")
-	rupture  = ui.Hex("#C94A3D")
+	rupture  = ui.Hex("#D94326")
 	blue     = ui.Hex("#173E78")
-	charcoal = ui.Hex("#2A2D2B")
+	charcoal = ui.Hex("#1E211F")
 )
 
-// palette is paper, not white; charcoal, not black: the contrast of printed matter. Rules are drawn,
-// not hinted; meta text keeps 4.4:1 on paper, and hover is a ground the eye sees (raised is not).
-type palette struct{ bg, fg, mute, meta, rule, raised, hover ui.Color }
+// palette is machined field paper, not white; instrument charcoal, not black: printed-matter
+// legibility with hardware precision. Rules are drawn 1px hairlines; recessed holds LCD/telemetry
+// readouts, raised holds tactile controls and floating modules.
+type palette struct{ bg, fg, mute, meta, rule, raised, hover, recessed ui.Color }
 
 var (
-	light = palette{ui.Hex("#E3E7E0"), charcoal, ui.Hex("#444A45"), ui.Hex("#646A65"), ui.Hex("#9EA49F"), ui.Hex("#ECEFE9"), ui.Hex("#D6DAD3")}
-	dark  = palette{ui.Hex("#1C201E"), ui.Hex("#DADFD8"), ui.Hex("#A8AEA9"), ui.Hex("#8A918C"), ui.Hex("#4E5550"), ui.Hex("#242927"), ui.Hex("#2F3331")}
-	// A peer's hue (1 to 6, as the view assigns them; 0, this computer, takes the ink): six tones
-	// apart from each other and from the rupture red, light then dark.
-	hues = [][2]string{{"#2F5FA8", "#6E9BE0"}, {"#1F7F73", "#4FBFAE"}, {"#9A6A12", "#D9A441"}, {"#6A47A8", "#A88BE0"}, {"#4A7A22", "#8CC255"}, {"#9C3F86", "#D77CC4"}}
+	light = palette{ui.Hex("#E5E7E1"), charcoal, ui.Hex("#464B47"), ui.Hex("#636964"), ui.Hex("#A6ACA6"), ui.Hex("#EFF1EC"), ui.Hex("#D7DBD3"), ui.Hex("#DADED7")}
+	dark  = palette{ui.Hex("#161817"), ui.Hex("#E2E6DF"), ui.Hex("#A4ABA5"), ui.Hex("#7F8680"), ui.Hex("#3D433F"), ui.Hex("#1F2220"), ui.Hex("#2A2E2B"), ui.Hex("#111312")}
+	// A peer's hue (1 to 6, as the view assigns them; 0, this computer, takes the ink): six hardware
+	// LED tones apart from each other and from the signal vermilion, light then dark.
+	hues = [][2]string{{"#2558A8", "#6899E6"}, {"#167A6E", "#4CC4B3"}, {"#A36A0B", "#E0A83E"}, {"#6843AD", "#A989E6"}, {"#3D781E", "#87C452"}, {"#9E3A84", "#DB78C2"}}
 )
 
 // One scale, denser than the phone's: title 18 · body 14 · small 13 · label 10; three weights:
@@ -51,7 +52,7 @@ var (
 const (
 	title, body, small, labelSize = 18, 14, 13, 10
 	medium, strong                = 500, 600
-	soft, pane                    = 6, 10 // radii: what you press or type in, what holds something
+	soft, pane                    = 4, 8 // machined radii: keycaps & inputs, hardware panels
 	margin                        = 16
 	mono                          = "Ubuntu Sans Mono"
 )
@@ -145,16 +146,24 @@ func hover(e ui.Element, on ui.Color) ui.Element {
 	return e.Background(e.AnimateColor("hover", map[bool]ui.Color{true: on, false: on.Alpha(0)}[e.Hovered()], hovering))
 }
 
-// link is a small action in words, unlike the labels it sits by: sentence case, its key after
+// link is a small action in words, unlike the labels it sits by: sentence case, its keycap after
 // it, a ground under the pointer; its words stay on the column's edge.
 func link(c *ui.Context, text, key string) bool {
 	pal := p(c)
 	return press(hover(ui.Row(c).Height(24).Padding(0, 8).Margin(0, -8).Gap(8).Radius(soft).AlignItems(ui.Center), pal.hover).Children(func() {
 		ui.Text(c, text).FontSize(12).FontWeight(medium).TextColor(pal.mute)
 		if key != "" {
-			ui.Text(c, key).FontSize(12).TextColor(pal.meta)
+			keycap(c, key)
 		}
 	}))
+}
+
+// keycap renders a shortcut legend like a miniature hardware keycap.
+func keycap(c *ui.Context, key string) ui.Element {
+	pal := p(c)
+	return ui.Row(c).Padding(1, 5).Radius(3).Background(pal.raised).Border(1, pal.rule.Alpha(0.85)).Children(func() {
+		ui.Text(c, key).FontSize(10).FontWeight(medium).TextColor(pal.meta).SingleLine()
+	})
 }
 
 // empty says a list has nothing to show, and why, where its rows would be.
@@ -430,23 +439,23 @@ func hazard(c *ui.Context, height float32, ground, ink ui.Color) ui.Element {
 	return ui.Box(c).FillWidth().Height(height).Background(ground).Stripes(ink, 6, 6, 45)
 }
 
-// gauge is a reading in segments, as Evangelion shows a synchronisation rate: lit up to value
-// (0 to 1), red past alarm.
+// gauge is a reading in segments, as Evangelion shows a synchronisation rate and a TE synth shows
+// level: housed in a recessed bay, lit up to value (0 to 1), vermilion past alarm.
 func gauge(c *ui.Context, value float64, alarm float64) ui.Element {
 	pal := p(c)
 	const segments = 10
 	lit := int(value*segments + 0.5)
-	return ui.Row(c).Gap(2).Shrink(0).Children(func() {
+	return ui.Row(c).Gap(2).Padding(3, 4).Radius(3).Background(pal.recessed).Border(1, pal.rule.Alpha(0.55)).Shrink(0).Children(func() {
 		for i := range segments {
-			ink := pal.rule.Alpha(0.6)
+			ink := pal.rule.Alpha(0.45)
 			switch {
 			case i < lit && value > alarm:
 				ink = rupture
 			case i < lit:
-				ink = pal.mute
+				ink = pal.fg
 			}
-			// A change runs along the segments, 25 ms apart, as a reading climbs on a NERV screen.
-			seg := ui.Box(c.Key(i)).Size(3, 10)
+			// A change runs along the segments, 15 ms apart, as a reading climbs on a NERV screen.
+			seg := ui.Box(c.Key(i)).Size(3, 9).Radius(1)
 			seg.Background(seg.AnimateColor("lit", ink, ui.Animation{Duration: 120 * time.Millisecond, Ease: easeOut, Delay: time.Duration(i) * 15 * time.Millisecond}))
 		}
 	})

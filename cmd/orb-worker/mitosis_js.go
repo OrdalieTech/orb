@@ -94,6 +94,20 @@ func (b *mitosisPeer) app(emit func(any)) (*view.App, error) {
 			return "", errors.New("a browser tab runs no orb command")
 		},
 		ReadFile: func(string) ([]byte, error) { return nil, errors.New("a browser tab has no files to send") },
+		WriteFile: func(name string, data []byte) (string, error) {
+			clean := strings.TrimSpace(strings.ReplaceAll(name, "/", "_"))
+			if clean == "" || clean == "." || clean == ".." {
+				clean = "attachment"
+			}
+			rel := "attachments/" + clean
+			if err := instance.Host.FS.CreateDir(ctx, worker.Workspace+"/attachments", true); err != nil {
+				return "", err
+			}
+			if err := instance.Host.FS.WriteFile(ctx, worker.Workspace+"/"+rel, data); err != nil {
+				return "", err
+			}
+			return rel, nil
+		},
 		Tabs:     saved, SaveTabs: keep(tabs),
 		Names: named, SaveNames: keep(names),
 		Name: "this tab", Emit: emit,

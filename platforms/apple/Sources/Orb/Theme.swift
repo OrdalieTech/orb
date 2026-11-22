@@ -8,23 +8,23 @@ typealias NativeImage = UIImage
 /// iPhone runs no Orb of its own yet, and starts them on the machines it is paired with.
 let device = "this iPhone", local = false
 
-/// Ordalie tokens, as on Android (ui/Theme.kt): paper and charcoal, one rupture red, a blue kept
-/// for remote Orbs acting here. Each tone follows the system's light or dark appearance.
+/// Ordalie tokens, as on Android (ui/Theme.kt), Desktop and Web: Field Paper & OP-XY charcoal,
+/// Evangelion × teenage engineering signal vermilion, and Pattern Blue for remote Orbs acting here.
 enum Ink {
-    static let bg = tone(0xE3E7E0, 0x1C201E)
-    static let fg = tone(0x2A2D2B, 0xDADFD8)
-    static let mute = tone(0x4F5550, 0xA8AEA9)
-    static let meta = tone(0x7E847F, 0x7A817C)
-    static let rule = tone(0x9EA49F, 0x4E5550)
-    static let raised = tone(0xECEFE9, 0x242927)
-    static let rupture = Color(rgb: 0xC94A3D)
+    static let bg = tone(0xE5E7E1, 0x161817)
+    static let fg = tone(0x1E211F, 0xE2E6DF)
+    static let mute = tone(0x464B47, 0xA4ABA5)
+    static let meta = tone(0x636964, 0x7F8680)
+    static let rule = tone(0xA6ACA6, 0x3D433F)
+    static let raised = tone(0xEFF1EC, 0x1F2220)
+    static let rupture = Color(rgb: 0xD94326)
     static let blue = Color(rgb: 0x173E78)
     static let paper = Color(rgb: 0xFAF9F6)
 
-    /// A peer's hue, as the view assigns it (1 to 6; this machine, 0, takes the ink): six tones
-    /// apart from each other and from the rupture red, as on Android.
+    /// A peer's hue, as the view assigns it (1 to 6; this machine, 0, takes the ink): six hardware
+    /// LED tones apart from each other and from the signal vermilion.
     static func hue(_ n: Int) -> Color {
-        let tones: [(UInt32, UInt32)] = [(0x2F5FA8, 0x6E9BE0), (0x1F7F73, 0x4FBFAE), (0x9A6A12, 0xD9A441), (0x6A47A8, 0xA88BE0), (0x4A7A22, 0x8CC255), (0x9C3F86, 0xD77CC4)]
+        let tones: [(UInt32, UInt32)] = [(0x2558A8, 0x6899E6), (0x167A6E, 0x4CC4B3), (0xA36A0B, 0xE0A83E), (0x6843AD, 0xA989E6), (0x3D781E, 0x87C452), (0x9E3A84, 0xDB78C2)]
         return n > 0 ? tone(tones[(n - 1) % tones.count].0, tones[(n - 1) % tones.count].1) : fg
     }
 

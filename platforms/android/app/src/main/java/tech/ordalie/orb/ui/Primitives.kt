@@ -241,13 +241,16 @@ fun Hazard(height: Dp, ground: Color, ink: Color) = Canvas(Modifier.fillMaxWidth
     }
 }
 
-/** A reading in ten segments, as Evangelion shows a synchronisation rate: lit up to [value], red past [alarm]. */
+/** A reading in ten segments, as Evangelion shows a synchronisation rate and a TE synth shows level. */
 @Composable
-fun Gauge(value: Double, alarm: Double) = Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+fun Gauge(value: Double, alarm: Double) = Row(
+    Modifier.clip(RoundedCornerShape(3.dp)).background(p.raised).border(1.dp, p.rule.copy(alpha = 0.55f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 3.dp),
+    horizontalArrangement = Arrangement.spacedBy(2.dp),
+) {
     val lit = (value * 10).roundToInt()
     repeat(10) { i ->
-        val ink by animateColorAsState(when { i >= lit -> p.rule.copy(alpha = 0.6f); value > alarm -> Ink.Rupture; else -> p.mute }, tween(120, i * 25), label = "segment")
-        Box(Modifier.size(3.dp, 10.dp).background(ink))
+        val ink by animateColorAsState(when { i >= lit -> p.rule.copy(alpha = 0.45f); value > alarm -> Ink.Rupture; else -> p.fg }, tween(120, i * 15), label = "segment")
+        Box(Modifier.size(3.dp, 9.dp).clip(RoundedCornerShape(1.dp)).background(ink))
     }
 }
 

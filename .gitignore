@@ -8,3 +8,7 @@ coverage.out
 
 # Transient per-agent git worktrees
 .claude/worktrees/
+
+# Static Svelte web app build tooling
+platforms/browser/web/node_modules/
+platforms/browser/web/dist/
