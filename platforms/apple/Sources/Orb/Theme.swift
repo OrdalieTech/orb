@@ -8,23 +8,23 @@ typealias NativeImage = UIImage
 /// iPhone runs no Orb of its own yet, and starts them on the machines it is paired with.
 let device = "this iPhone", local = false
 
-/// Ordalie tokens, as on Android (ui/Theme.kt), Desktop and Web: Field Paper & OP-XY charcoal,
-/// Evangelion × teenage engineering signal vermilion, and Pattern Blue for remote Orbs acting here.
+/// Ordalie tokens, as on Android (ui/Theme.kt), Desktop and Web: teenage engineering anodized field
+/// white & OP-XY matte carbon, International Orange (#FF4F00), and Pattern Blue for remote Orbs.
 enum Ink {
-    static let bg = tone(0xE5E7E1, 0x161817)
-    static let fg = tone(0x1E211F, 0xE2E6DF)
-    static let mute = tone(0x464B47, 0xA4ABA5)
-    static let meta = tone(0x636964, 0x7F8680)
-    static let rule = tone(0xA6ACA6, 0x3D433F)
-    static let raised = tone(0xEFF1EC, 0x1F2220)
-    static let rupture = Color(rgb: 0xD94326)
-    static let blue = Color(rgb: 0x173E78)
-    static let paper = Color(rgb: 0xFAF9F6)
+    static let bg = tone(0xF4F4F1, 0x0D0E10)
+    static let fg = tone(0x141413, 0xF2F2EE)
+    static let mute = tone(0x575854, 0xA1A39E)
+    static let meta = tone(0x8A8B85, 0x6E706B)
+    static let rule = tone(0xDCDCD7, 0x26282C)
+    static let raised = tone(0xFFFFFF, 0x16171A)
+    static let rupture = Color(rgb: 0xFF4F00)
+    static let blue = Color(rgb: 0x1446A0)
+    static let paper = Color(rgb: 0xFAFAFA)
 
-    /// A peer's hue, as the view assigns it (1 to 6; this machine, 0, takes the ink): six hardware
-    /// LED tones apart from each other and from the signal vermilion.
+    /// A peer's hue, as the view assigns it (1 to 6; this machine, 0, takes the ink): six rotary
+    /// encoder LED tones apart from each other and from International Orange.
     static func hue(_ n: Int) -> Color {
-        let tones: [(UInt32, UInt32)] = [(0x2558A8, 0x6899E6), (0x167A6E, 0x4CC4B3), (0xA36A0B, 0xE0A83E), (0x6843AD, 0xA989E6), (0x3D781E, 0x87C452), (0x9E3A84, 0xDB78C2)]
+        let tones: [(UInt32, UInt32)] = [(0x1D63ED, 0x5B9BFF), (0x009E7A, 0x2DD4BF), (0xD98A00, 0xF5B041), (0x7048E8, 0xA78BFA), (0x379E28, 0x6EE755), (0xD63384, 0xF472B6)]
         return n > 0 ? tone(tones[(n - 1) % tones.count].0, tones[(n - 1) % tones.count].1) : fg
     }
 

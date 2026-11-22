@@ -134,13 +134,15 @@
     display: flex;
     flex-direction: column;
     background: var(--recessed);
-    border-top: 2px solid var(--fg);
+    border-top: 1px solid var(--rule-strong);
+    box-shadow: 0 -8px 28px var(--shade);
+    animation: drawer-in 210ms var(--ease);
   }
   .term-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 5px 12px;
+    padding: 6px 14px;
     background: var(--raised);
     border-bottom: 1px solid var(--rule);
   }
@@ -151,13 +153,13 @@
     color: var(--meta);
   }
   .term-err {
-    padding: 8px 12px;
+    padding: 8px 14px;
     font-size: var(--small);
   }
   .term-body {
     flex: 1;
     min-height: 0;
-    padding: 6px 10px;
+    padding: 8px 12px;
     overflow: hidden;
   }
 </style>

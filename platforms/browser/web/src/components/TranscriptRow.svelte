@@ -137,55 +137,67 @@
     flex-direction: column;
     align-items: flex-end;
     gap: 6px;
-    padding: 20px 0 12px 48px;
+    padding: 22px 0 14px 48px;
   }
   .via {
+    font-family: var(--font-mono);
     font-size: var(--label);
     font-weight: 600;
-    letter-spacing: .08em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--hue1);
   }
   .you-bubble {
     margin: 0;
-    padding: 8px 13px;
+    padding: 10px 15px;
     white-space: pre-wrap;
-    border-radius: var(--pane);
+    border-radius: 14px 14px 4px 14px;
     background: var(--recessed);
     border: 1px solid var(--rule-soft);
     max-width: 100%;
+    line-height: 1.55;
   }
   .tok-skill {
-    padding: 0 5px;
-    border-radius: 3px;
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-family: var(--font-mono);
+    font-size: 0.9em;
     font-weight: 600;
     color: var(--bg);
     background: var(--fg);
   }
   .tok-file {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
     text-decoration: underline;
-    text-underline-offset: 2px;
+    text-decoration-color: var(--rule-strong);
+    text-underline-offset: 3px;
     font-weight: 500;
   }
   .tok-ref {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
     color: var(--meta);
     font-weight: 500;
   }
   .row-said {
-    padding: 3px 0;
+    padding: 4px 0;
   }
   .row-note {
     display: block;
     width: 100%;
-    padding: 4px 0;
+    padding: 5px 0;
     border: 0;
     background: none;
     text-align: left;
     cursor: pointer;
-    font-size: 13.5px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
     color: var(--meta);
     white-space: pre-wrap;
+    transition: color var(--t-fast) var(--ease);
   }
+  .row-note:hover { color: var(--mute); }
   .row-note.folded {
     display: -webkit-box;
     -webkit-line-clamp: 3;
@@ -197,15 +209,17 @@
     align-items: center;
     gap: 8px;
     width: 100%;
-    padding: 3px 4px;
-    margin: 0 -4px;
+    padding: 4px 6px;
+    margin: 0 -6px;
     border: 0;
     border-radius: var(--soft);
     background: none;
     text-align: left;
     cursor: pointer;
-    font-size: var(--small);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
     color: var(--mute);
+    transition: background-color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
     .run-head:hover { background: var(--hover); }
@@ -219,7 +233,7 @@
   }
   .run-head b {
     flex-shrink: 0;
-    min-width: 66px;
+    min-width: 64px;
     font-weight: 600;
     color: var(--fg);
   }
@@ -234,39 +248,45 @@
   .run-head em.failed {
     flex-shrink: 0;
     font-style: normal;
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 600;
     color: var(--rupture);
   }
   .run-body {
     margin-left: 16px;
-    padding-left: 8px;
-    border-left: 1px solid var(--rule-soft);
+    padding-left: 10px;
+    border-left: 1px solid var(--rule);
+    animation: drop-in 140ms var(--ease);
   }
   .pictures {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     overflow-x: auto;
-    padding: 4px 0;
+    padding: 6px 0;
   }
   .pic-btn {
     padding: 0;
     border: 1px solid var(--rule);
-    border-radius: var(--soft);
+    border-radius: 9px;
     overflow: hidden;
     background: var(--raised);
     cursor: zoom-in;
     flex-shrink: 0;
+    transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+  }
+  .pic-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--shade);
   }
   .pic-btn img {
     display: block;
-    height: 108px;
+    height: 112px;
     width: auto;
   }
   .pic-ph {
     width: 96px;
-    height: 108px;
-    border-radius: var(--soft);
+    height: 112px;
+    border-radius: 9px;
     background: var(--recessed);
     border: 1px solid var(--rule-soft);
     flex-shrink: 0;

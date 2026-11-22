@@ -195,10 +195,11 @@
   </div>
 
   <div class="title-card">
-    <b class="stretch">NEW SESSION</b>
-    <i class="card-pip"></i>
+    <span class="card-idx">00</span>
+    <span class="card-title">New session</span>
+    <i class="card-pip" aria-hidden="true"></i>
     <button type="button" class="kbd-hint" onclick={() => (orb.shortcutsOpen = true)} title="Keyboard shortcuts">
-      <kbd>?</kbd> keys
+      <kbd>?</kbd> shortcuts
     </button>
   </div>
 
@@ -212,69 +213,98 @@
     display: flex;
     flex-direction: column;
     width: 100%;
-    max-width: calc(720px + 2 * var(--margin));
+    max-width: calc(740px + 2 * var(--margin));
     margin: 0 auto;
-    padding: 10px var(--margin) 0;
+    padding: 16px var(--margin) 0;
+    animation: view-in var(--t-med) var(--ease);
   }
 
-  /* MAGI hardware machine cards */
+  /* Field instrument machine strip */
   .magi {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     overflow-x: auto;
     scrollbar-width: none;
     flex-shrink: 0;
+    padding-bottom: 2px;
   }
   .magi-unit {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    flex: 1 0 132px;
-    max-width: 220px;
-    padding: 7px 9px;
+    gap: 5px;
+    flex: 1 0 144px;
+    max-width: 230px;
+    padding: 10px 12px;
     text-align: left;
     border: 1px solid var(--rule);
-    border-radius: var(--soft);
-    background: var(--recessed);
+    border-radius: 10px;
+    background: var(--raised);
+    box-shadow: 0 1px 2px var(--shade);
     cursor: pointer;
-    transition: border-color 110ms, background-color 110ms;
+    overflow: hidden;
+    transition:
+      transform var(--t-fast) var(--ease),
+      border-color var(--t-fast) var(--ease),
+      background-color var(--t-fast) var(--ease),
+      box-shadow var(--t-med) var(--ease);
+  }
+  .magi-unit::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--rupture);
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform var(--t-med) var(--ease);
   }
   .magi-unit.on {
-    border-color: var(--fg);
-    background: var(--raised);
-    box-shadow: inset 0 2px 0 var(--fg);
+    border-color: var(--rule-strong);
+    box-shadow: 0 3px 10px var(--shade);
   }
+  .magi-unit.on::after {
+    transform: scaleX(1);
+  }
+  .magi-unit:active { transform: scale(0.985); }
   .magi-top {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
     min-width: 0;
   }
   .magi-name {
-    font-size: var(--label);
+    font-size: 12.5px;
     font-weight: 600;
-    letter-spacing: .07em;
-    text-transform: uppercase;
-    color: var(--mute);
+    letter-spacing: -0.01em;
+    color: var(--fg);
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  .magi-unit.on .magi-name { color: var(--fg); }
   .magi-bot {
     display: flex;
     align-items: center;
-    font-size: 11.5px;
-    color: var(--mute);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--meta);
   }
   .magi-bot b {
     margin-left: auto;
-    font-size: var(--label);
-    letter-spacing: .04em;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--meta);
   }
   .magi-unit.down .magi-bot { color: var(--rupture); }
   @media (hover: hover) {
-    .magi-unit:hover:not(.on) { background: var(--hover); }
+    .magi-unit:hover {
+      border-color: var(--rule-strong);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px var(--shade);
+    }
   }
 
   .summary-bar {
@@ -282,10 +312,14 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 6px 2px 2px;
+    padding: 10px 2px 4px;
     flex-shrink: 0;
   }
-  .summary { font-size: var(--small); color: var(--meta); }
+  .summary {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--meta);
+  }
   .summary.asks { color: var(--rupture); font-weight: 600; }
   .browse-btn { font-size: 12px; color: var(--fg); }
 
@@ -294,9 +328,9 @@
     align-items: center;
     gap: 8px;
     width: 100%;
-    padding: 6px 8px;
-    margin-top: 4px;
-    border: 1px solid var(--rule-soft);
+    padding: 8px 12px;
+    margin-top: 6px;
+    border: 1px solid var(--rule);
     border-radius: var(--soft);
     background: var(--raised);
     text-align: left;
@@ -304,6 +338,7 @@
     color: var(--mute);
     cursor: pointer;
     flex-shrink: 0;
+    animation: drop-in var(--t-fast) var(--ease);
   }
   .launch-line .x { margin-left: auto; font-size: 15px; }
 
@@ -311,27 +346,30 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    margin: 6px calc(-1 * var(--margin)) 0;
-    padding: 4px var(--margin) 16px;
-    mask-image: linear-gradient(transparent, #000 8px, #000 calc(100% - 14px), transparent);
+    margin: 8px calc(-1 * var(--margin)) 0;
+    padding: 6px var(--margin) 20px;
+    mask-image: linear-gradient(transparent, #000 10px, #000 calc(100% - 16px), transparent);
   }
   .home-section {
-    margin-bottom: 18px;
+    margin-bottom: 24px;
   }
   .hud-action {
     margin-left: auto;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 2px 6px;
+    padding: 2px 7px;
     border: 0;
     border-radius: var(--soft);
     background: none;
-    font-size: 11px;
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    font-weight: 500;
     color: var(--mute);
     cursor: pointer;
     text-transform: none;
     letter-spacing: 0;
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
     .hud-action:hover { background: var(--hover); color: var(--fg); }
@@ -339,26 +377,38 @@
 
   .open-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
-    gap: 7px;
-    margin-top: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(205px, 1fr));
+    gap: 8px;
+    margin-top: 10px;
   }
   .open-card {
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    padding: 8px 10px;
+    gap: 4px;
+    padding: 11px 12px;
     border: 1px solid var(--rule);
-    border-radius: var(--pane);
+    border-radius: 10px;
     background: var(--raised);
+    box-shadow: 0 1px 2px var(--shade);
     cursor: pointer;
-    transition: border-color 110ms, background-color 110ms;
+    transition:
+      transform var(--t-fast) var(--ease),
+      border-color var(--t-fast) var(--ease),
+      box-shadow var(--t-med) var(--ease);
   }
-  .open-card.busy { border-color: var(--fg); }
-  .open-card.asks { border-color: var(--rupture); }
-  .open-card.asleep { opacity: .72; }
+  .open-card.busy { border-color: var(--rule-strong); }
+  .open-card.asks {
+    border-color: color-mix(in srgb, var(--rupture) 55%, transparent);
+    box-shadow: 0 0 0 2px var(--rupture-soft);
+  }
+  .open-card.asleep { opacity: 0.68; }
+  .open-card:active { transform: scale(0.985); }
   @media (hover: hover) {
-    .open-card:hover { background: var(--hover); }
+    .open-card:hover {
+      border-color: var(--rule-strong);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px var(--shade);
+    }
     .open-card:hover .oc-x { opacity: 1; }
   }
   .oc-head {
@@ -370,7 +420,7 @@
     flex: 1;
     min-width: 0;
     font-size: var(--small);
-    font-weight: 600;
+    font-weight: 550;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -382,17 +432,20 @@
     color: var(--meta);
     font-size: 14px;
     cursor: pointer;
-    opacity: .35;
+    opacity: 0;
+    transition: opacity var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
+  .oc-x:hover { color: var(--fg); }
   .oc-meta {
-    font-size: 11.5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
     color: var(--meta);
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
   .oc-tail {
-    font-size: 11.5px;
+    font-size: 12px;
     color: var(--mute);
     overflow: hidden;
     white-space: nowrap;
@@ -401,34 +454,45 @@
 
   .thread-search {
     margin-left: auto;
-    width: 170px;
-    padding: 3px 8px;
+    width: 185px;
+    padding: 4px 10px;
+    font-family: var(--font-sans);
     font-size: 12px;
     text-transform: none;
     letter-spacing: 0;
     border: 1px solid var(--rule);
     border-radius: var(--soft);
     background: var(--raised);
+    transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
   }
-  .thread-search:focus-visible { outline: 0; border-color: var(--fg); }
+  .thread-search:focus-visible {
+    outline: 0;
+    border-color: var(--fg);
+    box-shadow: 0 0 0 3px var(--hover);
+  }
 
   .entries {
-    margin-top: 6px;
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
   }
   .entry-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    width: calc(100% + 14px);
-    margin: 0 -7px;
-    padding: 9px 8px;
+    gap: 11px;
+    width: calc(100% + 16px);
+    margin: 0 -8px;
+    padding: 9px 10px;
     border: 0;
-    border-radius: var(--soft);
-    background: none;
+    border-radius: 8px;
+    background: transparent;
     text-align: left;
     font-size: var(--body);
     cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease), transform 100ms var(--ease);
   }
+  .entry-row:active { transform: scale(0.995); }
   .entry-title {
     flex: 1;
     min-width: 0;
@@ -436,10 +500,11 @@
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  .entry-row.open .entry-title { font-weight: 600; }
+  .entry-row.open .entry-title { font-weight: 550; }
   .entry-meta {
     flex-shrink: 0;
-    font-size: var(--small);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
     color: var(--meta);
   }
   .entry-meta.asks { color: var(--rupture); font-weight: 600; }
@@ -450,46 +515,53 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 18px 0;
+    padding: 20px 0;
   }
-  .empty-msg { padding: 18px 0; }
+  .empty-msg { padding: 20px 0; }
 
-  /* NERV × TE title card above prompt */
+  /* Clean TE session deck header above prompt */
   .title-card {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     gap: 8px;
     flex-shrink: 0;
-    height: 58px;
-    padding: 8px 4px 2px;
+    padding: 12px 4px 4px;
     border-top: 1px solid var(--rule);
   }
-  .title-card b {
-    font-size: 20px;
-    line-height: 24px;
-    transform: scaleY(1.9);
-    transform-origin: 0 100%;
-    animation: wipe 260ms 40ms var(--ease) backwards;
+  .card-idx {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--rupture);
+    letter-spacing: 0.04em;
+  }
+  .card-title {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--fg);
   }
   .card-pip {
-    width: 7px;
-    height: 7px;
-    margin-bottom: 3px;
-    border-radius: 1px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
     background: var(--rupture);
   }
   .kbd-hint {
     margin-left: auto;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: 2px 6px;
+    gap: 6px;
+    padding: 3px 7px;
     border: 0;
     border-radius: var(--soft);
     background: none;
-    font-size: 11px;
+    font-size: 11.5px;
     color: var(--meta);
     cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
     .kbd-hint:hover { background: var(--hover); color: var(--fg); }

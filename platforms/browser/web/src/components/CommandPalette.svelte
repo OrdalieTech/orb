@@ -275,36 +275,41 @@
     display: grid;
     place-items: center;
     padding: var(--margin);
-    background: #0005;
+    background: var(--backdrop);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: backdrop-in 140ms var(--ease);
   }
   .sheet {
-    width: min(440px, 100%);
-    max-height: min(560px, 80dvh);
+    width: min(460px, 100%);
+    max-height: min(560px, 82dvh);
     display: flex;
     flex-direction: column;
-    padding: 12px;
+    padding: 14px;
     border: 1px solid var(--rule);
-    border-radius: var(--pane);
+    border-radius: 14px;
     background: var(--raised);
-    box-shadow: 0 20px 52px var(--shade);
+    box-shadow: 0 24px 64px var(--shade-lg);
+    animation: sheet-in 190ms var(--ease);
   }
-  .sheet.wide { width: min(560px, 100%); }
+  .sheet.wide { width: min(580px, 100%); }
   .sheet-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 4px 10px;
+    padding: 2px 4px 12px;
   }
   .sheet-in {
     width: 100%;
-    margin-bottom: 8px;
-    padding: 8px 10px;
+    margin-bottom: 10px;
+    padding: 9px 12px;
     border: 1px solid var(--rule);
-    border-radius: var(--soft);
-    background: var(--bg);
+    border-radius: 9px;
+    background: var(--recessed);
     font-size: var(--small);
+    transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
   }
-  .sheet-in:focus-visible { outline: 0; border-color: var(--fg); }
+  .sheet-in:focus-visible { outline: 0; border-color: var(--fg); background: var(--raised); }
   .sheet-list {
     flex: 1;
     min-height: 0;
@@ -315,13 +320,14 @@
     align-items: center;
     gap: 10px;
     width: 100%;
-    padding: 8px 10px;
+    padding: 9px 10px;
     border: 0;
-    border-radius: var(--soft);
+    border-radius: 8px;
     background: none;
     text-align: left;
     font-size: var(--small);
     cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease);
   }
   .sheet-row.on { background: var(--hover); }
   @media (hover: hover) { .sheet-row:hover { background: var(--hover); } }
@@ -336,7 +342,8 @@
   .sr-det {
     flex: 1;
     min-width: 0;
-    font-size: 12px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
     color: var(--meta);
     overflow: hidden;
     white-space: nowrap;
@@ -346,7 +353,7 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    margin-top: 4px;
+    margin-top: 6px;
   }
   .pad { padding: 10px 8px; }
 
@@ -354,20 +361,20 @@
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 18px;
     padding: 4px;
   }
   .kbd-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
   }
   .kbd-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 4px 0;
+    padding: 6px 0;
     border-bottom: 1px solid var(--rule-soft);
     font-size: var(--small);
     color: var(--mute);
@@ -380,8 +387,10 @@
     z-index: 50;
     display: grid;
     place-items: center;
-    background: #000d;
+    background: rgba(10, 11, 12, 0.88);
+    backdrop-filter: blur(10px);
     overflow: auto;
+    animation: backdrop-in 150ms var(--ease);
   }
   .img-bar {
     position: fixed;
@@ -394,7 +403,8 @@
   .img-backdrop img {
     max-width: 92vw;
     max-height: 88dvh;
-    transition: transform 120ms var(--ease);
+    border-radius: 8px;
+    transition: transform 160ms var(--ease);
     cursor: zoom-in;
   }
 </style>

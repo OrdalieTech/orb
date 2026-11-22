@@ -82,8 +82,10 @@
     background: none;
     text-align: left;
     cursor: pointer;
-    font-size: var(--small);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
     color: var(--mute);
+    transition: background-color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
     .act-line:hover { background: var(--hover); }
@@ -98,7 +100,7 @@
   .chev { font-size: 13px; line-height: 1; }
   .act-verb {
     flex-shrink: 0;
-    min-width: 66px;
+    min-width: 64px;
     font-weight: 600;
     color: var(--fg);
   }
@@ -116,7 +118,7 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    font-size: 12px;
+    font-size: 11.5px;
     color: var(--meta);
   }
   .act-res.failed { color: var(--rupture); font-weight: 600; }
@@ -124,16 +126,19 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    margin: 4px 0 6px 18px;
-    padding: 10px 12px;
+    margin: 5px 0 8px 18px;
+    padding: 11px 13px;
     border: 1px solid var(--rule);
-    border-radius: var(--pane);
+    border-radius: 10px;
     background: var(--raised);
+    box-shadow: 0 2px 8px var(--shade);
+    animation: drop-in 150ms var(--ease);
   }
   .pane-lbl {
+    font-family: var(--font-mono);
     font-size: var(--label);
     font-weight: 600;
-    letter-spacing: .08em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--meta);
   }
@@ -141,8 +146,9 @@
     margin: 0;
     max-height: 45vh;
     overflow: auto;
+    font-family: var(--font-mono);
     font-size: 12px;
-    line-height: 1.45;
+    line-height: 1.5;
     white-space: pre-wrap;
   }
   .pane-pre.muted { color: var(--mute); }

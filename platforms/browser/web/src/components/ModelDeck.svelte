@@ -270,47 +270,55 @@
     display: grid;
     place-items: center;
     padding: var(--margin);
-    background: #0005;
+    background: var(--backdrop);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: backdrop-in 140ms var(--ease);
   }
   .deck {
-    width: min(460px, 100%);
-    max-height: min(600px, 82dvh);
+    width: min(470px, 100%);
+    max-height: min(620px, 84dvh);
     display: flex;
     flex-direction: column;
-    padding: 12px;
+    padding: 14px;
     border: 1px solid var(--rule);
-    border-radius: var(--pane);
+    border-radius: 14px;
     background: var(--raised);
-    box-shadow: 0 20px 50px var(--shade);
+    box-shadow: 0 24px 64px var(--shade-lg);
+    animation: sheet-in 190ms var(--ease);
   }
   .deck-head {
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
     gap: 12px;
-    padding: 2px 4px 10px;
+    padding: 2px 4px 12px;
   }
   .head-left strong {
     display: block;
-    margin-top: 2px;
+    margin-top: 3px;
     font-size: 18px;
-    font-weight: 700;
+    font-weight: 600;
+    letter-spacing: -0.025em;
   }
   .places {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
   }
   .place-chip {
-    padding: 3px 9px;
+    padding: 4px 11px;
     font-size: 12px;
     font-weight: 500;
     border: 1px solid var(--rule);
-    border-radius: var(--soft);
-    background: none;
+    border-radius: var(--pill);
+    background: var(--raised);
+    color: var(--mute);
     cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
+  .place-chip:hover:not(.on) { border-color: var(--rule-strong); color: var(--fg); }
   .place-chip.on {
     color: var(--bg);
     background: var(--fg);
@@ -318,14 +326,15 @@
   }
   .deck-filter {
     width: 100%;
-    padding: 7px 10px;
-    margin-bottom: 6px;
+    padding: 9px 12px;
+    margin-bottom: 8px;
     border: 1px solid var(--rule);
-    border-radius: var(--soft);
-    background: var(--bg);
+    border-radius: 9px;
+    background: var(--recessed);
     font-size: var(--small);
+    transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
   }
-  .deck-filter:focus-visible { outline: 0; border-color: var(--fg); }
+  .deck-filter:focus-visible { outline: 0; border-color: var(--fg); background: var(--raised); }
 
   .deck-list {
     flex: 1;
@@ -334,10 +343,11 @@
     padding-right: 2px;
   }
   .sec-lbl {
-    margin: 10px 6px 3px;
+    margin: 12px 6px 4px;
+    font-family: var(--font-mono);
     font-size: var(--label);
-    font-weight: 600;
-    letter-spacing: .07em;
+    font-weight: 500;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--meta);
   }
@@ -346,13 +356,15 @@
     align-items: center;
     gap: 10px;
     width: 100%;
-    padding: 7px 8px;
+    padding: 8px 10px;
     border: 0;
-    border-radius: var(--soft);
+    border-radius: 8px;
     background: none;
     text-align: left;
-    font-size: var(--small);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
     cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease);
   }
   .mdl-row span {
     flex: 1;
@@ -362,53 +374,63 @@
     text-overflow: ellipsis;
   }
   .mdl-row small {
-    font-size: var(--label);
-    letter-spacing: .06em;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--meta);
     flex-shrink: 0;
   }
   .mdl-row.on { font-weight: 600; background: var(--recessed); }
-  .mdl-row.hi { background: var(--hover); outline: 1px solid var(--rule); outline-offset: -1px; }
+  .mdl-row.hi { background: var(--hover); }
   @media (hover: hover) { .mdl-row:hover { background: var(--hover); } }
 
   .empty-note { padding: 12px 8px; }
   .add-prov { margin-top: 6px; }
 
   .acct-sec {
-    margin-top: 8px;
-    padding-top: 4px;
+    margin-top: 10px;
+    padding-top: 6px;
     border-top: 1px solid var(--rule-soft);
   }
   .levels-sec {
-    margin-top: 10px;
-    padding-top: 8px;
+    margin-top: 12px;
+    padding-top: 10px;
     border-top: 1px solid var(--rule);
   }
   .lvl-head {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    padding: 0 4px 6px;
+    padding: 0 4px 8px;
   }
   .lvl-head .sec-lbl { margin: 0; }
   .lvl-head small { font-size: 12px; color: var(--mute); }
   .lvl-seg {
     display: flex;
-    border: 1px solid var(--fg);
-    border-radius: var(--soft);
-    overflow: hidden;
+    padding: 3px;
+    background: var(--recessed);
+    border: 1px solid var(--rule-soft);
+    border-radius: 9px;
+    gap: 2px;
   }
   .lvl-seg button {
     flex: 1;
     padding: 7px 0;
     border: 0;
-    border-right: 1px solid var(--rule-soft);
-    background: var(--bg);
-    font-size: 12px;
-    font-weight: 600;
+    border-radius: 6px;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 550;
+    color: var(--mute);
     cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
   }
-  .lvl-seg button:last-child { border-right: 0; }
-  .lvl-seg button.on { color: var(--bg); background: var(--fg); }
+  .lvl-seg button:hover:not(.on) { color: var(--fg); }
+  .lvl-seg button.on {
+    color: var(--fg);
+    background: var(--raised);
+    box-shadow: 0 1px 3px var(--shade);
+  }
 </style>

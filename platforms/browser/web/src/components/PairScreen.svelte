@@ -103,58 +103,67 @@
     max-width: 480px;
     margin: 0 auto;
     padding: var(--margin);
+    animation: view-in var(--t-med) var(--ease);
   }
   .pair-card {
-    padding: 20px;
+    padding: 24px;
     border: 1px solid var(--rule);
-    border-radius: var(--pane);
+    border-radius: 16px;
     background: var(--raised);
-    box-shadow: 0 8px 28px var(--shade);
+    box-shadow: 0 12px 40px var(--shade);
   }
   h1 {
-    margin: 8px 0 8px;
-    font-size: var(--title);
+    margin: 10px 0 8px;
+    font-size: 21px;
+    letter-spacing: -0.03em;
   }
-  .sub { color: var(--mute); font-size: var(--small); }
+  .sub { color: var(--mute); font-size: var(--small); line-height: 1.55; }
   .cmd {
     display: inline-block;
-    margin: 10px 0;
-    padding: 7px 12px;
+    margin: 12px 0;
+    padding: 8px 13px;
     border: 1px solid var(--rule);
-    border-radius: var(--soft);
+    border-radius: 8px;
     background: var(--recessed);
-    font-weight: 700;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
   }
   .code-in {
     display: block;
     width: 100%;
     margin: 14px 0 12px;
-    padding: 9px 11px;
+    padding: 10px 12px;
     resize: none;
+    font-family: var(--font-mono);
     font-size: 12px;
     border: 1px solid var(--rule);
-    border-radius: var(--soft);
-    background: var(--bg);
-  }
-  .code-in:focus-visible { outline: 0; border-color: var(--fg); }
-  .preview {
-    margin-bottom: 12px;
-    padding: 10px 12px;
-    border: 1px solid var(--rule);
-    border-radius: var(--soft);
+    border-radius: 9px;
     background: var(--recessed);
+    transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+  }
+  .code-in:focus-visible { outline: 0; border-color: var(--fg); background: var(--raised); }
+  .preview {
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    background: var(--recessed);
+    animation: drop-in var(--t-fast) var(--ease);
   }
   .preview strong {
     display: block;
-    margin: 4px 0 2px;
+    margin: 5px 0 2px;
+    font-family: var(--font-mono);
     font-size: 22px;
-    letter-spacing: .03em;
+    letter-spacing: 0.04em;
   }
   .fp {
     display: block;
-    margin: 10px 0 4px;
+    margin: 12px 0 4px;
+    font-family: var(--font-mono);
     font-size: 28px;
-    letter-spacing: .04em;
+    letter-spacing: 0.05em;
   }
   .wait-row {
     display: flex;

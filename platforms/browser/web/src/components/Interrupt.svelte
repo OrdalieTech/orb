@@ -141,7 +141,7 @@
 
 <style>
   .interrupt {
-    --ink: #1E211F;
+    --ink: #141413;
     position: fixed;
     inset: 0;
     z-index: 40;
@@ -151,10 +151,11 @@
     padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
     color: var(--ink);
     background: var(--rupture);
-    animation: rise 320ms cubic-bezier(.4, 0, .2, 1) backwards;
+    animation: rise 260ms var(--ease) backwards;
   }
   @keyframes rise {
-    from { opacity: 0; transform: translateY(28%); }
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
   }
   .hazard {
     display: block;

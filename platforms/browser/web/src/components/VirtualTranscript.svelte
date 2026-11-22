@@ -351,66 +351,75 @@
     overflow-y: auto;
     overflow-anchor: none;
     overflow-wrap: anywhere;
-    padding: 12px var(--margin) 0;
+    padding: 16px var(--margin) 0;
   }
   .transcript:focus-visible { outline: 0; }
   .chat-col {
-    max-width: 720px;
+    max-width: 740px;
     margin-inline: auto;
   }
   .earlier-btn {
     display: flex;
-    margin: 0 auto 14px;
-    font-size: 12px;
-    padding: 4px 12px;
+    margin: 0 auto 16px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    padding: 5px 14px;
+    border-radius: var(--pill);
   }
   .empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding: 56px 0;
+    gap: 12px;
+    padding: 64px 0;
+    font-family: var(--font-mono);
     font-size: var(--label);
-    font-weight: 600;
-    letter-spacing: .08em;
+    font-weight: 500;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--meta);
+    animation: view-in var(--t-med) var(--ease);
   }
   .empty-mark {
     width: 24px;
     height: 24px;
-    background: var(--rule);
+    background: var(--rule-strong);
     mask: url(ordalie.svg) center / contain no-repeat;
   }
   .virt-row {
     contain: layout style;
   }
   .tail-space {
-    min-height: 36px;
-    padding: 6px 0 10px;
+    min-height: 40px;
+    padding: 8px 0 12px;
   }
   .caret {
     display: block;
     width: 8px;
     height: 16px;
+    border-radius: 2px;
     background: var(--rupture);
-    animation: led-pulse 1.06s steps(1) infinite;
+    animation: led-breathe 1.0s ease-in-out infinite;
   }
   .status-line {
-    font-size: var(--small);
+    font-family: var(--font-mono);
+    font-size: 12px;
     color: var(--meta);
-    padding-top: 4px;
+    padding-top: 6px;
   }
   .jump-live {
     position: absolute;
-    right: 20px;
-    bottom: 12px;
-    padding: 4px 10px;
+    right: 22px;
+    bottom: 14px;
+    padding: 5px 12px;
+    border-radius: var(--pill);
+    font-family: var(--font-mono);
     font-size: 11px;
-    letter-spacing: .04em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
-    box-shadow: 0 4px 14px var(--shade);
+    box-shadow: 0 4px 16px var(--shade-lg);
+    animation: drop-in var(--t-fast) var(--ease);
     z-index: 2;
   }
 </style>

@@ -1,6 +1,6 @@
-/* Ordalie × Evangelion × Teenage Engineering design system
-   Machined Field Paper & OP-XY Instrument Charcoal · Signal Vermilion · Ubuntu Sans Mono.
-   Minimal, clean, hardware-precise: 1px hairlines, recessed telemetry readouts, tactile keycaps. */
+/* Ordalie × teenage engineering (OP-1 field / OP-XY / TP-7) design system
+   Anodized Field White & Matte Carbon · International Orange (#FF4F00) ·
+   Swiss neo-grotesque prose paired with Ubuntu Sans Mono hardware telemetry. */
 
 @font-face {
   font-family: "Ubuntu Sans Mono";
@@ -10,90 +10,119 @@
 }
 
 :root {
-  --bg: #E5E7E1;
-  --fg: #1E211F;
-  --mute: #464B47;
-  --meta: #636964;
-  --rule: #A6ACA6;
-  --rule-soft: color-mix(in srgb, var(--rule) 55%, transparent);
-  --raised: #EFF1EC;
-  --recessed: #DADED7;
-  --hover: #D7DBD3;
-  --shade: #00000014;
-  --key-rim: #00000022;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: "Ubuntu Sans Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --rupture: #D94326;
-  --blue: #173E78;
-  --paper-ink: #FAF9F6;
+  /* Light — OP-1 field anodized silver-white */
+  --bg: #F4F4F1;
+  --bg-glass: rgba(244, 244, 241, 0.84);
+  --fg: #141413;
+  --mute: #575854;
+  --meta: #8A8B85;
+  --rule: rgba(20, 20, 19, 0.10);
+  --rule-strong: rgba(20, 20, 19, 0.18);
+  --rule-soft: rgba(20, 20, 19, 0.055);
+  --raised: #FFFFFF;
+  --recessed: #EAEAE6;
+  --hover: rgba(20, 20, 19, 0.045);
+  --shade: rgba(15, 16, 15, 0.07);
+  --shade-lg: rgba(15, 16, 15, 0.14);
+  --backdrop: rgba(16, 17, 16, 0.28);
+
+  /* TE International Orange + functional rotary encoder LEDs */
+  --rupture: #FF4F00;
+  --rupture-soft: rgba(255, 79, 0, 0.10);
+  --blue: #1446A0;
+  --paper-ink: #FAFAFA;
 
   --hue0: var(--mute);
-  --hue1: #2558A8;
-  --hue2: #167A6E;
-  --hue3: #A36A0B;
-  --hue4: #6843AD;
-  --hue5: #3D781E;
-  --hue6: #9E3A84;
+  --hue1: #1D63ED;
+  --hue2: #009E7A;
+  --hue3: #D98A00;
+  --hue4: #7048E8;
+  --hue5: #379E28;
+  --hue6: #D63384;
 
-  --title: 18px;
-  --body: 15px;
+  /* Scale & geometry */
+  --title: 19px;
+  --body: 14.5px;
   --small: 13px;
-  --label: 10px;
-  --round: 30px;
-  --soft: 4px;
-  --pane: 8px;
-  --margin: 16px;
-  --ease: cubic-bezier(.23, 1, .32, 1);
+  --label: 10.5px;
+  --round: 32px;
+  --soft: 7px;
+  --pane: 12px;
+  --pill: 999px;
+  --margin: 20px;
+
+  /* Motion — crisp hardware deceleration & subtle tactile spring */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --spring: cubic-bezier(0.34, 1.35, 0.64, 1);
+  --t-fast: 120ms;
+  --t-med: 190ms;
+  --t-slow: 280ms;
 
   color-scheme: light dark;
-  font: 400 var(--body)/1.45 "Ubuntu Sans Mono", ui-monospace, monospace;
+  font: 400 var(--body)/1.58 var(--font-sans);
   color: var(--fg);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #161817;
-    --fg: #E2E6DF;
-    --mute: #A4ABA5;
-    --meta: #7F8680;
-    --rule: #3D433F;
-    --raised: #1F2220;
-    --recessed: #111312;
-    --hover: #2A2E2B;
-    --shade: #00000066;
-    --key-rim: #00000080;
-    --rupture: #F05232;
-    --blue: #2255A4;
-    --hue1: #6899E6;
-    --hue2: #4CC4B3;
-    --hue3: #E0A83E;
-    --hue4: #A989E6;
-    --hue5: #87C452;
-    --hue6: #DB78C2;
+    --bg: #0D0E10;
+    --bg-glass: rgba(13, 14, 16, 0.82);
+    --fg: #F2F2EE;
+    --mute: #A1A39E;
+    --meta: #6E706B;
+    --rule: rgba(255, 255, 255, 0.09);
+    --rule-strong: rgba(255, 255, 255, 0.18);
+    --rule-soft: rgba(255, 255, 255, 0.05);
+    --raised: #16171A;
+    --recessed: #1D1F23;
+    --hover: rgba(255, 255, 255, 0.055);
+    --shade: rgba(0, 0, 0, 0.35);
+    --shade-lg: rgba(0, 0, 0, 0.58);
+    --backdrop: rgba(0, 0, 0, 0.56);
+    --rupture: #FF5719;
+    --rupture-soft: rgba(255, 87, 25, 0.14);
+    --blue: #2563EB;
+    --hue1: #5B9BFF;
+    --hue2: #2DD4BF;
+    --hue3: #F5B041;
+    --hue4: #A78BFA;
+    --hue5: #6EE755;
+    --hue6: #F472B6;
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #161817;
-  --fg: #E2E6DF;
-  --mute: #A4ABA5;
-  --meta: #7F8680;
-  --rule: #3D433F;
-  --raised: #1F2220;
-  --recessed: #111312;
-  --hover: #2A2E2B;
-  --shade: #00000066;
-  --key-rim: #00000080;
-  --rupture: #F05232;
-  --blue: #2255A4;
-  --hue1: #6899E6;
-  --hue2: #4CC4B3;
-  --hue3: #E0A83E;
-  --hue4: #A989E6;
-  --hue5: #87C452;
-  --hue6: #DB78C2;
+  --bg: #0D0E10;
+  --bg-glass: rgba(13, 14, 16, 0.82);
+  --fg: #F2F2EE;
+  --mute: #A1A39E;
+  --meta: #6E706B;
+  --rule: rgba(255, 255, 255, 0.09);
+  --rule-strong: rgba(255, 255, 255, 0.18);
+  --rule-soft: rgba(255, 255, 255, 0.05);
+  --raised: #16171A;
+  --recessed: #1D1F23;
+  --hover: rgba(255, 255, 255, 0.055);
+  --shade: rgba(0, 0, 0, 0.35);
+  --shade-lg: rgba(0, 0, 0, 0.58);
+  --backdrop: rgba(0, 0, 0, 0.56);
+  --rupture: #FF5719;
+  --rupture-soft: rgba(255, 87, 25, 0.14);
+  --blue: #2563EB;
+  --hue1: #5B9BFF;
+  --hue2: #2DD4BF;
+  --hue3: #F5B041;
+  --hue4: #A78BFA;
+  --hue5: #6EE755;
+  --hue6: #F472B6;
 }
 
 :root[data-theme="light"] {
@@ -102,8 +131,8 @@
 
 @media (max-width: 600px) {
   :root {
-    --title: 19px;
-    --label: 11px;
+    --title: 18px;
+    --margin: 14px;
     --round: 34px;
   }
 }
@@ -121,41 +150,61 @@ html, body, #root {
   flex-direction: column;
   background: var(--bg);
   color: var(--fg);
+  transition: background-color var(--t-med) var(--ease), color var(--t-med) var(--ease);
 }
 
 p { margin: 0; }
-h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -.02em; }
+h1, h2, h3, h4 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
 button, textarea, input { font: inherit; color: inherit; }
+code, pre, kbd { font-family: var(--font-mono); }
 
-/* Tactile hardware button (TE keycap feel) */
+/* Clean machined TE buttons */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   cursor: pointer;
-  padding: 7px 13px;
+  padding: 7px 14px;
   font-size: var(--small);
-  font-weight: 600;
-  border: 1px solid var(--fg);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  border: 1px solid var(--rule-strong);
   border-radius: var(--soft);
   background: var(--raised);
-  box-shadow: 0 1px 0 var(--key-rim);
-  transition: transform 90ms var(--ease), background-color 120ms, box-shadow 90ms;
+  box-shadow: 0 1px 2px var(--shade);
+  transition:
+    transform 110ms var(--ease),
+    background-color var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease);
 }
 .btn:active:enabled {
-  transform: translateY(1px);
+  transform: scale(0.975);
   box-shadow: none;
 }
 .btn.inverted {
   color: var(--bg);
   background: var(--fg);
-  border-color: var(--fg);
+  border-color: transparent;
+  box-shadow: 0 1px 3px var(--shade);
+}
+.btn.accent {
+  color: #FFFFFF;
+  background: var(--rupture);
+  border-color: transparent;
 }
 .btn.danger {
   color: var(--rupture);
-  border-color: var(--rupture);
-  background: transparent;
+  border-color: color-mix(in srgb, var(--rupture) 35%, transparent);
+  background: var(--rupture-soft);
+  box-shadow: none;
 }
 .btn.subtle {
   border-color: var(--rule);
@@ -165,13 +214,25 @@ button, textarea, input { font: inherit; color: inherit; }
 }
 .btn.plain {
   border: 0;
-  padding: 4px 6px;
+  padding: 5px 8px;
   background: transparent;
   box-shadow: none;
   font-weight: 500;
   color: var(--mute);
 }
 @media (hover: hover) {
+  .btn:hover:enabled:not(.inverted):not(.danger):not(.subtle):not(.plain) {
+    border-color: var(--fg);
+    box-shadow: 0 2px 6px var(--shade);
+  }
+  .btn.inverted:hover:enabled {
+    opacity: 0.9;
+  }
+  .btn.danger:hover:enabled {
+    background: var(--rupture);
+    color: #FFFFFF;
+    border-color: var(--rupture);
+  }
   .btn.subtle:hover:enabled,
   .btn.plain:hover:enabled {
     background: var(--hover);
@@ -179,52 +240,52 @@ button, textarea, input { font: inherit; color: inherit; }
   }
 }
 :disabled {
-  opacity: .42;
+  opacity: 0.38;
   cursor: default;
 }
 :focus-visible {
-  outline: 2px solid var(--fg);
-  outline-offset: 1px;
+  outline: 2px solid var(--rupture);
+  outline-offset: 2px;
 }
 
-/* Miniature TE hardware keycap legend */
+/* Flat minimal hardware keycap legend */
 kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 1px 5px;
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: .04em;
-  line-height: 1.4;
-  color: var(--meta);
-  background: var(--raised);
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+  color: var(--mute);
+  background: var(--recessed);
   border: 1px solid var(--rule);
-  border-bottom-width: 2px;
-  border-radius: 3px;
+  border-radius: 5px;
   white-space: nowrap;
 }
 
-/* Numbered NERV × TE section header: 01 · LABEL */
+/* Clean TE × Swiss technical section index: 01 LABEL */
 .hud-label {
   display: flex;
   align-items: center;
   gap: 8px;
+  font-family: var(--font-mono);
   font-size: var(--label);
-  font-weight: 600;
-  letter-spacing: .08em;
+  font-weight: 500;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--meta);
 }
 .hud-label .idx {
   color: var(--rupture);
-  font-weight: 700;
-  letter-spacing: .04em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 .hud-label .tail {
   margin-left: auto;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--meta);
 }
 
@@ -237,90 +298,125 @@ kbd {
   color: var(--rupture) !important;
 }
 
-/* NERV stretched title typography (spent sparingly: ORB mark, NEW SESSION, interrupts) */
+/* Reserved exclusively for the full-screen Interrupt rupture display */
 .stretch {
   display: block;
   flex-shrink: 0;
+  font-family: var(--font-mono);
   font-weight: 700;
   white-space: nowrap;
   pointer-events: none;
-  transform: scale(var(--squeeze, 1), 1.9);
+  transform: scale(var(--squeeze, 1), 1.85);
   transform-origin: 0 50%;
 }
 
-/* Hardware square LED indicator */
+/* Clean hardware LED dot */
 .led {
   display: inline-block;
   width: 7px;
   height: 7px;
   flex-shrink: 0;
-  border-radius: 1px;
-  background: var(--hue, var(--mute));
+  border-radius: 50%;
+  background: var(--hue, var(--meta));
+  transition: background-color var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease);
 }
 .led.round {
   border-radius: 50%;
 }
 .led.live {
-  animation: led-pulse 1.3s steps(1) infinite;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hue, var(--rupture)) 22%, transparent);
+  animation: led-breathe 1.8s ease-in-out infinite;
 }
 .led.asks {
   background: var(--rupture);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--rupture) 65%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rupture) 26%, transparent);
+  animation: led-breathe 1.2s ease-in-out infinite;
 }
 
-/* Segmented 10-bar hardware meter (sync rate / context) */
+/* Segmented 10-bar hardware readout (context usage) */
 .sync-bay {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 6px;
+  gap: 7px;
+  height: 28px;
+  padding: 0 9px;
   background: var(--recessed);
   border: 1px solid var(--rule-soft);
-  border-radius: 3px;
+  border-radius: var(--soft);
+  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 600;
-  color: var(--meta);
+  font-weight: 500;
+  color: var(--mute);
+  transition: border-color var(--t-med) var(--ease), color var(--t-med) var(--ease);
 }
 .sync-bars {
   display: inline-flex;
+  align-items: center;
   gap: 2px;
 }
 .sync-bars i {
-  width: 3px;
-  height: 9px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--rule) 45%, transparent);
-  transition: background-color 120ms var(--ease);
+  width: 2.5px;
+  height: 10px;
+  border-radius: 1.5px;
+  background: var(--rule-strong);
+  transition: background-color 220ms var(--ease), transform 220ms var(--ease);
 }
 .sync-bars i.lit {
   background: var(--fg);
 }
 .sync-bay.alarm {
-  border-color: color-mix(in srgb, var(--rupture) 65%, transparent);
+  border-color: color-mix(in srgb, var(--rupture) 40%, transparent);
+  background: var(--rupture-soft);
   color: var(--rupture);
 }
 .sync-bay.alarm .sync-bars i.lit {
   background: var(--rupture);
 }
 
-/* Thin hardware scrollbars */
+/* Minimal translucent scrollbars */
 .scroll {
   scrollbar-width: thin;
-  scrollbar-color: var(--rule) transparent;
+  scrollbar-color: var(--rule-strong) transparent;
 }
 
-@keyframes led-pulse {
-  50% { opacity: .24; }
+/* Keyframes — ultra-subtle, GPU-composited only */
+@keyframes led-breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.42; transform: scale(0.86); }
+}
+@keyframes view-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes sheet-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.978); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes drawer-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes drop-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 @keyframes wipe {
   from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
 }
 @keyframes appear {
   from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 0s !important;
-    transition-duration: 0s !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

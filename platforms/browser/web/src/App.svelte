@@ -248,18 +248,21 @@
     flex: 1;
     display: grid;
     place-items: center;
+    animation: backdrop-in var(--t-med) var(--ease);
   }
   .boot-mark .mark {
-    width: 28px;
-    height: 28px;
-    background: var(--rule);
+    width: 30px;
+    height: 30px;
+    background: var(--fg);
     mask: url(ordalie.svg) center / contain no-repeat;
+    animation: led-breathe 1.6s ease-in-out infinite;
   }
   .app-shell {
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
+    animation: backdrop-in var(--t-fast) var(--ease);
   }
   .workspace {
     flex: 1;
@@ -271,6 +274,7 @@
     flex: 1;
     min-height: 0;
     display: flex;
+    animation: view-in var(--t-med) var(--ease);
   }
   .split-divider {
     width: 1px;
@@ -282,10 +286,11 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 6px var(--margin);
+    padding: 8px var(--margin);
     font-size: var(--small);
-    background: var(--raised);
-    border-top: 1px solid var(--rupture);
+    background: var(--rupture-soft);
+    border-top: 1px solid color-mix(in srgb, var(--rupture) 35%, transparent);
+    animation: drop-in var(--t-fast) var(--ease);
   }
   .toast {
     position: fixed;
@@ -295,24 +300,30 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 7px 10px 7px 14px;
+    padding: 8px 14px;
     font-size: var(--small);
     font-weight: 500;
     color: var(--bg);
     background: var(--fg);
-    border-radius: var(--soft);
+    border-radius: var(--pill);
     transform: translateX(-50%);
-    box-shadow: 0 10px 28px var(--shade);
-    animation: appear 140ms var(--ease);
+    box-shadow: 0 10px 30px var(--shade-lg);
+    animation: toast-in var(--t-med) var(--ease);
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translate(-50%, 10px) scale(0.97); }
+    to { opacity: 1; transform: translate(-50%, 0) scale(1); }
   }
   .toast-undo {
-    padding: 2px 8px;
-    border: 1px solid var(--bg);
-    border-radius: 3px;
+    padding: 2px 9px;
+    border: 1px solid color-mix(in srgb, var(--bg) 35%, transparent);
+    border-radius: var(--pill);
     background: none;
     color: var(--bg);
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 600;
     cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease);
   }
+  .toast-undo:hover { background: color-mix(in srgb, var(--bg) 16%, transparent); }
 </style>
