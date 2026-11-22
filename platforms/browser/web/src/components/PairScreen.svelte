@@ -32,7 +32,6 @@
 <section class="pair-shell">
   {#if orb.screen === "invite"}
     <div class="pair-card">
-      <div class="hud-label"><span class="idx">01</span><span>mitosis · browser peer</span></div>
       <h1>Pair this tab</h1>
       <p class="sub">On your computer, run</p>
       <code class="cmd">orb mitosis --browser</code>
@@ -70,7 +69,6 @@
     </div>
   {:else if orb.screen === "approve"}
     <div class="pair-card">
-      <div class="hud-label"><span class="idx">02</span><span>waiting for approval</span></div>
       <h1>Approve on the computer</h1>
       <p class="sub">On the computer, answer <b>y</b>. It shows this tab as</p>
       <strong class="fp">{orb.fingerprint}</strong>
@@ -79,7 +77,6 @@
     </div>
   {:else if orb.screen === "elsewhere"}
     <div class="pair-card">
-      <div class="hud-label"><span class="idx">!</span><span>tab lock</span></div>
       <h1>Open in another tab</h1>
       <p class="sub">{orb.elsewhereText}</p>
       <div class="actions">

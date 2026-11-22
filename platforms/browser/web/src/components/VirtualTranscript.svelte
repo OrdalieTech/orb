@@ -372,10 +372,8 @@
     justify-content: center;
     gap: 12px;
     padding: 64px 0;
-    font-size: var(--label);
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    font-size: var(--small);
+    font-weight: 600;
     color: var(--meta);
     animation: view-in var(--t-med) var(--ease);
   }
@@ -411,9 +409,7 @@
     bottom: 12px;
     padding: 4px 10px;
     border-radius: 0;
-    font-size: 11px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    font-size: 12px;
     background: var(--fg);
     color: var(--bg);
     animation: drop-in var(--t-fast) var(--ease);

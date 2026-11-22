@@ -140,11 +140,9 @@
     padding: 18px 0 12px 0;
   }
   .via {
-    font-size: var(--label);
+    font-size: 11.5px;
     font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--hue1);
+    color: var(--mute);
   }
   .you-bubble {
     margin: 0;
@@ -160,14 +158,14 @@
   .you-bubble::before {
     content: "> ";
     font-weight: 700;
-    color: var(--rupture);
+    color: var(--fg);
   }
   .tok-skill {
     padding: 0 5px;
     border-radius: 0;
     font-weight: 700;
-    color: #FFFFFF;
-    background: var(--rupture);
+    color: var(--bg);
+    background: var(--fg);
   }
   .tok-file {
     font-family: var(--font-mono);

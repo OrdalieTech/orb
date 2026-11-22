@@ -184,10 +184,8 @@
     display: flex;
     justify-content: space-between;
     padding: 14px var(--margin);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
-    letter-spacing: .09em;
-    text-transform: uppercase;
   }
   .word {
     --h: 142px;
@@ -200,10 +198,8 @@
   .word.squeezed { --squeeze: .6; }
   .caption {
     margin: 0 var(--margin) 16px;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
-    letter-spacing: .09em;
-    text-transform: uppercase;
     animation: appear 240ms 120ms var(--ease) backwards;
   }
   .first {
@@ -276,10 +272,8 @@
     border: 0;
     background: none;
     text-align: left;
-    font-size: var(--label);
+    font-size: 12px;
     font-weight: 600;
-    letter-spacing: .09em;
-    text-transform: uppercase;
     color: var(--ink);
     cursor: pointer;
   }

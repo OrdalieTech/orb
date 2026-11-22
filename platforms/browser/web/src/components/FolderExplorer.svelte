@@ -271,9 +271,8 @@
     padding: 0 5px;
     border: 1px solid var(--rule);
     border-radius: 0;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
-    text-transform: uppercase;
     color: var(--amber);
     background: var(--bg);
   }

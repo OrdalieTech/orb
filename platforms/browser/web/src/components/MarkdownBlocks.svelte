@@ -151,19 +151,15 @@
     color: var(--bg);
   }
   .md-lang {
-    font-size: var(--label);
+    font-size: 11.5px;
     font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
     color: var(--bg);
   }
   .md-copy {
     cursor: pointer;
     padding: 1px 8px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font-size: 11px;
+    font-weight: 600;
     color: var(--bg);
     background: transparent;
     border: 1px solid color-mix(in srgb, var(--bg) 50%, transparent);
@@ -171,7 +167,7 @@
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
-    .md-copy:hover { background: var(--rupture); border-color: var(--rupture); color: #FFFFFF; }
+    .md-copy:hover { background: var(--bg); color: var(--fg); }
   }
   .md-pre {
     margin: 0;
@@ -210,9 +206,7 @@
   .md-table th {
     font-weight: 700;
     background: var(--recessed);
-    font-size: var(--label);
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
+    font-size: var(--small);
     color: var(--fg);
   }
   .md-link {

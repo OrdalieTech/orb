@@ -28,7 +28,6 @@
     title="Home (Alt+H)"
     aria-label="Home"
   >
-    <i class="orb-dot" aria-hidden="true"></i>
     <b class="stretch">ORB</b>
   </button>
 
@@ -59,7 +58,7 @@
         {#if c.ask}
           <small class="tab-asks">asks</small>
         {:else if c.unread > 0}
-          <small class="tab-unread">{c.unread > 99 ? "99+" : c.unread}</small>
+          <small class="tab-unread">({c.unread > 99 ? "99+" : c.unread})</small>
         {/if}
         <button
           type="button"
@@ -147,7 +146,6 @@
   .orb-mark {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
     padding: 0 14px;
     border: 0;
     border-right: 1px solid var(--rule);
@@ -156,15 +154,10 @@
     flex-shrink: 0;
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .orb-dot {
-    width: 7px;
-    height: 7px;
-    background: var(--rupture);
-  }
   .orb-mark b {
     font-size: 11px;
     line-height: 14px;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     color: var(--fg);
   }
   .orb-mark.on {
@@ -236,18 +229,17 @@
     text-overflow: ellipsis;
   }
   .tab-asks {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
     color: var(--rupture);
   }
   .tab-unread {
-    padding: 0 5px;
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 700;
-    color: #FFFFFF;
-    background: var(--rupture);
+    color: var(--meta);
+  }
+  .tab-chip.on .tab-unread {
+    color: color-mix(in srgb, var(--bg) 72%, transparent);
   }
   .tab-x {
     display: grid;

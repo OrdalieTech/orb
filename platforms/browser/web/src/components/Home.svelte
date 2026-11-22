@@ -196,7 +196,6 @@
 
   <div class="title-card">
     <b class="stretch">NEW SESSION</b>
-    <i class="card-pip" aria-hidden="true"></i>
     <button type="button" class="kbd-hint" onclick={() => (orb.shortcutsOpen = true)} title="Keyboard shortcuts">
       <kbd>?</kbd> keys
     </button>
@@ -254,10 +253,8 @@
     min-width: 0;
   }
   .magi-name {
-    font-size: 11px;
+    font-size: 12.5px;
     font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
     color: inherit;
     overflow: hidden;
     white-space: nowrap;
@@ -337,12 +334,10 @@
     padding: 1px 6px;
     border: 0;
     background: none;
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 12px;
+    font-weight: 500;
     color: var(--mute);
     cursor: pointer;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
@@ -501,12 +496,6 @@
     transform: scaleY(1.85);
     transform-origin: 0 100%;
     animation: wipe 220ms 30ms var(--ease) backwards;
-  }
-  .card-pip {
-    width: 8px;
-    height: 8px;
-    margin-bottom: 4px;
-    background: var(--rupture);
   }
   .kbd-hint {
     margin-left: auto;

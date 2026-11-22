@@ -36,7 +36,7 @@
           <i class="led" class:live={t.busy} class:asks={!!t.ask} style="--hue: var(--hue{m?.hue || 0})"></i>
           <span class="ov-name">{named(t.title)}</span>
           {#if t.unread > 0}
-            <span class="ov-unread">{t.unread}</span>
+            <span class="ov-unread">({t.unread})</span>
           {/if}
           <button
             type="button"
@@ -131,12 +131,9 @@
     text-overflow: ellipsis;
   }
   .ov-unread {
-    padding: 0 5px;
-    border-radius: 0;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
-    background: var(--rupture);
-    color: #FFFFFF;
+    color: var(--meta);
   }
   .ov-x {
     padding: 0 4px;

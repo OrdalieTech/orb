@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	_ "embed"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -459,15 +458,14 @@ func gauge(c *ui.Context, value float64, alarm float64) ui.Element {
 	})
 }
 
-// hudLabel is a section's name as a HUD numbers it: its index, its name, its state at the edge.
-func hudLabel(c *ui.Context, index int, name, state string) ui.Element {
+// hudLabel is a plain normal-case section heading with an optional trailing state.
+func hudLabel(c *ui.Context, _ int, name, state string) ui.Element {
 	pal := p(c)
 	return ui.Row(c).FillWidth().Gap(8).Children(func() {
-		ui.Text(c, fmt.Sprintf("%02d", index)).FontSize(labelSize).FontWeight(strong).TextColor(rupture)
-		label(c, name).Shrink(1).MinWidth(0).TextColor(pal.meta)
+		ui.Text(c, name).FontSize(small).FontWeight(strong).TextColor(pal.fg).Shrink(1).MinWidth(0)
 		ui.Spacer(c)
 		if state != "" {
-			ui.Text(c, state).FontSize(labelSize).TextColor(pal.meta).Shrink(0)
+			ui.Text(c, state).FontSize(small).TextColor(pal.meta).Shrink(0)
 		}
 	})
 }

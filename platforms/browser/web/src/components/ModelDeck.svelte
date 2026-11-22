@@ -341,10 +341,8 @@
   }
   .sec-lbl {
     margin: 12px 6px 4px;
-    font-size: var(--label);
+    font-size: 12px;
     font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
     color: var(--meta);
   }
   .mdl-row {
@@ -370,10 +368,7 @@
     text-overflow: ellipsis;
   }
   .mdl-row small {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    font-size: 11px;
     color: var(--meta);
     flex-shrink: 0;
   }

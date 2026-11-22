@@ -827,9 +827,7 @@
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .side-idx {
-    font-size: 10.5px;
-    font-weight: 700;
-    color: var(--meta);
+    display: none;
   }
   .side-item.on {
     color: var(--bg);
@@ -863,12 +861,9 @@
   .sec { margin-top: 26px; }
   .sub-lbl {
     margin: 14px 0 4px;
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--meta);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--mute);
   }
   .sub-gap { margin-top: 8px; }
   .err-gap { margin-top: 14px; }

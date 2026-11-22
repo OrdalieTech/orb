@@ -246,10 +246,7 @@
   .acting b { font-size: 14px; line-height: 20px; }
   .acting p {
     flex: 1;
-    font-family: var(--font-mono);
-    font-size: var(--label);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font-size: 12px;
     opacity: 0.85;
   }
   .acting .btn {

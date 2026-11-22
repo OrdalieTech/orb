@@ -134,11 +134,8 @@
     animation: drop-in 90ms var(--ease);
   }
   .pane-lbl {
-    font-family: var(--font-mono);
-    font-size: var(--label);
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font-size: 11.5px;
+    font-weight: 700;
     color: var(--meta);
   }
   .pane-pre {
