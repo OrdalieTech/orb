@@ -127,12 +127,11 @@
     flex-direction: column;
     gap: 6px;
     margin: 5px 0 8px 18px;
-    padding: 11px 13px;
-    border: 1px solid var(--rule);
-    border-radius: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--fg);
+    border-radius: var(--pane);
     background: var(--raised);
-    box-shadow: 0 2px 8px var(--shade);
-    animation: drop-in 150ms var(--ease);
+    animation: drop-in 110ms var(--ease);
   }
   .pane-lbl {
     font-family: var(--font-mono);

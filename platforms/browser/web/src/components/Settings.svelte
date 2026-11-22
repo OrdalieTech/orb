@@ -296,7 +296,7 @@
           <div class="row">
             <div class="row-main">
               <strong>theme</strong>
-              <p class="meta">Field White (light) · OP-XY Carbon (dark)</p>
+              <p class="meta">Studio Light · OP-XY OLED Dark</p>
             </div>
             <div class="seg">
               {#each ["auto", "light", "dark"] as mode}
@@ -814,33 +814,30 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 11px;
+    padding: 7px 10px;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: var(--soft);
     background: none;
     text-align: left;
     font-size: var(--small);
-    font-weight: 500;
+    font-weight: 600;
     color: var(--mute);
     cursor: pointer;
     transition:
       background-color var(--t-fast) var(--ease),
       border-color var(--t-fast) var(--ease),
-      color var(--t-fast) var(--ease),
-      box-shadow var(--t-fast) var(--ease);
+      color var(--t-fast) var(--ease);
   }
   .side-idx {
-    font-family: var(--font-mono);
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--meta);
   }
   .side-item.on {
-    color: var(--fg);
-    font-weight: 600;
-    background: var(--raised);
-    border-color: var(--rule);
-    box-shadow: 0 1px 2px var(--shade);
+    color: var(--bg);
+    font-weight: 700;
+    background: var(--fg);
+    border-color: var(--fg);
   }
   .side-item.on .side-idx { color: var(--rupture); }
   .back-btn {
@@ -899,30 +896,28 @@
   }
   .row-btns { display: flex; gap: 6px; flex-shrink: 0; }
 
-  /* Machined segmented control */
+  /* Stark high-contrast TE segmented switch */
   .seg {
     display: inline-flex;
-    padding: 3px;
-    background: var(--recessed);
-    border: 1px solid var(--rule-soft);
-    border-radius: 9px;
-    gap: 2px;
+    border: 1px solid var(--fg);
+    border-radius: var(--soft);
+    overflow: hidden;
   }
   .seg button {
     padding: 4px 11px;
     border: 0;
-    border-radius: 6px;
-    background: transparent;
-    font-size: 12px;
-    font-weight: 550;
+    border-right: 1px solid var(--rule);
+    background: var(--raised);
+    font-size: 11.5px;
+    font-weight: 700;
     color: var(--mute);
     cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
+  .seg button:last-child { border-right: 0; }
   .seg button.on {
-    background: var(--raised);
-    color: var(--fg);
-    box-shadow: 0 1px 3px var(--shade);
+    background: var(--fg);
+    color: var(--bg);
   }
 
   .mini-magi {
@@ -937,13 +932,12 @@
     gap: 10px;
     padding: 7px 11px;
     border: 1px solid var(--rule);
-    border-radius: 9px;
+    border-radius: var(--pane);
     background: var(--raised);
-    font-size: 12.5px;
-    box-shadow: 0 1px 2px var(--shade);
+    font-size: 12px;
   }
-  .mini-card span { display: flex; align-items: center; gap: 7px; font-weight: 500; }
-  .mini-card b { font-family: var(--font-mono); font-size: 10px; font-weight: 500; color: var(--meta); }
+  .mini-card span { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+  .mini-card b { font-size: 10px; font-weight: 700; color: var(--meta); }
   .mini-card.down b { color: var(--rupture); }
 
   .chips {
@@ -954,17 +948,17 @@
     margin: 14px 0 10px;
   }
   .chip {
-    padding: 5px 12px;
+    padding: 4px 10px;
     border: 1px solid var(--rule);
-    border-radius: var(--pill);
+    border-radius: var(--soft);
     background: var(--raised);
-    font-size: 12.5px;
-    font-weight: 500;
+    font-size: 12px;
+    font-weight: 600;
     color: var(--mute);
     cursor: pointer;
     transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .chip:hover:not(.on) { border-color: var(--rule-strong); color: var(--fg); }
+  .chip:hover:not(.on) { border-color: var(--fg); color: var(--fg); }
   .chip.on {
     color: var(--bg);
     background: var(--fg);
@@ -974,19 +968,19 @@
 
   .search-in {
     width: 100%;
-    padding: 9px 12px;
+    padding: 8px 10px;
     margin: 4px 0 10px;
     border: 1px solid var(--rule);
-    border-radius: 9px;
+    border-radius: var(--soft);
     background: var(--raised);
     font-size: var(--small);
-    transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+    transition: border-color var(--t-fast) var(--ease);
   }
-  .search-in:focus-visible { outline: 0; border-color: var(--fg); box-shadow: 0 0 0 3px var(--hover); }
+  .search-in:focus-visible { outline: 0; border-color: var(--fg); }
 
   .acct-block, .plugin-block {
     padding-bottom: 8px;
-    border-bottom: 1px solid var(--rule-soft);
+    border-bottom: 1px solid var(--rule);
   }
   .quota {
     display: grid;
@@ -994,25 +988,25 @@
     align-items: center;
     gap: 10px;
     padding: 4px 0 4px 12px;
-    font-family: var(--font-mono);
     font-size: 11.5px;
-    color: var(--meta);
+    color: var(--mute);
   }
   .q-track {
-    height: 5px;
-    border-radius: var(--pill);
+    height: 6px;
+    border-radius: 0;
     background: var(--recessed);
+    border: 1px solid var(--rule);
     overflow: hidden;
   }
   .q-track i {
     display: block;
     height: 100%;
-    border-radius: var(--pill);
+    border-radius: 0;
     background: var(--fg);
-    transition: width 320ms var(--ease);
+    transition: width 220ms var(--ease);
   }
   .quota.alarm .q-track i { background: var(--rupture); }
-  .quota.alarm .q-pct { color: var(--rupture); font-weight: 600; }
+  .quota.alarm .q-pct { color: var(--rupture); font-weight: 700; }
 
   .method-card, .flow-card {
     display: flex;
@@ -1020,11 +1014,10 @@
     align-items: flex-start;
     gap: 10px;
     margin-top: 14px;
-    padding: 18px;
-    border: 1px solid var(--rule);
+    padding: 16px;
+    border: 1px solid var(--fg);
     border-radius: var(--pane);
     background: var(--raised);
-    box-shadow: 0 2px 8px var(--shade);
   }
   .code-big {
     padding: 4px 0;

@@ -198,12 +198,12 @@
     max-height: min(580px, 82dvh);
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--rule);
-    border-radius: 14px;
+    border: 1px solid var(--fg);
+    border-radius: var(--pane);
     background: var(--raised);
-    box-shadow: 0 24px 64px var(--shade-lg);
+    box-shadow: 0 18px 48px var(--shade);
     overflow: hidden;
-    animation: sheet-in 190ms var(--ease);
+    animation: sheet-in 150ms var(--ease);
   }
   .exp-head {
     display: flex;

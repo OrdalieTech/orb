@@ -23,25 +23,25 @@ import (
 var ordalieSVG []byte
 var ordalie = ui.MustParseSVG(ordalieSVG)
 
-// Ordalie tokens, as on Android (ui/Theme.kt) and Web: teenage engineering anodized field white
-// and OP-XY matte carbon, International Orange (#FF4F00), and Pattern Blue for remote Orbs.
+// Ordalie tokens, as on Android (ui/Theme.kt) and Web: teenage engineering high-contrast Swiss
+// studio light & OP-XY pitch-black OLED dark, International Orange (#FF4D00), Pattern Blue.
 var (
-	texte    = ui.Hex("#FAFAFA")
-	rupture  = ui.Hex("#FF4F00")
-	blue     = ui.Hex("#1446A0")
-	charcoal = ui.Hex("#141413")
+	texte    = ui.Hex("#FFFFFF")
+	rupture  = ui.Hex("#FF4D00")
+	blue     = ui.Hex("#0047AB")
+	charcoal = ui.Hex("#0A0A0A")
 )
 
-// palette is anodized field white & ceramic surfaces in light, matte carbon in dark.
-// Rules are hairline dividers; recessed holds telemetry readouts, raised holds floating cards.
+// palette is high-contrast studio paper & white cards in light, true OLED black in dark.
+// Rules are crisp 1px borders; recessed holds telemetry readouts, raised holds floating cards.
 type palette struct{ bg, fg, mute, meta, rule, raised, hover, recessed ui.Color }
 
 var (
-	light = palette{ui.Hex("#F4F4F1"), charcoal, ui.Hex("#575854"), ui.Hex("#8A8B85"), ui.Hex("#DCDCD7"), ui.Hex("#FFFFFF"), ui.Hex("#EAEAE5"), ui.Hex("#EAEAE6")}
-	dark  = palette{ui.Hex("#0D0E10"), ui.Hex("#F2F2EE"), ui.Hex("#A1A39E"), ui.Hex("#6E706B"), ui.Hex("#26282C"), ui.Hex("#16171A"), ui.Hex("#222429"), ui.Hex("#1D1F23")}
-	// A peer's hue (1 to 6, as the view assigns them; 0, this computer, takes the ink): six rotary
-	// encoder LED tones apart from each other and from International Orange, light then dark.
-	hues = [][2]string{{"#1D63ED", "#5B9BFF"}, {"#009E7A", "#2DD4BF"}, {"#D98A00", "#F5B041"}, {"#7048E8", "#A78BFA"}, {"#379E28", "#6EE755"}, {"#D63384", "#F472B6"}}
+	light = palette{ui.Hex("#F2F2EE"), charcoal, ui.Hex("#333330"), ui.Hex("#5C5C57"), ui.Hex("#C6C6C0"), ui.Hex("#FFFFFF"), ui.Hex("#E2E2DC"), ui.Hex("#E5E5DF")}
+	dark  = palette{ui.Hex("#050505"), ui.Hex("#FFFFFF"), ui.Hex("#C4C4C0"), ui.Hex("#8A8A85"), ui.Hex("#2C2C2E"), ui.Hex("#0F0F10"), ui.Hex("#1E1E21"), ui.Hex("#161618")}
+	// A peer's hue (1 to 6, as the view assigns them; 0, this computer, takes the ink): six vivid
+	// OP-1 rotary encoder LED tones apart from International Orange, light then dark.
+	hues = [][2]string{{"#0057FF", "#2997FF"}, {"#008F5D", "#00E599"}, {"#D97706", "#FFC400"}, {"#6D28D9", "#B388FF"}, {"#16803C", "#5CE65C"}, {"#DB2777", "#FF5CA8"}}
 )
 
 // One scale, denser than the phone's: title 18 · body 14 · small 13 · label 10; three weights:
@@ -51,7 +51,7 @@ var (
 const (
 	title, body, small, labelSize = 18, 14, 13, 10
 	medium, strong                = 500, 600
-	soft, pane                    = 7, 12 // clean machined radii: controls & inputs, floating cards
+	soft, pane                    = 3, 4 // tight machined radii: keys & inputs, hardware panels
 	margin                        = 16
 	mono                          = "Ubuntu Sans Mono"
 )

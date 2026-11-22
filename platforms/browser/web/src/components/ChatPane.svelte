@@ -134,12 +134,12 @@
     align-items: center;
     gap: 10px;
     width: 100%;
-    max-width: calc(740px + 2 * var(--margin));
+    max-width: calc(760px + 2 * var(--margin));
     margin: 0 auto;
-    padding: 8px var(--margin) 7px;
-    font-size: 12px;
+    padding: 7px var(--margin) 6px;
+    font-size: 11.5px;
     color: var(--meta);
-    border-bottom: 1px solid var(--rule-soft);
+    border-bottom: 1px solid var(--rule);
     flex-shrink: 0;
   }
   .strip.busy .strip-where { color: var(--fg); }
@@ -149,8 +149,6 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-family: var(--font-mono);
-    font-size: 11.5px;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -160,10 +158,9 @@
     text-overflow: ellipsis;
   }
   .strip-title {
-    font-family: var(--font-sans);
-    font-size: 12.5px;
+    font-size: 12px;
     color: var(--fg);
-    font-weight: 600;
+    font-weight: 700;
     max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -173,65 +170,66 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 2px 8px;
-    border: 1px solid var(--rule-soft);
-    border-radius: var(--pill);
-    background: var(--recessed);
-    font-family: var(--font-mono);
+    padding: 2px 7px;
+    border: 1px solid var(--rule);
+    border-radius: var(--soft);
+    background: var(--raised);
     font-size: 11px;
-    color: var(--mute);
+    font-weight: 600;
+    color: var(--fg);
     cursor: pointer;
     flex-shrink: 0;
-    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .strip-pill .jp {
     font-size: 10px;
     letter-spacing: 0.04em;
-    opacity: 0.72;
+    color: var(--meta);
   }
   .strip-pill.alarm {
-    background: var(--rupture-soft);
-    border-color: color-mix(in srgb, var(--rupture) 40%, transparent);
+    border-color: var(--rupture);
+    color: var(--rupture);
   }
   .strip-cost {
-    font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--meta);
+    font-weight: 600;
+    color: var(--mute);
     flex-shrink: 0;
   }
   .strip-term {
-    padding: 2px 8px;
-    border: 1px solid var(--rule);
+    padding: 2px 7px;
+    border: 1px solid var(--fg);
     border-radius: var(--soft);
     background: var(--raised);
-    font-family: var(--font-mono);
     font-size: 11.5px;
-    font-weight: 600;
-    color: var(--mute);
+    font-weight: 700;
+    color: var(--fg);
     cursor: pointer;
     flex-shrink: 0;
-    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .strip-term.on {
     color: var(--bg);
     background: var(--fg);
-    border-color: var(--fg);
   }
   .strip-close {
     padding: 0 5px;
     border: 0;
-    border-radius: 5px;
+    border-radius: var(--soft);
     background: none;
-    color: var(--meta);
+    color: var(--mute);
     font-size: 15px;
     cursor: pointer;
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
-    .strip-pill:hover, .strip-term:hover:not(.on), .strip-close:hover {
-      background: var(--hover);
-      color: var(--fg);
+    .strip-pill:hover, .strip-term:hover:not(.on) {
+      background: var(--fg);
+      border-color: var(--fg);
+      color: var(--bg);
     }
+    .strip-pill:hover .jp { color: var(--bg); }
+    .strip-close:hover { background: var(--hover); color: var(--fg); }
   }
   .acting {
     display: flex;

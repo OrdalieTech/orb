@@ -281,11 +281,11 @@
     display: flex;
     flex-direction: column;
     padding: 14px;
-    border: 1px solid var(--rule);
-    border-radius: 14px;
+    border: 1px solid var(--fg);
+    border-radius: var(--pane);
     background: var(--raised);
-    box-shadow: 0 24px 64px var(--shade-lg);
-    animation: sheet-in 190ms var(--ease);
+    box-shadow: 0 18px 48px var(--shade);
+    animation: sheet-in 150ms var(--ease);
   }
   .deck-head {
     display: flex;
@@ -408,29 +408,26 @@
   .lvl-head small { font-size: 12px; color: var(--mute); }
   .lvl-seg {
     display: flex;
-    padding: 3px;
-    background: var(--recessed);
-    border: 1px solid var(--rule-soft);
-    border-radius: 9px;
-    gap: 2px;
+    border: 1px solid var(--fg);
+    border-radius: var(--soft);
+    overflow: hidden;
   }
   .lvl-seg button {
     flex: 1;
     padding: 7px 0;
     border: 0;
-    border-radius: 6px;
-    background: transparent;
-    font-family: var(--font-mono);
+    border-right: 1px solid var(--rule);
+    background: var(--raised);
     font-size: 11.5px;
-    font-weight: 550;
+    font-weight: 700;
     color: var(--mute);
     cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .lvl-seg button:hover:not(.on) { color: var(--fg); }
+  .lvl-seg button:last-child { border-right: 0; }
+  .lvl-seg button:hover:not(.on) { color: var(--fg); background: var(--hover); }
   .lvl-seg button.on {
-    color: var(--fg);
-    background: var(--raised);
-    box-shadow: 0 1px 3px var(--shade);
+    color: var(--bg);
+    background: var(--fg);
   }
 </style>

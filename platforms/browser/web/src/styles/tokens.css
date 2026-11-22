@@ -1,6 +1,6 @@
-/* Ordalie × teenage engineering (OP-1 field / OP-XY / TP-7) design system
-   Anodized Field White & Matte Carbon · International Orange (#FF4F00) ·
-   Swiss neo-grotesque prose paired with Ubuntu Sans Mono hardware telemetry. */
+/* Ordalie × teenage engineering (OP-XY OLED / EP-133 / Swiss Studio) × Evangelion
+   High-contrast stark monochrome + TE International Orange (#FF4F00) + OP-1 encoder hues.
+   Full Ubuntu Sans Mono · crisp 1px geometry · tight 2px/4px radii · snappy mechanical transitions. */
 
 @font-face {
   font-family: "Ubuntu Sans Mono";
@@ -10,119 +10,112 @@
 }
 
 :root {
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", system-ui, sans-serif;
   --font-mono: "Ubuntu Sans Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Light — OP-1 field anodized silver-white */
-  --bg: #F4F4F1;
-  --bg-glass: rgba(244, 244, 241, 0.84);
-  --fg: #141413;
-  --mute: #575854;
-  --meta: #8A8B85;
-  --rule: rgba(20, 20, 19, 0.10);
-  --rule-strong: rgba(20, 20, 19, 0.18);
-  --rule-soft: rgba(20, 20, 19, 0.055);
+  /* Light — Crisp Swiss / EP-133 high-contrast studio */
+  --bg: #F2F2EE;
+  --fg: #0A0A0A;
+  --mute: #333330;
+  --meta: #5C5C57;
+  --rule: #C6C6C0;
+  --rule-strong: #0A0A0A;
+  --rule-soft: #DCDCD6;
   --raised: #FFFFFF;
-  --recessed: #EAEAE6;
-  --hover: rgba(20, 20, 19, 0.045);
-  --shade: rgba(15, 16, 15, 0.07);
-  --shade-lg: rgba(15, 16, 15, 0.14);
-  --backdrop: rgba(16, 17, 16, 0.28);
+  --recessed: #E5E5DF;
+  --hover: #E2E2DC;
+  --shade: rgba(0, 0, 0, 0.14);
+  --backdrop: rgba(10, 10, 10, 0.45);
 
-  /* TE International Orange + functional rotary encoder LEDs */
-  --rupture: #FF4F00;
-  --rupture-soft: rgba(255, 79, 0, 0.10);
-  --blue: #1446A0;
-  --paper-ink: #FAFAFA;
+  /* TE International Orange + OP-1 4-encoder vivid high-contrast hues */
+  --rupture: #FF4D00;
+  --rupture-soft: rgba(255, 77, 0, 0.12);
+  --blue: #0047AB;
+  --paper-ink: #FFFFFF;
 
-  --hue0: var(--mute);
-  --hue1: #1D63ED;
-  --hue2: #009E7A;
-  --hue3: #D98A00;
-  --hue4: #7048E8;
-  --hue5: #379E28;
-  --hue6: #D63384;
+  --hue0: #0A0A0A;
+  --hue1: #0057FF;
+  --hue2: #008F5D;
+  --hue3: #D97706;
+  --hue4: #6D28D9;
+  --hue5: #16803C;
+  --hue6: #DB2777;
 
-  /* Scale & geometry */
-  --title: 19px;
-  --body: 14.5px;
-  --small: 13px;
-  --label: 10.5px;
+  /* Scale & tight machined geometry */
+  --title: 18px;
+  --body: 14px;
+  --small: 12.5px;
+  --label: 10px;
   --round: 32px;
-  --soft: 7px;
-  --pane: 12px;
-  --pill: 999px;
-  --margin: 20px;
+  --soft: 3px;
+  --pane: 4px;
+  --margin: 16px;
 
-  /* Motion — crisp hardware deceleration & subtle tactile spring */
+  /* Snappy mechanical motion */
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --spring: cubic-bezier(0.34, 1.35, 0.64, 1);
-  --t-fast: 120ms;
-  --t-med: 190ms;
-  --t-slow: 280ms;
+  --t-fast: 100ms;
+  --t-med: 160ms;
 
   color-scheme: light dark;
-  font: 400 var(--body)/1.58 var(--font-sans);
+  font: 400 var(--body)/1.5 var(--font-mono);
+  font-variant-numeric: tabular-nums;
   color: var(--fg);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0D0E10;
-    --bg-glass: rgba(13, 14, 16, 0.82);
-    --fg: #F2F2EE;
-    --mute: #A1A39E;
-    --meta: #6E706B;
-    --rule: rgba(255, 255, 255, 0.09);
-    --rule-strong: rgba(255, 255, 255, 0.18);
-    --rule-soft: rgba(255, 255, 255, 0.05);
-    --raised: #16171A;
-    --recessed: #1D1F23;
-    --hover: rgba(255, 255, 255, 0.055);
-    --shade: rgba(0, 0, 0, 0.35);
-    --shade-lg: rgba(0, 0, 0, 0.58);
-    --backdrop: rgba(0, 0, 0, 0.56);
-    --rupture: #FF5719;
-    --rupture-soft: rgba(255, 87, 25, 0.14);
-    --blue: #2563EB;
-    --hue1: #5B9BFF;
-    --hue2: #2DD4BF;
-    --hue3: #F5B041;
-    --hue4: #A78BFA;
-    --hue5: #6EE755;
-    --hue6: #F472B6;
+    /* Dark — OP-XY true pitch-black OLED instrument display */
+    --bg: #050505;
+    --fg: #FFFFFF;
+    --mute: #C4C4C0;
+    --meta: #8A8A85;
+    --rule: #2C2C2E;
+    --rule-strong: #FFFFFF;
+    --rule-soft: #1E1E20;
+    --raised: #0F0F10;
+    --recessed: #161618;
+    --hover: #1E1E21;
+    --shade: rgba(0, 0, 0, 0.72);
+    --backdrop: rgba(0, 0, 0, 0.72);
+    --rupture: #FF5500;
+    --rupture-soft: rgba(255, 85, 0, 0.16);
+    --blue: #1D63ED;
+    --hue0: #FFFFFF;
+    --hue1: #2997FF;
+    --hue2: #00E599;
+    --hue3: #FFC400;
+    --hue4: #B388FF;
+    --hue5: #5CE65C;
+    --hue6: #FF5CA8;
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0D0E10;
-  --bg-glass: rgba(13, 14, 16, 0.82);
-  --fg: #F2F2EE;
-  --mute: #A1A39E;
-  --meta: #6E706B;
-  --rule: rgba(255, 255, 255, 0.09);
-  --rule-strong: rgba(255, 255, 255, 0.18);
-  --rule-soft: rgba(255, 255, 255, 0.05);
-  --raised: #16171A;
-  --recessed: #1D1F23;
-  --hover: rgba(255, 255, 255, 0.055);
-  --shade: rgba(0, 0, 0, 0.35);
-  --shade-lg: rgba(0, 0, 0, 0.58);
-  --backdrop: rgba(0, 0, 0, 0.56);
-  --rupture: #FF5719;
-  --rupture-soft: rgba(255, 87, 25, 0.14);
-  --blue: #2563EB;
-  --hue1: #5B9BFF;
-  --hue2: #2DD4BF;
-  --hue3: #F5B041;
-  --hue4: #A78BFA;
-  --hue5: #6EE755;
-  --hue6: #F472B6;
+  --bg: #050505;
+  --fg: #FFFFFF;
+  --mute: #C4C4C0;
+  --meta: #8A8A85;
+  --rule: #2C2C2E;
+  --rule-strong: #FFFFFF;
+  --rule-soft: #1E1E20;
+  --raised: #0F0F10;
+  --recessed: #161618;
+  --hover: #1E1E21;
+  --shade: rgba(0, 0, 0, 0.72);
+  --backdrop: rgba(0, 0, 0, 0.72);
+  --rupture: #FF5500;
+  --rupture-soft: rgba(255, 85, 0, 0.16);
+  --blue: #1D63ED;
+  --hue0: #FFFFFF;
+  --hue1: #2997FF;
+  --hue2: #00E599;
+  --hue3: #FFC400;
+  --hue4: #B388FF;
+  --hue5: #5CE65C;
+  --hue6: #FF5CA8;
 }
 
 :root[data-theme="light"] {
@@ -132,7 +125,7 @@
 @media (max-width: 600px) {
   :root {
     --title: 18px;
-    --margin: 14px;
+    --margin: 12px;
     --round: 34px;
   }
 }
@@ -156,136 +149,140 @@ html, body, #root {
 p { margin: 0; }
 h1, h2, h3, h4 {
   margin: 0;
-  font-weight: 600;
-  letter-spacing: -0.025em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   line-height: 1.25;
 }
 button, textarea, input { font: inherit; color: inherit; }
-code, pre, kbd { font-family: var(--font-mono); }
 
-/* Clean machined TE buttons */
+/* Stark high-contrast TE hardware key buttons */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   cursor: pointer;
-  padding: 7px 14px;
+  padding: 6px 12px;
   font-size: var(--small);
-  font-weight: 500;
-  letter-spacing: -0.005em;
-  border: 1px solid var(--rule-strong);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid var(--fg);
   border-radius: var(--soft);
   background: var(--raised);
-  box-shadow: 0 1px 2px var(--shade);
+  color: var(--fg);
   transition:
-    transform 110ms var(--ease),
+    transform 80ms var(--ease),
     background-color var(--t-fast) var(--ease),
-    border-color var(--t-fast) var(--ease),
     color var(--t-fast) var(--ease),
-    box-shadow var(--t-fast) var(--ease);
+    border-color var(--t-fast) var(--ease);
 }
 .btn:active:enabled {
-  transform: scale(0.975);
-  box-shadow: none;
+  transform: translateY(1px);
 }
 .btn.inverted {
   color: var(--bg);
   background: var(--fg);
-  border-color: transparent;
-  box-shadow: 0 1px 3px var(--shade);
+  border-color: var(--fg);
 }
 .btn.accent {
   color: #FFFFFF;
   background: var(--rupture);
-  border-color: transparent;
+  border-color: var(--rupture);
 }
 .btn.danger {
   color: var(--rupture);
-  border-color: color-mix(in srgb, var(--rupture) 35%, transparent);
-  background: var(--rupture-soft);
-  box-shadow: none;
+  border-color: var(--rupture);
+  background: transparent;
 }
 .btn.subtle {
   border-color: var(--rule);
   color: var(--mute);
   background: transparent;
-  box-shadow: none;
 }
 .btn.plain {
-  border: 0;
-  padding: 5px 8px;
+  border: 1px solid transparent;
+  padding: 4px 7px;
   background: transparent;
-  box-shadow: none;
   font-weight: 500;
   color: var(--mute);
 }
 @media (hover: hover) {
   .btn:hover:enabled:not(.inverted):not(.danger):not(.subtle):not(.plain) {
-    border-color: var(--fg);
-    box-shadow: 0 2px 6px var(--shade);
+    background: var(--fg);
+    color: var(--bg);
   }
   .btn.inverted:hover:enabled {
-    opacity: 0.9;
+    background: var(--rupture);
+    border-color: var(--rupture);
+    color: #FFFFFF;
   }
   .btn.danger:hover:enabled {
     background: var(--rupture);
     color: #FFFFFF;
-    border-color: var(--rupture);
   }
-  .btn.subtle:hover:enabled,
+  .btn.subtle:hover:enabled {
+    border-color: var(--fg);
+    color: var(--fg);
+    background: var(--raised);
+  }
   .btn.plain:hover:enabled {
     background: var(--hover);
     color: var(--fg);
   }
 }
 :disabled {
-  opacity: 0.38;
+  opacity: 0.32;
   cursor: default;
 }
 :focus-visible {
   outline: 2px solid var(--rupture);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
-/* Flat minimal hardware keycap legend */
+/* Crisp hardware keycap legend */
 kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 1px 6px;
+  padding: 1px 5px;
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  line-height: 1.45;
-  color: var(--mute);
-  background: var(--recessed);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  color: var(--fg);
+  background: var(--raised);
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: 2px;
   white-space: nowrap;
 }
 
-/* Clean TE × Swiss technical section index: 01 LABEL */
+/* High-contrast numbered technical HUD header: [01] SECTION */
 .hud-label {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: var(--font-mono);
   font-size: var(--label);
-  font-weight: 500;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--meta);
+  color: var(--mute);
 }
 .hud-label .idx {
-  color: var(--rupture);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: var(--rupture);
+  color: #FFFFFF;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
 }
 .hud-label .tail {
   margin-left: auto;
-  font-weight: 400;
+  font-weight: 500;
   color: var(--meta);
 }
 
@@ -298,56 +295,52 @@ kbd {
   color: var(--rupture) !important;
 }
 
-/* Reserved exclusively for the full-screen Interrupt rupture display */
+/* Evangelion stretched display type (Interrupt) */
 .stretch {
   display: block;
   flex-shrink: 0;
-  font-family: var(--font-mono);
   font-weight: 700;
   white-space: nowrap;
   pointer-events: none;
-  transform: scale(var(--squeeze, 1), 1.85);
+  transform: scale(var(--squeeze, 1), 1.9);
   transform-origin: 0 50%;
 }
 
-/* Clean hardware LED dot */
+/* Sharp square hardware LED */
 .led {
   display: inline-block;
   width: 7px;
   height: 7px;
   flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--hue, var(--meta));
-  transition: background-color var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease);
+  border-radius: 1px;
+  background: var(--hue, var(--fg));
+  transition: background-color var(--t-fast) var(--ease);
 }
 .led.round {
   border-radius: 50%;
 }
 .led.live {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hue, var(--rupture)) 22%, transparent);
-  animation: led-breathe 1.8s ease-in-out infinite;
+  animation: led-blink 1.1s ease-in-out infinite;
 }
 .led.asks {
   background: var(--rupture);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rupture) 26%, transparent);
-  animation: led-breathe 1.2s ease-in-out infinite;
+  animation: led-blink 0.7s ease-in-out infinite;
 }
 
-/* Segmented 10-bar hardware readout (context usage) */
+/* Segmented 10-bar OLED telemetry meter */
 .sync-bay {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 28px;
-  padding: 0 9px;
-  background: var(--recessed);
-  border: 1px solid var(--rule-soft);
+  height: 26px;
+  padding: 0 8px;
+  background: var(--raised);
+  border: 1px solid var(--rule);
   border-radius: var(--soft);
-  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 500;
-  color: var(--mute);
-  transition: border-color var(--t-med) var(--ease), color var(--t-med) var(--ease);
+  font-weight: 700;
+  color: var(--fg);
+  transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
 .sync-bars {
   display: inline-flex;
@@ -355,41 +348,40 @@ kbd {
   gap: 2px;
 }
 .sync-bars i {
-  width: 2.5px;
+  width: 3px;
   height: 10px;
-  border-radius: 1.5px;
-  background: var(--rule-strong);
-  transition: background-color 220ms var(--ease), transform 220ms var(--ease);
+  border-radius: 0;
+  background: var(--rule);
+  transition: background-color var(--t-med) var(--ease);
 }
 .sync-bars i.lit {
   background: var(--fg);
 }
 .sync-bay.alarm {
-  border-color: color-mix(in srgb, var(--rupture) 40%, transparent);
-  background: var(--rupture-soft);
+  border-color: var(--rupture);
   color: var(--rupture);
 }
 .sync-bay.alarm .sync-bars i.lit {
   background: var(--rupture);
 }
 
-/* Minimal translucent scrollbars */
+/* Sharp minimal scrollbars */
 .scroll {
   scrollbar-width: thin;
-  scrollbar-color: var(--rule-strong) transparent;
+  scrollbar-color: var(--rule) transparent;
 }
 
-/* Keyframes — ultra-subtle, GPU-composited only */
-@keyframes led-breathe {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.42; transform: scale(0.86); }
+/* Crisp subtle mechanical transitions */
+@keyframes led-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.22; }
 }
 @keyframes view-in {
-  from { opacity: 0; transform: translateY(5px); }
+  from { opacity: 0; transform: translateY(3px); }
   to { opacity: 1; transform: translateY(0); }
 }
 @keyframes sheet-in {
-  from { opacity: 0; transform: translateY(8px) scale(0.978); }
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 @keyframes backdrop-in {
@@ -397,11 +389,11 @@ kbd {
   to { opacity: 1; }
 }
 @keyframes drawer-in {
-  from { opacity: 0; transform: translateY(14px); }
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 @keyframes drop-in {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(3px); }
   to { opacity: 1; transform: translateY(0); }
 }
 @keyframes wipe {
@@ -409,7 +401,7 @@ kbd {
   to { clip-path: inset(0 0 0 0); }
 }
 @keyframes appear {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(3px); }
   to { opacity: 1; transform: translateY(0); }
 }
 

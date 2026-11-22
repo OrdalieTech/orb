@@ -444,29 +444,25 @@
     position: relative;
     flex-shrink: 0;
     width: calc(100% - 2 * var(--margin) + 12px);
-    max-width: 752px;
-    margin: 8px auto max(18px, env(safe-area-inset-bottom));
-    padding: 13px 12px 10px;
-    border: 1px solid var(--rule);
-    border-radius: 16px;
+    max-width: 772px;
+    margin: 8px auto max(16px, env(safe-area-inset-bottom));
+    padding: 12px 10px 9px;
+    border: 1px solid var(--fg);
+    border-radius: var(--pane);
     background: var(--raised);
-    box-shadow: 0 2px 12px var(--shade), 0 0 0 1px var(--rule-soft);
-    transition:
-      border-color var(--t-med) var(--ease),
-      box-shadow var(--t-med) var(--ease);
+    transition: border-color var(--t-fast) var(--ease);
   }
   .prompt-deck:focus-within {
-    border-color: var(--rule-strong);
-    box-shadow: 0 6px 26px var(--shade-lg), 0 0 0 1px var(--rule-strong);
+    box-shadow: 0 0 0 1px var(--fg);
   }
   .prompt-deck.dragging {
     border-color: var(--rupture);
-    box-shadow: 0 0 0 3px var(--rupture-soft);
+    box-shadow: 0 0 0 2px var(--rupture);
   }
   .prompt-input {
     display: block;
     width: 100%;
-    min-height: 2.7em;
+    min-height: 2.6em;
     max-height: min(14lh, 30dvh);
     field-sizing: content;
     padding: 0 10px 8px;
@@ -474,7 +470,7 @@
     resize: none;
     background: none;
     font-size: var(--body);
-    line-height: 1.55;
+    line-height: 1.5;
   }
   .prompt-input::placeholder { color: var(--meta); }
   .prompt-input:focus-visible { outline: 0; }
@@ -485,27 +481,27 @@
   .deck-bar {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 6px 2px 0 4px;
-    border-top: 1px solid var(--rule-soft);
+    gap: 5px;
+    padding: 7px 2px 0 4px;
+    border-top: 1px solid var(--rule);
   }
   .deck-chip {
     display: flex;
     align-items: center;
     gap: 7px;
     min-width: 0;
-    height: 30px;
-    padding: 0 9px;
-    border: 0;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid transparent;
     border-radius: var(--soft);
     background: none;
     cursor: pointer;
-    font-size: 12.5px;
-    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    font-size: 12px;
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .deck-chip.aim {
     flex: 0 1 auto;
-    font-weight: 550;
+    font-weight: 700;
     color: var(--fg);
   }
   .deck-chip.aim:disabled { opacity: 1; cursor: default; }
@@ -517,7 +513,6 @@
   .deck-chip.model {
     flex: 1 1 auto;
     justify-content: flex-start;
-    font-family: var(--font-mono);
     font-size: 12px;
     color: var(--mute);
   }
@@ -534,9 +529,9 @@
     flex-shrink: 0;
   }
   .meter i {
-    width: 2.5px;
-    border-radius: 1.5px;
-    background: var(--rule-strong);
+    width: 3px;
+    border-radius: 0;
+    background: var(--rule);
     transition: background-color var(--t-med) var(--ease);
   }
   .meter i:nth-child(1) { height: 4px; }
@@ -550,42 +545,45 @@
   .deck-icon {
     display: grid;
     place-items: center;
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     flex-shrink: 0;
-    border: 0;
-    border-radius: var(--soft);
-    background: none;
-    color: var(--meta);
-    font-family: var(--font-mono);
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), transform 100ms var(--ease);
-  }
-  .deck-icon:active:enabled { transform: scale(0.92); }
-  .deck-queue {
-    padding: 5px 10px;
     border: 1px solid var(--rule);
     border-radius: var(--soft);
-    background: var(--recessed);
-    color: var(--mute);
-    font-family: var(--font-mono);
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), transform 80ms var(--ease);
+  }
+  .deck-icon:active:enabled { transform: translateY(1px); }
+  .deck-queue {
+    padding: 4px 9px;
+    border: 1px solid var(--fg);
+    border-radius: var(--soft);
+    background: var(--bg);
+    color: var(--fg);
     font-size: 11.5px;
-    font-weight: 500;
+    font-weight: 700;
     cursor: pointer;
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
-    .deck-chip:hover:enabled,
+    .deck-chip:hover:enabled {
+      background: var(--hover);
+      border-color: var(--rule);
+      color: var(--fg);
+    }
     .deck-icon:hover:enabled,
     .deck-queue:hover {
-      background: var(--hover);
-      color: var(--fg);
+      background: var(--fg);
+      border-color: var(--fg);
+      color: var(--bg);
     }
   }
 
-  /* Iconic circular TE machined send / stop button */
+  /* Iconic high-contrast circular TE Orange/Black action key */
   .te-action {
     display: grid;
     place-items: center;
@@ -596,44 +594,40 @@
     border: 0;
     border-radius: 50%;
     cursor: pointer;
-    color: var(--bg);
-    background: var(--fg);
-    box-shadow: 0 2px 6px var(--shade);
+    color: #FFFFFF;
+    background: var(--rupture);
     transition:
-      transform 140ms var(--spring),
-      background-color var(--t-med) var(--ease),
-      box-shadow var(--t-fast) var(--ease),
-      opacity var(--t-fast) var(--ease);
+      transform 90ms var(--ease),
+      background-color var(--t-fast) var(--ease),
+      color var(--t-fast) var(--ease);
   }
   .te-action:hover:enabled {
-    transform: scale(1.05);
-    box-shadow: 0 4px 12px var(--shade-lg);
+    background: var(--fg);
+    color: var(--bg);
   }
   .te-action:active:enabled { transform: scale(0.92); }
   .te-action:disabled {
     opacity: 1;
     background: var(--recessed);
     color: var(--meta);
+    border: 1px solid var(--rule);
     cursor: default;
-    box-shadow: none;
   }
   .te-action.stop {
     background: var(--rupture);
     color: #FFFFFF;
-    box-shadow: 0 2px 10px color-mix(in srgb, var(--rupture) 40%, transparent);
   }
   .te-action::before {
     content: "";
     width: 54%;
     height: 54%;
     background: currentColor;
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 13.5V3.5M2.75 8.25 8 3l5.25 5.25' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
-    transition: transform var(--t-fast) var(--ease);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 13.5V3.5M2.75 8.25 8 3l5.25 5.25' fill='none' stroke='black' stroke-width='3' stroke-miterlimit='8'/%3E%3C/svg%3E") center / contain no-repeat;
   }
   .te-action.stop::before {
-    width: 32%;
-    height: 32%;
-    border-radius: 2px;
+    width: 34%;
+    height: 34%;
+    border-radius: 1px;
     mask: none;
   }
 
@@ -641,36 +635,36 @@
     position: absolute;
     left: 0;
     right: 0;
-    bottom: calc(100% + 8px);
+    bottom: calc(100% + 6px);
     max-height: 260px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    padding: 6px;
-    border: 1px solid var(--rule);
+    padding: 4px;
+    border: 1px solid var(--fg);
     border-radius: var(--pane);
     background: var(--raised);
-    box-shadow: 0 14px 36px var(--shade-lg);
     z-index: 6;
-    animation: drop-in 140ms var(--ease);
+    animation: drop-in 110ms var(--ease);
   }
   .pal-row {
     display: flex;
     align-items: baseline;
     gap: 12px;
-    padding: 7px 10px;
+    padding: 6px 9px;
     border: 0;
     border-radius: var(--soft);
     background: none;
     text-align: left;
     cursor: pointer;
     font-size: var(--small);
-    transition: background-color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .pal-row b { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; flex-shrink: 0; }
+  .pal-row b { font-weight: 700; flex-shrink: 0; }
   .pal-row span { color: var(--meta); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .pal-row.on { background: var(--hover); }
+  .pal-row.on { background: var(--fg); color: var(--bg); }
+  .pal-row.on span { color: color-mix(in srgb, var(--bg) 72%, transparent); }
   @media (hover: hover) {
-    .pal-row:hover { background: var(--hover); }
+    .pal-row:hover:not(.on) { background: var(--hover); }
   }
 </style>

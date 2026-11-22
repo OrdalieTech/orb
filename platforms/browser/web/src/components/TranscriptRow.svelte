@@ -149,22 +149,20 @@
   }
   .you-bubble {
     margin: 0;
-    padding: 10px 15px;
+    padding: 9px 13px;
     white-space: pre-wrap;
-    border-radius: 14px 14px 4px 14px;
-    background: var(--recessed);
-    border: 1px solid var(--rule-soft);
+    border-radius: var(--pane);
+    background: var(--raised);
+    border: 1px solid var(--fg);
     max-width: 100%;
-    line-height: 1.55;
+    line-height: 1.5;
   }
   .tok-skill {
     padding: 1px 6px;
-    border-radius: 5px;
-    font-family: var(--font-mono);
-    font-size: 0.9em;
-    font-weight: 600;
-    color: var(--bg);
-    background: var(--fg);
+    border-radius: 2px;
+    font-weight: 700;
+    color: #FFFFFF;
+    background: var(--rupture);
   }
   .tok-file {
     font-family: var(--font-mono);

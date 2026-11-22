@@ -129,61 +129,56 @@
     border-left: 2px solid var(--rupture);
   }
   .md-code {
-    padding: 1px 6px;
-    font-family: var(--font-mono);
-    font-size: 0.88em;
-    border-radius: 5px;
+    padding: 0 5px;
+    font-size: 0.92em;
+    border-radius: 2px;
     background: var(--recessed);
-    border: 1px solid var(--rule-soft);
+    border: 1px solid var(--rule);
   }
   .md-pre-wrap {
     margin: 10px 0;
-    border: 1px solid var(--rule);
-    border-radius: 10px;
+    border: 1px solid var(--fg);
+    border-radius: var(--pane);
     background: var(--raised);
-    box-shadow: 0 1px 3px var(--shade);
     overflow: hidden;
   }
   .md-pre-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 12px;
-    background: var(--recessed);
-    border-bottom: 1px solid var(--rule-soft);
+    padding: 5px 10px;
+    background: var(--fg);
+    color: var(--bg);
   }
   .md-lang {
-    font-family: var(--font-mono);
     font-size: var(--label);
-    font-weight: 500;
-    letter-spacing: 0.08em;
+    font-weight: 700;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--meta);
+    color: var(--bg);
   }
   .md-copy {
     cursor: pointer;
-    padding: 2px 9px;
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    font-weight: 500;
-    letter-spacing: 0.04em;
+    padding: 1px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--mute);
-    background: var(--raised);
-    border: 1px solid var(--rule);
-    border-radius: 5px;
-    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+    color: var(--bg);
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--bg) 45%, transparent);
+    border-radius: 2px;
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
-    .md-copy:hover { color: var(--fg); border-color: var(--rule-strong); }
+    .md-copy:hover { background: var(--rupture); border-color: var(--rupture); color: #FFFFFF; }
   }
   .md-pre {
     margin: 0;
-    padding: 12px 14px;
+    padding: 11px 13px;
     overflow-x: auto;
-    font-family: var(--font-mono);
     font-size: 12.5px;
-    line-height: 1.55;
+    line-height: 1.5;
     white-space: pre-wrap;
     tab-size: 4;
   }
@@ -194,8 +189,8 @@
   .md-table-wrap {
     margin: 10px 0;
     overflow-x: auto;
-    border: 1px solid var(--rule);
-    border-radius: 10px;
+    border: 1px solid var(--fg);
+    border-radius: var(--pane);
     background: var(--raised);
   }
   .md-table {
@@ -204,22 +199,21 @@
     font-size: var(--small);
   }
   .md-table th, .md-table td {
-    padding: 8px 12px;
+    padding: 7px 11px;
     text-align: left;
     vertical-align: top;
-    border-bottom: 1px solid var(--rule-soft);
-    border-right: 1px solid var(--rule-soft);
+    border-bottom: 1px solid var(--rule);
+    border-right: 1px solid var(--rule);
   }
   .md-table th:last-child, .md-table td:last-child { border-right: 0; }
   .md-table tr:last-child td { border-bottom: 0; }
   .md-table th {
-    font-family: var(--font-mono);
-    font-weight: 600;
+    font-weight: 700;
     background: var(--recessed);
     font-size: var(--label);
-    letter-spacing: 0.06em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--mute);
+    color: var(--fg);
   }
   .md-link {
     color: inherit;

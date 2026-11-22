@@ -13,25 +13,25 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import tech.ordalie.orb.R
 
-/** Ordalie tokens: teenage engineering anodized field white & OP-XY matte carbon, International Orange (#FF4F00). */
+/** Ordalie tokens: teenage engineering high-contrast studio light & OP-XY OLED dark, International Orange (#FF4D00). */
 object Ink {
-    val Texte = Color(0xFFFAFAFA)
-    val Rupture = Color(0xFFFF4F00)
-    val Blue = Color(0xFF1446A0)
-    val Charcoal = Color(0xFF141413)
+    val Texte = Color(0xFFFFFFFF)
+    val Rupture = Color(0xFFFF4D00)
+    val Blue = Color(0xFF0047AB)
+    val Charcoal = Color(0xFF0A0A0A)
 }
 
 @Immutable
 data class Palette(val bg: Color, val fg: Color, val mute: Color, val meta: Color, val rule: Color, val raised: Color)
 
-/** Anodized field white & ceramic surfaces in light; matte carbon in dark. */
-val LightPalette = Palette(Color(0xFFF4F4F1), Ink.Charcoal, Color(0xFF575854), Color(0xFF8A8B85), Color(0xFFDCDCD7), Color(0xFFFFFFFF))
-val DarkPalette = Palette(Color(0xFF0D0E10), Color(0xFFF2F2EE), Color(0xFFA1A39E), Color(0xFF6E706B), Color(0xFF26282C), Color(0xFF16171A))
+/** High-contrast studio light & true OLED black dark. */
+val LightPalette = Palette(Color(0xFFF2F2EE), Ink.Charcoal, Color(0xFF333330), Color(0xFF5C5C57), Color(0xFFC6C6C0), Color(0xFFFFFFFF))
+val DarkPalette = Palette(Color(0xFF050505), Color(0xFFFFFFFF), Color(0xFFC4C4C0), Color(0xFF8A8A85), Color(0xFF2C2C2E), Color(0xFF0F0F10))
 val LocalPalette = staticCompositionLocalOf { LightPalette }
 
-/** A peer's hue (1 to 6, as the view assigns them; 0, this phone, takes the ink): six rotary encoder
- *  LED tones apart from each other and from International Orange, as on desktop and web. */
-private val Hues = listOf(0xFF1D63ED to 0xFF5B9BFF, 0xFF009E7A to 0xFF2DD4BF, 0xFFD98A00 to 0xFFF5B041, 0xFF7048E8 to 0xFFA78BFA, 0xFF379E28 to 0xFF6EE755, 0xFFD63384 to 0xFFF472B6)
+/** A peer's hue (1 to 6, as the view assigns them; 0, this phone, takes the ink): six vivid OP-1
+ *  rotary encoder LED tones apart from International Orange, as on desktop and web. */
+private val Hues = listOf(0xFF0057FF to 0xFF2997FF, 0xFF008F5D to 0xFF00E599, 0xFFD97706 to 0xFFFFC400, 0xFF6D28D9 to 0xFFB388FF, 0xFF16803C to 0xFF5CE65C, 0xFFDB2777 to 0xFFFF5CA8)
 @Composable
 fun hue(n: Int, phone: Color = p.mute): Color = if (n <= 0) phone else Hues[(n - 1) % Hues.size].let { (light, dark) -> Color(if (p == DarkPalette) dark else light) }
 val p: Palette @Composable get() = LocalPalette.current
@@ -46,9 +46,9 @@ val Regular = FontWeight.Normal
 val Medium = FontWeight.Medium
 val Strong = FontWeight.SemiBold
 
-/** Two clean machined radii: 7 for controls and inputs, 12 for floating cards. */
-val Soft = RoundedCornerShape(7.dp)
-val Pane = RoundedCornerShape(12.dp)
+/** Two tight machined radii: 3 for keys and inputs, 4 for hardware panels. */
+val Soft = RoundedCornerShape(3.dp)
+val Pane = RoundedCornerShape(4.dp)
 val Margin = 16.dp
 
 /** The display's corner radius, as the platform reports it; none where the screen is square. */

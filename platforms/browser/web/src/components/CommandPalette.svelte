@@ -286,11 +286,11 @@
     display: flex;
     flex-direction: column;
     padding: 14px;
-    border: 1px solid var(--rule);
-    border-radius: 14px;
+    border: 1px solid var(--fg);
+    border-radius: var(--pane);
     background: var(--raised);
-    box-shadow: 0 24px 64px var(--shade-lg);
-    animation: sheet-in 190ms var(--ease);
+    box-shadow: 0 18px 48px var(--shade);
+    animation: sheet-in 150ms var(--ease);
   }
   .sheet.wide { width: min(580px, 100%); }
   .sheet-head {
@@ -329,8 +329,9 @@
     cursor: pointer;
     transition: background-color var(--t-fast) var(--ease);
   }
-  .sheet-row.on { background: var(--hover); }
-  @media (hover: hover) { .sheet-row:hover { background: var(--hover); } }
+  .sheet-row.on { background: var(--fg); color: var(--bg); }
+  .sheet-row.on .sr-det { color: color-mix(in srgb, var(--bg) 72%, transparent); }
+  @media (hover: hover) { .sheet-row:hover:not(.on) { background: var(--hover); } }
   .sr-lbl {
     flex-shrink: 0;
     max-width: 65%;

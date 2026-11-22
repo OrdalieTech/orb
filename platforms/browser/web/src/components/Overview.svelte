@@ -97,31 +97,22 @@
   .ov-card {
     display: flex;
     flex-direction: column;
-    height: 230px;
-    padding: 13px 14px;
+    height: 226px;
+    padding: 12px 13px;
     border: 1px solid var(--rule);
     border-radius: var(--pane);
     background: var(--raised);
-    box-shadow: 0 1px 3px var(--shade);
     cursor: pointer;
     transition:
       border-color var(--t-fast) var(--ease),
-      transform var(--t-med) var(--ease),
-      box-shadow var(--t-med) var(--ease);
+      transform 80ms var(--ease);
   }
-  .ov-card.busy { border-color: var(--rule-strong); }
-  .ov-card.asks {
-    border-color: color-mix(in srgb, var(--rupture) 55%, transparent);
-    box-shadow: 0 0 0 2px var(--rupture-soft);
-  }
-  .ov-card.asleep { opacity: 0.65; }
-  .ov-card:active { transform: scale(0.985); }
+  .ov-card.busy { border-color: var(--fg); }
+  .ov-card.asks { border-color: var(--rupture); }
+  .ov-card.asleep { opacity: 0.58; }
+  .ov-card:active { transform: translateY(1px); }
   @media (hover: hover) {
-    .ov-card:hover {
-      border-color: var(--rule-strong);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px var(--shade);
-    }
+    .ov-card:hover { border-color: var(--fg); }
   }
   .ov-top {
     display: flex;
@@ -138,13 +129,12 @@
     text-overflow: ellipsis;
   }
   .ov-unread {
-    padding: 0 6px;
-    border-radius: var(--pill);
-    font-family: var(--font-mono);
+    padding: 0 5px;
+    border-radius: 2px;
     font-size: 10px;
-    font-weight: 600;
-    background: var(--fg);
-    color: var(--bg);
+    font-weight: 700;
+    background: var(--rupture);
+    color: #FFFFFF;
   }
   .ov-x {
     padding: 0 4px;
@@ -177,9 +167,9 @@
   }
   .ov-tail pre {
     margin: 0;
-    font-family: var(--font-sans);
-    font-size: 12.5px;
-    line-height: 1.48;
+    font: inherit;
+    font-size: 11.5px;
+    line-height: 1.45;
     color: var(--mute);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -190,24 +180,25 @@
     gap: 8px;
     margin-top: 10px;
     padding-top: 8px;
-    border-top: 1px solid var(--rule-soft);
-    font-family: var(--font-mono);
+    border-top: 1px solid var(--rule);
     font-size: 10.5px;
+    font-weight: 600;
     color: var(--meta);
   }
   .ov-bar {
-    width: 52px;
-    height: 4px;
+    width: 54px;
+    height: 5px;
     background: var(--recessed);
-    border-radius: var(--pill);
+    border: 1px solid var(--rule);
+    border-radius: 0;
     overflow: hidden;
   }
   .ov-bar i {
     display: block;
     height: 100%;
     background: var(--fg);
-    border-radius: var(--pill);
-    transition: width 260ms var(--ease);
+    border-radius: 0;
+    transition: width 200ms var(--ease);
   }
   .ov-bar i.alarm { background: var(--rupture); }
   .ov-new {

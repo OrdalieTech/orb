@@ -106,11 +106,10 @@
     animation: view-in var(--t-med) var(--ease);
   }
   .pair-card {
-    padding: 24px;
-    border: 1px solid var(--rule);
-    border-radius: 16px;
+    padding: 22px;
+    border: 1px solid var(--fg);
+    border-radius: var(--pane);
     background: var(--raised);
-    box-shadow: 0 12px 40px var(--shade);
   }
   h1 {
     margin: 10px 0 8px;
