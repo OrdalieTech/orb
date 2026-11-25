@@ -60,7 +60,8 @@ func startFixtureManagerIn(t *testing.T, agentDir string, paths ...string) (*Man
 	cwd := t.TempDir()
 	manager := NewManager(Options{
 		AgentDir: agentDir, CWD: cwd, Version: "test", Runtime: &runtime,
-		RequestTimeout: 30 * time.Second, ShutdownTimeout: time.Second,
+		// Windows runners have spent over 30 s in a host handshake or a local npm install.
+		RequestTimeout: 2 * time.Minute, ShutdownTimeout: time.Second,
 		BackoffBase: 10 * time.Millisecond, BackoffMax: 50 * time.Millisecond,
 	})
 	t.Cleanup(func() {

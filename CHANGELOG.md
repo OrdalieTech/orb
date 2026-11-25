@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- When an extension's dependency install is killed or fails, the load error now leads with the timeout or exit error, then the installer's output; before, a killed `npm install` could report only its own success line.
+
 ## [0.27.0] - 2026-11-20
 
 One sync group is one set of machines: being in the group is enough to see and drive the conversations of every machine in it, a browser tab included, with no pairing code per machine, and leaving the group takes that access away at once. The default model, its reasoning and the plugin switches travel with the group too, and a member's change reaches every device in under a second.
