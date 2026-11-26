@@ -558,9 +558,9 @@ func (a *app) layout(c *ui.Context, x *tile, corner, left bool) {
 	x.over = ""
 	e.DrawOver(func(pt *ui.Painter, r ui.Rect) {
 		x.width, x.height = r.W, r.H
-		// The focused tile's top edge in the rupture.
+		// The focused tile's subtle top edge accent.
 		if focus > 0 {
-			pt.Fill(ui.Rect{X: r.X, Y: r.Y, W: r.W, H: 2}, rupture.Alpha(focus), 0)
+			pt.Fill(ui.Rect{X: r.X, Y: r.Y, W: r.W, H: 1.5}, pal.fg.Alpha(0.65*focus), 0)
 		}
 		// Where a drop would put what is dragged: this half, or the whole tile.
 		h := r
@@ -581,23 +581,27 @@ func (a *app) layout(c *ui.Context, x *tile, corner, left bool) {
 	})
 }
 
-// zones are the parts of a tile a drag drops on while it lasts: a side opens a tile there, the
-// middle shows what is dragged in this one.
+// zones are the parts of a tile's body (below its tab bar) a drag drops on while it lasts:
+// a side opens a tile there, the middle shows what is dragged in this one. Keeping the tab bar
+// clear lets tabs drag along the bar to reorder without triggering splits.
 func (a *app) zones(c *ui.Context, x *tile) {
-	for _, z := range [...]struct {
-		side       string
-		l, t, w, h float32
-	}{
-		{"middle", 25, 25, 50, 50}, {"left", 0, 0, 25, 100}, {"right", 75, 0, 25, 100}, {"top", 25, 0, 50, 25}, {"bottom", 25, 75, 50, 25},
-	} {
-		e := ui.Box(c.Key(z.side)).Absolute().LeftPercent(z.l).TopPercent(z.t).WidthPercent(z.w).HeightPercent(z.h)
-		if _, ok := ui.DragOver[carried](e); ok {
-			x.over = z.side
+	barH := max(c.TitleBar().Height, 48)
+	ui.Box(c.Key("zones")).Absolute().Left(0).Right(0).Top(barH).Bottom(0).Children(func() {
+		for _, z := range [...]struct {
+			side       string
+			l, t, w, h float32
+		}{
+			{"middle", 25, 25, 50, 50}, {"left", 0, 0, 25, 100}, {"right", 75, 0, 25, 100}, {"top", 25, 0, 50, 25}, {"bottom", 25, 75, 50, 25},
+		} {
+			e := ui.Box(c.Key(z.side)).Absolute().LeftPercent(z.l).TopPercent(z.t).WidthPercent(z.w).HeightPercent(z.h)
+			if _, ok := ui.DragOver[carried](e); ok {
+				x.over = z.side
+			}
+			if v, ok := ui.Drop[carried](e); ok {
+				a.dropped(x, z.side, v)
+			}
 		}
-		if v, ok := ui.Drop[carried](e); ok {
-			a.dropped(x, z.side, v)
-		}
-	}
+	})
 }
 
 // tileTools is what a tile's bar offers the pointer on hover: split it, zoom it, close it.

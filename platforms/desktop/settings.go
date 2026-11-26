@@ -771,7 +771,7 @@ func (a *app) generalScreen(c *ui.Context) {
 		a.magi(c)
 		hudLabel(c, 3, "keys", "").Padding(18, 0, 4)
 		for _, k := range [][2]string{
-			{keys("K") + " · " + keys("P"), "go to a conversation, a thread"}, {keys("T") + " · " + keys("N"), "new tab"}, {keys("W"), "close the tab (it runs on)"},
+			{keys("K") + " · " + keys("P"), "go to a conversation, a thread"}, {keys("G") + " · pinch", "overview · live agent grid"}, {keys("T") + " · " + keys("N"), "new tab"}, {keys("W"), "close the tab (it runs on)"},
 			{keys("⇧T"), "reopen the tab closed last"}, {keys("⇧W"), "close the tile"}, {keys("D") + " · " + keys("⇧D"), "split right · down"},
 			{keys("[") + " · " + keys("]"), "previous · next tile"}, {keys("⇧[") + " · " + keys("⇧]") + " · ⇧← · ⇧→", "previous · next tab"},
 			{map[bool]string{true: "⌃Tab · ⌃⇧Tab", false: "Ctrl+Tab · Ctrl+Shift+Tab"}[runtime.GOOS == "darwin"], "next · previous tab"},

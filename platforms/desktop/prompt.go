@@ -142,9 +142,16 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 				in.TextRanges(r)
 			}
 			// Enter sends (steers a turn under way, as its button says), Shift+Enter breaks the
-			// line; Tab takes the first choice.
+			// line; Tab takes the first choice; Shift+Left/Right switches tabs when the draft is empty.
 			in.OnTextKey(func(k ui.TextKey) bool {
 				switch {
+				case k.Mods == ui.Shift && (k.Key == ui.KeyLeft || k.Key == ui.KeyRight) && k.Text() == "":
+					if k.Key == ui.KeyLeft {
+						a.move(-1)
+					} else {
+						a.move(1)
+					}
+					return true
 				case k.Key == ui.KeyEnter && k.Mods == 0:
 					text := strings.TrimSpace(k.Text())
 					k.SetText("")

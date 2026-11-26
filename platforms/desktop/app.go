@@ -105,8 +105,12 @@ type app struct {
 	answered   string                  // the pairing claim answered, until the view drops it
 	asked      map[string]time.Time    // when each question showed: its keys arm a moment later
 	keyed      bool                    // what shows now was opened by a key, so it shows at once
-	carded     bool                    // the start screen's title has wiped in, once a launch
-	opening    string                  // the thread being opened, until its Orb answers
+	carded       bool                 // the start screen's title has wiped in, once a launch
+	opening      string               // the thread being opened, until its Orb answers
+	overview     bool                 // live agent grid view (pinch out or ⌘G)
+	pinchScale   float32              // live cumulative trackpad pinch scale (1.0 at rest)
+	pinchAt      time.Time            // timestamp of last trackpad InputZoom event
+	pinchCool    time.Time            // short cooldown after pinch commits so momentum doesn't re-trigger
 }
 
 // cmd is the key that goes with the app's shortcuts: Command on macOS, Control elsewhere.
@@ -193,6 +197,7 @@ func (a *app) show(tab string) {
 }
 
 func (a *app) showTab(tab string, focusPrompt bool) {
+	a.overview = false
 	a.stack, a.fresh = nil, nil
 	a.listing = time.Now().Add(5 * time.Second)
 	if focusPrompt {
@@ -258,9 +263,13 @@ func (a *app) view(c *ui.Context) {
 		a.linger--
 	}
 	a.dragging, a.dragNow = a.linger > 0, false
-	// Every conversation on screen follows at full pace.
+	// Every conversation on screen follows at full pace; in Overview, every open tab streams live.
 	var shown []string
-	if a.top().kind == "" || a.settingsOpen() {
+	if a.overview {
+		for _, t := range o.state.Tabs {
+			shown = append(shown, t.ID)
+		}
+	} else if a.top().kind == "" || a.settingsOpen() {
 		for _, t := range a.onScreen().tiles(nil) {
 			if t.tab != "" && !slices.Contains(shown, t.tab) {
 				shown = append(shown, t.tab)
@@ -272,8 +281,43 @@ func (a *app) view(c *ui.Context) {
 	if len(a.stack) > 0 && a.picker == nil && a.rename == nil && a.model == "" {
 		c.OnShortcut(0, ui.KeyEscape, a.back)
 	}
-	main := func() {
-		ui.Column(c).Fill().Background(pal.bg).Children(func() {
+	pinchTarget := a.settlePinch(c)
+	root := ui.Column(c).Fill().Background(pal.recessed).LineHeight(1.45).ObserveInput(a.onPinch)
+	visualScale := root.Spring("pinchScale", pinchTarget, ui.SpringOptions{Duration: 220 * time.Millisecond})
+	root.Children(func() {
+		var s, radius, shadow float32 = 1, 0, 0
+		var op float32 = 1
+		switch {
+		case !a.overview && visualScale < 0.996:
+			p := min(max((1-visualScale)/0.22, 0), 1)
+			s = 1 - 0.16*p
+			radius = 16 * p
+			shadow = p
+		case !a.overview && visualScale > 1.004:
+			// Gentle rubber-band when pinching outward on an already-open workspace.
+			s = 1 + min((visualScale-1)*0.07, 0.03)
+		case a.overview && visualScale > 1.004:
+			p := min(max((visualScale-1)/0.24, 0), 1)
+			s = 1 + 0.09*p
+			op = 1 - 0.14*p
+		case a.overview && visualScale < 0.996:
+			s = 1 - min((1-visualScale)*0.05, 0.025)
+		}
+		stage := ui.Column(c).Fill().Background(pal.bg).TransformOrigin(0.5, 0.5)
+		if s != 1 {
+			stage.Scale(s, s)
+		}
+		if op != 1 {
+			stage.Opacity(op)
+		}
+		if radius > 0.5 {
+			stage.Radius(radius).Border(1, pal.rule.Alpha(shadow)).Shadow(0, 12*shadow, 32*shadow, 0, charcoal.Alpha(0.18*shadow)).Clip()
+		}
+		stage.Children(func() {
+			if a.overview && a.top().kind == "" {
+				a.overviewScreen(c)
+				return
+			}
 			top := a.top()
 			// Settings opens in the tile the keys act on, its tabs above it, as Home does.
 			if top.kind == "" || a.settingsOpen() {
@@ -290,8 +334,7 @@ func (a *app) view(c *ui.Context) {
 			ui.Row(c).FillWidth().Height(max(c.TitleBar().Height, 48)).DragWindow()
 			a.screen(c, top)
 		})
-	}
-	ui.Column(c).Fill().Background(pal.bg).LineHeight(1.45).Children(main)
+	})
 	a.overlays(c)
 }
 
@@ -308,7 +351,7 @@ func (a *app) titleBar(c *ui.Context, body func()) {
 		right = tb.Right + 12
 	}
 	// Not clickable: a click target does not drag the window. Its title focuses the tile.
-	bar := ui.Row(c).FillWidth().Height(max(tb.Height, 48)).Padding(0, right, 0, left).Gap(10).BorderWidth(0, 0, 1, 0).BorderColor(p(c).rule).Clip().DragWindow()
+	bar := ui.Row(c).FillWidth().Height(max(tb.Height, 48)).Padding(0, right, 0, left).Gap(8).BorderWidth(0, 0, 1, 0).BorderColor(p(c).rule.Alpha(0.65)).Clip().DragWindow()
 	hovered := bar.Hovered()
 	bar.Children(func() {
 		a.tools, a.barHover = false, hovered
@@ -318,6 +361,9 @@ func (a *app) titleBar(c *ui.Context, body func()) {
 		body()
 		a.tileTools(c)
 		if a.corner {
+			if len(a.o.state.Tabs) > 0 {
+				a.overviewButton(c)
+			}
 			a.menuMark(c)
 		}
 	})
@@ -546,6 +592,8 @@ func (a *app) menu() *mygo.Menu {
 		}},
 		{Role: mygo.RoleEditMenu},
 		{Label: "View", Submenu: []*mygo.MenuItem{
+			{Label: "Overview Grid", Accelerator: "Cmd+G", Click: do(func() { a.overview = !a.overview; a.pinchScale = 1 })},
+			mygo.Separator(),
 			{Label: "Split Right", Accelerator: "Cmd+D", Click: do(func() { a.split(a.active, "right", &tile{}) })},
 			{Label: "Split Down", Accelerator: "Shift+Cmd+D", Click: do(func() { a.split(a.active, "bottom", &tile{}) })},
 			{Label: "Terminal", Accelerator: "Cmd+J", Click: do(func() {
@@ -594,12 +642,19 @@ func (a *app) shortcuts(c *ui.Context) {
 		// TUI parity: Shift+Tab cycles reasoning level; Ctrl+O expands/collapses tool outputs.
 		on(ui.Shift, ui.KeyTab, a.cycleReasoning)
 		on(ui.Ctrl, ui.KeyO, a.toggleToolOutputs)
-		// Shift+Left / Shift+Right switch tabs whenever the cursor is not in a text field or modal.
-		if !c.FocusWithin(a.active.boxAt) && a.rename == nil && a.picker == nil && a.model == "" && len(a.stack) == 0 {
+		// Shift+Left / Shift+Right switch tabs whenever the cursor is not in a text field or modal
+		// (when the prompt box IS focused but empty, prompt.go's OnTextKey handles Shift+Arrows too).
+		if !c.FocusWithin(a.active.boxAt) && !a.overview && a.rename == nil && a.picker == nil && a.model == "" && len(a.stack) == 0 {
 			on(ui.Shift, ui.KeyLeft, func() { a.move(-1) })
 			on(ui.Shift, ui.KeyRight, func() { a.move(1) })
 		}
 	}
+	on(cmd, ui.KeyG, func() {
+		if len(o.state.Tabs) > 0 || a.overview {
+			a.overview = !a.overview
+			a.pinchScale = 1
+		}
+	})
 	on(cmd, ui.KeyN, a.newSession)
 	on(cmd, ui.KeyK, a.openPalette)
 	on(cmd, ui.KeyP, a.openPalette)

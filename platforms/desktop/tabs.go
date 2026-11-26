@@ -106,6 +106,20 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 				}
 			}).Tooltip(strings.Join(nonEmpty(t.Title, strings.Join(nonEmpty(t.Where, tidy(t.CWD)), " · "), t.Status), "\n"))
 			a.carry(e, carried{tab: id})
+			if over, ok := ui.DragOver[carried](e); ok && over.tab != "" && over.tab != id {
+				from := slices.Index(x.tabs, over.tab)
+				after := from >= 0 && from < i
+				e.DrawOver(func(pt *ui.Painter, r ui.Rect) {
+					lx := r.X
+					if after {
+						lx = r.X + r.W - 2
+					}
+					pt.Fill(ui.Rect{X: lx, Y: r.Y + 4, W: 2, H: r.H - 8}, pal.fg, 1)
+				})
+			}
+			if v, ok := ui.Drop[carried](e); ok && v.tab != "" && v.tab != id {
+				a.reorderTab(x, v.tab, i)
+			}
 			e.ContextMenu(func(m *ui.Menu) {
 				if m.Item("Rename…").Chosen() {
 					a.renameTab(*t)
@@ -114,7 +128,10 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 					a.place(x, "right", id, false)
 				}
 				if i > 0 && m.Item("Move left").Chosen() {
-					x.tabs[i-1], x.tabs[i] = x.tabs[i], x.tabs[i-1]
+					a.reorderTab(x, id, i-1)
+				}
+				if i+1 < len(x.tabs) && m.Item("Move right").Chosen() {
+					a.reorderTab(x, id, i+1)
 				}
 				if m.Item("Close").Shortcut(cmd, ui.KeyW).Chosen() {
 					a.close(id)
@@ -167,7 +184,50 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 				a.show("")
 			}
 		}
+		// Dropping a tab on the empty end of the bar moves it to the last slot of this tile.
+		tailDrop := ui.Box(c.Key("tab-tail")).Grow(1).Basis(0).Height(28)
+		if over, ok := ui.DragOver[carried](tailDrop); ok && over.tab != "" {
+			tailDrop.DrawOver(func(pt *ui.Painter, r ui.Rect) {
+				pt.Fill(ui.Rect{X: r.X + 2, Y: r.Y + 4, W: 2, H: r.H - 8}, pal.fg, 1)
+			})
+		}
+		if v, ok := ui.Drop[carried](tailDrop); ok && v.tab != "" {
+			a.reorderTab(x, v.tab, len(x.tabs))
+		}
 	})
+}
+
+// reorderTab moves tabID to position to inside tile x (either reordering within x, or moving it
+// from another tile into x at that exact slot) and persists the order when x is the sole tile.
+func (a *app) reorderTab(x *tile, tabID string, to int) {
+	if tabID == "" || x == nil {
+		return
+	}
+	from := slices.Index(x.tabs, tabID)
+	if from >= 0 {
+		x.tabs = slices.Delete(x.tabs, from, from+1)
+		if to > len(x.tabs) {
+			to = len(x.tabs)
+		}
+		x.tabs = slices.Insert(x.tabs, max(0, to), tabID)
+		x.tab = tabID
+		a.activate(x)
+		if a.o != nil {
+			a.o.send("move", "tab", tabID, "to", max(0, to))
+		}
+		return
+	}
+	// Came from another tile: take ownership at the requested index.
+	a.own(x, tabID)
+	if cur := slices.Index(x.tabs, tabID); cur >= 0 {
+		x.tabs = slices.Delete(x.tabs, cur, cur+1)
+		if to > len(x.tabs) {
+			to = len(x.tabs)
+		}
+		x.tabs = slices.Insert(x.tabs, max(0, to), tabID)
+	}
+	x.tab = tabID
+	a.activate(x)
 }
 
 // menuMark is the menu at the window's top right, as the phone's: the conversation shown, the
@@ -277,6 +337,10 @@ func (a *app) paletteSheet(c *ui.Context) {
 			here: func() { a.show(t.ID) }, right: func() { a.place(a.active, "right", t.ID, false) }}, t.Title, t.Where, t.CWD, "open")
 	}
 	// Quick workspace & model actions (aligned with Web CommandPalette).
+	if len(o.state.Tabs) > 0 || a.overview {
+		add(hit{title: "Overview · live agent grid", meta: keys("G") + " · pinch",
+			here: func() { a.overview = !a.overview; a.pinchScale = 1 }, right: func() { a.overview = !a.overview; a.pinchScale = 1 }}, "overview grid all agents tabs pinch")
+	}
 	if cur := o.tab(a.tab); cur != nil {
 		add(hit{title: "Rename session", meta: keys("R"), here: func() { a.renameTab(*cur) }, right: func() { a.renameTab(*cur) }}, "rename session", cur.Title)
 	}
