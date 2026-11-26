@@ -137,13 +137,15 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
     }
     // A notification asked for a conversation: show its tab.
     LaunchedEffect(rt.show) { rt.show?.let { nav.show(it); rt.show = null } }
-    // What a new conversation starts on, before one runs: this phone's models and its default,
-    // read again once the sheet closes, a screen (Providers) gives way, or another page shows (a
-    // conversation's model change becomes the default).
-    LaunchedEffect(rt.view.state.up, deck, nav.stack.size, nav.open?.id) {
-        if (rt.view.state.up && deck == null) rt.view.readDefault(rt.view.state.self)
+    // What a new conversation starts on, before one runs: the active target machine's models and
+    // default, read again once the target changes, the sheet closes, a screen gives way, or another
+    // page shows (a conversation's model change becomes the default).
+    val topFolderPeer = (nav.stack.lastOrNull() as? Screen.Folder)?.peer
+    val targetPeer = topFolderPeer ?: nav.target?.first?.takeIf { it.isNotEmpty() } ?: rt.view.state.self
+    LaunchedEffect(rt.view.state.up, deck, nav.stack.size, nav.open?.id, targetPeer) {
+        if (rt.view.state.up && deck == null && targetPeer.isNotEmpty()) rt.view.readDefault(targetPeer)
     }
-    val fresh = rt.view.defaults[rt.view.state.self]
+    val fresh = rt.view.defaults[targetPeer] ?: rt.view.defaults[rt.view.state.self]
     val ctx = Ctx(rt, nav, cites, onCite, LocalContext.current, fresh, { deck = it }, { renaming = it }, { picker = it }) { ref, tab -> viewing = ref to tab }
     // A keyboard's shortcuts, the desktop's: Ctrl or Meta is ⌘ (⌃⌘ is both; Android keeps most Meta
     // letters for itself). In the terminal Ctrl and Esc are the shell's (^W, ^D, vim), so ⌘ is

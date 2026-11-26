@@ -997,44 +997,67 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 				a.push(screen{kind: "providers", peer: t.Peer})
 			}
 		})
-		field(c, &a.query, "Search models", false).Margin(10, 12, 6).AutoFocus()
+		pick := func(id string) {
+			if home {
+				a.makeDefault(t.Peer, id, "")
+			} else {
+				o.send("model", "tab", t.ID, "name", id)
+			}
+			a.model, a.query = "", ""
+		}
+		in := field(c, &a.query, "Search models", false).Margin(10, 12, 6).AutoFocus()
+		q := strings.TrimSpace(a.query)
+		var matches []string
+		if q != "" {
+			matches = fuzzyFilterModels(t.Models, q)
+			if in.Submitted() && len(matches) > 0 {
+				pick(matches[0])
+			}
+		}
 		ui.Scroll(c).FillWidth().MaxHeight(300).Shrink(1).Padding(0, 4, 4).Children(func() {
-			q := strings.ToLower(strings.TrimSpace(a.query))
-			// The default and what the machine's open conversations run on, above the rest.
-			var used []string
-			use := func(id string) {
-				if slices.Contains(t.Models, id) && !slices.Contains(used, id) {
-					used = append(used, id)
-				}
-			}
-			if def != nil {
-				use(def.Model)
-			}
-			for _, x := range o.state.Tabs {
-				if x.Peer == t.Peer {
-					use(x.Model)
-				}
-			}
-			var last string
-			for i, id := range append(used, t.Models...) {
-				if q != "" && !strings.Contains(strings.ToLower(id), q) {
-					continue
-				}
-				group, short, _ := strings.Cut(id, "/")
-				if i < len(used) {
-					group, short = "in use", id
-				}
-				if group != last {
-					last = group
-					label(c.Key("h:"+group), group).TextColor(pal.meta).Padding(10, 12, 2)
-				}
-				if press(menuRow(c.Key(group+":"+id), short, map[bool]string{true: "default"}[def != nil && id == def.Model], id == t.Model)) {
-					if home {
-						a.makeDefault(t.Peer, id, "")
-					} else {
-						o.send("model", "tab", t.ID, "name", id)
+			if q != "" {
+				for _, id := range matches {
+					prov, short, hasSlash := strings.Cut(id, "/")
+					if !hasSlash {
+						short, prov = id, ""
 					}
-					a.model, a.query = "", ""
+					meta := strings.Join(nonEmpty(prov, map[bool]string{true: "default"}[def != nil && id == def.Model]), " · ")
+					if press(menuRow(c.Key("q:"+id), short, meta, id == t.Model)) {
+						pick(id)
+					}
+				}
+				if len(matches) == 0 && len(t.Models) > 0 {
+					label(c, "no matching models").TextColor(pal.meta).Padding(10, 12)
+				}
+			} else {
+				// The default and what the machine's open conversations run on, above the rest.
+				var used []string
+				use := func(id string) {
+					if slices.Contains(t.Models, id) && !slices.Contains(used, id) {
+						used = append(used, id)
+					}
+				}
+				if def != nil {
+					use(def.Model)
+				}
+				for _, x := range o.state.Tabs {
+					if x.Peer == t.Peer {
+						use(x.Model)
+					}
+				}
+				var last string
+				for i, id := range append(used, t.Models...) {
+					group, short, _ := strings.Cut(id, "/")
+					if i < len(used) {
+						group, short = "in use", id
+					}
+					if group != last {
+						last = group
+						label(c.Key("h:"+group), group).TextColor(pal.meta).Padding(10, 12, 2)
+					}
+					if press(menuRow(c.Key(group+":"+id), short, map[bool]string{true: "default"}[def != nil && id == def.Model], id == t.Model)) {
+						pick(id)
+					}
 				}
 			}
 			if len(t.Models) == 0 {

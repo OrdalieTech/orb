@@ -18,13 +18,60 @@ fun ColumnScope.Home(c: Ctx) {
     val v = c.v
     Notice(c)
     var device by rememberSaveable { mutableStateOf("") }
-    Magi(c, device) { device = if (device == it) "" else it }
+    var folder by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(c.nav.target) {
+        val target = c.nav.target
+        if (target != null) {
+            if (device != target.first) device = target.first
+            if (folder != target.second) folder = target.second
+        }
+    }
+    Magi(c, device) { id ->
+        if (device == id) {
+            device = ""
+            folder = ""
+            c.aim(v.state.self)
+        } else {
+            device = id
+            val m = v.machine(id)
+            val keepFolder = folder.takeIf { it.isNotEmpty() && m?.folders?.any { f -> f.cwd == it } == true }.orEmpty()
+            folder = keepFolder
+            if (m == null || m.self) c.aim(v.state.self, keepFolder)
+            else if (m.connected || m.launch) c.aim(m.id, keepFolder)
+            else c.aim(v.state.self)
+        }
+    }
+    val selectedMachine = v.machine(device)
+    if (selectedMachine != null && (selectedMachine.folders.isNotEmpty() || (!selectedMachine.self && selectedMachine.launch))) {
+        val targetId = if (selectedMachine.self || selectedMachine.connected || selectedMachine.launch) selectedMachine.id else v.state.self
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Margin, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FolderChip("all", selected = folder.isEmpty()) {
+                folder = ""
+                c.aim(targetId)
+            }
+            selectedMachine.folders.take(8).forEach { f ->
+                val label = f.cwd.substringAfterLast('/').ifEmpty { "/" }
+                FolderChip(label, selected = folder == f.cwd) {
+                    val next = if (folder == f.cwd) "" else f.cwd
+                    folder = next
+                    c.aim(targetId, next)
+                }
+            }
+            if (!selectedMachine.self && selectedMachine.launch) {
+                FolderChip("browse ›", selected = false) { c.nav.go(Screen.Device(selectedMachine.id)) }
+            }
+        }
+    }
     // What runs, as the desktop's sidebar says it under the same cards: "2 working · …", "needs you · …".
     T(v.state.summary, Modifier.padding(horizontal = Margin + 2.dp, vertical = 2.dp), size = 13.sp, color = if (v.state.summary.startsWith("needs")) Ink.Rupture else p.meta, lines = 1)
     // Every thread on every machine in one list, newest first: where it lives is a detail of the row.
     // A machine's card narrows the list to it (and its folders open from here). New conversations
     // start from the prompt box, which also chooses where.
-    val shown = if (device.isEmpty()) v.home.entries else v.home.entries.filter { it.machine == device }
+    val shown = v.home.entries.filter { e -> (device.isEmpty() || e.machine == device) && (folder.isEmpty() || e.cwd == folder) }
     val browsable = v.machine(device)?.takeIf { !it.self && it.launch }
     // Newer threads arriving from other machines land above; a reader at the top stays at the top.
     val list = rememberLazyListState()
@@ -55,8 +102,27 @@ fun ColumnScope.Home(c: Ctx) {
         item { Spacer(Modifier.height(12.dp)) }
     }
     TitleCard()
-    PromptBox(null, c, c.palette(null), placeholder = "What should we work on?") { c.send(null, it) }
+    val target = c.nav.target
+    val targetPeer = target?.first?.let(v::machine)
+    val targetFolder = target?.second.orEmpty().substringAfterLast('/').ifEmpty { target?.second.orEmpty() }
+    val placeholder = when {
+        targetPeer != null && !targetPeer.self && targetFolder.isNotEmpty() -> "Work in $targetFolder on ${targetPeer.name}…"
+        targetPeer != null && !targetPeer.self -> "New session on ${targetPeer.name}…"
+        targetFolder.isNotEmpty() -> "Work in $targetFolder…"
+        else -> "What should we work on?"
+    }
+    PromptBox(null, c, c.palette(null), placeholder = placeholder) { c.send(null, it) }
 }
+
+@Composable
+private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) =
+    Box(
+        Modifier.clip(Pane).background(if (selected) p.raised else Color.Transparent)
+            .border(1.dp, if (selected) p.mute else p.rule, Pane).press(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    ) {
+        T(label, size = 12.sp, weight = if (selected) Strong else Medium, color = if (selected) p.fg else p.mute, lines = 1)
+    }
 
 /** An Evangelion title card over the prompt box, as on the desktop: a rule, the title stretched tall. */
 @Composable

@@ -89,6 +89,12 @@
     const name = aim.machine.self ? "this tab" : aim.machine.name;
     return `${name}${aim.cwd ? ` · ${base(aim.cwd)}` : ""}`;
   });
+  let homePlaceholder = $derived.by(() => {
+    if (!aim.machine) return "start session…";
+    const peerName = aim.machine.self ? "this tab" : aim.machine.name;
+    if (aim.cwd) return `Work in ${base(aim.cwd)} on ${peerName}…`;
+    return `New session on ${peerName}…`;
+  });
 
   // Compute slash / @ palette choices
   let paletteChoices = $derived.by(() => {
@@ -384,7 +390,7 @@
       onkeyup={onKeyUp}
       onkeydown={onKeyDown}
       onpaste={onPaste}
-      placeholder={tab ? (busy ? "steer or queue a message" : "command or prompt...") : "start session..."}
+      placeholder={tab ? (busy ? "steer or queue a message" : "command or prompt...") : homePlaceholder}
       aria-label="Message"
     ></textarea>
   </div>

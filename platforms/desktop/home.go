@@ -23,6 +23,24 @@ func (a *app) homeScreen(c *ui.Context) {
 	})
 }
 
+// homePlaceholder reflects where Home's next session will start: folder, remote peer, or default.
+func (a *app) homePlaceholder() string {
+	peer := cmp.Or(a.target[0], a.o.state.Self)
+	m := a.o.machine(peer)
+	remote := m != nil && !m.Self
+	cwd := a.target[1]
+	switch {
+	case cwd != "" && remote:
+		return fmt.Sprintf("Work in %s on %s…", path.Base(cwd), m.Name)
+	case cwd != "":
+		return fmt.Sprintf("Work in %s…", path.Base(cwd))
+	case remote:
+		return fmt.Sprintf("New session on %s…", m.Name)
+	default:
+		return "What should we work on?"
+	}
+}
+
 // homeBody is Home under its bar: the title card, the prompt box, the cards open, the latest.
 func (a *app) homeBody(c *ui.Context, small bool) {
 	o, pal := a.o, p(c)
@@ -47,7 +65,7 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 		ui.Box(c).Height(22)
 		// The box a little past the column (8 a side, 2.5% of it), so it stands out of the page
 		// without leaving it; its own padding sets its text in.
-		ui.Column(c).FillWidth().MaxWidth(680+16).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, "What should we work on?") })
+		ui.Column(c).FillWidth().MaxWidth(680+16).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, a.homePlaceholder()) })
 		var recent []Entry
 		for _, e := range o.home.Entries {
 			if !e.Open && len(recent) < 6 {

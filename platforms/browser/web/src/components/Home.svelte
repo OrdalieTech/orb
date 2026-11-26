@@ -1,9 +1,10 @@
 <script>
   import { orb } from "../lib/store.svelte.js";
-  import { ago, named, tailPreview, tidy, word } from "../lib/utils.js";
+  import { ago, base, named, tailPreview, tidy, word } from "../lib/utils.js";
   import PromptBox from "./PromptBox.svelte";
 
   let threadFilter = $state("");
+  let folderFilter = $state("");
 
   let aim = $derived.by(() => {
     void orb.aimVersion;
@@ -23,6 +24,8 @@
     return [...(orb.state.tabs || [])].sort((a, b) => rank(a) - rank(b));
   });
   let selectedMachine = $derived(orb.deviceFilter ? orb.getMachine(orb.deviceFilter) : null);
+  let scopeMachine = $derived(selectedMachine || aim.machine);
+  let scopeFolders = $derived((scopeMachine?.folders || []).filter(f => f.cwd).slice(0, 8));
   let reading = $derived(
     (orb.home.machines || []).filter(m => m.reading && (!orb.deviceFilter || m.id === orb.deviceFilter)),
   );
@@ -30,12 +33,33 @@
     const q = threadFilter.trim().toLowerCase();
     return (orb.home.entries || []).filter(e => {
       if (orb.deviceFilter && e.machine !== orb.deviceFilter) return false;
+      if (folderFilter && e.cwd !== folderFilter) return false;
       if (!showOwn && e.machine === orb.state.self && !e.open) return false;
       if (!q) return true;
       const m = orb.getMachine(e.machine);
       return `${e.title || ""} ${e.cwd || ""} ${m?.name || ""}`.toLowerCase().includes(q);
     });
   });
+
+  function selectPeer(m) {
+    if (orb.deviceFilter === m.id) {
+      orb.deviceFilter = "";
+      folderFilter = "";
+      return;
+    }
+    const sameAim = aim.machine?.id === m.id;
+    const nextCwd = sameAim ? aim.cwd || "" : "";
+    orb.deviceFilter = m.id;
+    if (!sameAim) folderFilter = "";
+    orb.aimAt(m.id, nextCwd);
+  }
+
+  function selectFolder(cwd) {
+    if (!scopeMachine) return;
+    const next = folderFilter === cwd ? "" : cwd;
+    folderFilter = next;
+    orb.aimAt(scopeMachine.id, next);
+  }
 
   let launching = $derived(orb.state.launching || "");
   let starting = $derived(launching.startsWith("starting"));
@@ -52,7 +76,7 @@
         class="magi-unit"
         class:on={orb.deviceFilter === m.id}
         class:down={!ok}
-        onclick={() => (orb.deviceFilter = orb.deviceFilter === m.id ? "" : m.id)}
+        onclick={() => selectPeer(m)}
         oncontextmenu={e => { e.preventDefault(); orb.openDeviceMenu(m); }}
         title="Click to filter · Right-click for options"
       >
@@ -70,7 +94,7 @@
 
   <div class="summary-bar">
     <p class="summary" class:asks={(orb.state.summary || "").startsWith("needs")}>{orb.state.summary || ""}</p>
-    {#if selectedMachine && !selectedMachine.self && selectedMachine.launch && selectedMachine.connected}
+    {#if selectedMachine && !selectedMachine.self && selectedMachine.launch && selectedMachine.connected && scopeFolders.length === 0}
       <button
         type="button"
         class="btn plain browse-btn"
@@ -80,6 +104,40 @@
       </button>
     {/if}
   </div>
+
+  {#if scopeMachine && scopeFolders.length > 0}
+    <div class="folder-strip scroll" role="group" aria-label="Folder scope">
+      <button
+        type="button"
+        class="folder-pill"
+        class:on={!folderFilter}
+        onclick={() => { folderFilter = ""; orb.aimAt(scopeMachine.id, ""); }}
+      >
+        all
+      </button>
+      {#each scopeFolders as f (f.cwd)}
+        <button
+          type="button"
+          class="folder-pill"
+          class:on={folderFilter === f.cwd}
+          onclick={() => selectFolder(f.cwd)}
+          title={tidy(f.cwd)}
+        >
+          <span>{base(f.cwd) || tidy(f.cwd)}</span>
+          {#if f.threads}<small>{f.threads}</small>{/if}
+        </button>
+      {/each}
+      {#if !scopeMachine.self && scopeMachine.launch && scopeMachine.connected}
+        <button
+          type="button"
+          class="folder-pill browse"
+          onclick={() => (orb.explorerPeer = scopeMachine.id)}
+        >
+          browse ›
+        </button>
+      {/if}
+    </div>
+  {/if}
 
   {#if launching && launching !== orb.dismissedLaunch}
     <button
@@ -298,6 +356,49 @@
   }
   .summary.asks { color: var(--rupture); font-weight: 700; }
   .browse-btn { font-size: 12px; color: var(--fg); }
+
+  .folder-strip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 2px 0 6px;
+    flex-shrink: 0;
+  }
+  .folder-pill {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    flex-shrink: 0;
+    padding: 3px 9px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--meta);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+  .folder-pill small {
+    font-size: 10.5px;
+    color: var(--meta);
+    opacity: 0.8;
+  }
+  .folder-pill.on {
+    background: var(--recessed);
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .folder-pill.on small { color: var(--mute); }
+  .folder-pill.browse { color: var(--mute); }
+  @media (hover: hover) {
+    .folder-pill:hover:not(.on) {
+      background: var(--hover);
+      color: var(--fg);
+    }
+  }
 
   .launch-line {
     display: flex;

@@ -1,5 +1,6 @@
 <script>
   import { orb } from "../lib/store.svelte.js";
+  import { fuzzyFilterModels } from "../lib/modelSearch.js";
   import { REASONING } from "../lib/utils.js";
 
   let query = $state("");
@@ -28,17 +29,14 @@
     return providers.find(p => p.id === id);
   }
 
-  let filteredModels = $derived.by(() => {
-    const q = query.trim().toLowerCase();
-    return (source.models || []).filter(id => {
-      if (!q) return true;
-      const pName = providerInfo(id.split("/")[0])?.name || "";
-      return `${id} ${pName}`.toLowerCase().includes(q);
-    });
-  });
+  let isSearching = $derived(query.trim().length > 0);
+  let filteredModels = $derived(
+    fuzzyFilterModels(source.models || [], query, id => providerInfo(id)?.name || ""),
+  );
 
   let mineProvider = $derived(source.model?.split("/")[0] || "");
   let usedModels = $derived.by(() => {
+    if (isSearching) return [];
     const set = new Set([
       def?.default,
       ...(orb.state.tabs || []).filter(c => c.peer === peerId).map(c => c.model),
@@ -47,6 +45,7 @@
   });
 
   let grouped = $derived.by(() => {
+    if (isSearching) return [];
     const map = new Map();
     for (const id of filteredModels) {
       const p = id.split("/")[0];
@@ -65,10 +64,14 @@
   });
 
   // Flat list of selectable model entries for keyboard ↑/↓/Enter
-  let flatList = $derived([
-    ...usedModels.map(id => ({ id, full: true })),
-    ...grouped.flatMap(g => g.models.map(id => ({ id, full: false }))),
-  ]);
+  let flatList = $derived(
+    isSearching
+      ? filteredModels.map(id => ({ id, full: false }))
+      : [
+          ...usedModels.map(id => ({ id, full: true })),
+          ...grouped.flatMap(g => g.models.map(id => ({ id, full: false }))),
+        ],
+  );
 
   let providerAccounts = $derived(
     (orb.accountsByPeer[peerId] || []).filter(a => a.provider === mineProvider),
@@ -168,40 +171,64 @@
       />
 
       <div class="deck-list scroll">
-        {#if usedModels.length > 0}
-          <p class="sec-lbl">in use</p>
-          {#each usedModels as id, idx (id)}
-            <button
-              type="button"
-              class="mdl-row"
-              class:on={id === source.model}
-              class:hi={idx === deckAt}
-              onclick={() => chooseModel(id)}
-            >
-              <span>{id}</span>
-              {#if id === def?.default}<small>default</small>{/if}
-              {#if id === source.model}<i class="led round" style="--hue: var(--fg)"></i>{/if}
-            </button>
+        {#if isSearching}
+          {#if filteredModels.length > 0}
+            <p class="sec-lbl">matches · {filteredModels.length}</p>
+            {#each filteredModels as id, idx (id)}
+              {@const prov = id.split("/")[0]}
+              {@const pLabel = providerInfo(prov)?.name || prov}
+              <button
+                type="button"
+                class="mdl-row"
+                class:on={id === source.model}
+                class:hi={idx === deckAt}
+                onclick={() => chooseModel(id)}
+              >
+                <span class="mdl-main">
+                  <span class="mdl-short">{id.split("/").slice(1).join("/") || id}</span>
+                  <small class="mdl-prov">{pLabel}</small>
+                </span>
+                {#if id === def?.default}<small>default</small>{/if}
+                {#if id === source.model}<i class="led round" style="--hue: var(--fg)"></i>{/if}
+              </button>
+            {/each}
+          {/if}
+        {:else}
+          {#if usedModels.length > 0}
+            <p class="sec-lbl">in use</p>
+            {#each usedModels as id, idx (id)}
+              <button
+                type="button"
+                class="mdl-row"
+                class:on={id === source.model}
+                class:hi={idx === deckAt}
+                onclick={() => chooseModel(id)}
+              >
+                <span>{id}</span>
+                {#if id === def?.default}<small>default</small>{/if}
+                {#if id === source.model}<i class="led round" style="--hue: var(--fg)"></i>{/if}
+              </button>
+            {/each}
+          {/if}
+
+          {#each grouped as g (g.provider)}
+            <p class="sec-lbl">{[g.info?.name || g.provider, g.info?.holds, `${g.models.length}`].filter(Boolean).join(" · ")}</p>
+            {#each g.models as id (id)}
+              {@const flatIdx = flatList.findIndex((f, i) => i >= usedModels.length && f.id === id)}
+              <button
+                type="button"
+                class="mdl-row"
+                class:on={id === source.model}
+                class:hi={flatIdx === deckAt}
+                onclick={() => chooseModel(id)}
+              >
+                <span>{id.split("/").slice(1).join("/")}</span>
+                {#if id === def?.default}<small>default</small>{/if}
+                {#if id === source.model}<i class="led round" style="--hue: var(--fg)"></i>{/if}
+              </button>
+            {/each}
           {/each}
         {/if}
-
-        {#each grouped as g (g.provider)}
-          <p class="sec-lbl">{[g.info?.name || g.provider, g.info?.holds, `${g.models.length}`].filter(Boolean).join(" · ")}</p>
-          {#each g.models as id (id)}
-            {@const flatIdx = flatList.findIndex((f, i) => i >= usedModels.length && f.id === id)}
-            <button
-              type="button"
-              class="mdl-row"
-              class:on={id === source.model}
-              class:hi={flatIdx === deckAt}
-              onclick={() => chooseModel(id)}
-            >
-              <span>{id.split("/").slice(1).join("/")}</span>
-              {#if id === def?.default}<small>default</small>{/if}
-              {#if id === source.model}<i class="led round" style="--hue: var(--fg)"></i>{/if}
-            </button>
-          {/each}
-        {/each}
 
         {#if filteredModels.length === 0}
           <p class="meta empty-note">{query ? "no model matches" : targetMachine && !def && !activeTab ? "reading models…" : "no models available"}</p>
@@ -366,6 +393,19 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+  .mdl-main {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .mdl-short {
+    flex: 0 1 auto !important;
+  }
+  .mdl-prov {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--meta);
   }
   .mdl-row small {
     font-size: 11px;

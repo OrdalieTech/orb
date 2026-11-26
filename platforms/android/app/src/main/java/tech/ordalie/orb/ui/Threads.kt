@@ -62,15 +62,22 @@ fun ColumnScope.DeviceScreen(c: Ctx, peerId: String) {
 fun ColumnScope.FolderScreen(c: Ctx, peerId: String, cwd: String) {
     val peer = c.v.machine(peerId) ?: return
     val threads = c.v.home.entries.filter { it.machine == peerId && it.cwd == cwd && !it.unstored }
-    Header(cwd.substringAfterLast('/').ifEmpty { cwd }, sub = peer.name + " · " + tidy(cwd), back = c.nav::back)
+    val folderName = cwd.substringAfterLast('/').ifEmpty { cwd }
+    Header(folderName, sub = peer.name + " · " + tidy(cwd), back = c.nav::back)
     Column(Modifier.padding(horizontal = Margin)) {
-        Btn("new thread here", inverted = true, modifier = Modifier.fillMaxWidth()) { c.start(peer.id, cwd) }
         Launching(c)
-        T(if (threads.isEmpty()) "no threads here yet" else "threads", Modifier.padding(top = 18.dp, bottom = 4.dp), label = true, color = if (threads.isEmpty()) p.meta else p.fg)
+        T(if (threads.isEmpty()) "no threads here yet" else "threads", Modifier.padding(top = 12.dp, bottom = 4.dp), label = true, color = if (threads.isEmpty()) p.meta else p.fg)
     }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
         items(threads, key = { it.key }) { e ->
             SessionRow(e.title, if (e.open) "open" else "", ago(e.modified), e.live, e.asks, hue = c.v.hue(peerId), rename = { c.threadMenu(e) }) { c.open(e.key) }
         }
     }
+    PromptBox(
+        session = null,
+        c = c,
+        commands = c.palette(null),
+        placeholder = "Work in $folderName on ${peer.name}…",
+        targetOverride = peer.id to cwd,
+    ) { c.sendIn(peer.id, cwd, it) }
 }

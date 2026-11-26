@@ -20,8 +20,8 @@ class Ctx(
     fun palette(t: Tab?): List<Command> = v.state.commands + t?.commands.orEmpty()
 
     /** Sends what the prompt box holds: the view runs commands and messages, and names what only the app does. */
-    fun send(t: Tab?, typed: String) = rt.scope.launch {
-        val to = nav.target.takeIf { t == null && !typed.startsWith("/") }
+    fun send(t: Tab?, typed: String, targetOverride: Pair<String, String>? = null) = rt.scope.launch {
+        val to = (targetOverride ?: nav.target).takeIf { t == null && !typed.startsWith("/") }
         val machine = if (t != null) t.peer.takeIf { t.remote } else to?.first?.takeIf { it != v.state.self }
         var text = typed
         // Cited files live on this phone: another machine gets a copy, which the message cites.
@@ -47,10 +47,18 @@ class Ctx(
     /** Opens a Home row or a running Orb in its tab. */
     fun open(key: String) = rt.scope.launch { v.ask("open", "key" to key).obj?.optString("tab")?.let(nav::show) }
 
+    /** Sends a new message directly into a specific machine and folder. */
+    fun sendIn(machine: String, cwd: String, typed: String) = send(null, typed, machine to cwd)
+
+    /** Aims Home's next message at a machine (and optional folder) without navigating. */
+    fun aim(machine: String, cwd: String = "") {
+        nav.target = (machine to cwd).takeIf { machine != v.state.self || cwd.isNotEmpty() }
+    }
+
     /** Makes a machine's folder where Home's next message goes, and shows Home: a conversation opens
      *  with its first message, never as an empty tab, as on the desktop. */
     fun start(machine: String, cwd: String = "") {
-        nav.target = (machine to cwd).takeIf { machine != v.state.self || cwd.isNotEmpty() }
+        aim(machine, cwd)
         nav.home()
     }
 

@@ -32,9 +32,10 @@ fun AnimatedVisibilityScope.ModelSheet(session: Tab, c: Ctx, dismiss: () -> Unit
     val s = if (home) def ?: session else session
     // Run past the sheet, which a pick closes.
     fun default(model: String, level: String = "") = c.rt.scope.launch { c.v.makeDefault(s.peer, model, level) }
-    fun match(id: String) = query.isBlank() || id.contains(query.trim(), ignoreCase = true)
-    val used = (listOfNotNull(def?.model) + c.v.state.tabs.filter { it.peer == s.peer }.map { it.model }).distinct().filter { it in s.models && match(it) }
-    val groups = mapOf("in use" to used) + s.models.filter(::match).groupBy { it.substringBefore('/') }
+    val searching = query.isNotBlank()
+    val ranked = remember(s.models, query) { if (searching) fuzzyFilterModels(s.models, query) else emptyList() }
+    val used = (listOfNotNull(def?.model) + c.v.state.tabs.filter { it.peer == s.peer }.map { it.model }).distinct().filter { it in s.models }
+    val groups = mapOf("in use" to used) + s.models.groupBy { it.substringBefore('/') }
     Row(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 18.dp), verticalAlignment = Alignment.Bottom) {
         Column(Modifier.weight(1f)) {
             T(if (!home) "model" else "default · " + if (s.peer == c.v.state.self) "this phone" else s.where, label = true, color = p.meta, lines = 1)
@@ -45,17 +46,42 @@ fun AnimatedVisibilityScope.ModelSheet(session: Tab, c: Ctx, dismiss: () -> Unit
     }
     Field(query, "Search models", Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) { query = it }
     LazyColumn(Modifier.weight(1f, fill = false)) {
-        groups.filterValues { it.isNotEmpty() }.forEach { (group, ids) ->
-            item(key = "h:$group") { T(if (group == "in use") group else "$group · ${ids.size}", Modifier.padding(start = Margin, top = 12.dp, bottom = 2.dp), label = true, color = p.meta) }
-            items(ids, key = { "$group:$it" }) { id ->
-                val on = id == s.model
-                Row(Modifier.fillMaxWidth().press {
-                    if (home) default(id) else c.v.send("model", "tab" to s.id, "name" to id)
-                    dismiss()
-                }.padding(horizontal = Margin, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-                    T(if (group == "in use") id else id.substringAfter('/'), Modifier.weight(1f), size = 16.sp, weight = if (on) Strong else Regular, lines = 1)
-                    if (id == def?.model) T("default", Modifier.padding(start = 10.dp, end = 10.dp), label = true, color = p.meta)
-                    if (on) Dot(p.fg)
+        if (searching) {
+            if (ranked.isEmpty()) {
+                item(key = "empty") {
+                    T("no matching models", Modifier.padding(horizontal = Margin, vertical = 16.dp), size = 14.sp, color = p.meta)
+                }
+            } else {
+                item(key = "h:matches") {
+                    T("matches · ${ranked.size}", Modifier.padding(start = Margin, top = 12.dp, bottom = 2.dp), label = true, color = p.meta)
+                }
+                items(ranked, key = { "q:$it" }) { id ->
+                    val on = id == s.model
+                    val provider = id.substringBefore('/', "")
+                    Row(Modifier.fillMaxWidth().press {
+                        if (home) default(id) else c.v.send("model", "tab" to s.id, "name" to id)
+                        dismiss()
+                    }.padding(horizontal = Margin, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                        T(id.substringAfter('/'), Modifier.weight(1f), size = 16.sp, weight = if (on) Strong else Regular, lines = 1)
+                        if (provider.isNotEmpty()) T(provider, Modifier.padding(start = 10.dp), size = 12.sp, color = p.meta, lines = 1)
+                        if (id == def?.model) T("default", Modifier.padding(start = 10.dp, end = 6.dp), label = true, color = p.meta)
+                        if (on) { Spacer(Modifier.width(6.dp)); Dot(p.fg) }
+                    }
+                }
+            }
+        } else {
+            groups.filterValues { it.isNotEmpty() }.forEach { (group, ids) ->
+                item(key = "h:$group") { T(if (group == "in use") group else "$group · ${ids.size}", Modifier.padding(start = Margin, top = 12.dp, bottom = 2.dp), label = true, color = p.meta) }
+                items(ids, key = { "$group:$it" }) { id ->
+                    val on = id == s.model
+                    Row(Modifier.fillMaxWidth().press {
+                        if (home) default(id) else c.v.send("model", "tab" to s.id, "name" to id)
+                        dismiss()
+                    }.padding(horizontal = Margin, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                        T(if (group == "in use") id else id.substringAfter('/'), Modifier.weight(1f), size = 16.sp, weight = if (on) Strong else Regular, lines = 1)
+                        if (id == def?.model) T("default", Modifier.padding(start = 10.dp, end = 10.dp), label = true, color = p.meta)
+                        if (on) Dot(p.fg)
+                    }
                 }
             }
         }

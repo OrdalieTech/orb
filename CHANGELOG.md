@@ -5,6 +5,7 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Contextual Home prompt & ranked fuzzy LLM model search across Android, Web, and Desktop: tapping a peer in Home's MAGI strip now aims the Home prompt box at that peer and loads its default model/reasoning, inline folder scope chips let you filter threads and target `(peer, folder)` in one tap (with a live scoped `PromptBox` directly inside Android's `FolderScreen` and contextual placeholders like `Work in orb on MacBook Pro…`), and model search now ranks results with multi-token, separator-agnostic (`54`/`5.4`/`opus 55`), alias-aware (`oai`/`anth`/`gem`/`ds`), subsequence fuzzy matching (pressing Enter selects the #1 match on Web and Desktop).
 - Consolidation & resilience pass: bounded 2s fail-open timeout on `builtin:memory`'s `BeforeAgentStart` delta load so SQLite contention never stalls a prompt, added SQLite `busy_timeout` / `journal_size_limit` pragma tests, added 16 zero-dependency `node:test` unit tests for `platforms/browser/web` and wired `make web-test` + `make desktop-test` into `Makefile` and CI, decomposed `agent/modes/interactive_components.go` (2,888 → 858 lines) into focused `tool_view.go`, `reasoning_view.go`, and `status_indicators.go` files, and added canonical `BlocksMarkdown` / `TableMarkdown` / `SpansMarkdown` serialization with round-trip tests in `mitosis/view/markdown.go`.
 
 ## [0.28.0] - 2026-11-26

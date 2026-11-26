@@ -45,6 +45,7 @@ private class Tokens(val fg: Color, val bg: Color, val meta: Color) : VisualTran
 @Composable
 fun PromptBox(
     session: Tab?, c: Ctx, commands: List<Command>, placeholder: String = "What should we work on?", modifier: Modifier = Modifier,
+    targetOverride: Pair<String, String>? = null,
     onSend: (String) -> Unit,
 ) {
     // Asked for (the overview's new-session card, ⌘L), the box of the page on screen takes the keyboard once the page settles.
@@ -134,11 +135,26 @@ fun PromptBox(
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // Where it runs is chosen on Home; a conversation stays where it started, as on the desktop.
-            Row(Modifier.press(enabled = session == null, onClick = c::chooseWhere).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                val target = c.nav.target.takeIf { session == null }
+            Row(Modifier.press(enabled = session == null && targetOverride == null, onClick = c::chooseWhere).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                val target = (targetOverride ?: c.nav.target).takeIf { session == null }
                 Where(c.v.hue(session?.peer ?: target?.first), phone = p.fg); Spacer(Modifier.width(7.dp))
                 // The model matters more here: a long machine name gives way to it.
-                T((session?.where?.takeIf { session.remote } ?: target?.let { (m, cwd) -> cwd.substringAfterLast('/').ifEmpty { c.v.machine(m)?.name } } ?: "phone").let { if (it.length > 14) it.take(13) + "…" else it } + if (session == null) " ▾" else "", size = 14.sp, weight = Strong, lines = 1)
+                val whereLabel = session?.where?.takeIf { session.remote } ?: target?.let { (m, cwd) ->
+                    val peerName = c.v.machine(m)?.takeUnless { it.self }?.name.orEmpty()
+                    val folderName = cwd.substringAfterLast('/').ifEmpty { cwd }
+                    when {
+                        peerName.isNotEmpty() && folderName.isNotEmpty() -> {
+                            val pShort = if (peerName.length > 8) peerName.take(7) + "…" else peerName
+                            val fShort = if (folderName.length > 10) folderName.take(9) + "…" else folderName
+                            "$pShort · $fShort"
+                        }
+                        folderName.isNotEmpty() -> folderName
+                        peerName.isNotEmpty() -> peerName
+                        else -> "phone"
+                    }
+                } ?: "phone"
+                val shownWhere = if (whereLabel.length > 20) whereLabel.take(19) + "…" else whereLabel
+                T(shownWhere + if (session == null && targetOverride == null) " ▾" else "", size = 14.sp, weight = Strong, lines = 1)
             }
             Row(Modifier.weight(1f).press { c.chooseModel(session) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 val on = session ?: c.fresh
