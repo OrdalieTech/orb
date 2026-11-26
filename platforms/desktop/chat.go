@@ -1123,6 +1123,49 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 				pick(matches[0])
 			}
 		}
+		modelRow := func(key, short, prov, id string) {
+			isDef := def != nil && id == def.Model
+			chosen := id == t.Model
+			row := hover(ui.Row(c.Key(key)).FillWidth().Padding(8, 12).Radius(8).Gap(10).AlignItems(ui.Center), pal.hover)
+			setDef := false
+			row.Children(func() {
+				w := 400
+				if chosen {
+					w = strong
+				}
+				ui.Text(c, short).Grow(1).Basis(0).FontWeight(w).SingleLine().Tooltip(short)
+				if !home && !isDef && row.Hovered() {
+					if prov != "" {
+						label(c, prov).TextColor(pal.meta)
+					}
+					act := ui.Row(c.Key("def")).Padding(2, 6).Radius(4)
+					ink := pal.meta
+					if act.Hovered() {
+						ink = pal.fg
+					}
+					act.Children(func() {
+						label(c, "set default").TextColor(ink)
+					})
+					if press(act) {
+						setDef = true
+					}
+				} else {
+					note := strings.Join(nonEmpty(prov, map[bool]string{true: "default"}[isDef]), " · ")
+					if note != "" {
+						label(c, note).TextColor(pal.meta)
+					}
+				}
+				if chosen {
+					dot(c, pal.fg, 6, false, false)
+				}
+			})
+			if setDef {
+				a.makeDefault(t.Peer, id, "")
+				a.say("default model · " + short)
+			} else if press(row) {
+				pick(id)
+			}
+		}
 		ui.Scroll(c).FillWidth().MaxHeight(300).Shrink(1).Padding(0, 4, 4).Children(func() {
 			if q != "" {
 				for _, id := range matches {
@@ -1130,10 +1173,7 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 					if !hasSlash {
 						short, prov = id, ""
 					}
-					meta := strings.Join(nonEmpty(prov, map[bool]string{true: "default"}[def != nil && id == def.Model]), " · ")
-					if press(menuRow(c.Key("q:"+id), short, meta, id == t.Model)) {
-						pick(id)
-					}
+					modelRow("q:"+id, short, prov, id)
 				}
 				if len(matches) == 0 && len(models) > 0 {
 					label(c, "no matching models").TextColor(pal.meta).Padding(10, 12)
@@ -1164,9 +1204,7 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 						last = group
 						label(c.Key("h:"+group), group).TextColor(pal.meta).Padding(10, 12, 2)
 					}
-					if press(menuRow(c.Key(group+":"+id), short, map[bool]string{true: "default"}[def != nil && id == def.Model], id == t.Model)) {
-						pick(id)
-					}
+					modelRow(group+":"+id, short, "", id)
 				}
 			}
 			if len(t.Models) == 0 {

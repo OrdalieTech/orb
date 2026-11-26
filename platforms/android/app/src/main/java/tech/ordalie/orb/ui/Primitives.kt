@@ -194,11 +194,14 @@ fun Slot(name: String, state: String = "", modifier: Modifier = Modifier, body: 
 
 /** The bar of every screen below Home and its conversations: back, the name, what it shows, an action at right. */
 @Composable
-fun Header(title: String, sub: String = "", back: () -> Unit, right: @Composable RowScope.() -> Unit = {}) =
+fun Header(title: String, sub: String = "", back: () -> Unit, hue: Int? = null, right: @Composable RowScope.() -> Unit = {}) =
     Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Box(Modifier.press(onClick = back).padding(horizontal = 10.dp, vertical = 2.dp)) { T("‹", size = 28.sp, color = p.fg) }
         Column(Modifier.weight(1f)) {
-            T(title, size = Size.Title, weight = Strong, lines = 1)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                if (hue != null) Where(hue)
+                T(title, size = Size.Title, weight = Strong, lines = 1)
+            }
             if (sub.isNotEmpty()) T(sub, size = 13.sp, color = p.meta, lines = 1)
         }
         right()

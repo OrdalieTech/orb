@@ -1096,3 +1096,49 @@ func TestTranscriptPeerAndSubagentExchanges(t *testing.T) {
 		t.Fatalf("row[3] = %+v", rows[3])
 	}
 }
+
+func TestRemoteUpdateWaitsForRestartAndRefreshesVersion(t *testing.T) {
+	ctx := t.Context()
+	var probes atomic.Int32
+	c := newClient()
+	a := &App{
+		ctx:        ctx,
+		asked:      map[*tab]bool{},
+		refreshNow: make(chan struct{}, 1),
+		machines:   []*machine{{id: "peer-1", host: "lab", version: "0.27.0", state: "connected", loadDone: true}},
+		o: Options{
+			Emit: func(m any) { c.out <- mitosis.JSON(m) },
+			Call: func(_ context.Context, method string, params, result any) error {
+				if method != "remote" {
+					return json.Unmarshal([]byte(`{}`), result)
+				}
+				var req struct {
+					Method string `json:"method"`
+				}
+				_ = json.Unmarshal(mitosis.JSON(params), &req)
+				switch req.Method {
+				case "host.update":
+					return json.Unmarshal([]byte(`{"from":"0.27.0","to":"0.28.0","status":"updated · Mitosis restarting"}`), result)
+				case "host.sessions":
+					if probes.Add(1) == 1 {
+						return fmt.Errorf("peer restarting")
+					}
+					return json.Unmarshal([]byte(`{"host":"lab","version":"0.28.0","items":[]}`), result)
+				}
+				return json.Unmarshal([]byte(`{}`), result)
+			},
+		},
+	}
+	a.Do([]byte(`{"id":"u1","do":"update","machine":"peer-1"}`))
+	c.until(t, "update reply", func() bool { return c.replies["u1"] != nil })
+	var msg string
+	if err := json.Unmarshal(c.replies["u1"], &msg); err != nil || msg != "updated to 0.28.0" {
+		t.Fatalf("update reply = %s (err=%v), want %q", c.replies["u1"], err, "updated to 0.28.0")
+	}
+	a.mu.Lock()
+	gotVersion := a.machine("peer-1").version
+	a.mu.Unlock()
+	if gotVersion != "0.28.0" {
+		t.Fatalf("machine version after update = %q, want 0.28.0", gotVersion)
+	}
+}

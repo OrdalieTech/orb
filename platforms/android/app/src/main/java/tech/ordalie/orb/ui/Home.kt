@@ -155,10 +155,29 @@ private fun Magi(c: Ctx, device: String, pick: (String) -> Unit) {
     val visibleMachines = if (showHidden) allMachines else allMachines.filter { it.id !in hidden }.ifEmpty { allMachines }
     // A development build is the newest there is, whatever its number.
     val current = v.state.latest.isEmpty() || !Release.newer(v.state.latest, c.rt.version) || c.rt.version.endsWith("-dev")
+    val cards: List<Machine?> = visibleMachines + null
     Column(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 10.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        visibleMachines.chunked(2).forEach { row ->
+        cards.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { m ->
+                    if (m == null) {
+                        Column(
+                            Modifier.weight(1f).clip(Pane)
+                                .background(p.fg.copy(alpha = 0.02f))
+                                .border(1.dp, p.rule, Pane)
+                                .press {
+                                    c.pick(Picker("pair device", listOf("scan QR code", "invite a computer")) { opt ->
+                                        if (opt == "scan QR code") c.nav.go(Screen.Mitosis) else c.nav.go(Screen.Invite)
+                                    })
+                                }
+                                .padding(horizontal = 11.dp, vertical = 9.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            T("+ pair device", size = 14.sp, weight = Medium, color = p.mute, lines = 1)
+                            T("QR or invite", size = 12.sp, color = p.meta, lines = 1)
+                        }
+                        return@forEach
+                    }
                     val isHidden = m.id in hidden
                     val up = if (m.self) v.state.up else m.connected
                     val yes = up && (!m.self || current)
@@ -211,7 +230,7 @@ private fun Magi(c: Ctx, device: String, pick: (String) -> Unit) {
                         T(sub, size = 12.sp, color = ink, lines = 1)
                     }
                 }
-                if (row.size == 1 && visibleMachines.size > 1) Spacer(Modifier.weight(1f))
+                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
         if (hiddenCount > 0) {

@@ -711,7 +711,11 @@ func (a *app) settingsMenu(c *ui.Context) {
 	pal, root := p(c), a.stack[0]
 	ui.Column(c).Width(200).Padding(16, 10, 12).Gap(2).Background(pal.raised).BorderWidth(0, 1, 0, 0).BorderColor(pal.rule.Alpha(0.75)).Children(func() {
 		ui.Text(c, "Settings").FontSize(title).FontWeight(strong).Padding(0, 10, 2)
-		ui.Text(c, a.machineName(cmp.Or(root.peer, a.o.state.Self))).FontSize(small).TextColor(pal.meta).Padding(0, 10, 14).SingleLine()
+		peer := cmp.Or(root.peer, a.o.state.Self)
+		ui.Row(c).Padding(0, 10, 14).Gap(6).AlignItems(ui.Center).Children(func() {
+			where(c, a.o.hue(peer), false, false, pal.fg)
+			ui.Text(c, a.machineName(peer)).FontSize(small).TextColor(pal.meta).SingleLine()
+		})
 		for _, s := range settingsKinds {
 			on := root.kind == s.kind
 			e := ui.Row(c.Key(s.kind)).FillWidth().Padding(7, 10).Radius(7).Children(func() {

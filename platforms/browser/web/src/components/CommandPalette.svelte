@@ -208,6 +208,14 @@
       {/if}
       {#if pk.field}
         <div class="field-actions">
+          {#if pk.action}
+            <button
+              type="button"
+              class="btn plain"
+              style="margin-right: auto"
+              onclick={() => { pk.resolve(null); pk.action.run(); }}
+            >{pk.action.label}</button>
+          {/if}
           <button type="button" class="btn subtle" onclick={() => pk.resolve(null)}>cancel</button>
           <button type="button" class="btn inverted" onclick={() => pk.resolve(pickFilter)}>save</button>
         </div>
@@ -220,6 +228,9 @@
               class:on={i === pickAt}
               onclick={() => pk.resolve(o.value ?? o.label)}
             >
+              {#if o.hue !== undefined}
+                <i class="led" style="--hue: var(--hue{o.hue || 0})"></i>
+              {/if}
               <span class="sr-lbl">{o.label}</span>
               {#if o.detail}<small class="sr-det">{o.detail}</small>{/if}
             </button>

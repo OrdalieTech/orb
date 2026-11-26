@@ -102,7 +102,7 @@ class Nav(private val rt: Runtime, private val scope: CoroutineScope) {
 class Rename(val title: String, val apply: (String) -> Unit)
 
 /** A choice list rising from the bottom — places, menus, confirmations all use it. */
-class Picker(val title: String, val options: List<String>, val selected: String = "", val pick: (String) -> Unit)
+class Picker(val title: String, val options: List<String>, val selected: String = "", val hues: List<Int?> = emptyList(), val pick: (String) -> Unit)
 
 @Composable
 fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, shared: MutableState<String?>, shortcuts: ((KeyEvent) -> Boolean) -> Unit) {
@@ -436,6 +436,10 @@ fun AnimatedVisibilityScope.PickerSheet(pk: Picker, dismiss: () -> Unit) = Sheet
         itemsIndexed(pk.options) { n, o ->
             val sel = o == pk.selected
             Row(Modifier.animateEnterExit(enter = fadeIn(tween(240, 60 + n * 25)) + slideInVertically(tween(300, 40 + n * 25)) { it / 2 }).fillMaxWidth().press { dismiss(); pk.pick(o) }.padding(horizontal = Margin, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                pk.hues.getOrNull(n)?.let { hue ->
+                    Where(hue, phone = p.fg)
+                    Spacer(Modifier.width(9.dp))
+                }
                 T(o, Modifier.weight(1f), size = 16.sp, weight = if (sel) Strong else Regular, lines = 1)
                 if (sel) Dot(p.fg)
             }

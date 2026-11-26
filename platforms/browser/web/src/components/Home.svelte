@@ -100,6 +100,15 @@
         </span>
       </button>
     {/each}
+    <button
+      type="button"
+      class="magi-unit magi-pair"
+      onclick={() => orb.pairDevicePrompt()}
+      title="Pair another device with a mitosis code"
+    >
+      <span class="magi-pair-title">+ pair device</span>
+      <span class="magi-pair-sub">paste code · mitosis</span>
+    </button>
   </div>
 
   <div class="summary-bar">
@@ -364,10 +373,31 @@
   .magi-unit.on .magi-bot { color: var(--mute); }
   .magi-unit.down .magi-bot,
   .magi-unit.down .magi-verdict { color: var(--rupture); }
+  .magi-pair {
+    justify-content: center;
+    align-items: center;
+    gap: 3px;
+    text-align: center;
+    border-style: dashed;
+    background: transparent;
+    color: var(--mute);
+  }
+  .magi-pair-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--mute);
+  }
+  .magi-pair-sub {
+    font-size: 11px;
+    color: var(--meta);
+  }
   @media (hover: hover) {
     .magi-unit:hover:not(.on) {
       background: var(--hover);
       border-color: var(--rule);
+    }
+    .magi-pair:hover .magi-pair-title {
+      color: var(--fg);
     }
   }
 

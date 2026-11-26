@@ -142,8 +142,13 @@ func (a *app) peerRow(c *ui.Context, m Machine) {
 				parts = append(parts, "orb "+m.Version)
 			}
 			ui.Text(c, strings.Join(parts, " · ")).FontSize(labelSize + 1).TextColor(pal.meta).SingleLine()
+			next := o.state.Latest
 			if u := pairing.updating[m.ID]; u != "" {
-				ui.Text(c, u).FontSize(labelSize + 1).TextColor(pal.mute)
+				if next != "" && m.Version != "" && !newer(next, m.Version) && strings.Contains(strings.ToLower(u), "restarting") {
+					delete(pairing.updating, m.ID)
+				} else {
+					ui.Text(c, u).FontSize(labelSize + 1).TextColor(pal.mute)
+				}
 			}
 		})
 		// A device behind the latest release updates from here (its Orb swaps itself and restarts Mitosis).

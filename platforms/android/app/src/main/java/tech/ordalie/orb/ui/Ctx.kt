@@ -66,14 +66,15 @@ class Ctx(
 
     /** Where the next message goes: a new conversation on this phone, an Orb running somewhere, or a folder of a machine. */
     fun chooseWhere() {
-        val running = v.home.machines.flatMap { it.running }.filterNot { it.open } // an open conversation already follows those
+        val running = v.home.machines.flatMap { m -> m.running.filterNot { it.open }.map { m.id to it } } // an open conversation already follows those
         val hosts = v.home.machines.filter { !it.self && it.launch }
-        val labels = listOf("new on this phone") + running.map { it.label } + hosts.map { "a folder on ${it.name}…" }
-        pick(Picker("run on", labels) { choice ->
+        val labels = listOf("new on this phone") + running.map { it.second.label } + hosts.map { "a folder on ${it.name}…" }
+        val hues = listOf(v.hue(v.state.self)) + running.map { v.hue(it.first) } + hosts.map { v.hue(it.id) }
+        pick(Picker("run on", labels, hues = hues) { choice ->
             val at = labels.indexOf(choice)
             when {
                 at == 0 -> start(v.state.self)
-                at <= running.size -> open("i:" + running[at - 1].instance)
+                at <= running.size -> open("i:" + running[at - 1].second.instance)
                 else -> nav.go(Screen.Device(hosts[at - 1 - running.size].id))
             }
         })

@@ -101,6 +101,7 @@
       <div class="exp-head">
         <div class="hud-label">
           <span class="idx">DIR</span>
+          <i class="led" style="--hue: var(--hue{machine.hue || 0})"></i>
           <span>{machine.name}</span>
         </div>
         <button type="button" class="btn plain" onclick={close}><kbd>Esc</kbd></button>

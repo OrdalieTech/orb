@@ -266,7 +266,7 @@ func (a *App) fetch(peer string) {
 				if len(found) > 0 || peer != a.self {
 					m.state = "connected"
 				}
-				if !wasUp && peer != a.self && !m.loadDone {
+				if !wasUp && peer != a.self {
 					go a.loadThreads(peer)
 				}
 			} else if m.state != "connected" {

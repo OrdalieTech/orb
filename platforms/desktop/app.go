@@ -23,6 +23,7 @@ type screen struct {
 type picker struct {
 	title    string
 	options  []string
+	hues     []int // optional per-option machine hue (>= 0 draws where square, -1 none)
 	selected string
 	pick     func(string)
 	at       *ui.Handle // the trigger it opens out of; none, a dialog
@@ -535,13 +536,16 @@ func (a *app) opened(tab string, err error) {
 // of a machine, whose explorer leads back here. Orbs already running are a thread away (⌘K), live.
 func (a *app) chooseWhere() {
 	a.keyed = false
-	options, hosts := []string{device}, []string{}
-	for _, m := range a.o.home.Machines {
+	o := a.o
+	options, hosts, hues := []string{device}, []string{}, []int{o.hue(o.state.Self)}
+	for _, m := range o.home.Machines {
 		if m.Launch {
-			options, hosts = append(options, "a folder on "+m.Name+"  ›"), append(hosts, m.ID)
+			options = append(options, "a folder on "+m.Name+"  ›")
+			hosts = append(hosts, m.ID)
+			hues = append(hues, o.hue(m.ID))
 		}
 	}
-	a.picker = &picker{title: "start on", options: options, at: &a.active.whereAt, pick: func(s string) {
+	a.picker = &picker{title: "start on", options: options, hues: hues, at: &a.active.whereAt, pick: func(s string) {
 		if at := slices.Index(options, s); at == 0 {
 			a.target = [2]string{}
 		} else {
@@ -923,13 +927,34 @@ func menuRow(c *ui.Context, text, note string, chosen bool) ui.Element {
 }
 
 func (a *app) pickerSheet(c *ui.Context) {
-	pk := a.picker
+	pk, pal := a.picker, p(c)
 	open := true
 	list := func() {
 		label(c, pk.title).Padding(12, 16, 6)
 		ui.Scroll(c).MaxHeight(420).Shrink(1).Padding(0, 4, 6).Children(func() {
-			for _, o := range pk.options {
-				if press(menuRow(c.Key(o), o, "", o == pk.selected)) {
+			for i, o := range pk.options {
+				hue := -1
+				if i < len(pk.hues) {
+					hue = pk.hues[i]
+				}
+				var row ui.Element
+				if hue >= 0 {
+					chosen := o == pk.selected
+					row = hover(ui.Row(c.Key(o)).FillWidth().Padding(8, 12).Radius(8).Gap(10).AlignItems(ui.Center), pal.hover).Children(func() {
+						where(c, hue, false, false, pal.fg)
+						w := 400
+						if chosen {
+							w = strong
+						}
+						ui.Text(c, o).Grow(1).Basis(0).FontWeight(w).SingleLine().Tooltip(o)
+						if chosen {
+							dot(c, pal.fg, 6, false, false)
+						}
+					})
+				} else {
+					row = menuRow(c.Key(o), o, "", o == pk.selected)
+				}
+				if press(row) {
 					a.picker = nil
 					pk.pick(o)
 				}

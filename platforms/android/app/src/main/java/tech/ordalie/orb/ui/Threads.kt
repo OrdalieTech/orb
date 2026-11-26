@@ -35,7 +35,7 @@ fun ColumnScope.DeviceScreen(c: Ctx, peerId: String) {
     val peer = c.v.machine(peerId) ?: return
     val folders = peer.folders
     var path by remember { mutableStateOf("") }
-    Header(peer.name, sub = listOfNotNull("${folders.size} folders · ${folders.sumOf { it.threads }} threads", peer.version.ifEmpty { null }?.let { "orb $it" }).joinToString(" · "), back = c.nav::back) {
+    Header(peer.name, sub = listOfNotNull("${folders.size} folder" + (if (folders.size == 1) "" else "s") + " · ${folders.sumOf { it.threads }} threads", peer.version.ifEmpty { null }?.let { "orb $it" }).joinToString(" · "), back = c.nav::back, hue = c.v.hue(peerId)) {
         Btn("providers") { c.nav.go(Screen.Providers(peer.id)) }
         Btn("plugins") { c.nav.go(Screen.Plugins(peer.id)) }
     }
@@ -63,7 +63,7 @@ fun ColumnScope.FolderScreen(c: Ctx, peerId: String, cwd: String) {
     val peer = c.v.machine(peerId) ?: return
     val threads = c.v.home.entries.filter { it.machine == peerId && it.cwd == cwd && !it.unstored }
     val folderName = cwd.substringAfterLast('/').ifEmpty { cwd }
-    Header(folderName, sub = peer.name + " · " + tidy(cwd), back = c.nav::back)
+    Header(folderName, sub = peer.name + " · " + tidy(cwd), back = c.nav::back, hue = c.v.hue(peerId))
     Column(Modifier.padding(horizontal = Margin)) {
         Launching(c)
         T(if (threads.isEmpty()) "no threads here yet" else "threads", Modifier.padding(top = 12.dp, bottom = 4.dp), label = true, color = if (threads.isEmpty()) p.meta else p.fg)

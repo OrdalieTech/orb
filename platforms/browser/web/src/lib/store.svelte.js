@@ -1193,6 +1193,20 @@ function createOrbStore() {
     approval();
   }
 
+  async function pairDevicePrompt() {
+    const text = await pick("pair a device", [], {
+      field: true,
+      hint: "paste code from orb mitosis --browser",
+      action: { label: "settings · mitosis ›", run: () => openSettings("mitosis", defaultPeer()) },
+    });
+    if (!text || !text.trim()) return;
+    try {
+      await joinInvitation(text, true);
+    } catch (err) {
+      showError(err?.message || String(err));
+    }
+  }
+
   async function forgetTab() {
     if (
       (await pick("forget this tab? its conversations here go with it", [
@@ -1381,6 +1395,7 @@ function createOrbStore() {
     isPeerHidden,
     parseInvitationCode,
     joinInvitation,
+    pairDevicePrompt,
     forgetTab,
     takeOverTab,
     bumpFocus() { focusTick++; },

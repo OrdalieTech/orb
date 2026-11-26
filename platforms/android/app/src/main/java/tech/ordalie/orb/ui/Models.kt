@@ -93,6 +93,10 @@ fun AnimatedVisibilityScope.ModelSheet(session: Tab, c: Ctx, dismiss: () -> Unit
                         T(id.substringAfter('/'), Modifier.weight(1f), size = 16.sp, weight = if (on) Strong else Regular, lines = 1)
                         if (provider.isNotEmpty()) T(provider, Modifier.padding(start = 10.dp), size = 12.sp, color = p.meta, lines = 1)
                         if (id == def?.model) T("default", Modifier.padding(start = 10.dp, end = 6.dp), label = true, color = p.meta)
+                        else if (!home) T("set default", Modifier.press {
+                            default(id)
+                            android.widget.Toast.makeText(c.context, "default model set", android.widget.Toast.LENGTH_SHORT).show()
+                        }.padding(start = 10.dp, end = 6.dp, top = 2.dp, bottom = 2.dp), label = true, color = p.meta)
                         if (on) { Spacer(Modifier.width(6.dp)); Dot(p.fg) }
                     }
                 }
@@ -108,6 +112,10 @@ fun AnimatedVisibilityScope.ModelSheet(session: Tab, c: Ctx, dismiss: () -> Unit
                     }.padding(horizontal = Margin, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
                         T(if (group == "in use") id else id.substringAfter('/'), Modifier.weight(1f), size = 16.sp, weight = if (on) Strong else Regular, lines = 1)
                         if (id == def?.model) T("default", Modifier.padding(start = 10.dp, end = 10.dp), label = true, color = p.meta)
+                        else if (!home) T("set default", Modifier.press {
+                            default(id)
+                            android.widget.Toast.makeText(c.context, "default model set", android.widget.Toast.LENGTH_SHORT).show()
+                        }.padding(start = 10.dp, end = 10.dp, top = 2.dp, bottom = 2.dp), label = true, color = p.meta)
                         if (on) Dot(p.fg)
                     }
                 }

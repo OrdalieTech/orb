@@ -327,7 +327,8 @@ func (a *app) explorer(c *ui.Context) {
 				a.exploring = ""
 				a.chooseWhere()
 			}
-			label(c, m.Name).TextColor(pal.meta).MarginEnd(8).MaxWidth(120).Tooltip(m.Name)
+			where(c, o.hue(peer), false, false, pal.fg)
+			label(c, m.Name).TextColor(pal.meta).MarginStart(4).MarginEnd(8).MaxWidth(120).Tooltip(m.Name)
 			// Between the folders a / (none after the root, which is one); the last, where it is, in ink.
 			cs := crumbs(d.Path)
 			if len(cs) > 4 { // a deep path keeps where it starts and where it is
@@ -659,7 +660,11 @@ func (a *app) homeScopeBar(c *ui.Context) {
 							ui.Row(c).FillWidth().Gap(5).AlignItems(ui.Center).Children(func() {
 								ui.Text(c, statusText).FontSize(11).TextColor(map[bool]ui.Color{true: pal.meta, false: rupture}[up]).SingleLine()
 								if len(m.Folders) > 0 {
-									ui.Text(c, fmt.Sprintf("· %d folders", len(m.Folders))).FontSize(11).TextColor(pal.meta).SingleLine()
+									fLabel := fmt.Sprintf("· %d folders", len(m.Folders))
+									if len(m.Folders) == 1 {
+										fLabel = "· 1 folder"
+									}
+									ui.Text(c, fLabel).FontSize(11).TextColor(pal.meta).SingleLine()
 								}
 								if hidden {
 									ui.Text(c, "· hidden").FontSize(10.5).TextColor(pal.meta).SingleLine()
@@ -678,6 +683,26 @@ func (a *app) homeScopeBar(c *ui.Context) {
 									a.aimHome(m.ID, "")
 								}
 							}
+						}
+					}
+					pairCard := ui.Column(c.Key("peer:pair")).FillWidth().Height(68).Padding(10, 12).Radius(8).
+						Border(1, pal.rule.Alpha(0.45)).Justify(ui.Center).AlignItems(ui.Center).Gap(2)
+					hover(pairCard, pal.hover)
+					pairCard.Children(func() {
+						ui.Text(c, "+ pair device").FontSize(12.5).FontWeight(medium).TextColor(pal.mute).SingleLine()
+						ui.Text(c, "invite · join").FontSize(10.5).TextColor(pal.meta).SingleLine()
+					})
+					if press(pairCard.Tooltip("Pair another computer with this Orb")) {
+						a.picker = &picker{
+							title:   "pair device",
+							options: []string{"invite a device · QR & command", "join a device · paste code"},
+							pick: func(s string) {
+								if strings.HasPrefix(s, "invite") {
+									a.push(screen{kind: "invite"})
+								} else {
+									a.push(screen{kind: "join"})
+								}
+							},
 						}
 					}
 				})

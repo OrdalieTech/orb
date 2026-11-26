@@ -190,7 +190,17 @@
     updatingPeer = { ...updatingPeer, [m.id]: `updating to ${orb.latestRelease || "latest"}…` };
     try {
       const res = await orb.ask("update", { machine: m.id });
-      updatingPeer = { ...updatingPeer, [m.id]: typeof res === "string" && res ? res : "updated" };
+      const msg = typeof res === "string" && res ? res : "updated";
+      updatingPeer = { ...updatingPeer, [m.id]: msg };
+      if (!msg.includes("reconnecting") && !msg.includes("restarting")) {
+        setTimeout(() => {
+          if (updatingPeer[m.id] === msg) {
+            const copy = { ...updatingPeer };
+            delete copy[m.id];
+            updatingPeer = copy;
+          }
+        }, 4000);
+      }
     } catch (err) {
       updatingPeer = { ...updatingPeer, [m.id]: err.message || "update failed" };
     }
@@ -249,6 +259,7 @@
   aria-label="Settings"
   tabindex="-1"
   onclick={e => { if (e.target === e.currentTarget) orb.screen = "app"; }}
+  onkeydown={e => { if (e.key === "Escape") orb.screen = "app"; }}
 >
 <section class="settings">
   <nav class="sidebar" aria-label="Settings sections">
@@ -499,7 +510,10 @@
                 class="chip"
                 class:on={d.id === peerId}
                 onclick={() => { providerQuery = ""; orb.openSettings("providers", d.id); }}
-              >{d.self ? "this tab" : d.name}</button>
+              >
+                <i class="led" style="--hue: var(--hue{d.hue || 0})"></i>
+                <span>{d.self ? "this tab" : d.name}</span>
+              </button>
             {/each}
           </div>
 
@@ -632,7 +646,10 @@
               class="chip"
               class:on={d.id === peerId}
               onclick={() => orb.openSettings("plugins", d.id)}
-            >{d.self ? "this tab" : d.name}</button>
+            >
+              <i class="led" style="--hue: var(--hue{d.hue || 0})"></i>
+              <span>{d.self ? "this tab" : d.name}</span>
+            </button>
           {/each}
         </div>
 
@@ -999,6 +1016,9 @@
     margin: 14px 0 10px;
   }
   .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     padding: 4px 10px;
     border: 1px solid var(--rule);
     border-radius: var(--radius-sm);

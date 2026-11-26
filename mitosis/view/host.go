@@ -265,9 +265,52 @@ func (a *App) slow(in intent) func() (any, error) {
 		return func() (any, error) { cancel(); a.signIn(machine, in.Provider, in.Auth); return nil, nil }
 	case "update":
 		return call(func() (any, error) {
+			var prevVersion string
+			a.mu.Lock()
+			if m := a.machine(in.Machine); m != nil {
+				prevVersion = m.version
+			}
+			a.mu.Unlock()
 			var r struct{ Status, To string }
 			err := host("host.update", "update itself", struct{}{}, &r)
-			return strings.Trim(r.Status+" · "+r.To, " ·"), err
+			if err != nil || r.To == "" {
+				return strings.Trim(r.Status+" · "+r.To, " ·"), err
+			}
+			// Mark the peer for fresh version/thread reload on reconnect, then wait for its
+			// restarted Mitosis to answer on the new version so the UI resolves cleanly.
+			a.mu.Lock()
+			if m := a.machine(in.Machine); m != nil {
+				m.loadDone = false
+			}
+			a.mu.Unlock()
+			deadline := time.Now().Add(25 * time.Second)
+			for delay := 600 * time.Millisecond; time.Now().Before(deadline); delay = time.Second {
+				select {
+				case <-ctx.Done():
+					return "updated to " + r.To, nil
+				case <-time.After(delay):
+				}
+				var page struct{ Host, Version string }
+				probeCtx, probeCancel := context.WithTimeout(ctx, 4*time.Second)
+				probeErr := a.remote(probeCtx, in.Machine, "host.sessions", map[string]any{"limit": 1}, &page)
+				probeCancel()
+				if probeErr == nil && page.Version != "" && (page.Version == r.To || page.Version != prevVersion) {
+					a.mu.Lock()
+					if m := a.machine(in.Machine); m != nil {
+						m.version = page.Version
+						if page.Host != "" {
+							m.host = page.Host
+						}
+						m.state, m.retryAt = "connected", time.Time{}
+					}
+					a.flush()
+					a.mu.Unlock()
+					go a.loadThreads(in.Machine)
+					return "updated to " + page.Version, nil
+				}
+			}
+			a.wakeMachines()
+			return "updated to " + r.To + " · reconnecting", nil
 		})
 	case "invite":
 		return call(func() (any, error) {

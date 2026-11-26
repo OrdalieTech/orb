@@ -262,37 +262,53 @@
             {#each filteredModels as id, idx (id)}
               {@const prov = id.split("/")[0]}
               {@const pLabel = providerInfo(prov)?.name || prov}
-              <button
-                type="button"
+              <div
                 class="mdl-row"
                 class:on={id === source.model}
                 class:hi={idx === deckAt}
-                onclick={() => chooseModel(id)}
               >
-                <span class="mdl-main">
-                  <span class="mdl-short">{id.split("/").slice(1).join("/") || id}</span>
-                  <small class="mdl-prov">{pLabel}</small>
-                </span>
-                {#if id === def?.default}<small>default</small>{/if}
+                <button type="button" class="mdl-pick" onclick={() => chooseModel(id)}>
+                  <span class="mdl-main">
+                    <span class="mdl-short">{id.split("/").slice(1).join("/") || id}</span>
+                    <small class="mdl-prov">{pLabel}</small>
+                  </span>
+                </button>
+                {#if id === def?.default}
+                  <small class="mdl-badge">default</small>
+                {:else if activeTab && peerId}
+                  <button
+                    type="button"
+                    class="mdl-set-def"
+                    onclick={e => { e.stopPropagation(); orb.setDefaultModel(peerId, id); orb.showToast("default model updated"); }}
+                  >set default</button>
+                {/if}
                 {#if id === source.model}<i class="led round" style="--hue: var(--fg)"></i>{/if}
-              </button>
+              </div>
             {/each}
           {/if}
         {:else}
           {#if usedModels.length > 0}
             <p class="sec-lbl">in use</p>
             {#each usedModels as id, idx (id)}
-              <button
-                type="button"
+              <div
                 class="mdl-row"
                 class:on={id === source.model}
                 class:hi={idx === deckAt}
-                onclick={() => chooseModel(id)}
               >
-                <span>{id}</span>
-                {#if id === def?.default}<small>default</small>{/if}
+                <button type="button" class="mdl-pick" onclick={() => chooseModel(id)}>
+                  <span>{id}</span>
+                </button>
+                {#if id === def?.default}
+                  <small class="mdl-badge">default</small>
+                {:else if activeTab && peerId}
+                  <button
+                    type="button"
+                    class="mdl-set-def"
+                    onclick={e => { e.stopPropagation(); orb.setDefaultModel(peerId, id); orb.showToast("default model updated"); }}
+                  >set default</button>
+                {/if}
                 {#if id === source.model}<i class="led round" style="--hue: var(--fg)"></i>{/if}
-              </button>
+              </div>
             {/each}
           {/if}
 
@@ -300,17 +316,25 @@
             <p class="sec-lbl">{[g.info?.name || g.provider, g.info?.holds, `${g.models.length}`].filter(Boolean).join(" · ")}</p>
             {#each g.models as id (id)}
               {@const flatIdx = flatList.findIndex((f, i) => i >= usedModels.length && f.id === id)}
-              <button
-                type="button"
+              <div
                 class="mdl-row"
                 class:on={id === source.model}
                 class:hi={flatIdx === deckAt}
-                onclick={() => chooseModel(id)}
               >
-                <span>{id.split("/").slice(1).join("/")}</span>
-                {#if id === def?.default}<small>default</small>{/if}
+                <button type="button" class="mdl-pick" onclick={() => chooseModel(id)}>
+                  <span>{id.split("/").slice(1).join("/")}</span>
+                </button>
+                {#if id === def?.default}
+                  <small class="mdl-badge">default</small>
+                {:else if activeTab && peerId}
+                  <button
+                    type="button"
+                    class="mdl-set-def"
+                    onclick={e => { e.stopPropagation(); orb.setDefaultModel(peerId, id); orb.showToast("default model updated"); }}
+                  >set default</button>
+                {/if}
                 {#if id === source.model}<i class="led round" style="--hue: var(--fg)"></i>{/if}
-              </button>
+              </div>
             {/each}
           {/each}
         {/if}
@@ -531,19 +555,37 @@
   .mdl-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     width: 100%;
-    padding: 7px 9px;
+    padding: 0 9px 0 0;
     border: 0;
     border-bottom: 1px solid var(--rule-soft);
     border-radius: 0;
     background: none;
     text-align: left;
     font-size: 12.5px;
-    cursor: pointer;
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .mdl-row span {
+  .mdl-row.acct-row {
+    gap: 10px;
+    padding: 7px 9px;
+    cursor: pointer;
+  }
+  .mdl-pick {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    padding: 7px 0 7px 9px;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .mdl-pick > span,
+  .mdl-row > span {
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -563,10 +605,40 @@
     font-size: 11px;
     color: var(--meta);
   }
-  .mdl-row small {
+  .mdl-row small,
+  .mdl-badge {
     font-size: 11px;
     color: var(--meta);
     flex-shrink: 0;
+  }
+  .mdl-set-def {
+    flex-shrink: 0;
+    padding: 2px 6px;
+    border: 1px solid var(--rule-soft);
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    color: var(--meta);
+    font-size: 10.5px;
+    font-weight: 600;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--t-fast) var(--ease), color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+  }
+  .mdl-set-def:hover {
+    color: var(--fg);
+    border-color: var(--rule-focus);
+  }
+  .mdl-row:hover .mdl-set-def,
+  .mdl-row:focus-within .mdl-set-def {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  @media (hover: none) {
+    .mdl-set-def {
+      opacity: 1;
+      pointer-events: auto;
+    }
   }
   .mdl-row.on { font-weight: 600; background: var(--recessed); }
   .mdl-row.hi { background: var(--hover); }

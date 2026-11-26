@@ -272,9 +272,11 @@
     const options = [];
     for (const m of orb.launchers()) {
       const at = now.machine?.id === m.id && tidy(now.cwd);
+      const hue = orb.getMachine(m.id)?.hue ?? 0;
       options.push({
         label: m.name,
         detail: "home folder",
+        hue,
         on: at === "" || at === "~",
         value: () => orb.aimAt(m.id),
       });
@@ -282,6 +284,7 @@
         options.push({
           label: tidy(f.cwd),
           detail: `${m.name} · ${f.threads} thread${f.threads === 1 ? "" : "s"}`,
+          hue,
           on: at === tidy(f.cwd),
           value: () => orb.aimAt(m.id, f.cwd),
         });
@@ -289,17 +292,20 @@
       options.push({
         label: `browse folders on ${m.name} ›`,
         detail: "interactive explorer",
+        hue,
         value: () => {
           orb.explorerPeer = m.id;
         },
       });
     }
     for (const m of orb.home.machines || []) {
+      const hue = orb.getMachine(m.id)?.hue ?? 0;
       for (const r of m.running || []) {
         if (!r.open && !m.self) {
           options.push({
             label: r.label,
             detail: r.busy ? "working · open it" : "running · open it",
+            hue,
             value: () => orb.openEntry(`i:${r.instance}`),
           });
         }
@@ -309,6 +315,7 @@
       options.push({
         label: "this tab",
         detail: "its own Orb · sandboxed js + workspace",
+        hue: self.hue ?? 0,
         on: now.machine?.self,
         value: () => orb.aimAt(orb.state.self),
       });
