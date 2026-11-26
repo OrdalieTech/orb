@@ -121,3 +121,17 @@ func TestFuzzyFilterModelsNoMatch(t *testing.T) {
 		t.Fatalf("expected no matches, got %v", got)
 	}
 }
+
+func TestFuzzyTextScorePalette(t *testing.T) {
+	if _, ok := fuzzyTextScore("Refactor TUI components ~/orb", "ref tui"); !ok {
+		t.Fatal("expected multi-token match")
+	}
+	if _, ok := fuzzyTextScore("Split right tile pane", "spr"); !ok {
+		t.Fatal("expected subsequence match")
+	}
+	exact, ok1 := fuzzyTextScore("Model & reasoning", "model")
+	sub, ok2 := fuzzyTextScore("Some old demo label", "model")
+	if !ok1 || !ok2 || exact <= sub {
+		t.Fatalf("exact (%d,%v) should beat scattered (%d,%v)", exact, ok1, sub, ok2)
+	}
+}

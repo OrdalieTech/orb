@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,10 +18,10 @@ import (
 func (a *app) tabChips(c *ui.Context, x *tile) {
 	o, pal := a.o, p(c)
 	chip := func(key string, on bool, body func(hovered bool)) ui.Element {
-		e := ui.Row(c.Key(key)).Height(30).Padding(0, 6, 0, 10).Gap(7).Radius(soft).Shrink(1).MinWidth(0).AlignItems(ui.Center)
+		e := ui.Row(c.Key(key)).Height(28).Padding(0, 6, 0, 10).Gap(7).Radius(6).Shrink(1).MinWidth(0).AlignItems(ui.Center)
 		hovered := e.Hovered()
 		if on {
-			e.Background(pal.raised).Border(1, pal.rule)
+			e.Background(pal.recessed)
 		} else {
 			hover(e, pal.hover)
 		}
@@ -246,6 +247,7 @@ func (a *app) openPalette() { a.palette, a.search, a.pick = true, "", 0 }
 // hit is one line of Go to, and what choosing it does: here, or (⌘↩) in a tile at the right.
 type hit struct {
 	title, meta string
+	score       int
 	live, asks  bool
 	hue         int
 	here, right func()
@@ -255,32 +257,74 @@ type hit struct {
 func (a *app) paletteSheet(c *ui.Context) {
 	o, pal := a.o, p(c)
 	open := true
-	q := strings.ToLower(strings.TrimSpace(a.search))
-	has := func(s ...string) bool { return q == "" || strings.Contains(strings.ToLower(strings.Join(s, " ")), q) }
+	q := strings.TrimSpace(a.search)
+	match := func(fields ...string) (int, bool) {
+		if q == "" {
+			return 0, true
+		}
+		return fuzzyTextScore(strings.Join(fields, " "), q)
+	}
 	var hits []hit
-	for _, t := range o.state.Tabs {
-		if has(t.Title, t.Where, t.CWD) {
-			hits = append(hits, hit{title: cmp.Or(t.Title, "new session"), meta: strings.Join(nonEmpty("open", map[bool]string{true: t.Where}[t.Remote]), " · "), live: t.Busy, asks: t.Ask != nil, hue: o.hue(t.Peer),
-				here: func() { a.show(t.ID) }, right: func() { a.place(a.active, "right", t.ID, false) }})
+	add := func(h hit, fields ...string) {
+		if sc, ok := match(fields...); ok {
+			h.score = sc
+			hits = append(hits, h)
 		}
 	}
+	for _, t := range o.state.Tabs {
+		t := t
+		add(hit{title: cmp.Or(t.Title, "new session"), meta: strings.Join(nonEmpty("open", map[bool]string{true: t.Where}[t.Remote]), " · "), live: t.Busy, asks: t.Ask != nil, hue: o.hue(t.Peer),
+			here: func() { a.show(t.ID) }, right: func() { a.place(a.active, "right", t.ID, false) }}, t.Title, t.Where, t.CWD, "open")
+	}
+	// Quick workspace & model actions (aligned with Web CommandPalette).
+	if cur := o.tab(a.tab); cur != nil {
+		add(hit{title: "Rename session", meta: keys("R"), here: func() { a.renameTab(*cur) }, right: func() { a.renameTab(*cur) }}, "rename session", cur.Title)
+	}
+	add(hit{title: "Model & reasoning", meta: map[bool]string{true: "⌃M", false: "Ctrl+M"}[runtime.GOOS == "darwin"],
+		here: func() { a.chooseModel(o.tab(a.tab), true) }, right: func() { a.chooseModel(o.tab(a.tab), true) }}, "model reasoning thinking switch")
+	add(hit{title: "Cycle reasoning level", meta: "⇧Tab",
+		here: a.cycleReasoning, right: a.cycleReasoning}, "cycle reasoning thinking effort")
+	add(hit{title: "Toggle tool outputs", meta: map[bool]string{true: "⌃O", false: "Ctrl+O"}[runtime.GOOS == "darwin"],
+		here: a.toggleToolOutputs, right: a.toggleToolOutputs}, "toggle expand collapse tool outputs")
+	add(hit{title: "Split right", meta: keys("D"),
+		here: func() { a.split(a.active, "right", &tile{}) }, right: func() { a.split(a.active, "right", &tile{}) }}, "split right tile pane")
+	add(hit{title: "Split down", meta: keys("⇧D"),
+		here: func() { a.split(a.active, "bottom", &tile{}) }, right: func() { a.split(a.active, "bottom", &tile{}) }}, "split down tile pane")
+	if !a.root.leaf() {
+		add(hit{title: "Even out tiles", meta: keys("⌃="),
+			here: func() { a.root.even(true); a.reshape() }, right: func() { a.root.even(true); a.reshape() }}, "even equalize tiles split")
+	}
+	add(hit{title: "Settings", meta: keys(","), here: a.settings, right: a.settings}, "settings preferences providers plugins mitosis")
+
 	for _, m := range o.home.Machines {
-		if m.Launch && has("new session", m.Name) {
-			hits = append(hits, hit{title: "new session on " + m.Name, hue: o.hue(m.ID),
-				here: func() { a.start(m.ID, "") }, right: func() { a.start(m.ID, "") }})
+		m := m
+		if m.Launch {
+			add(hit{title: "New session on " + m.Name, hue: o.hue(m.ID),
+				here: func() { a.start(m.ID, "") }, right: func() { a.start(m.ID, "") }}, "new session", m.Name)
+			add(hit{title: "Browse folders on " + m.Name, hue: o.hue(m.ID),
+				here: func() { a.exploring = m.ID }, right: func() { a.exploring = m.ID }}, "browse folders directory", m.Name)
 		}
 	}
 	for _, e := range o.home.Entries {
-		if len(hits) >= 60 {
+		if len(hits) >= 80 && q == "" {
 			break
 		}
-		if !e.Open && has(e.Title, e.CWD) {
+		if !e.Open {
+			e := e
 			meta := ago(e.Modified)
+			mName := ""
 			if m := o.machine(e.Machine); m != nil && !m.Self {
+				mName = m.Name
 				meta = m.Name + " · " + meta
 			}
-			hits = append(hits, hit{title: e.Title, meta: meta, live: e.Live, asks: e.Asks, hue: o.hue(e.Machine),
-				here: func() { a.open(e.Key) }, right: func() { a.dropped(a.active, "right", carried{key: e.Key}) }, thread: &e})
+			add(hit{title: e.Title, meta: meta, live: e.Live, asks: e.Asks, hue: o.hue(e.Machine),
+				here: func() { a.open(e.Key) }, right: func() { a.dropped(a.active, "right", carried{key: e.Key}) }, thread: &e}, e.Title, e.CWD, mName)
+		}
+	}
+	if q != "" {
+		slices.SortStableFunc(hits, func(x, y hit) int { return y.score - x.score })
+		if len(hits) > 60 {
+			hits = hits[:60]
 		}
 	}
 	a.pick = min(max(a.pick, 0), max(len(hits)-1, 0))

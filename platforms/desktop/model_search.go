@@ -14,6 +14,51 @@ var modelAliases = map[string]string{
 	"ds":   "deepseek",
 }
 
+// fuzzyTextScore scores a general command-palette target string against a whitespace-tokenized
+// fuzzy query (every token must match via substring, separator-normalized substring, or subsequence).
+func fuzzyTextScore(target, query string) (int, bool) {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return 0, true
+	}
+	tokens := strings.Fields(q)
+	if len(tokens) == 0 {
+		return 0, true
+	}
+	lower := strings.ToLower(target)
+	norm := normalizeModel(lower)
+	total := 0
+	for _, tok := range tokens {
+		tokNorm := normalizeModel(tok)
+		if idx := strings.Index(lower, tok); idx >= 0 {
+			s := 180
+			if idx == 0 {
+				s += 120
+			} else if isWordBoundary(lower, idx) {
+				s += 60
+			}
+			total += s
+			continue
+		}
+		if tokNorm != "" && strings.Contains(norm, tokNorm) {
+			total += 120
+			continue
+		}
+		if sc, ok := subsequenceScore(lower, tok); ok {
+			total += sc
+			continue
+		}
+		if tokNorm != "" {
+			if sc, ok := subsequenceScore(norm, tokNorm); ok {
+				total += sc / 2
+				continue
+			}
+		}
+		return 0, false
+	}
+	return total, true
+}
+
 // fuzzyFilterModels filters and ranks model IDs (e.g. "anthropic/claude-sonnet-4-6") against
 // a whitespace-separated query. Every token must match (AND, any order), ignoring separators
 // (- _ . / : space) and supporting shorthand aliases and ordered subsequence matching.

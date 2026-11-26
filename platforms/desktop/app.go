@@ -41,9 +41,11 @@ type renaming struct {
 type app struct {
 	o          *Orb
 	stack      []screen
-	tab        string               // the conversation shown, "" for Home
-	allOpen    bool                 // Home shows every open conversation, not the first few
-	target     [2]string            // the machine and folder Home's next message starts in; none, this computer
+	tab          string               // the conversation shown, "" for Home
+	allOpen      bool                 // Home shows every open conversation, not the first few
+	target       [2]string            // the machine and folder Home's next message starts in; none, this computer
+	deviceFilter string               // Home peer filter (synced with target when picked from MAGI)
+	folderFilter string               // Home folder filter (synced with target when picked from folder pills)
 	instant    bool                 // a key acted: the frame shows what it did at once, nothing a key does animates
 	closed     []string             // the threads of the tabs closed, newest last, which ⌘⇧T reopens
 	scale      float32              // the window's zoom (⌘= ⌘- ⌘0), 0 for 1
@@ -454,8 +456,20 @@ func (a *app) open(key string) {
 // start starts Orb on a machine, in a folder or (cwd empty) where it starts, and opens it.
 // start makes a machine's folder where Home's next message goes, and shows Home: a conversation
 // opens with its first message, never as an empty tab.
-func (a *app) start(machine, cwd string) {
+func (a *app) aimHome(machine, cwd string) {
 	a.target = [2]string{machine, cwd}
+	peer := cmp.Or(machine, a.o.state.Self)
+	if peer != "" {
+		a.readDefault(peer, nil)
+	}
+}
+
+func (a *app) start(machine, cwd string) {
+	a.aimHome(machine, cwd)
+	if machine != "" && machine != a.o.state.Self {
+		a.deviceFilter = machine
+	}
+	a.folderFilter = cwd
 	a.show("")
 }
 
@@ -615,6 +629,11 @@ func (a *app) shortcuts(c *ui.Context) {
 		}
 	})
 	on(cmd, ui.KeyL, func() { a.focus++ })
+	on(cmd, ui.KeyR, func() {
+		if t := o.tab(a.tab); t != nil {
+			a.renameTab(*t)
+		}
+	})
 	on(cmd|ui.Shift, ui.KeyM, func() { a.chooseModel(o.tab(a.tab), true) })
 	on(cmd|ui.Shift, ui.KeyC, func() {
 		if t := o.tab(a.tab); t != nil {

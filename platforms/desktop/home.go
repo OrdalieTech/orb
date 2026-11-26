@@ -62,14 +62,29 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 			})
 			a.launching(c)
 		})
-		ui.Box(c).Height(22)
+		ui.Box(c).Height(18)
+		// Contextual peer (MAGI) + recent folder scope pills above the Home prompt box,
+		// matching Android and Web: picking a peer or folder aims the prompt and filters threads.
+		if !small {
+			a.homeScopeBar(c)
+		}
 		// The box a little past the column (8 a side, 2.5% of it), so it stands out of the page
 		// without leaving it; its own padding sets its text in.
 		ui.Column(c).FillWidth().MaxWidth(680+16).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, a.homePlaceholder()) })
 		var recent []Entry
 		for _, e := range o.home.Entries {
-			if !e.Open && len(recent) < 6 {
-				recent = append(recent, e)
+			if e.Open {
+				continue
+			}
+			if a.deviceFilter != "" && e.Machine != a.deviceFilter {
+				continue
+			}
+			if a.folderFilter != "" && e.CWD != a.folderFilter {
+				continue
+			}
+			recent = append(recent, e)
+			if len(recent) >= 6 {
+				break
 			}
 		}
 		a.boot(c)
@@ -165,13 +180,13 @@ func (a *app) openCards(c *ui.Context) {
 		})
 		ui.Grid(c).FillWidth().Columns(map[bool]int{true: 2, false: 3}[a.narrow]).Gap(8).Children(func() {
 			for _, t := range tabs {
-				border := pal.rule
+				border := pal.rule.Alpha(0.55)
 				if t.Ask != nil {
 					border = rupture
 				} else if t.Busy {
-					border = pal.fg
+					border = pal.mute
 				}
-				card := ui.Column(c.Key(t.ID)).Height(78).Padding(9, 10).Gap(3).Radius(pane).Background(pal.raised).Border(1, border).Clip()
+				card := ui.Column(c.Key(t.ID)).Height(78).Padding(9, 10).Gap(3).Radius(6).Background(pal.raised).Border(1, border).Clip()
 				hovered := card.Hovered()
 				hover(card, pal.hover)
 				card.Children(func() {
@@ -510,5 +525,144 @@ func (a *app) boot(c *ui.Context) {
 				ui.Text(c, l.what).Grow(1).Basis(0).MinWidth(0).FontSize(12).TextColor(ink).SingleLine()
 			})
 		}
+	})
+}
+
+// homeScopeBar shows the MAGI peer strip (when paired devices exist) and inline recent folder
+// pills for the aimed peer. Clicking a peer or folder immediately aims Home's prompt box and
+// narrows the latest threads list below.
+func (a *app) homeScopeBar(c *ui.Context) {
+	o, pal := a.o, p(c)
+	machines := slices.Clone(o.home.Machines)
+	slices.SortStableFunc(machines, func(x, y Machine) int {
+		if x.Self != y.Self {
+			if x.Self {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(x.Name, y.Name)
+	})
+	if len(machines) > 1 {
+		reading(c).MaxWidth(680).Margin(0, ui.Auto, 10).PaddingX(margin).Children(func() {
+			ui.ScrollHorizontal(c).FillWidth().Children(func() {
+				ui.Row(c).Gap(6).Children(func() {
+					for _, m := range machines {
+						m := m
+						up := m.Connected
+						if m.Self {
+							up = o.state.Up
+						}
+						on := a.deviceFilter == m.ID
+						name := m.Name
+						if m.Self {
+							name = device
+						}
+						statusText := fmt.Sprintf("%d running", len(m.Running))
+						if !up {
+							statusText = map[bool]string{true: "starting…", false: "offline"}[m.Self]
+						}
+						pill := ui.Row(c.Key("peer:"+m.ID)).Padding(5, 10).Gap(7).Radius(6).AlignItems(ui.Center)
+						if on {
+							pill.Background(pal.recessed)
+						} else {
+							hover(pill, pal.hover)
+						}
+						pill.Children(func() {
+							where(c, o.hue(m.ID), false, !up && !m.Self, map[bool]ui.Color{true: pal.fg, false: pal.mute}[on])
+							ui.Text(c, name).FontSize(12).FontWeight(map[bool]int{true: strong, false: medium}[on]).TextColor(map[bool]ui.Color{true: pal.fg, false: pal.mute}[on]).SingleLine()
+							ui.Text(c, statusText).FontSize(11).TextColor(map[bool]ui.Color{true: pal.meta, false: rupture}[up]).SingleLine()
+						})
+						if press(pill.Tooltip("Click to target " + name + " and filter threads")) {
+							if on {
+								a.deviceFilter, a.folderFilter = "", ""
+								a.aimHome("", "")
+							} else {
+								a.deviceFilter, a.folderFilter = m.ID, ""
+								if m.Self {
+									a.aimHome("", "")
+								} else {
+									a.aimHome(m.ID, "")
+								}
+							}
+						}
+					}
+				})
+			})
+		})
+	}
+
+	// Inline recent folder pills for the selected or aimed peer.
+	scopePeer := cmp.Or(a.deviceFilter, a.target[0], o.state.Self)
+	m := o.machine(scopePeer)
+	if m == nil || (len(m.Folders) == 0 && !m.Launch) {
+		return
+	}
+	folders := m.Folders
+	if len(folders) > 8 {
+		folders = folders[:8]
+	}
+	if len(folders) == 0 && a.deviceFilter == "" {
+		return
+	}
+	reading(c).MaxWidth(680).Margin(0, ui.Auto, 10).PaddingX(margin).Children(func() {
+		ui.ScrollHorizontal(c).FillWidth().Children(func() {
+			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+				if len(folders) > 0 {
+					allOn := a.folderFilter == ""
+					allBtn := ui.Row(c.Key("dir:all")).Padding(3, 8).Radius(6)
+					if allOn {
+						allBtn.Background(pal.recessed)
+					} else {
+						hover(allBtn, pal.hover)
+					}
+					allBtn.Children(func() {
+						ui.Text(c, "all").FontSize(11.5).FontWeight(map[bool]int{true: medium, false: 400}[allOn]).TextColor(map[bool]ui.Color{true: pal.fg, false: pal.meta}[allOn]).SingleLine()
+					})
+					if press(allBtn) {
+						a.folderFilter = ""
+						a.aimHome(map[bool]string{true: "", false: m.ID}[m.Self], "")
+					}
+				}
+				for _, f := range folders {
+					f := f
+					on := a.folderFilter == f.CWD
+					labelText := path.Base(f.CWD)
+					if labelText == "." || labelText == "" {
+						labelText = f.CWD
+					}
+					pill := ui.Row(c.Key("dir:"+f.CWD)).Padding(3, 8).Gap(5).Radius(6).AlignItems(ui.Center)
+					if on {
+						pill.Background(pal.recessed)
+					} else {
+						hover(pill, pal.hover)
+					}
+					pill.Children(func() {
+						ui.Text(c, labelText).FontSize(11.5).FontWeight(map[bool]int{true: medium, false: 400}[on]).TextColor(map[bool]ui.Color{true: pal.fg, false: pal.mute}[on]).SingleLine()
+						if f.Threads > 0 {
+							ui.Text(c, fmt.Sprint(f.Threads)).FontSize(10.5).TextColor(pal.meta).SingleLine()
+						}
+					})
+					if press(pill.Tooltip(tidy(f.CWD))) {
+						if on {
+							a.folderFilter = ""
+							a.aimHome(map[bool]string{true: "", false: m.ID}[m.Self], "")
+						} else {
+							a.folderFilter = f.CWD
+							a.aimHome(m.ID, f.CWD)
+						}
+					}
+				}
+				if m.Launch {
+					browse := hover(ui.Row(c.Key("dir:browse")).Padding(3, 8).Radius(6), pal.hover)
+					browse.Children(func() {
+						ui.Text(c, "browse ›").FontSize(11.5).TextColor(pal.meta).SingleLine()
+					})
+					if press(browse) {
+						a.exploring = m.ID
+					}
+				}
+			})
+		})
 	})
 }

@@ -96,10 +96,19 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 			case i-head < len(tt):
 				a.turn(c, tt[i-head], i == head, t)
 			default:
-				// Room under the last message, where the caret waits while Orb writes.
+				// Room under the last message: blinking caret while streaming, or quiet pulsing
+				// "working…" when a turn is busy before streaming output starts.
+				rows := o.rows[t.ID]
+				lastLive := len(rows) > 0 && rows[len(rows)-1].Live
 				reading(c).Height(40).Padding(6, margin, 0).Children(func() {
-					if t.Streaming {
+					switch {
+					case t.Streaming:
 						caret(c)
+					case t.Busy && !lastLive:
+						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+							dot(c, rupture, 5, true, false)
+							ui.Text(c, "working…").FontSize(small).TextColor(pal.meta)
+						})
 					}
 				})
 			}
@@ -108,6 +117,11 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 		case len(tt) > 0:
 		case !t.Loaded:
 			a.pending(c)
+		case t.Busy:
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Attach(ui.AnchorCenter, ui.AnchorCenter).Children(func() {
+				dot(c, rupture, 6, true, false)
+				label(c, "working…").TextColor(pal.meta)
+			})
 		case t.Asleep:
 			label(c, "asleep · a message wakes it").TextColor(pal.meta).Attach(ui.AnchorCenter, ui.AnchorCenter)
 		default:
@@ -331,7 +345,7 @@ func (a *app) turn(c *ui.Context, rows []Row, first bool, t *Tab) {
 			}
 			a.pictures(c, you.Images, t)
 			if strings.TrimSpace(you.Text) != "" {
-				tokens(c, you.Text).Padding(8, 12).Radius(pane).Background(pal.fg.Alpha(0.07)).FontSize(size)
+				tokens(c, you.Text).Padding(9, 13).Radius(10).Background(pal.recessed).FontSize(size)
 			}
 		})
 		return
@@ -775,7 +789,7 @@ func spans(c *ui.Context, ss []Span) ui.Element {
 				e.Strikethrough()
 			}
 			if s.Code {
-				e.FontSize(size - 1.5).TextColor(pal.mute).TextBackground(pal.raised)
+				e.FontSize(size - 1.5).TextColor(pal.mute).TextBackground(pal.recessed)
 			}
 		}
 	})
