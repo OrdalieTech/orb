@@ -34,6 +34,34 @@ func TestPinchToOverviewAndBack(t *testing.T) {
 	}
 }
 
+func TestHandleInputReceivesRealMyGoPinchOverChildren(t *testing.T) {
+	a := &app{
+		o:          &Orb{state: State{Tabs: []Tab{{ID: "t1", Title: "First"}}}},
+		pinchScale: 1,
+	}
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().HandleInput(func(ev ui.InputEvent) bool {
+			if ev.Kind != ui.InputZoom {
+				return false
+			}
+			a.onPinch(ev)
+			return true
+		}).Children(func() {
+			ui.Scroll(c).Fill().Children(func() {
+				ui.Text(c, "hello world").Padding(20)
+			})
+		})
+	}, 400, 300)
+	tt.Frame()
+	for range 5 {
+		tt.Pinch(200, 150, 0.94)
+		tt.Frame()
+	}
+	if !a.overview {
+		t.Fatalf("expected MyGo HandleInput to open overview on trackpad pinch, scale=%v", a.pinchScale)
+	}
+}
+
 func TestOverviewTailFormatsRows(t *testing.T) {
 	rows := []Row{
 		{Kind: "you", Text: "check the build\nsecond line"},

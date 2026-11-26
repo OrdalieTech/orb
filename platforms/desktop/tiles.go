@@ -604,7 +604,8 @@ func (a *app) zones(c *ui.Context, x *tile) {
 	})
 }
 
-// tileTools is what a tile's bar offers the pointer on hover: split it, zoom it, close it.
+// tileTools is one compact split/layout button in a tile's bar opening a menu of all split and
+// tile actions with their keyboard shortcuts, keeping the tab strip spacious.
 func (a *app) tileTools(c *ui.Context) {
 	x, pal := a.building, p(c)
 	if x == nil || a.tools {
@@ -612,45 +613,50 @@ func (a *app) tileTools(c *ui.Context) {
 	}
 	a.tools = true
 	many := !a.root.leaf()
-	// A tight tile keeps its bar to close; the rest is on its menu.
-	if a.barHover && a.tight && many {
-		if press(ui.Text(c.Key("close"), "×").FontSize(16).TextColor(pal.meta).PaddingX(6).Tooltip("Close tile  " + keys("W"))) {
-			a.unsplit(x)
-		}
-	} else if a.barHover {
-		appear := ui.ElementTransition{Enter: &ui.Motion{}, Exit: &ui.Motion{}, Animation: &hovering} // shown on hover, often: a fade
-		icon := func(tip string, draw func(pt *ui.Painter, r ui.Rect)) bool {
-			e := ui.Box(c.Key(tip)).Size(24, 24).Radius(soft).Shrink(0).Tooltip(tip).Transition(appear)
-			hover(e, pal.hover)
-			e.Draw(func(pt *ui.Painter, r ui.Rect) {
-				draw(pt, ui.Rect{X: r.X + 6, Y: r.Y + 7, W: 12, H: 10})
-			})
-			return press(e)
-		}
-		if icon("Split right  "+keys("D"), func(pt *ui.Painter, r ui.Rect) {
-			pt.Stroke(r, pal.meta, 1.5, 1.2)
-			pt.Fill(ui.Rect{X: r.X + r.W/2 - 0.6, Y: r.Y, W: 1.2, H: r.H}, pal.meta, 0)
-		}) {
+	btn := hover(ui.Row(c.Key("tile-menu")).Size(28, 28).Radius(6).Shrink(0).Justify(ui.Center).AlignItems(ui.Center), pal.hover)
+	btn.Children(func() {
+		ui.Box(c).Size(12, 10).Draw(func(pt *ui.Painter, r ui.Rect) {
+			ink := pal.meta
+			if many && a.zoomed == x {
+				ink = pal.fg
+			}
+			pt.Stroke(r, ink, 1.5, 1.2)
+			pt.Fill(ui.Rect{X: r.X + r.W/2 - 0.6, Y: r.Y, W: 1.2, H: r.H}, ink, 0)
+		})
+	})
+	btn.Tooltip("Split & layout  " + keys("D")).Menu(func(m *ui.Menu) {
+		a.activate(x)
+		if m.Item("Split right").Shortcut(cmd, ui.KeyD).Chosen() {
 			a.split(x, "right", &tile{})
 		}
-		if icon("Split down  "+keys("⇧D"), func(pt *ui.Painter, r ui.Rect) {
-			pt.Stroke(r, pal.meta, 1.5, 1.2)
-			pt.Fill(ui.Rect{X: r.X, Y: r.Y + r.H/2 - 0.6, W: r.W, H: 1.2}, pal.meta, 0)
-		}) {
+		if m.Item("Split down").Shortcut(cmd|ui.Shift, ui.KeyD).Chosen() {
 			a.split(x, "bottom", &tile{})
 		}
-		if many && icon(map[bool]string{true: "Back to the tiles  ", false: "Zoom  "}[a.zoomed == x]+keys("⇧↩"), func(pt *ui.Painter, r ui.Rect) {
-			pt.Stroke(r, pal.meta, 1.5, 1.2)
-			if a.zoomed != x {
-				pt.Fill(ui.Rect{X: r.X + 3, Y: r.Y + 3, W: r.W - 6, H: r.H - 6}, pal.meta, 0.5)
+		if many {
+			m.Separator()
+			zoomLabel := "Zoom tile"
+			if a.zoomed == x {
+				zoomLabel = "Back to tiles"
 			}
-		}) {
-			a.zoom(x)
+			if m.Item(zoomLabel).Shortcut(cmd|ui.Shift, ui.KeyEnter).Chosen() {
+				a.zoom(x)
+			}
+			if m.Item("Even out tiles").Shortcut(cmd|ui.Ctrl, ui.KeyEqual).Chosen() {
+				a.root.even(true)
+				a.reshape()
+			}
+			if m.Item("Close tile").Shortcut(cmd|ui.Shift, ui.KeyW).Chosen() {
+				a.unsplit(x)
+			}
 		}
-		if many && press(ui.Text(c.Key("close"), "×").FontSize(16).TextColor(pal.meta).PaddingX(6).Tooltip("Close tile · its conversation stays open  "+keys("W")).Transition(appear)) {
-			a.unsplit(x)
+		if len(a.o.state.Tabs) > 0 {
+			m.Separator()
+			if m.Item("Overview grid").Shortcut(cmd, ui.KeyG).Chosen() {
+				a.overview = !a.overview
+				a.pinchScale = 1
+			}
 		}
-	}
+	})
 }
 
 // tileMenu is the rest on its bar's menu: its conversation's terminal, the layout, closing the

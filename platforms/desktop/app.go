@@ -282,7 +282,13 @@ func (a *app) view(c *ui.Context) {
 		c.OnShortcut(0, ui.KeyEscape, a.back)
 	}
 	pinchTarget := a.settlePinch(c)
-	root := ui.Column(c).Fill().Background(pal.recessed).LineHeight(1.45).ObserveInput(a.onPinch)
+	root := ui.Column(c).Fill().Background(pal.recessed).LineHeight(1.45).HandleInput(func(ev ui.InputEvent) bool {
+		if ev.Kind != ui.InputZoom {
+			return false
+		}
+		a.onPinch(ev)
+		return true
+	})
 	visualScale := root.Spring("pinchScale", pinchTarget, ui.SpringOptions{Duration: 220 * time.Millisecond})
 	root.Children(func() {
 		var s, radius, shadow float32 = 1, 0, 0
