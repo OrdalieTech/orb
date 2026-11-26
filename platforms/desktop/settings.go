@@ -694,17 +694,22 @@ func (a *app) pluginsScreen(c *ui.Context, peer string) {
 // settingsKinds are the tabs of Settings (⌘,), in order.
 var settingsKinds = []struct{ kind, name string }{{"general", "General"}, {"providers", "Providers"}, {"plugins", "Plugins"}, {"mitosis", "Mitosis"}}
 
-// settings opens Settings on its first tab.
+// settings toggles the floating Settings modal on its first tab.
 func (a *app) settings() {
 	reread()
+	if a.settingsOpen() {
+		a.stack = nil
+		a.fresh = nil
+		return
+	}
 	a.stack = []screen{{kind: "general", peer: a.o.state.Self}}
 }
 
-// settingsMenu is Settings' left side: its pages, the one shown lit, on the machine they show;
-// at its foot the way back to the conversations (Escape).
+// settingsMenu is Settings' left side inside the floating modal: its pages, the one shown lit,
+// and at its foot the close button (Escape).
 func (a *app) settingsMenu(c *ui.Context) {
 	pal, root := p(c), a.stack[0]
-	ui.Column(c).Width(208).Padding(4, 12, 16).Gap(2).BorderWidth(0, 1, 0, 0).BorderColor(pal.rule).Children(func() {
+	ui.Column(c).Width(200).Padding(16, 10, 12).Gap(2).Background(pal.raised).BorderWidth(0, 1, 0, 0).BorderColor(pal.rule.Alpha(0.75)).Children(func() {
 		ui.Text(c, "Settings").FontSize(title).FontWeight(strong).Padding(0, 10, 2)
 		ui.Text(c, a.machineName(cmp.Or(root.peer, a.o.state.Self))).FontSize(small).TextColor(pal.meta).Padding(0, 10, 14).SingleLine()
 		for _, s := range settingsKinds {
@@ -713,7 +718,7 @@ func (a *app) settingsMenu(c *ui.Context) {
 				ui.Text(c, s.name).FontWeight(map[bool]int{true: strong, false: medium}[on]).TextColor(map[bool]ui.Color{true: pal.fg, false: pal.mute}[on])
 			})
 			if on {
-				e.Background(pal.raised)
+				e.Background(pal.recessed)
 			} else {
 				hover(e, pal.hover)
 			}
@@ -724,14 +729,14 @@ func (a *app) settingsMenu(c *ui.Context) {
 		}
 		ui.Box(c).Grow(1)
 		done := ui.Row(c).FillWidth().Padding(7, 10).Radius(7).Children(func() {
-			ui.Text(c, "‹  conversations").Grow(1).TextColor(pal.mute)
+			ui.Text(c, "close").Grow(1).TextColor(pal.mute)
 			label(c, "esc").TextColor(pal.meta)
 		})
 		hover(done, pal.hover)
 		if press(done) {
-			for len(a.stack) > 0 {
-				a.back()
-			}
+			a.stack = nil
+			a.fresh = nil
+			reread()
 		}
 	})
 }

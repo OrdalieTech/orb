@@ -32,9 +32,7 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 	}
 	// ORB, first in the window's first tile as on the phone, is Home: a new session, the
 	// conversations open, every thread.
-	// Shown, it has the ground the tab shown has.
-	settings := x == a.active && a.settingsOpen() // shown over the tab, which then is not lit
-	home := x.tab == "" && !settings
+	home := x.tab == ""
 	// Tabs past the bar's room narrow, as a browser's, down to a few letters each; those that do not
 	// fit then wait behind +N, which lists them. The one shown always shows.
 	// The room is the bar's left once the readings and tools at its right have theirs, as last drawn.
@@ -72,7 +70,7 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 			if t == nil {
 				continue
 			}
-			on := x.tab == id && !settings
+			on := x.tab == id
 			e := chip(id, on, func(hovered bool) {
 				ink := pal.mute
 				switch {
@@ -143,14 +141,6 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 			if e.DoubleClicked() {
 				a.renameTab(*t)
 			}
-		}
-		if settings {
-			chip("settings", true, func(bool) {
-				ui.Text(c, "Settings").FontSize(small).FontWeight(strong)
-				if closeX("Close  esc") {
-					a.stack = nil
-				}
-			}).Shrink(0)
 		}
 		if len(hidden) > 0 {
 			more := ui.Row(c.Key("more")).Height(30).Padding(0, 9).Radius(7).Shrink(0).AlignItems(ui.Center).Children(func() {

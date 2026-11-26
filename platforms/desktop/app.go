@@ -275,7 +275,7 @@ func (a *app) view(c *ui.Context) {
 		for _, t := range o.state.Tabs {
 			shown = append(shown, t.ID)
 		}
-	} else if a.top().kind == "" || a.settingsOpen() {
+	} else {
 		for _, t := range a.onScreen().tiles(nil) {
 			if t.tab != "" && !slices.Contains(shown, t.tab) {
 				shown = append(shown, t.tab)
@@ -326,25 +326,17 @@ func (a *app) view(c *ui.Context) {
 			stage.Radius(radius).Border(1, pal.rule.Alpha(shadow)).Shadow(0, 12*shadow, 32*shadow, 0, charcoal.Alpha(0.18*shadow)).Clip()
 		}
 		stage.Children(func() {
-			if a.overview && a.top().kind == "" {
+			if a.overview {
 				a.overviewScreen(c)
 				return
 			}
-			top := a.top()
-			// Settings opens in the tile the keys act on, its tabs above it, as Home does.
-			if top.kind == "" || a.settingsOpen() {
-				top := a.onScreen()
-				if top != a.zoomed {
-					a.zoomed = nil
-				}
-				a.layout(c, top, true, true)
-				a.building = nil
-				a.saveTiles()
-				return
+			top := a.onScreen()
+			if top != a.zoomed {
+				a.zoomed = nil
 			}
-			// The window's controls keep their room above every other screen, in a bar that drags it.
-			ui.Row(c).FillWidth().Height(max(c.TitleBar().Height, 48)).DragWindow()
-			a.screen(c, top)
+			a.layout(c, top, true, true)
+			a.building = nil
+			a.saveTiles()
 		})
 	})
 	a.overlays(c)
@@ -834,6 +826,10 @@ func (a *app) overlays(c *ui.Context) {
 	} else if cl := o.state.Claim; cl != nil && cl.Claimant != a.answered {
 		a.pairRequest(c, *cl)
 	}
+	// Settings and its sub-screens float in a centered modal over the workspace (never inside a split tile).
+	if len(a.stack) > 0 {
+		a.settingsModal(c)
+	}
 	if a.picker != nil {
 		a.pickerSheet(c)
 	}
@@ -1019,15 +1015,41 @@ func (a *app) screen(c *ui.Context, top screen) {
 	}
 }
 
-// settingsOpen reports whether Settings shows: in the tile the keys act on.
-func (a *app) settingsOpen() bool {
-	return len(a.stack) > 0 && a.active != nil && slices.ContainsFunc(settingsKinds, func(s struct{ kind, name string }) bool { return s.kind == a.stack[0].kind })
+// settingsModal floats Settings (and any pushed sub-screen) in a centered dialog over the workspace.
+func (a *app) settingsModal(c *ui.Context) {
+	pal := p(c)
+	winW, winH := c.Size()
+	w := min(max(winW-48, 340), 900)
+	h := min(max(winH-64, 380), 660)
+	open := true
+	ui.DialogBase(c, &open, func(backdrop, panel ui.Element) {
+		backdrop.Background(ui.RGBA(0, 0, 0, map[bool]float32{true: 0.52, false: 0.30}[c.Theme().Dark])).
+			Transition(ui.ElementTransition{Enter: &ui.Motion{}, Exit: &ui.Motion{}, Animation: &showing})
+		panel.Width(w).Height(h).Radius(14).Background(pal.bg).Border(1, pal.rule).Clip().
+			Shadow(0, 20, 56, 0, ui.RGBA(0, 0, 0, map[bool]float32{true: 0.45, false: 0.22}[c.Theme().Dark])).
+			Transition(ui.ElementTransition{Enter: &ui.Motion{Scale: 0.96}, Exit: &ui.Motion{}, Animation: &showing})
+		if a.settingsOpen() {
+			a.settingsPage(c)
+		} else if top := a.top(); top.kind != "" {
+			ui.Column(c).Fill().Padding(8, 16, 12).Children(func() { a.screen(c, top) })
+		}
+	})
+	if !open {
+		a.stack = nil
+		a.fresh = nil
+		reread()
+	}
 }
 
-// settingsPage is Settings in its tile: the menu at left, the page shown beside it.
+// settingsOpen reports whether the floating Settings modal shows its tabbed layout.
+func (a *app) settingsOpen() bool {
+	return len(a.stack) > 0 && slices.ContainsFunc(settingsKinds, func(s struct{ kind, name string }) bool { return s.kind == a.stack[0].kind })
+}
+
+// settingsPage is Settings inside its floating modal: the sidebar at left, the page beside it.
 func (a *app) settingsPage(c *ui.Context) {
-	ui.Row(c).Grow(1).Basis(0).FillWidth().AlignItems(ui.Stretch).Children(func() {
+	ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
 		a.settingsMenu(c)
-		ui.Column(c).Grow(1).Basis(0).MaxWidth(840).PaddingX(16).Children(func() { a.screen(c, a.top()) })
+		ui.Column(c).Grow(1).Basis(0).FillHeight().Padding(8, 16, 12).Children(func() { a.screen(c, a.top()) })
 	})
 }

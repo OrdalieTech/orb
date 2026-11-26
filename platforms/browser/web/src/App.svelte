@@ -399,8 +399,6 @@
   </div>
 {:else if orb.screen === "invite" || orb.screen === "approve" || orb.screen === "elsewhere"}
   <PairScreen />
-{:else if orb.screen === "settings"}
-  <Settings />
 {:else}
   <div class="app-shell">
     <TopBar />
@@ -431,6 +429,9 @@
 {/if}
 
 <!-- Modals & Overlays -->
+{#if orb.screen === "settings"}
+  <Settings />
+{/if}
 {#if askingTab}
   <Interrupt tab={askingTab} ask={askingTab.ask} />
 {/if}

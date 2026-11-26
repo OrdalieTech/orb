@@ -241,10 +241,22 @@
   });
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div
+  class="settings-backdrop"
+  role="dialog"
+  aria-modal="true"
+  aria-label="Settings"
+  tabindex="-1"
+  onclick={e => { if (e.target === e.currentTarget) orb.screen = "app"; }}
+>
 <section class="settings">
   <nav class="sidebar" aria-label="Settings sections">
     <div class="side-head">
-      <h1>Settings</h1>
+      <div class="side-head-row">
+        <h1>Settings</h1>
+        <button type="button" class="close-x" aria-label="Close settings" onclick={() => (orb.screen = "app")}>×</button>
+      </div>
       <p class="meta">this tab and your devices</p>
     </div>
 
@@ -263,9 +275,9 @@
     <button
       type="button"
       class="side-item back-btn"
-      onclick={() => { orb.screen = "app"; orb.bumpFocus(); }}
+      onclick={() => (orb.screen = "app")}
     >
-      <span>‹ conversations</span>
+      <span>close</span>
       <kbd>Esc</kbd>
     </button>
   </nav>
@@ -794,14 +806,51 @@
     </div>
   </div>
 </section>
+</div>
 
 <style>
+  .settings-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 16;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: var(--backdrop);
+    animation: backdrop-in var(--t-fast) var(--ease);
+  }
   .settings {
-    flex: 1;
-    min-height: 0;
     display: flex;
-    width: 100%;
-    animation: view-in var(--t-med) var(--ease);
+    width: min(900px, calc(100vw - 32px));
+    height: min(660px, calc(100dvh - 48px));
+    min-height: 0;
+    border-radius: 12px;
+    border: 1px solid var(--rule);
+    background: var(--bg);
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+    animation: drop-in 130ms var(--ease);
+  }
+  .side-head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .close-x {
+    border: 0;
+    background: none;
+    color: var(--meta);
+    font-size: 18px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+  }
+  .close-x:hover {
+    color: var(--fg);
+    background: var(--hover);
   }
   .sidebar {
     display: flex;

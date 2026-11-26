@@ -530,11 +530,6 @@ func (a *app) layout(c *ui.Context, x *tile, corner, left bool) {
 	e.Children(func() {
 		t := o.tab(x.tab)
 		switch {
-		case x == a.active && a.settingsOpen():
-			a.titleBar(c, func() {})
-			if a.settingsOpen() { // a tab clicked in the bar just closed it
-				a.settingsPage(c)
-			}
 		case t != nil && x.shell:
 			a.terminal(c, t, x)
 		case t != nil:
