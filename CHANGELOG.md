@@ -5,6 +5,8 @@ shown by `/changelog`.
 
 ## [Unreleased]
 
+- Consolidation & resilience pass: bounded 2s fail-open timeout on `builtin:memory`'s `BeforeAgentStart` delta load so SQLite contention never stalls a prompt, added SQLite `busy_timeout` / `journal_size_limit` pragma tests, added 16 zero-dependency `node:test` unit tests for `platforms/browser/web` and wired `make web-test` + `make desktop-test` into `Makefile` and CI, decomposed `agent/modes/interactive_components.go` (2,888 → 858 lines) into focused `tool_view.go`, `reasoning_view.go`, and `status_indicators.go` files, and added canonical `BlocksMarkdown` / `TableMarkdown` / `SpansMarkdown` serialization with round-trip tests in `mitosis/view/markdown.go`.
+
 ## [0.28.0] - 2026-11-26
 
 Refined TUI, Web, Desktop, and Android interfaces with quiet tonal tool containment, copy-as-Markdown everywhere, Web recursive split tiling, interactive Android pinch-to-overview, and major Mitosis multiplayer & performance upgrades.

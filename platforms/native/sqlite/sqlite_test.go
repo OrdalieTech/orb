@@ -84,7 +84,13 @@ func TestDocumentsCommitRollbackAndConcurrentWriters(t *testing.T) {
 		t.Fatalf("namespace leaked: %q, %v", got, err)
 	}
 	for _, db := range []*DB{a, b} {
-		for pragma, want := range map[string]string{"journal_mode": "wal", "synchronous": "2", "foreign_keys": "1"} {
+		for pragma, want := range map[string]string{
+			"journal_mode":       "wal",
+			"synchronous":        "2",
+			"foreign_keys":       "1",
+			"busy_timeout":       "30000",
+			"journal_size_limit": "67108864",
+		} {
 			var got string
 			if err := db.QueryRowContext(ctx, "PRAGMA "+pragma).Scan(&got); err != nil || got != want {
 				t.Fatalf("%s = %q, %v", pragma, got, err)

@@ -15,7 +15,12 @@ check: build lint test portability
 include platforms/worker/worker.mk
 
 BROWSER_PORT ?= 8787
-.PHONY: browser-build browser-serve browser-dist browser-bench
+.PHONY: browser-build browser-serve browser-dist browser-bench web-test desktop-test
+web-test:
+	cd platforms/browser/web && (test -d node_modules || npm ci --no-audit --no-fund --loglevel=error) && npm test && npm run build
+
+desktop-test:
+	cd platforms/desktop && $(GO_ENV) go vet ./... && $(GO_ENV) CGO_ENABLED=1 go test -race ./...
 browser-build:
 	rm -rf .tools/browser && mkdir -p .tools/browser
 	# Build the static Svelte 5 web app (flat assets into .tools/browser).

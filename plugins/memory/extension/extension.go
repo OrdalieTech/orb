@@ -2,12 +2,18 @@ package extension
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/engine"
 	memorysdk "github.com/OrdalieTech/orb/plugins/memory"
 	agentmemory "github.com/OrdalieTech/orb/plugins/memory/agent"
 )
+
+// changesTimeout bounds the cross-session memory delta read during BeforeAgentStart
+// so a temporarily locked or checkpointing SQLite store cannot stall a user prompt.
+var changesTimeout = 2 * time.Second
 
 // Extension attaches memory to an agent using an explicit, instance-owned store.
 func Extension(store memorysdk.Store) extensions.Factory {
@@ -42,9 +48,19 @@ func Extension(store memorysdk.Store) extensions.Factory {
 			if prompt := runtime.SystemPrompt(event.SystemPrompt); prompt != event.SystemPrompt {
 				result.SystemPrompt = &prompt
 			}
-			changes, err := runtime.Changes(ctx)
+			changesCtx, cancel := context.WithTimeout(ctx, changesTimeout)
+			changes, err := runtime.Changes(changesCtx)
+			cancel()
 			if err != nil {
-				return nil, err
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(changesCtx.Err(), context.DeadlineExceeded) {
+					return nil, err
+				}
+				// Fail open on timeout (e.g., SQLite temporarily locked/checkpointing):
+				// skip injecting the delta for this turn rather than stalling or failing the prompt.
+				changes = ""
 			}
 			if changes != "" {
 				result.Message = &extensions.CustomMessage{CustomType: "orb.memory", Content: changes}

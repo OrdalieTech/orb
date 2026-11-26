@@ -30,11 +30,14 @@ jobs:
         with:
           node-version: 24
       - run: make check
-      - name: Build and vet the desktop app
-        working-directory: platforms/desktop
+      - name: Build, vet, and test the desktop app
         run: |
-          go vet ./...
+          make desktop-test
+          cd platforms/desktop
           for p in linux/amd64 darwin/arm64 windows/amd64; do GOOS=${p%/*} GOARCH=${p#*/} go build -o /dev/null .; done
+      - name: Test and build the web app
+        if: runner.os == 'Linux'
+        run: make web-test
       - name: Verify conformance fixtures
         if: runner.os == 'Linux'
         run: make fixtures-check

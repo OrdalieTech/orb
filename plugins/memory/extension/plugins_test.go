@@ -466,3 +466,66 @@ func toolResultText(request ai.Context, name string) string {
 	}
 	return ""
 }
+
+// blockingChangesStore succeeds on initial load, then blocks on subsequent Query
+// calls until the caller's context is done, simulating a locked/checkpointing SQLite DB.
+type blockingChangesStore struct {
+	plainMemoryStore
+	mu          sync.Mutex
+	blockReads  bool
+	queryCalled chan struct{}
+}
+
+func (store *blockingChangesStore) Query(ctx context.Context, filter memorysdk.Filter) ([]memorysdk.Item, error) {
+	store.mu.Lock()
+	block := store.blockReads
+	store.mu.Unlock()
+	if block {
+		select {
+		case store.queryCalled <- struct{}{}:
+		default:
+		}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return store.plainMemoryStore.Query(ctx, filter)
+}
+
+func TestBeforeAgentStartFailsOpenOnSlowStore(t *testing.T) {
+	prev := changesTimeout
+	changesTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { changesTimeout = prev })
+
+	store := &blockingChangesStore{
+		plainMemoryStore: plainMemoryStore{items: []memorysdk.Item{
+			{ID: "user", Time: time.Date(2026, 7, 23, 10, 0, 0, 0, time.UTC), Content: "User prefers terse replies.", Tags: []string{"user", userTargetTag}},
+		}},
+		queryCalled: make(chan struct{}, 1),
+	}
+	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
+	var seenPrompt string
+	provider.SetResponses([]faux.ResponseStep{
+		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
+			seenPrompt = *request.SystemPrompt
+			return faux.AssistantMessage("ok"), nil
+		}),
+	})
+	session := newMemoryPluginSession(t, provider, Extension(store), nil)
+
+	// Block subsequent reads (simulating SQLite lock/checkpoint during BeforeAgentStart).
+	store.mu.Lock()
+	store.blockReads = true
+	store.mu.Unlock()
+
+	start := time.Now()
+	err := session.PromptSync(context.Background(), "hello")
+	elapsed := time.Since(start)
+	require(t, err == nil, "PromptSync failed on slow memory store: %v", err)
+	require(t, elapsed < time.Second, "PromptSync blocked for %v, expected bounded timeout", elapsed)
+	select {
+	case <-store.queryCalled:
+	default:
+		t.Fatal("expected BeforeAgentStart to attempt memory delta read")
+	}
+	require(t, strings.Contains(seenPrompt, "User prefers terse replies."), "frozen profile missing from prompt:\n%s", seenPrompt)
+}

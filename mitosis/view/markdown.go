@@ -205,3 +205,173 @@ func spans(n ast.Node, src []byte) []Span {
 	walk(n, Span{})
 	return out
 }
+
+// BlocksMarkdown serializes parsed blocks back into clean Markdown.
+// Adjacent list items are joined with a single newline; other blocks are separated by a blank line.
+func BlocksMarkdown(blocks []Block) string {
+	type item struct {
+		kind string
+		text string
+	}
+	var out []item
+	for _, b := range blocks {
+		if txt := b.Markdown(); txt != "" {
+			out = append(out, item{b.Type, txt})
+		}
+	}
+	var buf strings.Builder
+	for i, it := range out {
+		if i > 0 {
+			if it.kind == "li" && out[i-1].kind == "li" {
+				buf.WriteString("\n")
+			} else {
+				buf.WriteString("\n\n")
+			}
+		}
+		buf.WriteString(it.text)
+	}
+	return buf.String()
+}
+
+// Markdown serializes a single block back into clean Markdown.
+func (b Block) Markdown() string {
+	switch b.Type {
+	case "p":
+		return SpansMarkdown(b.Spans)
+	case "h":
+		lvl := max(1, min(6, b.Level))
+		return strings.Repeat("#", lvl) + " " + SpansMarkdown(b.Spans)
+	case "li":
+		mark := b.Mark
+		if mark == "" || mark == "·" {
+			mark = "-"
+		}
+		return strings.Repeat("  ", max(0, b.Depth)) + mark + " " + SpansMarkdown(b.Spans)
+	case "quote":
+		return quotePrefix(BlocksMarkdown(b.Blocks))
+	case "code", "art":
+		lang := b.Lang
+		if b.Type == "art" && lang == "" {
+			lang = "text"
+		}
+		return fenceCode(lang, b.Text)
+	case "table":
+		return TableMarkdown(b.Rows)
+	case "rule":
+		return "---"
+	}
+	return ""
+}
+
+// SpansMarkdown serializes styled inline spans back into clean Markdown.
+func SpansMarkdown(ss []Span) string {
+	var out strings.Builder
+	for _, s := range ss {
+		out.WriteString(formatSpanMarkdown(s))
+	}
+	return out.String()
+}
+
+// TableMarkdown serializes table rows (header first) as a clean GFM Markdown table.
+func TableMarkdown(rows [][][]Span) string {
+	if len(rows) == 0 {
+		return ""
+	}
+	cols := 0
+	for _, r := range rows {
+		cols = max(cols, len(r))
+	}
+	if cols == 0 {
+		return ""
+	}
+	lines := make([]string, 0, len(rows)+1)
+	for ri, row := range rows {
+		vals := make([]string, cols)
+		for ci := range cols {
+			if ci < len(row) {
+				vals[ci] = escapeTableCell(SpansMarkdown(row[ci]))
+			}
+		}
+		lines = append(lines, "| "+strings.Join(vals, " | ")+" |")
+		if ri == 0 {
+			sep := make([]string, cols)
+			for ci := range sep {
+				sep[ci] = "---"
+			}
+			lines = append(lines, "| "+strings.Join(sep, " | ")+" |")
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatSpanMarkdown(s Span) string {
+	text := s.Text
+	if text == "" {
+		return ""
+	}
+	if s.Code {
+		ticks := "`"
+		for strings.Contains(text, ticks) {
+			ticks += "`"
+		}
+		if strings.HasPrefix(text, "`") || strings.HasSuffix(text, "`") {
+			text = " " + text + " "
+		}
+		inner := ticks + text + ticks
+		if s.Href != "" {
+			return "[" + inner + "](" + s.Href + ")"
+		}
+		return inner
+	}
+	// Keep surrounding whitespace outside emphasis delimiters so Markdown remains valid.
+	lead := len(text) - len(strings.TrimLeft(text, " \t\n"))
+	trail := len(text) - len(strings.TrimRight(text, " \t\n"))
+	if lead+trail >= len(text) {
+		return text
+	}
+	core := text[lead : len(text)-trail]
+	switch {
+	case s.Bold && s.Italic:
+		core = "***" + core + "***"
+	case s.Bold:
+		core = "**" + core + "**"
+	case s.Italic:
+		core = "*" + core + "*"
+	}
+	if s.Strike {
+		core = "~~" + core + "~~"
+	}
+	if s.Href != "" {
+		core = "[" + core + "](" + s.Href + ")"
+	}
+	return text[:lead] + core + text[len(text)-trail:]
+}
+
+func fenceCode(lang, text string) string {
+	fence := "```"
+	for strings.Contains(text, fence) {
+		fence += "`"
+	}
+	return fence + lang + "\n" + text + "\n" + fence
+}
+
+func escapeTableCell(s string) string {
+	s = strings.ReplaceAll(s, "|", `\|`)
+	s = strings.ReplaceAll(s, "\n", "<br>")
+	return strings.TrimSpace(s)
+}
+
+func quotePrefix(text string) string {
+	if text == "" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if line == "" {
+			lines[i] = ">"
+		} else {
+			lines[i] = "> " + line
+		}
+	}
+	return strings.Join(lines, "\n")
+}
