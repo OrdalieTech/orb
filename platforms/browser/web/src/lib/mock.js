@@ -97,13 +97,18 @@ export function generateHeavyRows(count = 2000, prefix = "r") {
 }
 
 export function createMockPeer({ emit, rowCount = 2000 }) {
+  const swarmMode = typeof location !== "undefined" && new URLSearchParams(location.search).get("swarm") === "1";
   const selfId = "orb:ed25519:TABBENCH00000000000000000000000000000000001";
   const macId = "orb:ed25519:MACBOOKP00000000000000000000000000000000002";
   const boxId = "orb:ed25519:SERVERBX00000000000000000000000000000000003";
+  const labId = "orb:ed25519:ORDLAB0300000000000000000000000000000000004";
+  const fedId = "orb:ed25519:FEDORAWK00000000000000000000000000000000005";
+  const phnId = "orb:ed25519:ONEPLS1500000000000000000000000000000000006";
+  const botId = "orb:ed25519:GROKVM0000000000000000000000000000000000007";
 
   const now = Date.now();
-  const heavyRows = generateHeavyRows(rowCount, "heavy");
-  const lightRows = generateHeavyRows(48, "light");
+  const heavyRows = generateHeavyRows(swarmMode ? 12 : rowCount, "heavy");
+  const lightRows = generateHeavyRows(swarmMode ? 12 : 48, "light");
 
   const machines = [
     {
@@ -246,6 +251,137 @@ export function createMockPeer({ emit, rowCount = 2000 }) {
     ["tab-live", lightRows],
   ]);
 
+  if (swarmMode) {
+    machines.length = 0;
+    tabs.length = 0;
+    entries.length = 0;
+    rowMap.clear();
+
+    const makeTab = (id, title, peer, where, cwd, opts = {}) => ({
+      id,
+      title,
+      peer,
+      where,
+      remote: peer !== selfId,
+      cwd,
+      busy: !!opts.busy,
+      acting: false,
+      online: true,
+      asleep: !!opts.asleep,
+      loaded: true,
+      earlier: false,
+      streaming: !!opts.busy,
+      status: opts.status || "",
+      model: opts.model || "google/gemini-4-neon",
+      thinking: "high",
+      levels: ["off", "low", "medium", "high"],
+      context: opts.context || 0.28,
+      cost: opts.cost || 0.24,
+      usage: null,
+      ask: opts.ask || null,
+      slots: [],
+      unread: opts.unread || 0,
+      commands: [],
+      models: ["google/gemini-4-neon", "anthropic/claude-opus-5-5"],
+    });
+
+    machines.push(
+      { id: selfId, name: "this tab", self: true, connected: true, version: "0.28.0", launch: false, hue: 0, running: [], folders: [] },
+      { id: macId, name: "MacBook Pro", self: false, connected: true, version: "0.28.0", launch: true, hue: 1, running: [
+        { instance: "s-mac-1", label: "orb · Mitosis protocol perf", busy: true, open: true },
+        { instance: "s-mac-2", label: "orb · TUI layout cleanup", busy: true, open: true },
+        { instance: "s-mac-3", label: "longboy · ingest worker", busy: false, open: true },
+        { instance: "s-mac-4", label: "ordalie-front · drawer polish", busy: false, open: false },
+      ], folders: [{ cwd: "/Users/baudouin/Documents/GitHub/orb", threads: 24, modified: now - 30000, live: true }] },
+      { id: labId, name: "ordalie-lab-3", self: false, connected: true, version: "0.28.0", launch: true, hue: 2, running: [
+        { instance: "s-lab-1", label: "ordalie-back · staging deploy", busy: true, open: true },
+        { instance: "s-lab-2", label: "ordalie-back · sqlc migration 042", busy: true, open: true },
+        { instance: "s-lab-3", label: "longboy · clickhouse rollup", busy: false, open: true },
+        { instance: "s-lab-4", label: "ops · cert renewal", busy: false, open: false },
+      ], folders: [{ cwd: "/home/ordalie/ordalie-back", threads: 18, modified: now - 40000, live: true }] },
+      { id: fedId, name: "fedora", self: false, connected: true, version: "0.28.0", launch: true, hue: 3, running: [
+        { instance: "s-fed-1", label: "orb · linux e2e matrix", busy: true, open: true },
+        { instance: "s-fed-2", label: "orb · fixtures-check", busy: false, open: true },
+        { instance: "s-fed-3", label: "bench · tailcat throughput", busy: true, open: false },
+      ], folders: [{ cwd: "/home/b-arbaretier/orb", threads: 12, modified: now - 90000, live: true }] },
+      { id: phnId, name: "OnePlus 15", self: false, connected: true, version: "0.28.0", launch: true, hue: 4, running: [
+        { instance: "s-phn-1", label: "notes · client brief Ledoux", busy: false, open: true },
+        { instance: "s-phn-2", label: "android · APK smoke test", busy: true, open: false },
+      ], folders: [{ cwd: "/data/data/tech.ordalie.orb/files/linux/files/home", threads: 5, modified: now - 180000, live: false }] },
+      { id: botId, name: "grok-bot-vm", self: false, connected: false, version: "0.27.0", launch: true, hue: 5, running: [], folders: [{ cwd: "/srv/bot", threads: 4, modified: now - 3600000, live: false }] },
+    );
+
+    const swarmTabs = [
+      makeTab("tab-coord", "Swarm coordinator", selfId, "this tab", "/workspace", { busy: true, context: 0.34 }),
+      makeTab("tab-mac-1", "Mitosis protocol perf", macId, "MacBook Pro", "/Users/baudouin/Documents/GitHub/orb", { busy: true, context: 0.72 }),
+      makeTab("tab-mac-2", "TUI layout cleanup", macId, "MacBook Pro", "/Users/baudouin/Documents/GitHub/orb", { busy: true, context: 0.51 }),
+      makeTab("tab-mac-3", "Longboy ingest worker", macId, "MacBook Pro", "/Users/baudouin/Documents/GitHub/longboy", { busy: false, context: 0.22 }),
+      makeTab("tab-lab-1", "Staging deploy", labId, "ordalie-lab-3", "/home/ordalie/ordalie-back", { busy: true, context: 0.84, ask: { id: "a1", owner: "permissions", title: "Run docker compose up on staging?", choices: ["approve", "deny"] } }),
+      makeTab("tab-lab-2", "SQLC migration 042", labId, "ordalie-lab-3", "/home/ordalie/ordalie-back", { busy: true, context: 0.61 }),
+      makeTab("tab-lab-3", "ClickHouse rollup", labId, "ordalie-lab-3", "/home/ordalie/longboy", { busy: false, context: 0.19 }),
+      makeTab("tab-fed-1", "Linux e2e matrix", fedId, "fedora", "/home/b-arbaretier/orb", { busy: true, context: 0.48 }),
+      makeTab("tab-fed-2", "Fixtures check", fedId, "fedora", "/home/b-arbaretier/orb", { busy: false, context: 0.15 }),
+      makeTab("tab-phn-1", "Client brief Ledoux", phnId, "OnePlus 15", "/data/data/tech.ordalie.orb/files/linux/files/home", { busy: false, context: 0.12 }),
+    ];
+    tabs.push(...swarmTabs);
+
+    const sessByTab = {
+      "tab-coord": "s-coord",
+      "tab-mac-1": "s-mac-1",
+      "tab-mac-2": "s-mac-2",
+      "tab-mac-3": "s-mac-3",
+      "tab-lab-1": "s-lab-1",
+      "tab-lab-2": "s-lab-2",
+      "tab-lab-3": "s-lab-3",
+      "tab-fed-1": "s-fed-1",
+      "tab-fed-2": "s-fed-2",
+      "tab-phn-1": "s-phn-1",
+    };
+    for (const t of swarmTabs) {
+      entries.push({
+        key: `t:${t.peer}|${sessByTab[t.id]}`,
+        title: t.title,
+        machine: t.peer,
+        cwd: t.cwd,
+        modified: now - 15000,
+        live: t.busy,
+        asks: !!t.ask,
+        open: true,
+        tab: t.id,
+        deletable: false,
+      });
+    }
+    // Add a couple of asleep/archived threads on offline & online peers
+    entries.push(
+      { key: `t:${botId}|s-bot-1`, title: "Nightly scraper run", machine: botId, cwd: "/srv/bot", modified: now - 7200000, live: false, asks: false, open: false, tab: "", deletable: false },
+      { key: `t:${botId}|s-bot-2`, title: "Digest summary", machine: botId, cwd: "/srv/bot", modified: now - 14400000, live: false, asks: false, open: false, tab: "", deletable: false },
+      { key: `t:${macId}|s-mac-old`, title: "Bench relay throughput", machine: macId, cwd: "/Users/baudouin/Documents/GitHub/orb", modified: now - 3600000, live: false, asks: false, open: false, tab: "", deletable: false },
+    );
+
+    // Populate peer-to-peer exchanges & local subagents so synapses and micro-spores light up!
+    rowMap.set("tab-coord", [
+      { k: "c1", kind: "peer", text: "Run benchmarks on protocol.Write", live: true, exchange: { dir: "out", scope: "peer", who: "MacBook Pro · Mitosis protocol perf", peer: macId, session: "s-mac-1", text: "Run benchmarks on protocol.Write", status: "sent", live: true } },
+      { k: "c2", kind: "peer", text: "Verify staging deploy once migration 042 lands", live: false, exchange: { dir: "out", scope: "peer", who: "ordalie-lab-3 · Staging deploy", peer: labId, session: "s-lab-1", text: "Verify staging deploy once migration 042 lands", status: "queued" } },
+      { k: "c3", kind: "peer", text: "Kick off Linux e2e matrix", live: false, exchange: { dir: "out", scope: "peer", who: "fedora · Linux e2e matrix", peer: fedId, session: "s-fed-1", text: "Kick off Linux e2e matrix", status: "sent" } },
+    ]);
+    rowMap.set("tab-mac-1", [
+      { k: "m1", kind: "peer", text: "Audit sync.Pool races in protocol.go", live: true, exchange: { dir: "out", scope: "subagent", who: "reviewer", text: "Audit sync.Pool races in protocol.go", status: "working", live: true } },
+      { k: "m2", kind: "peer", text: "Profile Validate() allocations", live: false, exchange: { dir: "out", scope: "subagent", who: "scout", text: "Profile Validate() allocations", status: "3 steps", reply: "0 B/op confirmed across 128B–256KiB." } },
+      { k: "m3", kind: "peer", text: "Run fixtures-check against new protocol.go", live: false, exchange: { dir: "out", scope: "peer", who: "fedora · Fixtures check", peer: fedId, session: "s-fed-2", text: "Run fixtures-check against new protocol.go", status: "sent" } },
+    ]);
+    rowMap.set("tab-lab-2", [
+      { k: "l1", kind: "peer", text: "Migration 042 verified, safe to deploy", live: true, exchange: { dir: "out", scope: "peer", who: "ordalie-lab-3 · Staging deploy", peer: labId, session: "s-lab-1", text: "Migration 042 verified, safe to deploy", status: "sent", live: true } },
+      { k: "l2", kind: "peer", text: "Check index lock duration", live: true, exchange: { dir: "out", scope: "subagent", who: "worker", text: "Check index lock duration", status: "working", live: true } },
+    ]);
+    rowMap.set("tab-fed-1", [
+      { k: "f1", kind: "peer", text: "Run F9 case-sensitive suite", live: true, exchange: { dir: "out", scope: "subagent", who: "runner-f9", text: "Run F9 case-sensitive suite", status: "working", live: true } },
+      { k: "f2", kind: "peer", text: "Run Wasm portability checks", live: false, exchange: { dir: "out", scope: "subagent", who: "runner-wasm", text: "Run Wasm portability checks", status: "done", reply: "All Wasm packages pass." } },
+    ]);
+    rowMap.set("tab-phn-1", [
+      { k: "p1", kind: "peer", text: "Summary pushed to MacBook memory", live: false, exchange: { dir: "out", scope: "peer", who: "MacBook Pro · Longboy ingest worker", peer: macId, session: "s-mac-3", text: "Summary pushed to MacBook memory", status: "sent" } },
+    ]);
+  }
+
   let streamTimer = null;
 
   function emitState() {
@@ -324,6 +460,16 @@ export function createMockPeer({ emit, rowCount = 2000 }) {
     },
   };
 
+  const closedTabs = new Map();
+  let termBuf = "\x1b[1;32morb@macbook\x1b[0m:\x1b[1;34m~/orb\x1b[0m$ ";
+  let termLine = "";
+  let termWaiters = [];
+  function pushTerm(chunk) {
+    termBuf += chunk;
+    const ws = termWaiters.splice(0);
+    for (const w of ws) w();
+  }
+
   return {
     async mitosisAdmin(method, paramsJSON) {
       const p = JSON.parse(paramsJSON || "{}");
@@ -338,17 +484,52 @@ export function createMockPeer({ emit, rowCount = 2000 }) {
         });
       }
       if (method === "remote") {
-        if (p.method === "host.terminal.open") return JSON.stringify({ terminal_id: "term-1" });
+        if (p.method === "host.terminal.open") {
+          termBuf = "\x1b[1;32morb@macbook\x1b[0m:\x1b[1;34m~/orb\x1b[0m$ ";
+          termLine = "";
+          return JSON.stringify({ terminal_id: "term-1" });
+        }
         if (p.method === "host.terminal.read") {
           const off = p.params?.offset || 0;
-          if (off === 0) {
-            const msg = "\x1b[1;32morb@macbook\x1b[0m:\x1b[1;34m~/orb\x1b[0m$ ";
-            return JSON.stringify({ data: btoa(msg), offset: msg.length, done: false });
+          if (off < termBuf.length) {
+            const chunk = termBuf.slice(off);
+            return JSON.stringify({ data: btoa(chunk), offset: termBuf.length, done: false });
           }
-          await new Promise(r => setTimeout(r, 800));
-          return JSON.stringify({ data: "", offset: off, done: false });
+          await new Promise(resolve => {
+            const timer = setTimeout(resolve, 600);
+            termWaiters.push(() => { clearTimeout(timer); resolve(); });
+          });
+          if (off < termBuf.length) {
+            const chunk = termBuf.slice(off);
+            return JSON.stringify({ data: btoa(chunk), offset: termBuf.length, done: false });
+          }
+          return JSON.stringify({ data: "", offset: termBuf.length, done: false });
         }
-        if (p.method === "host.terminal.write") return JSON.stringify({});
+        if (p.method === "host.terminal.write") {
+          const raw = p.params?.data ? atob(p.params.data) : "";
+          for (const ch of raw) {
+            if (ch === "\r" || ch === "\n") {
+              const cmd = termLine.trim();
+              termLine = "";
+              let reply = "\r\n";
+              if (cmd) reply += `(demo shell) ${cmd}\r\n`;
+              reply += "\x1b[1;32morb@macbook\x1b[0m:\x1b[1;34m~/orb\x1b[0m$ ";
+              pushTerm(reply);
+            } else if (ch === "\x7f" || ch === "\b") {
+              if (termLine.length > 0) {
+                termLine = termLine.slice(0, -1);
+                pushTerm("\b \b");
+              }
+            } else if (ch === "\x03") {
+              termLine = "";
+              pushTerm("^C\r\n\x1b[1;32morb@macbook\x1b[0m:\x1b[1;34m~/orb\x1b[0m$ ");
+            } else if (ch >= " ") {
+              termLine += ch;
+              pushTerm(ch);
+            }
+          }
+          return JSON.stringify({});
+        }
         if (p.method === "host.terminal.resize") return JSON.stringify({});
         if (p.method === "host.terminal.close") return JSON.stringify({});
       }
@@ -363,13 +544,59 @@ export function createMockPeer({ emit, rowCount = 2000 }) {
       if (m.do === "hello") {
         emitHome();
         emitState();
-        emitRows("tab-heavy", 0, heavyRows);
-        emitRows("tab-live", 0, lightRows);
+        for (const [id, list] of rowMap) {
+          emitRows(id, 0, list);
+        }
         return;
       }
       if (m.do === "open") {
-        const found = tabs.find(t => `t:${t.id}` === m.key);
-        reply({ tab: found ? found.id : "tab-heavy" });
+        let found = tabs.find(t => `t:${t.id}` === m.key);
+        if (!found) {
+          const entry = entries.find(e => e.key === m.key);
+          const id = entry?.tab || m.key.replace(/^t:/, "");
+          found = closedTabs.get(id);
+          if (found) {
+            closedTabs.delete(id);
+            tabs.push(found);
+            if (entry) entry.open = true;
+            emitState();
+            emitHome();
+          }
+        }
+        reply({ tab: found ? found.id : tabs[0]?.id || "" });
+        return;
+      }
+      if (m.do === "close") {
+        const idx = tabs.findIndex(t => t.id === m.tab);
+        if (idx >= 0) {
+          const [removed] = tabs.splice(idx, 1);
+          closedTabs.set(removed.id, removed);
+          const entry = entries.find(e => e.tab === removed.id);
+          if (entry) entry.open = false;
+          emitState();
+          emitHome();
+        }
+        return;
+      }
+      if (m.do === "move") {
+        const from = tabs.findIndex(t => t.id === m.tab);
+        const to = Math.max(0, Math.min(tabs.length - 1, Number(m.to) || 0));
+        if (from >= 0 && from !== to) {
+          const [moved] = tabs.splice(from, 1);
+          tabs.splice(to, 0, moved);
+          emitState();
+        }
+        return;
+      }
+      if (m.do === "rename") {
+        const target = tabs.find(t => t.id === m.tab);
+        if (target && m.name) {
+          target.title = m.name;
+          const entry = entries.find(e => e.tab === target.id);
+          if (entry) entry.title = m.name;
+          emitState();
+          emitHome();
+        }
         return;
       }
       if (m.do === "detail") {

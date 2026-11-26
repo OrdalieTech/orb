@@ -29,6 +29,49 @@ func (theme *Theme) Fade(lines []string, opacity float64) []string {
 	return faded
 }
 
+// BlendFG draws text with role's foreground blended toward pageBg at opacity.
+// Non-truecolor palettes fall back to the terminal's faint attribute.
+func BlendFG(role string, opacity float64, text string) string {
+	if text == "" {
+		return ""
+	}
+	palette := Current().Palette()
+	if palette != nil && palette.mode == TrueColor {
+		if page, pageOK := hexRGB(palette.export["pageBg"].Text); pageOK {
+			if color, colorOK := hexRGB(palette.resolved[role].Text); colorOK {
+				return "\x1b[" + color.toward(page, opacity, "38") + "m" + text + "\x1b[39m"
+			}
+		}
+	}
+	return "\x1b[2m" + text + "\x1b[22m"
+}
+
+// Rail draws the low-contrast hairline vertical guide used inside expanded
+// tool groups, diffs, and reasoning blocks.
+func Rail() string {
+	return BlendFG("toolTitle", 0.22, "│")
+}
+
+// Faint draws quiet secondary metadata (chevrons, line/token counts, hints).
+func Faint(text string) string {
+	return BlendFG("toolTitle", 0.36, text)
+}
+
+// PulseDot draws a subtle breathing status dot for active work. At elapsed == 0
+// it rests at peak visibility so non-animated renders stay deterministic.
+func PulseDot(role string, elapsed time.Duration) string {
+	palette := Current().Palette()
+	if palette == nil || palette.mode != TrueColor {
+		return FG(role, "•")
+	}
+	if _, ok := hexRGB(palette.export["pageBg"].Text); !ok {
+		return FG(role, "•")
+	}
+	phase := 0.5 * (1 + math.Cos(2*math.Pi*elapsed.Seconds()/1.6))
+	opacity := 0.32 + 0.68*phase
+	return BlendFG(role, opacity, "•")
+}
+
 // A shimmer's band sweeps shimmerSpeed cells a second, shimmerBand cells to
 // either side of its center at full strength fading to none, and starts and
 // ends shimmerPad cells off the text, so its first frame shows no band.

@@ -243,10 +243,11 @@ explicitly and in two separate kinds:
   events or the instance's pulse moves (a turn, a question, a rename), and opens a long
   conversation at its end (a snapshot with `tail`, which says where it starts); instances also take
   `session.compact` and `shell` (a `!command` in the conversation).
-- **Agents** are Orbs acting on their own. With agent access on (`/mitosis` → Advanced), an Orb's
-  agent lists, reads and messages its owner's other conversations, on this machine and connected
-  devices, with its owner's reach. A Worker's agent, which is not its owner, calls another Orb
-  through `mitosis_call` under its own grant.
+- **Agents** are Orbs acting on their own. When Mitosis is enabled, an Orb's agent lists, reads
+  and messages its owner's other conversations, on this machine and connected devices, with its
+  owner's reach (the `agents` tool hides itself when no other conversation is reachable). A
+  Worker's agent, which is not its owner, calls another Orb through `mitosis_call` under its own
+  grant.
 
 Transports adapt to the target. Native Orbs use Tailcat (WireGuard with NAT traversal) and local
 IPC. Browsers and Workers use the WebSocket transport, which keeps Mitosis's pinned TLS inside the

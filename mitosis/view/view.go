@@ -466,7 +466,7 @@ func (a *App) state() State {
 
 func lastYou(t *transcript) *item {
 	for i := len(t.items) - 1; i >= 0; i-- {
-		if t.items[i].kind == "y" {
+		if t.items[i].kind == "y" || t.items[i].kind == "p" {
 			return t.items[i]
 		}
 	}

@@ -10,25 +10,27 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/OrdalieTech/orb/agent/exchange"
 	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 )
 
 // Row is what an app draws of a conversation, one per line of it: what someone said (you), a
 // block of what Orb wrote (md), a run of what it did (run: thoughts and tool calls, folded into
-// one line past a single action), or a note.
+// one line past a single action), an inter-agent message (peer), or a note.
 type Row struct {
-	Key     string   `json:"k"`
-	Kind    string   `json:"kind"`
-	Text    string   `json:"text,omitempty"`
-	Via     string   `json:"via,omitempty"` // "mitosis": a peer sent it, not this app
-	Alarm   bool     `json:"alarm,omitempty"`
-	Images  []string `json:"images,omitempty"` // references an app fetches with "image"
-	Block   *Block   `json:"block,omitempty"`
-	Live    bool     `json:"live,omitempty"`
-	What    string   `json:"what,omitempty"` // a run in words: "2 thoughts · 3 commands"
-	Now     string   `json:"now,omitempty"`  // what a run is doing now
-	Failed  int      `json:"failed,omitempty"`
-	Actions []Action `json:"actions,omitempty"`
+	Key      string            `json:"k"`
+	Kind     string            `json:"kind"`
+	Text     string            `json:"text,omitempty"`
+	Via      string            `json:"via,omitempty"` // "mitosis": a peer sent it, not this app
+	Alarm    bool              `json:"alarm,omitempty"`
+	Images   []string          `json:"images,omitempty"` // references an app fetches with "image"
+	Block    *Block            `json:"block,omitempty"`
+	Exchange *exchange.Message `json:"exchange,omitempty"`
+	Live     bool              `json:"live,omitempty"`
+	What     string            `json:"what,omitempty"` // a run in words: "2 thoughts · 3 commands"
+	Now      string            `json:"now,omitempty"`  // what a run is doing now
+	Failed   int               `json:"failed,omitempty"`
+	Actions  []Action          `json:"actions,omitempty"`
 }
 
 // Action is one line of a run: a thought or a tool call, its target and what came of it. What
@@ -42,8 +44,8 @@ type Action struct {
 	Failed bool   `json:"failed,omitempty"`
 }
 
-// item is one thing a conversation holds: what someone said ('y'), what Orb said and thought
-// ('s'), a tool it ran ('t'), or a note ('n').
+// item is one thing a conversation holds: what someone said ('y'), an incoming peer message ('p'),
+// what Orb said and thought ('s'), a tool it ran ('t'), or a note ('n').
 type item struct {
 	key, kind                          string
 	text, via, thinking                string
@@ -51,6 +53,11 @@ type item struct {
 	live, failed, alarm                bool
 	verb, target, args, result, output string
 	diff                               string // an edit's, as the TUI draws it: "+12 line", "-12 line"
+	writeLines                         int
+	rawName                            string
+	rawArgs, rawDetails                map[string]any
+	rawResult                          string
+	exchange                           *exchange.Message
 	blocks                             []Block
 	parsed                             *face // the text and state blocks were parsed for
 	drawn                              face  // what its rows showed when last sent
@@ -157,6 +164,7 @@ type wireMessage struct {
 // edit's diff and a subagent's steps.
 type content struct {
 	text, thinking, diff, steps string
+	rawDetails                  map[string]any
 	images                      []string
 	calls                       []struct {
 		ID, Name  string
@@ -202,9 +210,16 @@ func result(raw json.RawMessage) content {
 }
 
 func (c *content) details(raw json.RawMessage) {
+	if len(raw) == 0 {
+		return
+	}
 	var d struct{ Diff, Steps string }
 	_ = json.Unmarshal(raw, &d)
 	c.diff, c.steps = d.Diff, d.Steps
+	var m map[string]any
+	if json.Unmarshal(raw, &m) == nil {
+		c.rawDetails = m
+	}
 }
 
 // apply folds one agent event in; false when it changes nothing drawn.
@@ -324,6 +339,12 @@ func (t *transcript) message(m wireMessage, final bool) {
 		if tag := tagged.FindStringSubmatch(strings.TrimLeft(text, " \t\n")); tag != nil {
 			// Machine-written turns (<task-notification>…) are events, not the person speaking.
 			t.note(strings.ReplaceAll(tag[1], "-", " ")+" · "+clip(spaces.ReplaceAllString(strings.TrimSpace(markup.ReplaceAllString(text, " ")), " "), 160), false)
+		} else if ex, ok := exchange.ParseIncoming(text); ok {
+			via := "mitosis"
+			if t.replaying {
+				via = ""
+			}
+			t.add(&item{kind: "p", text: ex.Text, via: via, images: c.images, exchange: &ex})
 		} else {
 			via := "mitosis"
 			if i := slices.Index(t.sent, text); i >= 0 || t.replaying {
@@ -385,13 +406,107 @@ func (t *transcript) message(m wireMessage, final bool) {
 }
 
 func (it *item) finish(c content, failed bool) {
-	it.result, it.output, it.diff, it.failed, it.live = summary(it.verb, c.text), kept(c.text), c.diff, failed, false
+	it.result, it.output, it.diff, it.failed, it.live = it.summarize(c, failed), kept(c.text), c.diff, failed, false
+	it.rawResult, it.rawDetails = c.text, c.rawDetails
 	if c.steps != "" {
 		it.output = kept(c.steps + "\n\n" + c.text)
 	}
 	if c.images != nil {
 		it.images = c.images
 	}
+}
+
+func (it *item) summarize(c content, failed bool) string {
+	lower := strings.ToLower(it.verb)
+	if failed && lower == "bash" {
+		if code := extractViewExitCode(c.text); code != "" {
+			return "exit " + code
+		}
+		return "failed"
+	}
+	if lower == "edit" && c.diff != "" {
+		added, removed := diffLineCounts(c.diff)
+		if added > 0 || removed > 0 {
+			return fmt.Sprintf("+%d -%d", added, removed)
+		}
+	}
+	if lower == "write" && it.writeLines > 0 && !failed {
+		return fmt.Sprintf("+%d ln", it.writeLines)
+	}
+	return summary(it.verb, c.text)
+}
+
+func diffLineCounts(diff string) (added, removed int) {
+	for line := range strings.SplitSeq(diff, "\n") {
+		if len(line) == 0 {
+			continue
+		}
+		switch line[0] {
+		case '+':
+			added++
+		case '-':
+			removed++
+		}
+	}
+	return added, removed
+}
+
+func extractViewExitCode(text string) string {
+	for _, prefix := range []string{"Command exited with code ", "exited with code ", "exit status "} {
+		if idx := strings.LastIndex(text, prefix); idx >= 0 {
+			rest := text[idx+len(prefix):]
+			end := 0
+			for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+				end++
+			}
+			if end > 0 {
+				return rest[:end]
+			}
+		}
+	}
+	return ""
+}
+
+func formatToolArgs(name string, args map[string]any) string {
+	if len(args) == 0 {
+		return ""
+	}
+	switch strings.ToLower(name) {
+	case "bash":
+		if cmd, _ := args["command"].(string); strings.TrimSpace(cmd) != "" {
+			return "$ " + strings.TrimSpace(cmd)
+		}
+	case "write":
+		if content, _ := args["content"].(string); content != "" {
+			return content
+		}
+	case "read":
+		// Path and line range are already shown on the header line.
+		return ""
+	}
+	// Shown as typed: a command's 2>&1 stays 2>&1, not \u003e\u0026.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(args)
+	return string(bytes.TrimSpace(buf.Bytes()))
+}
+
+func readRangeSuffix(args map[string]any) string {
+	offset, hasOffset := args["offset"].(float64)
+	limit, hasLimit := args["limit"].(float64)
+	if !hasOffset && !hasLimit {
+		return ""
+	}
+	start := 1
+	if hasOffset {
+		start = int(offset)
+	}
+	if hasLimit && int(limit) > 0 {
+		return fmt.Sprintf(":%d-%d", start, start+int(limit)-1)
+	}
+	return fmt.Sprintf(":%d", start)
 }
 
 func (t *transcript) tool(id, name string, raw json.RawMessage) {
@@ -436,21 +551,28 @@ func (t *transcript) tool(id, name string, raw json.RawMessage) {
 		pretty, _ := json.Marshal(args[keys[0]])
 		target = string(pretty)
 	}
-	// Shown as typed: a command's 2>&1 stays 2>&1, not \u003e\u0026.
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(args)
-	pretty := bytes.TrimSpace(buf.Bytes())
-	if len(args) == 0 {
-		pretty = nil
+	if strings.EqualFold(name, "read") && target != "" {
+		target += readRangeSuffix(args)
 	}
+	writeLines := 0
+	if strings.EqualFold(name, "write") {
+		if content, _ := args["content"].(string); content != "" {
+			writeLines = strings.Count(strings.TrimRight(content, "\n"), "\n") + 1
+		}
+	}
+	formattedArgs := formatToolArgs(name, args)
 	verb := cmp.Or(verbs[name], name)
-	if strings.HasPrefix(name, "mcp__") {
-		verb = name[strings.LastIndex(name, "__")+2:] // mcp__server__tool: the tool says what it did
+	if rest, ok := strings.CutPrefix(name, "mcp__"); ok {
+		if server, tool, found := strings.Cut(rest, "__"); found && server != "" && tool != "" {
+			verb = server + " · " + tool
+		} else {
+			verb = rest
+		}
 	}
-	it := &item{kind: "t", verb: verb, target: firstLine(target, 120), args: clip(string(pretty), 2000), live: !t.replaying}
+	it := &item{kind: "t", verb: verb, target: firstLine(target, 120), args: clip(formattedArgs, 2000), writeLines: writeLines, live: !t.replaying, rawName: name}
+	if strings.EqualFold(name, "agents") || strings.EqualFold(name, "subagent") {
+		it.rawArgs = args
+	}
 	t.tools[id] = t.keyed(it)
 	// A call lands right after the message that made it and its earlier calls, ahead of what a
 	// live stream added since.
@@ -481,6 +603,10 @@ func (t *transcript) rows() (rows []Row, last []int) {
 		case "y":
 			flush()
 			rows, last = append(rows, Row{Key: it.key, Kind: "you", Text: it.text, Via: it.via, Images: it.images}), append(last, i)
+		case "p":
+			flush()
+			ex := *it.exchange
+			rows, last = append(rows, Row{Key: it.key, Kind: "peer", Text: ex.Text, Via: it.via, Images: it.images, Exchange: &ex}), append(last, i)
 		case "s":
 			if strings.TrimSpace(it.thinking) != "" {
 				run, end = append(run, it), i
@@ -492,7 +618,19 @@ func (t *transcript) rows() (rows []Row, last []int) {
 				}
 			}
 		case "t":
-			run, end = append(run, it), i
+			if ex, ok := exchange.FromTool(it.rawName, it.rawArgs, it.rawResult, it.rawDetails, it.live, it.failed); ok {
+				flush()
+				rows, last = append(rows, Row{Key: it.key, Kind: "peer", Text: ex.Text, Live: ex.Live, Images: it.images, Exchange: &ex}), append(last, i)
+				continue
+			}
+			lower := strings.ToLower(it.verb)
+			if lower == "edit" || lower == "write" {
+				// File mutations stay surfaced outside folded exploration runs, matching the TUI.
+				flush()
+				rows, last = append(rows, runRow([]*item{it})), append(last, i)
+			} else {
+				run, end = append(run, it), i
+			}
 		case "n":
 			flush()
 			rows, last = append(rows, Row{Key: it.key, Kind: "note", Text: it.text, Alarm: it.alarm}), append(last, i)
@@ -643,10 +781,12 @@ func summary(verb, out string) string {
 		return "done"
 	case verb == "tasks":
 		return fmt.Sprintf("%d / %d done", strings.Count(out, "[x]"), len(lines))
+	case verb == "bash" && len(lines) > 1:
+		return fmt.Sprintf("%d ln", len(lines))
 	case verb == "bash" || len(lines) == 1:
 		return clip(lines[len(lines)-1], 120)
 	}
-	return fmt.Sprintf("%d lines", len(lines))
+	return fmt.Sprintf("%d ln", len(lines))
 }
 
 func tokensBefore(n int) string {

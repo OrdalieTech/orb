@@ -166,19 +166,34 @@ type Entry struct {
 	Deletable bool   `json:"deletable"`
 }
 
+type Exchange struct {
+	Dir     string `json:"dir"`
+	Scope   string `json:"scope"`
+	Who     string `json:"who"`
+	Peer    string `json:"peer"`
+	Session string `json:"session"`
+	Text    string `json:"text"`
+	Status  string `json:"status"`
+	Reply   string `json:"reply"`
+	Steps   string `json:"steps"`
+	Live    bool   `json:"live"`
+	Failed  bool   `json:"failed"`
+}
+
 type Row struct {
-	Key     string   `json:"k"`
-	Kind    string   `json:"kind"` // you · md · run · note
-	Text    string   `json:"text"`
-	Via     string   `json:"via"`
-	Alarm   bool     `json:"alarm"`
-	Images  []string `json:"images"`
-	Block   *Block   `json:"block"`
-	Live    bool     `json:"live"`
-	What    string   `json:"what"`
-	Now     string   `json:"now"`
-	Failed  int      `json:"failed"`
-	Actions []Action `json:"actions"`
+	Key      string    `json:"k"`
+	Kind     string    `json:"kind"` // you · md · run · peer · note
+	Text     string    `json:"text"`
+	Via      string    `json:"via"`
+	Alarm    bool      `json:"alarm"`
+	Images   []string  `json:"images"`
+	Block    *Block    `json:"block"`
+	Exchange *Exchange `json:"exchange"`
+	Live     bool      `json:"live"`
+	What     string    `json:"what"`
+	Now      string    `json:"now"`
+	Failed   int       `json:"failed"`
+	Actions  []Action  `json:"actions"`
 }
 
 type Action struct {

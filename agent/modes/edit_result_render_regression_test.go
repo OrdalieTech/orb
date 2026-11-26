@@ -96,8 +96,8 @@ func TestEditToolSuccessRenderSurvivesFileMutation(t *testing.T) {
 		editRegressionResultDetails(t),
 		false,
 	)
-	if collapsed := editRegressionRender(component); strings.Contains(collapsed, "Could not find the exact text") || !strings.Contains(collapsed, "click to expand") {
-		t.Fatalf("successful edit did not collapse its recorded diff: %s", collapsed)
+	if collapsed := editRegressionRender(component); strings.Contains(collapsed, "Could not find the exact text") || !strings.Contains(collapsed, "+1 -1") || strings.Contains(collapsed, "This is a test file.") {
+		t.Fatalf("successful edit did not collapse its recorded diff to a compact summary row: %s", collapsed)
 	}
 
 	// Any later re-composition (expand toggle, invalidate) must not

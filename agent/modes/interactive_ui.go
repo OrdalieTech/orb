@@ -185,18 +185,29 @@ func (ui *InteractiveUI) Confirm(ctx context.Context, title, message string, opt
 }
 
 func (ui *InteractiveUI) Input(ctx context.Context, title string, placeholder *string, opts *extensions.DialogOptions) (string, bool, error) {
+	placeholderValue := ""
+	if placeholder != nil {
+		placeholderValue = *placeholder
+	}
+	return ui.inputDialog(ctx, title, placeholderValue, "", opts)
+}
+
+func (ui *InteractiveUI) inputWithInitialValue(ctx context.Context, title, initialValue string, opts *extensions.DialogOptions) (string, bool, error) {
+	return ui.inputDialog(ctx, title, "", initialValue, opts)
+}
+
+func (ui *InteractiveUI) inputDialog(ctx context.Context, title, placeholder, initialValue string, opts *extensions.DialogOptions) (string, bool, error) {
 	signal := dialogSignal(opts)
 	if signal.Err() != nil {
 		return "", false, nil
 	}
 	result, submit, cancel := dialogResolvers()
-	placeholderValue := ""
-	if placeholder != nil {
-		placeholderValue = *placeholder
-	}
-	dialog := NewExtensionInputComponent(title, placeholderValue, submit, cancel,
+	dialog := NewExtensionInputComponent(title, placeholder, submit, cancel,
 		&extensionDialogOptions{ui: ui.mode.ui, timeout: dialogTimeout(opts)},
 	)
+	if initialValue != "" {
+		dialog.SetValue(initialValue)
+	}
 	closeDialog := ui.showDialog(dialog, dialog.cancel, title)
 	defer func() {
 		dialog.Dispose()

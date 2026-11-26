@@ -8,14 +8,20 @@ import (
 )
 
 func TestStrictJSON(t *testing.T) {
-	for _, s := range []string{`{"a":1,"a":2}`, `{"a":{"b":1,"b":2}}`, `[1]`, "{\"a\":\"\xff\"}", `{"a":"\ud800"}`, `{"a":1e999}`, `{} {}`, `{"a":` + strings.Repeat(`[`, 65) + `0` + strings.Repeat(`]`, 65) + `}`} {
+	for _, s := range []string{`{"a":1,"a":2}`, `{"\u0061":1,"a":2}`, `{"a":{"b":1,"b":2}}`, `[1]`, "{\"a\":\"\xff\"}", `{"a":"\ud800"}`, `{"a":1e999}`, `{} {}`, `{"a":` + strings.Repeat(`[`, 65) + `0` + strings.Repeat(`]`, 65) + `}`} {
 		if _, err := Canonical([]byte(s)); err == nil {
-			t.Errorf("accepted %q", s)
+			t.Errorf("Canonical accepted %q", s)
+		}
+		if err := Validate([]byte(s)); err == nil {
+			t.Errorf("Validate accepted %q", s)
 		}
 	}
 	for _, s := range []string{`{}`, `{"a":"😀"}`, `{"a":"\ud83d\ude00"}`, `{"a":[1,true,null]}`} {
 		if _, err := Canonical([]byte(s)); err != nil {
-			t.Errorf("rejected %q: %v", s, err)
+			t.Errorf("Canonical rejected %q: %v", s, err)
+		}
+		if err := Validate([]byte(s)); err != nil {
+			t.Errorf("Validate rejected %q: %v", s, err)
 		}
 	}
 }

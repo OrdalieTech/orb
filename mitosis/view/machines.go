@@ -527,6 +527,7 @@ func (a *App) open(key string) (any, error) {
 		for _, i := range m.instances {
 			if i.session == session {
 				t.Title = i.title
+				t.Busy = i.busy
 			}
 		}
 		for _, th := range m.threads {

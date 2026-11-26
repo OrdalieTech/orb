@@ -92,7 +92,7 @@
     {:else if actions.length > 1}
       {@const groupOpen = !!expandedMap.get(row.k)}
       <div class="run-group">
-        <button class="run-head" type="button" onclick={() => onToggle(row.k)} aria-expanded={groupOpen}>
+        <button class="run-head" type="button" data-no-copy onclick={() => onToggle(row.k)} aria-expanded={groupOpen}>
           <span class="run-glyph">
             {#if row.live}
               <i class="led round live" style="--hue: var(--rupture)"></i>
@@ -100,7 +100,7 @@
               <span>{groupOpen ? "⌄" : "›"}</span>
             {/if}
           </span>
-          <b class:live={row.live}>{row.live ? "working" : "worked"}</b>
+          <b class:live={row.live} class:open={groupOpen}>{row.live ? "working" : "worked"}</b>
           <span class="run-what">{[row.what, !groupOpen && row.now].filter(Boolean).join(" · ")}</span>
           {#if row.failed > 0}
             <em class="failed">{row.failed} failed</em>
@@ -129,6 +129,65 @@
       </div>
     {/if}
   </div>
+{:else if row.kind === "peer" && row.exchange}
+  {@const ex = row.exchange}
+  {@const isPeer = ex.scope === "peer"}
+  {@const peerHue = isPeer && ex.peer ? orb.getMachine(ex.peer)?.hue : null}
+  {@const canJump = isPeer && !!(ex.session || ex.peer)}
+  {@const subOpen = !!expandedMap.get(row.k)}
+  {@const replyPreview = ex.reply ? ex.reply.split("\n").map(l => l.trim()).find(Boolean) || "" : ""}
+  <div
+    class="row-peer"
+    class:is-peer={isPeer}
+    class:is-failed={ex.failed}
+  >
+    <div class="peer-head">
+      {#if isPeer}
+        <i class="led round" class:live={ex.live} style={peerHue !== null && peerHue !== undefined ? `--hue: var(--hue${peerHue})` : ""}></i>
+      {/if}
+      <span class="peer-arrow" aria-hidden="true">{ex.dir === "in" ? "←" : "→"}</span>
+      {#if canJump}
+        <button
+          type="button"
+          class="peer-who jump"
+          title="Open conversation"
+          onclick={() => orb.openExchange(ex)}
+        >{ex.who}</button>
+      {:else}
+        <span class="peer-who">{ex.who}</span>
+      {/if}
+      {#if ex.status}
+        <span class="peer-status" class:live={ex.live} class:failed={ex.failed}>
+          {#if ex.live && !isPeer}<i class="led round live"></i>{/if}
+          {ex.status}
+        </span>
+      {/if}
+    </div>
+    {#if ex.text}
+      <p class="peer-body">{ex.text}</p>
+    {/if}
+    {#if ex.scope === "subagent" && !ex.live && (ex.reply || ex.steps)}
+      <button
+        type="button"
+        class="peer-reply-toggle"
+        aria-expanded={subOpen}
+        onclick={() => onToggle(row.k)}
+      >
+        <span class="peer-reply-arrow">←</span>
+        <span class="peer-reply-preview">{subOpen ? "hide reply" : replyPreview || "view details"}</span>
+      </button>
+      {#if subOpen}
+        <div class="peer-reply-tray">
+          {#if ex.steps}
+            <pre class="peer-steps">{ex.steps}</pre>
+          {/if}
+          {#if ex.reply}
+            <p class="peer-reply-full">{ex.reply}</p>
+          {/if}
+        </div>
+      {/if}
+    {/if}
+  </div>
 {/if}
 
 <style>
@@ -147,12 +206,10 @@
   .you-bubble {
     margin: 0;
     width: 100%;
-    padding: 8px 12px;
+    padding: 9px 13px;
     white-space: pre-wrap;
-    border-radius: 0;
+    border-radius: var(--radius-md);
     background: var(--recessed);
-    border-top: 1px solid var(--rule);
-    border-bottom: 1px solid var(--rule);
     line-height: 1.5;
   }
   .you-bubble::before {
@@ -183,6 +240,122 @@
   }
   .row-said {
     padding: 4px 0;
+  }
+  .row-peer {
+    margin: 6px 0;
+    padding: 7px 10px;
+    background: var(--recessed);
+    border: 1px solid var(--rule-soft);
+    border-radius: var(--radius-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .row-peer.is-failed {
+    border-color: color-mix(in srgb, var(--rupture) 40%, var(--rule-soft));
+  }
+  .peer-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+  .peer-arrow {
+    color: var(--meta);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .peer-who {
+    font-weight: 700;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .peer-who.jump {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: left;
+  }
+  .peer-who.jump:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .peer-status {
+    margin-left: auto;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--meta);
+  }
+  .peer-status.live {
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .peer-status.failed {
+    color: var(--rupture);
+    font-weight: 600;
+  }
+  .peer-body {
+    margin: 0;
+    font-size: var(--body);
+    line-height: 1.45;
+    white-space: pre-wrap;
+    color: var(--fg);
+  }
+  .peer-reply-toggle {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 2px 0 0;
+    border: 0;
+    background: none;
+    font-size: 12px;
+    color: var(--meta);
+    cursor: pointer;
+    text-align: left;
+    min-width: 0;
+  }
+  .peer-reply-toggle:hover {
+    color: var(--fg);
+  }
+  .peer-reply-arrow {
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+  .peer-reply-preview {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .peer-reply-tray {
+    margin-top: 4px;
+    padding: 8px 10px;
+    background: var(--recessed);
+    max-height: 260px;
+    overflow: auto;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .peer-steps {
+    margin: 0 0 6px;
+    padding: 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--meta);
+    white-space: pre-wrap;
+  }
+  .peer-reply-full {
+    margin: 0;
+    white-space: pre-wrap;
+    color: var(--fg);
   }
   .row-note {
     display: block;
@@ -220,6 +393,7 @@
     font-family: var(--font-mono);
     font-size: 12.5px;
     color: var(--mute);
+    user-select: none;
     transition: background-color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
@@ -235,27 +409,28 @@
   .run-head b {
     flex-shrink: 0;
     min-width: 64px;
-    font-weight: 600;
-    color: var(--fg);
+    font-weight: 500;
+    color: var(--mute);
   }
-  .run-head b.live { color: var(--rupture); }
+  .run-head b.live, .run-head b.open { color: var(--fg); }
   .run-what {
     flex: 1;
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    color: var(--meta);
   }
   .run-head em.failed {
     flex-shrink: 0;
     font-style: normal;
     font-size: 11.5px;
-    font-weight: 600;
+    font-weight: 500;
     color: var(--rupture);
   }
   .run-body {
-    margin-left: 16px;
-    padding-left: 10px;
+    margin-left: 7px;
+    padding-left: 11px;
     border-left: 1px solid var(--rule);
     animation: drop-in 140ms var(--ease);
   }

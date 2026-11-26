@@ -216,9 +216,27 @@ fun App(rt: Runtime, cites: SnapshotStateList<String>, onCite: () -> Unit, share
                 Column(Modifier.fillMaxSize().then(if (s is Screen.Home) Modifier else Modifier.statusBarsPadding().navigationBarsPadding()).imePadding()) {
                     when (s) {
                         // The overview and the deck trade places as a zoom: a card grows into its page, a page shrinks into its card.
-                        Screen.Home -> SharedTransitionLayout {
-                            AnimatedContent(overview, transitionSpec = { fadeIn(tween(220, 60)) togetherWith fadeOut(tween(160)) }, label = "overview") { on ->
-                                CompositionLocalProvider(LocalMorph provides Morph(this@SharedTransitionLayout, this)) { if (on) Overview(ctx) { overview = false } else kept.SaveableStateProvider("deck") { Deck(ctx) } }
+                        Screen.Home -> PinchOverviewHost(
+                            overview = overview,
+                            enabled = rt.view.state.tabs.isNotEmpty(),
+                            onOverviewChange = { overview = it },
+                        ) {
+                            SharedTransitionLayout {
+                                AnimatedContent(
+                                    overview,
+                                    transitionSpec = {
+                                        if (targetState) {
+                                            (fadeIn(tween(200)) + scaleIn(spring(dampingRatio = 0.88f, stiffness = 420f), initialScale = 1.06f)) togetherWith
+                                                (fadeOut(tween(150)) + scaleOut(tween(180), targetScale = 0.92f))
+                                        } else {
+                                            (fadeIn(tween(180)) + scaleIn(spring(dampingRatio = 0.88f, stiffness = 420f), initialScale = 0.92f)) togetherWith
+                                                (fadeOut(tween(140)) + scaleOut(tween(180), targetScale = 1.05f))
+                                        }
+                                    },
+                                    label = "overview",
+                                ) { on ->
+                                    CompositionLocalProvider(LocalMorph provides Morph(this@SharedTransitionLayout, this)) { if (on) Overview(ctx) { overview = false } else kept.SaveableStateProvider("deck") { Deck(ctx) } }
+                                }
                             }
                         }
                         Screen.Mitosis -> MitosisScreen(ctx)

@@ -277,7 +277,11 @@ func (b *Mitosis) streamRead(ctx context.Context, caller string, params json.Raw
 		if len(s.buf) > 0 {
 			n := min(len(s.buf), streamChunk)
 			data := slices.Clone(s.buf[:n])
-			s.buf = s.buf[n:]
+			if n == len(s.buf) {
+				s.buf = s.buf[:0]
+			} else {
+				s.buf = s.buf[n:]
+			}
 			eof := s.eof && len(s.buf) == 0
 			s.signal()
 			s.mu.Unlock()

@@ -1,14 +1,16 @@
 <script>
   import MarkdownBlocks from "./MarkdownBlocks.svelte";
+  import { tableToMarkdown } from "../lib/markdownCopy.js";
 
   let { blocks = [] } = $props();
-  let copiedIdx = $state(-1);
+  let copiedKey = $state("");
 
-  function copyCode(text, idx) {
+  function copyText(text, key) {
+    if (!text) return;
     navigator.clipboard?.writeText(text).then(() => {
-      copiedIdx = idx;
+      copiedKey = key;
       setTimeout(() => {
-        if (copiedIdx === idx) copiedIdx = -1;
+        if (copiedKey === key) copiedKey = "";
       }, 1200);
     });
   }
@@ -18,21 +20,21 @@
   {@const indent = b.depth ? `margin-left:${b.depth * 2}ch` : undefined}
   {#if b.type === "h"}
     {#if b.level <= 2}
-      <h3 class="md-h3" style={indent}>
+      <h3 class="md-h3" data-md-level={b.level || 2} style={indent}>
         {#each b.spans || [] as s}
           {@render spanNode(s)}
         {/each}
       </h3>
     {:else}
-      <h4 class="md-h4" style={indent}>
+      <h4 class="md-h4" data-md-level={b.level || 3} style={indent}>
         {#each b.spans || [] as s}
           {@render spanNode(s)}
         {/each}
       </h4>
     {/if}
   {:else if b.type === "li"}
-    <div class="md-li" style={indent}>
-      <span class="md-mark">{b.mark}</span>
+    <div class="md-li" data-md-mark={b.mark || "·"} data-md-depth={b.depth || 0} style={indent}>
+      <span class="md-mark" data-no-copy>{b.mark}</span>
       <span class="md-li-body">
         {#each b.spans || [] as s}
           {@render spanNode(s)}
@@ -45,39 +47,51 @@
     </blockquote>
   {:else if b.type === "code" || b.type === "art"}
     <div class="md-pre-wrap" style={indent}>
-      <div class="md-pre-head">
+      <div class="md-pre-head" data-no-copy>
         <span class="md-lang">{b.lang || (b.type === "art" ? "diagram" : "code")}</span>
-        <button class="md-copy" type="button" onclick={() => copyCode(b.text || "", i)}>
-          {copiedIdx === i ? "copied" : "copy"}
+        <button class="md-copy" type="button" onclick={() => copyText(b.text || "", `code:${i}`)}>
+          {copiedKey === `code:${i}` ? "copied" : "copy"}
         </button>
       </div>
-      <pre class="md-pre" class:art={b.type === "art"}>{b.text}</pre>
+      <pre class="md-pre" class:art={b.type === "art"} data-md-lang={b.lang || (b.type === "art" ? "text" : "")}>{b.text}</pre>
     </div>
   {:else if b.type === "table"}
-    <div class="md-table-wrap scroll" style={indent}>
-      <table class="md-table">
-        <tbody>
-          {#each b.rows || [] as row, ri}
-            <tr>
-              {#each row || [] as cell}
-                {#if ri === 0}
-                  <th>
-                    {#each cell || [] as s}
-                      {@render spanNode(s)}
-                    {/each}
-                  </th>
-                {:else}
-                  <td>
-                    {#each cell || [] as s}
-                      {@render spanNode(s)}
-                    {/each}
-                  </td>
-                {/if}
-              {/each}
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+    {@const tRows = b.rows || []}
+    <div class="md-table-box" style={indent}>
+      <button
+        class="md-table-copy"
+        type="button"
+        data-no-copy
+        onclick={() => copyText(tableToMarkdown(tRows), `table:${i}`)}
+        title="Copy table as Markdown"
+      >
+        {copiedKey === `table:${i}` ? "copied" : "copy"}
+      </button>
+      <div class="md-table-wrap scroll">
+        <table class="md-table">
+          <tbody>
+            {#each tRows as row, ri}
+              <tr>
+                {#each row || [] as cell}
+                  {#if ri === 0}
+                    <th>
+                      {#each cell || [] as s}
+                        {@render spanNode(s)}
+                      {/each}
+                    </th>
+                  {:else}
+                    <td>
+                      {#each cell || [] as s}
+                        {@render spanNode(s)}
+                      {/each}
+                    </td>
+                  {/if}
+                {/each}
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     </div>
   {:else if b.type === "rule"}
     <hr class="md-hr" />
@@ -120,59 +134,56 @@
   .md-h3 { margin: 14px 0 5px; font-size: 17px; font-weight: 600; letter-spacing: -0.025em; }
   .md-h4 { margin: 10px 0 4px; font-size: 15px; font-weight: 600; letter-spacing: -0.015em; }
   .md-li { display: flex; gap: 8px; margin: 2px 0; line-height: 1.58; }
-  .md-mark { flex-shrink: 0; min-width: 14px; font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--meta); }
+  .md-mark { flex-shrink: 0; min-width: 14px; font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--meta); user-select: none; }
   .md-li-body { flex: 1; min-width: 0; white-space: pre-wrap; }
   .md-quote {
     margin: 8px 0;
-    padding: 4px 0 4px 14px;
+    padding: 2px 0 2px 14px;
     color: var(--mute);
-    border-left: 2px solid var(--rupture);
+    border-left: 2px solid var(--rule);
   }
   .md-code {
-    padding: 0 4px;
-    font-size: 0.92em;
+    padding: 1px 5px;
+    font-size: 0.91em;
     border-radius: var(--radius-sm);
     background: var(--recessed);
-    border: 1px solid var(--rule);
   }
   .md-pre-wrap {
     margin: 10px 0;
-    border: 1px solid var(--rule);
     border-radius: var(--radius-md);
-    background: var(--raised);
+    background: var(--recessed);
     overflow: hidden;
   }
   .md-pre-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 4px 10px;
-    background: var(--recessed);
-    border-bottom: 1px solid var(--rule);
-    color: var(--mute);
+    padding: 6px 12px 2px;
+    color: var(--meta);
+    user-select: none;
   }
   .md-lang {
-    font-size: 11.5px;
-    font-weight: 700;
-    color: var(--mute);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--meta);
   }
   .md-copy {
     cursor: pointer;
-    padding: 1px 8px;
+    padding: 1px 6px;
     font-size: 11px;
-    font-weight: 600;
-    color: var(--mute);
+    font-weight: 500;
+    color: var(--meta);
     background: transparent;
-    border: 1px solid var(--rule);
+    border: 0;
     border-radius: var(--radius-sm);
-    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
-    .md-copy:hover { background: var(--fg); border-color: var(--fg); color: var(--bg); }
+    .md-copy:hover { background: var(--hover); color: var(--fg); }
   }
   .md-pre {
     margin: 0;
-    padding: 10px 12px;
+    padding: 6px 12px 11px;
     overflow-x: auto;
     font-size: 12.5px;
     line-height: 1.5;
@@ -183,12 +194,37 @@
     white-space: pre;
     line-height: 1.15;
   }
+  .md-table-box {
+    position: relative;
+    margin: 12px 0;
+  }
+  .md-table-copy {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 2;
+    cursor: pointer;
+    padding: 2px 7px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--meta);
+    background: var(--bg);
+    border: 0;
+    border-radius: var(--radius-sm);
+    opacity: 0;
+    user-select: none;
+    transition: opacity var(--t-fast) var(--ease), color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+  }
+  .md-table-box:hover .md-table-copy,
+  .md-table-copy:focus-visible {
+    opacity: 1;
+  }
+  .md-table-copy:hover {
+    color: var(--fg);
+    background: var(--hover);
+  }
   .md-table-wrap {
-    margin: 10px 0;
     overflow-x: auto;
-    border: 1px solid var(--rule);
-    border-radius: var(--radius-md);
-    background: var(--raised);
   }
   .md-table {
     width: 100%;
@@ -196,19 +232,18 @@
     font-size: var(--small);
   }
   .md-table th, .md-table td {
-    padding: 7px 11px;
+    padding: 7px 12px 7px 0;
     text-align: left;
     vertical-align: top;
-    border-bottom: 1px solid var(--rule);
-    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule-soft);
   }
-  .md-table th:last-child, .md-table td:last-child { border-right: 0; }
+  .md-table th:last-child, .md-table td:last-child { padding-right: 0; }
   .md-table tr:last-child td { border-bottom: 0; }
   .md-table th {
-    font-weight: 700;
-    background: var(--recessed);
+    font-weight: 600;
     font-size: var(--small);
-    color: var(--fg);
+    color: var(--mute);
+    border-bottom: 1px solid var(--rule);
   }
   .md-link {
     color: inherit;

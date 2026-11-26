@@ -71,6 +71,7 @@ type Attachment struct {
 	ledger                   *mitosis.Ledger
 	generation               string
 	closed                   bool
+	closedCh                 chan struct{}
 	inflight                 chan struct{}
 	stopSessions, stopEvents func()
 	stream                   *mitosis.Stream
@@ -103,7 +104,7 @@ func Attach(lifetime context.Context, host Host, options Options) (*Attachment, 
 	if err != nil {
 		return nil, err
 	}
-	a := &Attachment{host: host, control: control, options: options, lifetime: lifetime, ledger: ledger, inflight: make(chan struct{}, 64), snapshots: map[string]frozen{}, pictures: map[string]picture{}}
+	a := &Attachment{host: host, control: control, options: options, lifetime: lifetime, ledger: ledger, closedCh: make(chan struct{}), inflight: make(chan struct{}, 64), snapshots: map[string]frozen{}, pictures: map[string]picture{}}
 	a.stopSessions = host.ObserveSessions(a.bind)
 	return a, nil
 }
@@ -134,6 +135,9 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 			a.partial = a.swapImages(a.partial)
 		}
 		for _, m := range state.Messages {
+			if engine.MessageRole(m) == "system" {
+				continue
+			}
 			b, err := jsonwire.Marshal(m)
 			if err != nil {
 				a.exhausted = true
@@ -146,9 +150,29 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 		// Marshalled at every delta, a long reply would cost its length squared, here and on the
 		// wire, so one goes out at most every updateEvery: the next delta, or the message's end,
 		// brings what came between.
+		// TurnEnd repeats messages and tool results already carried by message_end/tool_execution_end,
+		// AgentEnd repeats the whole turn's messages, and system prompts are internal to the model.
 		var b []byte
 		var err error
-		if update, ok := event.(engine.MessageUpdateEvent); ok {
+		switch e := event.(type) {
+		case engine.TurnEndEvent:
+			return
+		case engine.AgentEndEvent:
+			b = []byte(`{"type":"agent_end"}`)
+		case engine.MessageStartEvent:
+			if engine.MessageRole(e.Message) == "system" {
+				return
+			}
+			b, err = engine.MarshalAgentEvent(event)
+		case engine.MessageEndEvent:
+			if engine.MessageRole(e.Message) == "system" {
+				return
+			}
+			b, err = engine.MarshalAgentEvent(event)
+		case engine.MessageUpdateEvent:
+			if engine.MessageRole(e.Message) == "system" {
+				return
+			}
 			a.mu.Lock()
 			soon := time.Since(a.updated) < updateEvery
 			if !soon {
@@ -158,8 +182,8 @@ func (a *Attachment) bind(s *runtime.AgentSession) {
 			if soon {
 				return
 			}
-			b, err = ai.Marshal(update.Message)
-		} else {
+			b, err = ai.Marshal(e.Message)
+		default:
 			b, err = engine.MarshalAgentEvent(event)
 		}
 		if err != nil {
@@ -346,6 +370,7 @@ func (a *Attachment) Close() error {
 		return nil
 	}
 	a.closed = true
+	close(a.closedCh)
 	stopSessions, stopEvents := a.stopSessions, a.stopEvents
 	a.mu.Unlock()
 	if stopSessions != nil {
@@ -997,18 +1022,39 @@ func (a *Attachment) stretch(cursor string, limit int) (page, error) {
 		Type string `json:"type"`
 		Tool string `json:"toolCallId"`
 	}
-	kinds := make([]kind, len(events))
-	for i, e := range events {
-		_ = json.Unmarshal(e.Data, &kinds[i])
-	}
-	replaced := func(i int) bool {
-		for _, later := range kinds[i+1:] {
-			if kinds[i].Type == "message_update" && (later.Type == "message_update" || later.Type == "message_end") ||
-				kinds[i].Type == "tool_execution_update" && later.Tool == kinds[i].Tool && strings.HasPrefix(later.Type, "tool_execution_") {
-				return true
+	skip := make([]bool, len(events))
+	seenMsg := false
+	var seenTool map[string]bool
+	var k kind
+	for i := len(events) - 1; i >= 0; i-- {
+		k = kind{}
+		_ = json.Unmarshal(events[i].Data, &k)
+		switch k.Type {
+		case "message_update":
+			if seenMsg {
+				skip[i] = true
+			} else {
+				seenMsg = true
+			}
+		case "message_end":
+			seenMsg = true
+		case "tool_execution_update":
+			if seenTool[k.Tool] {
+				skip[i] = true
+			} else {
+				if seenTool == nil {
+					seenTool = map[string]bool{}
+				}
+				seenTool[k.Tool] = true
+			}
+		default:
+			if strings.HasPrefix(k.Type, "tool_execution_") && k.Tool != "" {
+				if seenTool == nil {
+					seenTool = map[string]bool{}
+				}
+				seenTool[k.Tool] = true
 			}
 		}
-		return false
 	}
 	size := 0
 	for i, e := range events {
@@ -1016,7 +1062,7 @@ func (a *Attachment) stretch(cursor string, limit int) (page, error) {
 			break
 		}
 		out.Cursor = e.Cursor
-		if replaced(i) {
+		if skip[i] {
 			continue
 		}
 		out.Events = append(out.Events, e)
@@ -1035,13 +1081,20 @@ const waitLimit = 15 * time.Second
 // asked, a turn begun, a rename), or waitLimit passed: a follower needs no timer of its own.
 func (a *Attachment) await(ctx context.Context, cursor, state string, limit int) (json.RawMessage, error) {
 	deadline := time.Now().Add(waitLimit)
+	// Fallback ticker catches pulse changes that do not publish stream events (quota, slots, rename).
+	tick := time.NewTicker(250 * time.Millisecond)
+	defer tick.Stop()
 	for {
-		// A follower waiting on an attachment that closes hears it at once, not at the deadline.
+		// Grab the stream wakeup channel before replaying so no Publish between Replay and select is missed.
 		a.mu.Lock()
-		closed := a.closed
+		closed, stream := a.closed, a.stream
 		a.mu.Unlock()
 		if closed {
 			return nil, mitosis.Fail("unavailable")
+		}
+		var streamWait <-chan struct{}
+		if stream != nil {
+			streamWait = stream.Wait()
 		}
 		out, err := a.replay(cursor, limit)
 		if err != nil || len(out.Events) > 0 || out.State != state || time.Now().After(deadline) {
@@ -1050,7 +1103,10 @@ func (a *Attachment) await(ctx context.Context, cursor, state string, limit int)
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+		case <-a.closedCh:
+			return nil, mitosis.Fail("unavailable")
+		case <-streamWait:
+		case <-tick.C:
 		}
 	}
 }

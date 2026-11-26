@@ -1,5 +1,21 @@
 import { HOME_COMMANDS, named, quotePath, shortPeer, tabName, toBase64 } from "./utils.js";
 import { createMockPeer } from "./mock.js";
+import {
+  closeTile as closeTileNode,
+  deserializeTree,
+  equalizeTree,
+  findLeaf,
+  findLeafByTab,
+  isLeaf,
+  listLeaves,
+  makeLeaf,
+  pruneTree,
+  serializeTree,
+  setSplitRatio as setSplitRatioNode,
+  setTileTab,
+  splitTile as splitTileNode,
+  visibleTabIds,
+} from "./tiles.js";
 
 // Code-mode sandboxed iframe + worker (opaque origin, 2-min timeout, nested tool calls).
 function sandboxWorker() {
@@ -112,11 +128,21 @@ function createOrbStore() {
   // the affected tab's VirtualTranscript re-evaluates.
   let rowsByTab = $state({});
 
-  // UI Navigation & Layout state
-  let shown = $state(""); // primary conversation id, "" = Home
-  let splitTab = $state(""); // secondary side-by-side conversation id on wide screens
-  let activePane = $state("primary"); // primary | secondary
+  // UI Navigation & Layout state (recursive binary split-tile tree, aligned with Desktop)
+  const initialLeaf = makeLeaf("");
+  let tileTree = $state(initialLeaf);
+  let activeTileId = $state(initialLeaf.id);
+  let zoomedTileId = $state("");
+  let shown = $state(""); // active tile's conversation id, "" = Home
+  let restoreLayout = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("orb.tab.layout") || "null");
+    } catch {
+      return null;
+    }
+  })();
   let overview = $state(false);
+  let mitosisMap = $state(typeof location !== "undefined" && new URLSearchParams(location.search).get("swarm") === "1");
   let deviceFilter = $state("");
   let dismissedLaunch = $state("");
   const initialTheme = localStorage.getItem("orb.tab.theme") || "auto";
@@ -189,7 +215,7 @@ function createOrbStore() {
     toastState = { text, undo };
     toastTimer = setTimeout(() => {
       toastState = null;
-    }, undo ? 9000 : 4000);
+    }, undo ? 3200 : 2200);
   }
 
   function dismissToast() {
@@ -243,12 +269,35 @@ function createOrbStore() {
     }
     if (pruned) rowsByTab = { ...rowsByTab };
 
+    if (restoreLayout) {
+      const restored = deserializeTree(restoreLayout);
+      restoreLayout = null;
+      if (restored) {
+        const prunedTree = pruneTree(restored, tabIds);
+        const leaves = listLeaves(prunedTree);
+        if (leaves.some(l => l.tab)) {
+          tileTree = prunedTree;
+          activeTileId = (leaves.find(l => l.tab === restoreTab) || leaves[0]).id;
+          shown = findLeaf(tileTree, activeTileId)?.tab || "";
+          restoreTab = "";
+          syncVisibleTabs();
+        }
+      }
+    }
     if (restoreTab && tabIds.has(restoreTab)) {
       focus(restoreTab);
     }
     restoreTab = "";
-    if (shown && !tabIds.has(shown)) focus("");
-    if (splitTab && !tabIds.has(splitTab)) splitTab = "";
+    const prunedTree = pruneTree(tileTree, tabIds);
+    if (prunedTree !== tileTree) {
+      tileTree = prunedTree;
+      persistLayout();
+    }
+    if (!findLeaf(tileTree, activeTileId)) {
+      activeTileId = listLeaves(tileTree)[0]?.id || "";
+    }
+    if (zoomedTileId && !findLeaf(tileTree, zoomedTileId)) zoomedTileId = "";
+    shown = findLeaf(tileTree, activeTileId)?.tab || "";
     if (terminalTab && !tabIds.has(terminalTab)) terminalTab = "";
 
     for (const w of waitingOnline.splice(0)) {
@@ -320,74 +369,159 @@ function createOrbStore() {
   }
 
   function activeTabId() {
-    if (activePane === "secondary" && splitTab) return splitTab;
-    return shown;
+    return findLeaf(tileTree, activeTileId)?.tab || shown || "";
+  }
+
+  function isSplit() {
+    return !isLeaf(tileTree);
+  }
+
+  function persistLayout() {
+    try {
+      localStorage.setItem("orb.tab.layout", JSON.stringify(serializeTree(tileTree)));
+      localStorage.setItem("orb.tab.shown", activeTabId());
+    } catch {}
   }
 
   function syncVisibleTabs() {
-    if (overview) {
+    if (overview || mitosisMap) {
       send({ do: "show", tabs: (state.tabs || []).map(t => t.id) });
       return;
     }
-    const visible = [];
-    if (shown) visible.push(shown);
-    if (splitTab && splitTab !== shown) visible.push(splitTab);
+    const visible = visibleTabIds(tileTree);
     send({ do: "show", tabs: visible });
   }
 
-  function focus(id, pane = "primary") {
-    showError("");
-    overview = false;
-    if (screen === "settings") screen = "app";
-    if (pane === "secondary") {
-      if (id === shown) {
-        activePane = "primary";
-      } else {
-        splitTab = id;
-        activePane = id ? "secondary" : "primary";
-      }
-    } else {
-      shown = id;
-      if (splitTab && splitTab === id) splitTab = "";
-      activePane = "primary";
-      localStorage.setItem("orb.tab.shown", id);
-    }
-    syncVisibleTabs();
+  function focusTile(tileId) {
+    const leaf = findLeaf(tileTree, tileId);
+    if (!leaf) return;
+    activeTileId = leaf.id;
+    shown = leaf.tab || "";
     updateTitle();
-    focusTick++;
+    persistLayout();
+  }
+
+  function cycleTile(delta) {
+    const leaves = listLeaves(tileTree);
+    if (leaves.length < 2) return;
+    const at = Math.max(0, leaves.findIndex(l => l.id === activeTileId));
+    const next = leaves[(at + delta + leaves.length) % leaves.length];
+    if (next) {
+      if (zoomedTileId) zoomedTileId = next.id;
+      focusTile(next.id);
+    }
+  }
+
+  function focus(id, tileId = "") {
+    showError("");
+    if (toastState?.undo) dismissToast();
+    overview = false;
+    mitosisMap = false;
+    if (screen === "settings") screen = "app";
+    // If clicking a tab already shown in another tile (and no explicit tileId target), jump to that tile.
+    if (id && !tileId && !isLeaf(tileTree)) {
+      const existing = findLeafByTab(tileTree, id);
+      if (existing) {
+        activeTileId = existing.id;
+        if (zoomedTileId) zoomedTileId = existing.id;
+        shown = existing.tab;
+        syncVisibleTabs();
+        persistLayout();
+        updateTitle();
+        return;
+      }
+    }
+    const targetId = tileId && findLeaf(tileTree, tileId) ? tileId : activeTileId;
+    tileTree = setTileTab(tileTree, targetId, id || "");
+    activeTileId = targetId;
+    shown = id || "";
+    syncVisibleTabs();
+    persistLayout();
+    updateTitle();
   }
 
   function toggleOverview() {
+    if (toastState?.undo) dismissToast();
     if (screen === "settings") screen = "app";
+    mitosisMap = false;
     overview = !overview;
     syncVisibleTabs();
   }
 
-  function toggleSplit(targetId = "") {
-    if (splitTab && !targetId) {
-      splitTab = "";
-      activePane = "primary";
-      syncVisibleTabs();
+  function toggleMitosisMap() {
+    if (toastState?.undo) dismissToast();
+    if (screen === "settings") screen = "app";
+    overview = false;
+    mitosisMap = !mitosisMap;
+    syncVisibleTabs();
+  }
+
+  function splitActiveTile(side = "right", targetTab = "", tileId = "") {
+    const fromId = tileId && findLeaf(tileTree, tileId) ? tileId : activeTileId;
+    let pickTab = targetTab;
+    if (!pickTab) {
+      const shownSet = new Set(visibleTabIds(tileTree));
+      pickTab = (state.tabs || []).find(t => !shownSet.has(t.id))?.id || "";
+    }
+    const res = splitTileNode(tileTree, fromId, side, pickTab);
+    if (!res.createdId) {
+      showToast("maximum split tiles reached");
       return;
     }
-    const candidate =
-      targetId ||
-      (state.tabs || []).find(t => t.id !== shown)?.id ||
-      "";
-    if (!candidate) {
-      showToast("open a second conversation to split");
-      return;
-    }
-    if (!shown) {
-      shown = candidate;
-      const second = (state.tabs || []).find(t => t.id !== shown)?.id || "";
-      splitTab = second;
-    } else if (candidate !== shown) {
-      splitTab = candidate;
-      activePane = "secondary";
-    }
+    tileTree = res.tree;
+    activeTileId = res.createdId;
+    zoomedTileId = "";
+    shown = pickTab;
     overview = false;
     syncVisibleTabs();
+    persistLayout();
+    updateTitle();
+  }
+
+  function closeTileById(tileId = "") {
+    const targetId = tileId && findLeaf(tileTree, tileId) ? tileId : activeTileId;
+    const res = closeTileNode(tileTree, targetId);
+    tileTree = res.tree;
+    activeTileId = res.nextActiveId;
+    if (zoomedTileId === targetId || isLeaf(tileTree)) zoomedTileId = "";
+    shown = findLeaf(tileTree, activeTileId)?.tab || "";
+    syncVisibleTabs();
+    persistLayout();
+    updateTitle();
+  }
+
+  function toggleSplit(targetId = "") {
+    if (!targetId && !isLeaf(tileTree)) {
+      closeTileById(activeTileId);
+      return;
+    }
+    splitActiveTile("right", targetId);
+  }
+
+  function setSplitRatioById(splitId, ratio) {
+    tileTree = setSplitRatioNode(tileTree, splitId, ratio);
+    persistLayout();
+  }
+
+  function equalizeTiles() {
+    if (isLeaf(tileTree)) return;
+    tileTree = equalizeTree(tileTree);
+    persistLayout();
+  }
+
+  function toggleZoomTile(tileId = "") {
+    if (isLeaf(tileTree)) return;
+    const targetId = tileId || activeTileId;
+    zoomedTileId = zoomedTileId === targetId ? "" : targetId;
+  }
+
+  function dropTabOnTile(tabId, tileId, zone = "center") {
+    if (!tabId || !findLeaf(tileTree, tileId)) return;
+    if (zone === "center") {
+      focus(tabId, tileId);
+      return;
+    }
+    splitActiveTile(zone, tabId, tileId);
   }
 
   function launchers() {
@@ -434,6 +568,17 @@ function createOrbStore() {
     }
   }
 
+  async function openExchange(ex) {
+    if (!ex || ex.scope !== "peer") return;
+    const entries = home.entries || [];
+    const key = ex.session && ex.peer
+      ? (entries.find(e => e.key === `i:${ex.session}`)?.key || `t:${ex.peer}|${ex.session}`)
+      : ex.session
+        ? `i:${ex.session}`
+        : "";
+    if (key) await openEntry(key);
+  }
+
   async function startSession(text) {
     const { machine: m, cwd } = getAim();
     if (!m) throw new Error("no device to start on yet");
@@ -456,14 +601,27 @@ function createOrbStore() {
     const at = list.findIndex(x => x.id === c.id);
     const entry = (home.entries || []).find(e => e.tab === c.id);
     send({ do: "close", tab: c.id });
-    if (c.id === splitTab) {
-      splitTab = "";
-      activePane = "primary";
+    state = { ...state, tabs: list.filter(x => x.id !== c.id) };
+    const shownElsewhere = new Set(visibleTabIds(tileTree));
+    shownElsewhere.delete(c.id);
+    const replacement =
+      [list[at + 1], list[at - 1], ...list].find(x => x && x.id !== c.id && !shownElsewhere.has(x.id))?.id || "";
+    for (const leaf of listLeaves(tileTree)) {
+      if (leaf.tab === c.id) {
+        if (!isLeaf(tileTree) && !replacement) {
+          const res = closeTileNode(tileTree, leaf.id);
+          tileTree = res.tree;
+          if (activeTileId === leaf.id) activeTileId = res.nextActiveId;
+        } else {
+          tileTree = setTileTab(tileTree, leaf.id, replacement);
+        }
+      }
     }
-    if (c.id === shown) {
-      const next = list[at + 1] || list[at - 1];
-      focus(next && next.id !== splitTab ? next.id : "");
-    }
+    if (zoomedTileId && !findLeaf(tileTree, zoomedTileId)) zoomedTileId = "";
+    shown = findLeaf(tileTree, activeTileId)?.tab || "";
+    syncVisibleTabs();
+    persistLayout();
+    updateTitle();
     if (!entry) return;
     const again = () =>
       ask("open", { key: entry.key }).then(
@@ -489,9 +647,17 @@ function createOrbStore() {
   }
 
   function stepTab(by) {
-    const ids = ["", ...(state.tabs || []).map(c => c.id)];
-    const at = ids.indexOf(shown);
-    focus(ids[(at + by + ids.length) % ids.length]);
+    const list = (state.tabs || []).map(c => c.id);
+    if (list.length === 0) return;
+    const cur = activeTabId();
+    const at = list.indexOf(cur);
+    let nextId;
+    if (at < 0) {
+      nextId = by >= 0 ? list[0] : list[list.length - 1];
+    } else {
+      nextId = list[(at + by + list.length) % list.length];
+    }
+    focus(nextId, activeTileId);
   }
 
   function getDraft(id) {
@@ -736,16 +902,23 @@ function createOrbStore() {
   }
 
   async function openTabMenu(c) {
+    const inSplit = !!findLeafByTab(tileTree, c.id) && !isLeaf(tileTree);
     const what = await pick(named(c.title), [
       { label: "rename" },
       ...(c.remote ? [{ label: "open terminal" }] : []),
-      { label: splitTab === c.id ? "close split" : "open in split" },
+      { label: "split right" },
+      { label: "split down" },
+      ...(inSplit ? [{ label: "close tile" }] : []),
       { label: "close conversation" },
     ]);
     if (what === "rename") renamePrompt(c.title, name => send({ do: "rename", tab: c.id, name }));
     if (what === "open terminal") terminalTab = c.id;
-    if (what === "open in split") toggleSplit(c.id);
-    if (what === "close split") toggleSplit();
+    if (what === "split right") splitActiveTile("right", c.id);
+    if (what === "split down") splitActiveTile("bottom", c.id);
+    if (what === "close tile") {
+      const leaf = findLeafByTab(tileTree, c.id);
+      if (leaf) closeTileById(leaf.id);
+    }
     if (what === "close conversation") closeTab(c);
   }
 
@@ -1069,11 +1242,18 @@ function createOrbStore() {
     get state() { return state; },
     get home() { return home; },
     get rowsByTab() { return rowsByTab; },
+    get tileTree() { return tileTree; },
+    get activeTileId() { return activeTileId; },
+    get zoomedTileId() { return zoomedTileId; },
+    get isSplit() { return isSplit(); },
+    get visibleTabs() { return visibleTabIds(tileTree); },
     get shown() { return shown; },
-    get splitTab() { return splitTab; },
-    get activePane() { return activePane; },
-    set activePane(v) { activePane = v; },
+    get splitTab() {
+      const leaves = listLeaves(tileTree);
+      return leaves.length > 1 ? (leaves.find(l => l.id !== activeTileId)?.tab || leaves[1]?.tab || "") : "";
+    },
     get overview() { return overview; },
+    get mitosisMap() { return mitosisMap; },
     get deviceFilter() { return deviceFilter; },
     set deviceFilter(v) { deviceFilter = v; },
     get dismissedLaunch() { return dismissedLaunch; },
@@ -1118,13 +1298,23 @@ function createOrbStore() {
     getMachine,
     activeTabId,
     focus,
+    focusTile,
+    cycleTile,
     toggleOverview,
+    toggleMitosisMap,
     toggleSplit,
+    splitActiveTile,
+    closeTile: closeTileById,
+    setSplitRatio: setSplitRatioById,
+    equalizeTiles,
+    toggleZoomTile,
+    dropTabOnTile,
     launchers,
     getAim,
     aimAt,
     defaultPeer,
     openEntry,
+    openExchange,
     closeTab,
     reopenClosed,
     stepTab,

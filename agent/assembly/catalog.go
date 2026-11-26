@@ -29,16 +29,15 @@ import (
 type CatalogOptions struct {
 	UsageCache *usage.Cache
 	// Accounts is host-supplied: provider-usage switches accounts through it.
-	Accounts          usage.Accounts
-	Memory            memorysdk.Store
-	OnMemoryWrite     func()
-	Mitosis           extensions.Factory
-	MitosisAgentCalls extensions.Factory
-	StreamFn          engine.StreamFn
-	HTTPClient        *http.Client
-	Settings          *config.SettingsManager
-	Policy            *permissions.Policy
-	AgentDir          string
+	Accounts      usage.Accounts
+	Memory        memorysdk.Store
+	OnMemoryWrite func()
+	Mitosis       extensions.Factory
+	StreamFn      engine.StreamFn
+	HTTPClient    *http.Client
+	Settings      *config.SettingsManager
+	Policy        *permissions.Policy
+	AgentDir      string
 	// ClaudeSessions is host-supplied: it runs processes the SDK layer never owns.
 	ClaudeSessions extensions.Factory
 	// Bash builds the host's bash tool, which background jobs run through.
@@ -48,24 +47,23 @@ type CatalogOptions struct {
 	Wake *wake.Scheduler
 }
 
-var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "provider-usage", "mitosis", "mitosis-agent-calls", "wake"}
+var names = []string{"tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "provider-usage", "mitosis", "wake"}
 
 var descriptions = map[string]string{
-	"activity":            "Compact, expandable statuses for agents and background processes",
-	"questions":           "Ask the user questions with choices and custom answers",
-	"mitosis":             "Pair devices and control explicitly shared Orb instances",
-	"mitosis-agent-calls": "Let agents list, read and message your other Orb conversations through Mitosis",
-	"tasks":               "Live session task list and todo tool",
-	"titles":              "Name each session after its first exchange",
-	"websearch":           "Web search and readable page fetching",
-	"subagents":           "Single or parallel child agents, including configured external CLIs",
-	"jobs":                "Background bash jobs that report when they end, monitored output, stop_job",
-	"permissions":         "Tool-call permissions, explicit approvals and optional audit mode",
-	"wake":                "Wake yourself later, once or on a schedule, and hold approvals until the user answers",
-	"memory":              "Bounded persistent remember, recall, replace, and forget tools",
-	"memtree":             "Experimental: zoomable summary tree of each session for lossless compaction or fresh turns",
-	"claude-sessions":     "Claude models and accounts through Claude Code and the official Agent SDK",
-	"provider-usage":      "The provider in use and its remaining quota in the footer, quotas in Providers",
+	"activity":        "Compact, expandable statuses for agents and background processes",
+	"questions":       "Ask the user questions with choices and custom answers",
+	"mitosis":         "Pair devices, share Orb conversations, and let agents talk across them",
+	"tasks":           "Live session task list and todo tool",
+	"titles":          "Name each session after its first exchange",
+	"websearch":       "Web search and readable page fetching",
+	"subagents":       "Single or parallel child agents, including configured external CLIs",
+	"jobs":            "Background bash jobs that report when they end, monitored output, stop_job",
+	"permissions":     "Tool-call permissions, explicit approvals and optional audit mode",
+	"wake":            "Wake yourself later, once or on a schedule, and hold approvals until the user answers",
+	"memory":          "Bounded persistent remember, recall, replace, and forget tools",
+	"memtree":         "Experimental: zoomable summary tree of each session for lossless compaction or fresh turns",
+	"claude-sessions": "Claude models and accounts through Claude Code and the official Agent SDK",
+	"provider-usage":  "The provider in use and its remaining quota in the footer, quotas in Providers",
 }
 
 // Choice is a plugin setting that takes one of a few values, its default first: the CLI checks
@@ -89,7 +87,7 @@ func Description(name string) string { return descriptions[name] }
 // Paged reports a plugin managed from a page of its own (Mitosis's, the providers' quotas) rather
 // than from the plugin list.
 func Paged(name string) bool {
-	return name == "mitosis" || name == "mitosis-agent-calls" || name == "provider-usage"
+	return name == "mitosis" || name == "provider-usage"
 }
 
 // Choices returns the plugin's settings that take one of a few values.
@@ -149,11 +147,8 @@ func Catalog(options CatalogOptions) map[string]extensions.Factory {
 	if options.ClaudeSessions == nil {
 		options.ClaudeSessions = func(extensions.API) error { return fmt.Errorf("claude sessions require host assembly") }
 	}
-	if options.MitosisAgentCalls == nil {
-		options.MitosisAgentCalls = func(extensions.API) error { return fmt.Errorf("mitosis agent calls require host assembly") }
-	}
 	return map[string]extensions.Factory{
-		"mitosis": options.Mitosis, "mitosis-agent-calls": options.MitosisAgentCalls, "claude-sessions": options.ClaudeSessions,
+		"mitosis": options.Mitosis, "claude-sessions": options.ClaudeSessions,
 		"questions":      questions.Extension(questions.Draw{Panel: panel.Draw, Text: text}),
 		"tasks":          tasks.Extension(tasks.Draw{Widget: newTaskWidget, Text: text}),
 		"titles":         titles.Extension(),

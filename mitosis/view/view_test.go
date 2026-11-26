@@ -491,12 +491,15 @@ func TestPluginToolsDrawInOrder(t *testing.T) {
 		tr.apply(json.RawMessage(e))
 	}
 	rows, _ := tr.rows()
-	if len(rows) != 2 || rows[0].Kind != "run" || rows[1].Kind != "note" {
+	if len(rows) != 3 || rows[0].Kind != "run" || rows[1].Kind != "peer" || rows[2].Kind != "note" {
 		t.Fatalf("rows: %+v", rows)
 	}
 	a := rows[0].Actions
-	if len(a) != 2 || a[0].Verb != "tasks" || a[0].Target != "fix" || a[0].Result != "1 / 3 done" || a[1].Verb != "subagent" || a[1].Target != "2 tasks" {
+	if len(a) != 1 || a[0].Verb != "tasks" || a[0].Target != "fix" || a[0].Result != "1 / 3 done" {
 		t.Fatalf("actions: %+v", a)
+	}
+	if ex := rows[1].Exchange; ex == nil || ex.Scope != "subagent" || ex.Who != "worker, worker" || ex.Status != "done" {
+		t.Fatalf("subagent exchange: %+v", ex)
 	}
 }
 
@@ -932,4 +935,164 @@ func TestStaleTargetPromptRetriesOnce(t *testing.T) {
 	c.until(t, "prompt retried and succeeded", func() bool {
 		return promptCalls.Load() == 2 && c.tab(opened.Tab).Status == ""
 	})
+}
+
+func TestToolFormattingAndStandaloneEdits(t *testing.T) {
+	var tr transcript
+	diff := `  1 a\n-2 old\n+2 new1\n+3 new2\n`
+	tr.load([]json.RawMessage{
+		json.RawMessage(`{"role":"assistant","content":[
+			{"type":"toolCall","id":"r1","name":"read","arguments":{"path":"a.go","offset":10,"limit":20}},
+			{"type":"toolCall","id":"b1","name":"bash","arguments":{"command":"go test ./..."}},
+			{"type":"toolCall","id":"m1","name":"mcp__docs__fetch","arguments":{"url":"https://example.com"}},
+			{"type":"toolCall","id":"e1","name":"edit","arguments":{"path":"a.go"}},
+			{"type":"toolCall","id":"w1","name":"write","arguments":{"path":"b.go","content":"line1\nline2\nline3\n"}}
+		]}`),
+		json.RawMessage(`{"role":"toolResult","toolCallId":"r1","content":[{"type":"text","text":"l1\nl2\nl3"}]}`),
+		json.RawMessage(`{"role":"toolResult","toolCallId":"b1","isError":true,"content":[{"type":"text","text":"FAIL\nCommand exited with code 1"}]}`),
+		json.RawMessage(`{"role":"toolResult","toolCallId":"m1","content":[{"type":"text","text":"ok"}]}`),
+		json.RawMessage(`{"role":"toolResult","toolCallId":"e1","content":[{"type":"text","text":"ok"}],"details":{"diff":"` + diff + `"}}`),
+		json.RawMessage(`{"role":"toolResult","toolCallId":"w1","content":[{"type":"text","text":"ok"}]}`),
+	}, 0)
+
+	rows, _ := tr.rows()
+	// Quiet calls fold into one run; edit and write stay surfaced as standalone rows.
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 rows (run + edit + write), got %d: %+v", len(rows), rows)
+	}
+	if len(rows[0].Actions) != 3 {
+		t.Fatalf("expected 3 quiet actions in first run, got %+v", rows[0].Actions)
+	}
+	if got := rows[0].Actions[0]; got.Target != "a.go:10-29" || got.Result != "3 ln" {
+		t.Fatalf("read action = %+v", got)
+	}
+	if d := tr.detail(rows[0].Actions[0].Key); d["args"] != "" {
+		t.Fatalf("read detail should omit redundant path json: %+v", d)
+	}
+	if got := rows[0].Actions[1]; got.Result != "exit 1" || !got.Failed {
+		t.Fatalf("failed bash action = %+v", got)
+	}
+	if d := tr.detail(rows[0].Actions[1].Key); d["args"] != "$ go test ./..." {
+		t.Fatalf("bash detail args = %q", d["args"])
+	}
+	if got := rows[0].Actions[2]; got.Verb != "docs · fetch" {
+		t.Fatalf("mcp verb = %q", got.Verb)
+	}
+	if got := rows[1].Actions; len(got) != 1 || got[0].Verb != "edit" || got[0].Result != "+2 -1" {
+		t.Fatalf("edit row = %+v", got)
+	}
+	if got := rows[2].Actions; len(got) != 1 || got[0].Verb != "write" || got[0].Result != "+3 ln" {
+		t.Fatalf("write row = %+v", got)
+	}
+	if d := tr.detail(rows[2].Actions[0].Key); d["args"] != "line1\nline2\nline3\n" {
+		t.Fatalf("write detail args = %q", d["args"])
+	}
+}
+
+func TestDropAppSlotFiltersTerminalOnlyGlyphs(t *testing.T) {
+	cases := []struct {
+		slot Slot
+		drop bool
+	}{
+		{Slot{Key: "status:mitosis", Lines: []string{"○"}}, true},
+		{Slot{Key: "status:provider-usage", Lines: []string{"5h 70%"}}, true},
+		{Slot{Key: "status:custom", Lines: []string{"\x1b[32m●\x1b[0m"}}, true},
+		{Slot{Key: "widget:tasks", Lines: []string{"✓ 1/2  → fix it"}}, false},
+		{Slot{Key: "notice", Lines: []string{"a server needs attention"}, Alarm: true}, false},
+	}
+	for _, tc := range cases {
+		if got := dropAppSlot(tc.slot); got != tc.drop {
+			t.Errorf("dropAppSlot(%+v) = %v, want %v", tc.slot, got, tc.drop)
+		}
+	}
+}
+
+func TestTabBusyTracksEventsSnapshotAndOpen(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var step atomic.Int32
+	a := &App{
+		ctx: ctx, self: "me", asked: map[*tab]bool{},
+		o: Options{Emit: func(any) {}, Call: func(callCtx context.Context, method string, params, result any) error {
+			if method != "remote" {
+				return nil
+			}
+			raw := mitosis.JSON(params)
+			var req struct {
+				Method string `json:"method"`
+			}
+			_ = json.Unmarshal(raw, &req)
+			if req.Method != "events.subscribe" {
+				<-callCtx.Done()
+				return callCtx.Err()
+			}
+			switch step.Add(1) {
+			case 1:
+				return json.Unmarshal([]byte(`{"snapshot_id":"s1","cursor":"c1","messages":[],"partial":{"role":"assistant","content":[{"type":"text","text":"working"}]}}`), result)
+			case 2:
+				return json.Unmarshal([]byte(`{"cursor":"c2","state":"p1","events":[{"data":{"type":"agent_start"}}]}`), result)
+			case 3:
+				return json.Unmarshal([]byte(`{"cursor":"c3","state":"p1","events":[{"data":{"type":"agent_end"}}]}`), result)
+			}
+			return nil
+		}},
+		machines: []*machine{{id: "peer1", host: "lab", state: "connected", instances: []instance{{session: "sess1", title: "Build", busy: true}}}},
+	}
+	tab := &tab{a: a, Tab: Tab{ID: "t1", Peer: "peer1"}, session: "sess1", running: true, pulse: "p1", wake: make(chan struct{}, 1), done: make(chan struct{})}
+	tab.snapshot()
+	if !tab.Busy {
+		t.Fatal("snapshot with partial did not mark tab busy")
+	}
+	tab.Busy = false
+	tab.events(true)
+	if !tab.Busy {
+		t.Fatal("agent_start event did not mark tab busy immediately")
+	}
+	tab.events(true)
+	if tab.Busy {
+		t.Fatal("agent_end event did not clear tab busy")
+	}
+	res, err := a.open("i:sess1")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	id := res.(map[string]string)["tab"]
+	a.mu.Lock()
+	opened := a.tab(id)
+	busy := opened != nil && opened.Busy
+	if opened != nil {
+		close(opened.done)
+	}
+	a.mu.Unlock()
+	if !busy {
+		t.Fatal("opening a busy running instance did not start tab with Busy=true")
+	}
+}
+
+func TestTranscriptPeerAndSubagentExchanges(t *testing.T) {
+	var tr transcript
+	tr.load([]json.RawMessage{
+		json.RawMessage(`{"role":"user","content":"Message from Orb agent orb:ed25519:kmUVCF6YvJHHyEIy90yc0t6PqIN6qr_89q-1zybjRqU, conversation s1 (Refactor, MacBook):\n\nIs staging green?"}`),
+		json.RawMessage(`{"role":"assistant","content":[{"type":"toolCall","id":"c1","name":"agents","arguments":{"action":"list"}},{"type":"toolCall","id":"c2","name":"agents","arguments":{"action":"send","agent":"ordalie-lab-3","text":"Check migration 042"}},{"type":"toolCall","id":"c3","name":"subagent","arguments":{"mode":"single","agent":"reviewer","task":"Verify locks"}}]}`),
+		json.RawMessage(`{"role":"toolResult","toolCallId":"c1","content":[{"type":"text","text":"Agent p1 · ordalie-lab-3"}]}`),
+		json.RawMessage(`{"role":"toolResult","toolCallId":"c2","content":[{"type":"text","text":"Queued: conversation s2 reads it after its current turn."}],"details":{"who":"ordalie-lab-3 · Deploy","peer":"orb:ed25519:rIMdmCCI2Y0bhXFOSyAs51-PknuBwj3wx9lzUId2SKI","session":"s2","status":"queued"}}`),
+		json.RawMessage(`{"role":"toolResult","toolCallId":"c3","content":[{"type":"text","text":"Locks look safe."}],"details":{"steps":"read lock.go\nrun -race"}}`),
+	}, 0)
+	rows, _ := tr.rows()
+	// Expect: incoming peer row, folded run row (agents list), outgoing peer row (agents send), local subagent peer row.
+	if len(rows) != 4 {
+		t.Fatalf("expected 4 rows, got %d: %+v", len(rows), rows)
+	}
+	if rows[0].Kind != "peer" || rows[0].Exchange == nil || rows[0].Exchange.Dir != "in" || rows[0].Exchange.Who != "MacBook · Refactor" || rows[0].Exchange.Text != "Is staging green?" {
+		t.Fatalf("row[0] = %+v", rows[0])
+	}
+	if rows[1].Kind != "run" {
+		t.Fatalf("row[1] should keep agents list folded in run, got %+v", rows[1])
+	}
+	if rows[2].Kind != "peer" || rows[2].Exchange == nil || rows[2].Exchange.Dir != "out" || rows[2].Exchange.Scope != "peer" || rows[2].Exchange.Who != "ordalie-lab-3 · Deploy" || rows[2].Exchange.Status != "queued" {
+		t.Fatalf("row[2] = %+v", rows[2])
+	}
+	if rows[3].Kind != "peer" || rows[3].Exchange == nil || rows[3].Exchange.Dir != "out" || rows[3].Exchange.Scope != "subagent" || rows[3].Exchange.Who != "reviewer" || rows[3].Exchange.Status != "2 steps" || rows[3].Exchange.Reply != "Locks look safe." {
+		t.Fatalf("row[3] = %+v", rows[3])
+	}
 }

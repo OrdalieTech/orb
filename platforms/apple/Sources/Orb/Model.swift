@@ -229,6 +229,20 @@ struct Action: Decodable, Equatable, Identifiable {
     var id: String { k }
 }
 
+struct Exchange: Decodable, Equatable {
+    @D var dir: String
+    @D var scope: String
+    @D var who: String
+    @D var peer: String
+    @D var session: String
+    @D var text: String
+    @D var status: String
+    @D var reply: String
+    @D var steps: String
+    @D var live: Bool
+    @D var failed: Bool
+}
+
 struct Row: Decodable, Equatable, Identifiable {
     @D var k: String
     @D var kind: String
@@ -237,6 +251,7 @@ struct Row: Decodable, Equatable, Identifiable {
     @D var alarm: Bool
     @D var images: [String]
     var block: Block?
+    var exchange: Exchange?
     @D var live: Bool
     @D var what: String
     @D var now: String

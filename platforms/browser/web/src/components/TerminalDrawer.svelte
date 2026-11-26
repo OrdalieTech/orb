@@ -76,7 +76,7 @@
         try { fitAddon?.fit(); } catch {}
       });
       resizeObs.observe(hostEl);
-      term.focus();
+      requestAnimationFrame(() => term?.focus());
 
       // Long-poll read loop
       let offset = 0;
@@ -124,7 +124,8 @@
   {#if error}
     <p class="term-err alarm">{error}</p>
   {/if}
-  <div class="term-body" bind:this={hostEl}></div>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="term-body" bind:this={hostEl} onmousedown={() => term?.focus()}></div>
 </div>
 
 <style>
@@ -133,17 +134,16 @@
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    background: var(--bg);
-    border-top: 1px solid var(--rule);
+    background: var(--recessed);
+    border-top: 1px solid var(--rule-soft);
     animation: drawer-in 140ms var(--ease);
   }
   .term-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 14px;
-    background: var(--raised);
-    border-bottom: 1px solid var(--rule);
+    padding: 5px 14px;
+    background: var(--recessed);
   }
   .term-sub {
     font-weight: 400;

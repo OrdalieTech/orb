@@ -91,17 +91,19 @@ environment, and is bounded: 10-minute timeout, 1 MiB output caps, whole
 process group killed on cancellation. The model can only ever pick a
 configured name — never supply a command.
 
-### mitosis-agent-calls
+### mitosis
 
-Agent access, switched on in `/mitosis` → Advanced. An agent gets an `agents` tool for its owner's
-agents, this machine's and those of connected devices: `list` gives each agent's id and name
-and the conversations open in it, each with its id, folder, title and state (idle, working,
-waiting for an answer); `read` shows a conversation's latest messages (tool output left out),
-and `send` gives it a message, queued after its current turn while it works, opening with a
-line that names the sender (its agent, conversation, title and machine) so the recipient can
-answer. An agent is named by its id or an unambiguous start of it; without a conversation,
-`read` and `send` go to the agent's default one, its latest. The agent acts with your reach, as the apps do. The tool exists for the model only
-while Mitosis is on and another conversation is reachable, so it costs nothing otherwise.
+Managed from `/mitosis` (not duplicated in `/plugins`). Turning Mitosis on shares this Orb's
+conversations with paired devices and gives the agent an `agents` tool for its owner's agents,
+this machine's and those of connected devices: `list` gives each agent's id and name and the
+conversations open in it, each with its id, folder, title and state (idle, working, waiting for an
+answer); `read` shows a conversation's latest messages (tool output left out), and `send` gives it a
+message, queued after its current turn while it works, opening with a line that names the sender
+(its agent, conversation, title and machine) so the recipient can answer. An agent is named by its
+device name, id, or an unambiguous start of it; without a conversation, `read` and `send` go to the
+agent's default one, its latest. The agent acts with your reach, as the apps do. The tool exists
+for the model only while Mitosis is on and another conversation is reachable, so it costs nothing
+otherwise.
 
 ### jobs
 

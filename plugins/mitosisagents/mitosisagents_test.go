@@ -171,7 +171,7 @@ func run(t *testing.T, b Mitosis, steps ...faux.ResponseStep) {
 	provider := faux.New(faux.Options{TokenSize: faux.FixedTokenSize(1000)})
 	provider.SetResponses(steps)
 	registry := extensions.NewRegistry(root)
-	if err := registry.Register("builtin:mitosis-agent-calls", Extension(b)); err != nil {
+	if err := registry.Register("builtin:mitosis", Extension(b)); err != nil {
 		t.Fatal(err)
 	}
 	settings, err := config.NewSettingsManager(root, config.WithAgentDir(root+"/agent"))
@@ -194,5 +194,21 @@ func run(t *testing.T, b Mitosis, steps ...faux.ResponseStep) {
 	defer result.Session.Dispose()
 	if err := result.Session.PromptSync(context.Background(), "check on the others"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAgentsLocateByName(t *testing.T) {
+	others := &fakeMitosis{conversations: map[string][]string{"p0": {"s0", "s1"}, "p1": {"s2"}}}
+	agents := &tool{mitosis: others}
+	peer, err := agents.locate(context.Background(), "lab", "")
+	if err != nil || peer != "p1" {
+		t.Fatalf("locate(\"lab\") = %q, %v; want p1", peer, err)
+	}
+	peer, err = agents.locate(context.Background(), "MAC", "")
+	if err != nil || peer != "p0" {
+		t.Fatalf("locate(\"MAC\") = %q, %v; want p0", peer, err)
+	}
+	if _, err := agents.locate(context.Background(), "unknown", ""); err == nil {
+		t.Fatal("locate(\"unknown\") succeeded, want error")
 	}
 }

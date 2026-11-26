@@ -277,13 +277,22 @@ type Stream struct {
 	sequence            uint64
 	events              []Event
 	limit, quota, bytes int
+	wake                chan struct{}
 }
 
 func NewStream(limit, quota int) *Stream {
 	if limit < 1 || quota < 1 {
 		panic("invalid stream limits")
 	}
-	return &Stream{epoch: protocol.NewID(), limit: limit, quota: quota}
+	return &Stream{epoch: protocol.NewID(), limit: limit, quota: quota, wake: make(chan struct{})}
+}
+
+// Wait returns a channel closed when the next event is published to this stream.
+func (s *Stream) Wait() <-chan struct{} {
+	s.mu.Lock()
+	ch := s.wake
+	s.mu.Unlock()
+	return ch
 }
 func (s *Stream) cursor() string { return s.epoch + ":" + strconv.FormatUint(s.sequence, 10) }
 
@@ -296,6 +305,10 @@ func (s *Stream) Cursor() string {
 func (s *Stream) Publish(data json.RawMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer func() {
+		close(s.wake)
+		s.wake = make(chan struct{})
+	}()
 	if s.sequence == ^uint64(0) {
 		s.epoch = protocol.NewID()
 		s.sequence = 0

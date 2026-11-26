@@ -19,8 +19,8 @@ export const MODELS = baseUrl => JSON.stringify({
     },
   },
 });
-// mitosis-agent-calls gives the object's agent mitosis_call (the Mitosis scenario).
-export const SETTINGS = JSON.stringify({ defaultProvider: "fake", defaultModel: "scripted", plugins: { "mitosis-agent-calls": true } });
+// mitosis gives the object's agent mitosis_call (the Mitosis scenario).
+export const SETTINGS = JSON.stringify({ defaultProvider: "fake", defaultModel: "scripted", plugins: { mitosis: true } });
 
 export function fail(message) {
   throw new Error(message);

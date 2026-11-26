@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.style.TextDecoration
@@ -131,10 +132,41 @@ private fun Turn(rows: List<Row>, first: Boolean, t: Tab, c: Ctx) {
             when (r.kind) {
                 "md" -> r.block?.let { Markdown(it) }
                 "run" -> if (r.actions.size == 1) ActionView(r.actions[0], t, c) else Worked(r, t, c)
+                "peer" -> r.exchange?.let { PeerExchangeView(it) }
                 "note" -> Folded(r.text, if (r.alarm) Ink.Rupture else p.meta)
             }
             // What the tools showed the model stays in view, even while their run is folded.
             Pictures(r.images.takeIf { r.kind == "run" }.orEmpty(), t, c)
+        }
+    }
+}
+
+/** A lightweight inter-agent message (Mitosis peer or local subagent) on a quiet recessed surface. */
+@Composable
+private fun PeerExchangeView(ex: Exchange) = Column(Modifier.fillMaxWidth().animateContentSize()) {
+    var open by remember { mutableStateOf(false) }
+    val accent = when {
+        ex.failed -> Ink.Rupture
+        ex.scope == "peer" -> Ink.Blue
+        else -> p.meta
+    }
+    Column(Modifier.fillMaxWidth().background(p.fg.copy(alpha = 0.045f), Soft).padding(horizontal = 10.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            T(if (ex.dir == "in") "←" else "→", size = Size.Label, color = accent)
+            T(ex.who, size = Size.Label, color = p.fg, modifier = Modifier.weight(1f))
+            if (ex.status.isNotEmpty()) T(ex.status, size = Size.Label, color = if (ex.failed) Ink.Rupture else p.meta)
+        }
+        if (ex.text.isNotBlank()) BasicText(ex.text, style = type(SIZE.sp, p.fg))
+        if (ex.scope == "subagent" && !ex.live && (ex.reply.isNotBlank() || ex.steps.isNotBlank())) {
+            val preview = if (open) "hide reply" else ex.reply.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: "view details"
+            Row(Modifier.press { open = !open }, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                T("←", size = Size.Label, color = p.meta)
+                T(preview, size = Size.Label, color = p.meta)
+            }
+            if (open) Column(Modifier.fillMaxWidth().background(p.fg.copy(alpha = 0.05f), Soft).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (ex.steps.isNotBlank()) BasicText(ex.steps, style = type(11f.sp, p.meta))
+                if (ex.reply.isNotBlank()) BasicText(ex.reply, style = type(12.5f.sp, p.fg))
+            }
         }
     }
 }
@@ -152,36 +184,57 @@ private fun Pictures(images: List<String>, t: Tab, c: Ctx) {
 private fun Worked(r: Row, t: Tab, c: Ctx) = Column(Modifier.fillMaxWidth().animateContentSize()) {
     var open by remember { mutableStateOf(false) }
     val now = r.now.takeIf { !open && it.isNotBlank() }
+    val rule = p.rule
     Box(Modifier.press { open = !open }) { ActionLine(if (r.live) "working" else "worked", listOfNotNull(r.what, now).joinToString(" · "), if (r.failed > 0) "${r.failed} failed" else "", live = r.live, failed = r.failed > 0, open = open) }
-    if (open) r.actions.forEach { Box(Modifier.padding(start = 16.dp)) { ActionView(it, t, c) } }
+    if (open) Column(Modifier.padding(start = 5.dp).drawBehind { drawRect(rule, size = this.size.copy(width = 1.dp.toPx())) }.padding(start = 11.dp)) {
+        r.actions.forEach { ActionView(it, t, c) }
+    }
 }
 
-/** A thought or a tool call: one line that opens into its whole text, or what it was given and returned. */
+/** A thought or a tool call: one line that opens into a bounded, scrollable tray with its text, diff, or output. */
 @Composable
 private fun ActionView(a: Action, t: Tab, c: Ctx) = Column(Modifier.fillMaxWidth().animateContentSize()) {
     var open by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<JSONObject?>(null) }
     LaunchedEffect(open, a.result, a.live) { if (open) detail = c.v.ask("detail", "tab" to t.id, "key" to a.key).obj }
     Box(Modifier.press { open = !open }) { ActionLine(a.verb, a.target, a.result, a.live, a.failed, open) }
-    if (open) Panel {
+    if (open) Panel(failed = a.failed) {
         val d = detail
         val diff = d?.optString("diff").orEmpty().trimEnd('\n')
-        if (a.verb == "thought") BasicText(d?.optString("text").orEmpty(), style = type((SIZE - 2).sp, p.mute))
-        // An edit shows what it changed: added lines in green, removed ones in the rupture.
-        else if (diff.isNotEmpty()) diff.lines().forEach { BasicText(it, style = type(12.sp, if (it.startsWith('+')) hue(5) else if (it.startsWith('-')) Ink.Rupture else p.mute)) }
+        if (a.verb == "thought") BasicText(d?.optString("text").orEmpty().ifEmpty { "…" }, style = type((SIZE - 2).sp, p.mute))
+        // An edit shows what it changed: muted ink over a soft tint per added/removed line.
+        else if (diff.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            diff.lines().forEach { line ->
+                val ink = when { line.startsWith('+') -> hue(5); line.startsWith('-') -> Ink.Rupture; else -> p.meta }
+                val bg = when { line.startsWith('+') -> ink.copy(alpha = 0.10f); line.startsWith('-') -> Ink.Rupture.copy(alpha = 0.10f); else -> Color.Transparent }
+                BasicText(line, Modifier.fillMaxWidth().background(bg, Soft).padding(horizontal = 6.dp, vertical = 1.dp), style = type(12.sp, ink))
+            }
+        }
         else {
-            d?.optString("args")?.takeIf { it.isNotBlank() }?.let { T("input", label = true, color = p.meta); BasicText(it, style = type(12.sp, p.mute)) }
-            T("output", label = true, color = p.meta)
-            BasicText(d?.optString("output") ?: "…", style = type(12.sp, if (a.failed) Ink.Rupture else p.fg))
+            val args = d?.optString("args").orEmpty()
+            if (args.isNotBlank()) {
+                if (!args.startsWith("$ ") && a.verb != "write") T("input", label = true, color = p.meta)
+                BasicText(args, style = type(12.sp, p.mute))
+                Rule(color = p.rule.copy(alpha = 0.6f))
+            }
+            BasicText(d?.optString("output") ?: "…", style = type(12.sp, if (a.failed) Ink.Rupture else p.mute))
         }
     }
 }
 
-/** What an action line opens onto: a raised, outlined surface under it. */
+/** What an action line opens onto: a quiet, height-capped scrollable tray under it. */
 @Composable
-private fun Panel(content: @Composable ColumnScope.() -> Unit) = Column(
-    Modifier.padding(start = 16.dp, top = 4.dp).fillMaxWidth().background(p.raised, Pane).border(1.dp, p.rule, Pane).padding(12.dp),
-    verticalArrangement = Arrangement.spacedBy(8.dp), content = content,
+private fun Panel(failed: Boolean = false, content: @Composable ColumnScope.() -> Unit) = Column(
+    Modifier
+        .padding(start = 16.dp, top = 4.dp, bottom = 4.dp)
+        .fillMaxWidth()
+        .heightIn(max = 260.dp)
+        .clip(Pane)
+        .background(p.raised, Pane)
+        .border(1.dp, if (failed) Ink.Rupture.copy(alpha = 0.35f) else p.rule.copy(alpha = 0.7f), Pane)
+        .verticalScroll(rememberScrollState())
+        .padding(horizontal = 12.dp, vertical = 10.dp),
+    verticalArrangement = Arrangement.spacedBy(6.dp), content = content,
 )
 
 /** Long errors fold to three lines; a tap opens them. */

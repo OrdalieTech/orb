@@ -96,6 +96,11 @@ func codexModels(known *Catalog, live []codexLiveModel) []ai.Model {
 			break
 		}
 	}
+	if template.ID == "" {
+		if fallback := known.Models("openai-codex"); len(fallback) > 0 {
+			template = fallback[0]
+		}
+	}
 	var models []ai.Model
 	for _, item := range live {
 		if item.Visibility != "list" || item.Slug == "" {

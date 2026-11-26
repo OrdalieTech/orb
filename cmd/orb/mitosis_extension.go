@@ -19,6 +19,7 @@ import (
 	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
 	"github.com/OrdalieTech/orb/platforms/native/mitosis/daemon"
+	"github.com/OrdalieTech/orb/plugins/mitosisagents"
 	"github.com/OrdalieTech/orb/tui"
 )
 
@@ -27,6 +28,11 @@ func mitosisExtension(args CLIArgs, settings *config.SettingsManager) extensions
 		profile := args.MitosisProfile
 		if profile == "" {
 			profile = "personal"
+		}
+		if args.MitosisProfile != "" || (settings != nil && settings.GetPlugins()["mitosis"]) {
+			if err := mitosisagents.Extension(ownerMitosis{args: args, settings: settings})(api); err != nil {
+				return err
+			}
 		}
 		api.On(extensions.EventSessionStart, func(ctx context.Context, _ extensions.Event, c extensions.Context) (any, error) {
 			if args.native != nil {
@@ -163,6 +169,7 @@ func setMitosisStatus(ui extensions.UI, on bool) {
 
 type mitosisSettingsStatus struct {
 	PeerStates map[string]string    `json:"peer_states"`
+	PeerNames  map[string]string    `json:"peer_names"`
 	PeerID     string               `json:"peer_id"`
 	Pending    []mitosis.Invitation `json:"pending"`
 	Peers      []string             `json:"peers"`
@@ -196,8 +203,8 @@ func mitosisSettingsWindow(ctx context.Context, c extensions.CommandContext, arg
 			_ = client.Close()
 		}
 		result, ok, menuErr := ui.Custom(ctx, func(host extensions.UIHost, th extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
-			enabled, agentCalls := args.MitosisProfile != "" || settings.GetPlugins()["mitosis"], settings.GetPlugins()["mitosis-agent-calls"]
-			rows := mitosisSettingsRows(page, running, enabled, agentCalls, status, th)
+			enabled := args.MitosisProfile != "" || settings.GetPlugins()["mitosis"]
+			rows := mitosisSettingsRows(page, running, enabled, status, th)
 			panel := newMitosisSettingsPanel(profile, page, selected, rows, th, host.Height, done)
 			page, notice, status := page, notice, status
 			panel.watch(ctx, host, func(ctx context.Context) []tui.GridRow {
@@ -208,7 +215,7 @@ func mitosisSettingsWindow(ctx context.Context, c extensions.CommandContext, arg
 				if err == nil {
 					status = current
 				}
-				rows := mitosisSettingsRows(page, err == nil, enabled, agentCalls, status, th)
+				rows := mitosisSettingsRows(page, err == nil, enabled, status, th)
 				if notice != "" {
 					for i := range rows {
 						rows[i].Detail = []string{th.FG("warning", notice)}
@@ -242,6 +249,7 @@ func mitosisSettingsWindow(ctx context.Context, c extensions.CommandContext, arg
 				if err := setMitosisSetting(settings, "mitosis", true); err != nil {
 					return err
 				}
+				reload = true
 				ui.Notify("Starting Mitosis…", extensions.NotifyInfo)
 				if err := startMitosis(ctx, profile, true); err != nil {
 					return err
@@ -291,6 +299,7 @@ func mitosisSettingsWindow(ctx context.Context, c extensions.CommandContext, arg
 				if err := setMitosisSetting(settings, "mitosis", false); err != nil {
 					return err
 				}
+				reload = true
 				if err := client.Call(ctx, "stop", struct{}{}, nil); err != nil {
 					return err
 				}
@@ -302,13 +311,6 @@ func mitosisSettingsWindow(ctx context.Context, c extensions.CommandContext, arg
 					return err
 				}
 				selected = "Start"
-				return nil
-			case "agent-calls":
-				if err := setMitosisSetting(settings, "mitosis-agent-calls", !settings.GetPlugins()["mitosis-agent-calls"]); err != nil {
-					return err
-				}
-				reload = true
-				notice = "Agent tools update when you close Mitosis."
 				return nil
 			default:
 				if !running {
@@ -336,7 +338,7 @@ func probeMitosis(ctx context.Context, profile string) (*protocol.Conn, mitosisS
 	return client, status, err
 }
 
-func mitosisSettingsRows(page string, running, enabled, agentCalls bool, status mitosisSettingsStatus, th extensions.Theme) []tui.GridRow {
+func mitosisSettingsRows(page string, running, enabled bool, status mitosisSettingsStatus, th extensions.Theme) []tui.GridRow {
 	row := func(value, label, state, detail string) tui.GridRow {
 		return tui.GridRow{Value: value, Cells: []string{th.FG("text", label), th.FG("muted", state)}, Detail: []string{detail}}
 	}
@@ -347,20 +349,9 @@ func mitosisSettingsRows(page string, running, enabled, agentCalls bool, status 
 			row("Invite device", "Create an invitation", "", "Invite another device. Both Orbs share all current and future conversations."),
 		}
 	}
-	if page == "advanced" {
-		calls := "Off"
-		if agentCalls {
-			calls = "On"
-		}
-		rows := []tui.GridRow{row("agent-calls", "Agent calls", calls, "Let agents list, read and message your other conversations, here and on connected devices.")}
-		if running {
-			rows = append(rows, row("Status", "This device's fingerprint", "", status.PeerID))
-		}
-		return rows
-	}
-	service := row("Start", "Enable Mitosis", "○ Off", "Connect your devices to share conversations. Local work continues when Mitosis is off.")
+	service := row("Start", "Enable Mitosis", "○ Off", "Connect your devices to share conversations and let agents reach them. Local work continues when Mitosis is off.")
 	if running && !enabled {
-		service = row("Start", "Share this conversation", "Mitosis on", "Attach this conversation and enable Mitosis for future launches.")
+		service = row("Start", "Share this conversation", "○ Off here", "Mitosis runs in the background. Select to attach this conversation and enable Mitosis for future launches.")
 	}
 	if running && enabled {
 		service = row("Stop", "Mitosis", th.FG("success", "● On"), "Turn off remote access. Your devices stay saved for next time.")
@@ -385,12 +376,18 @@ func mitosisSettingsRows(page string, running, enabled, agentCalls bool, status 
 				state = "Blocked"
 			}
 		}
-		rows = append(rows, row("peer:"+peer, mitosisDeviceLabel(peer), state, "Open this device's conversations. Availability updates automatically."))
+		rows = append(rows, row("peer:"+peer, mitosisDeviceLabel(peer, status.PeerNames), state, "Open this device's conversations. Availability updates automatically."))
 	}
-	return append(rows, row("page:advanced", "Advanced", "", "Agent tools and this device's fingerprint."))
+	if running && status.PeerID != "" {
+		rows = append(rows, row("Status", "This device", "", status.PeerID))
+	}
+	return rows
 }
 
-func mitosisDeviceLabel(peer string) string {
+func mitosisDeviceLabel(peer string, names map[string]string) string {
+	if name := strings.TrimSpace(names[peer]); name != "" {
+		return peerText(name, false)
+	}
 	fingerprint := strings.TrimPrefix(peer, "orb:ed25519:")
 	return "Device " + fingerprint[:min(10, len(fingerprint))]
 }
@@ -427,7 +424,7 @@ func newMitosisSettingsPanel(profile, page, selected string, rows []tui.GridRow,
 		title += " · " + profile
 	}
 	if page != "" {
-		title += " / " + map[string]string{"add": "Add device", "advanced": "Advanced"}[page]
+		title += " / " + map[string]string{"add": "Add device"}[page]
 	}
 	footer := "enter select · esc back"
 	frame := tui.NewPanel(title, footer,
@@ -556,7 +553,7 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 			_ = client.Call(ctx, "sync", map[string]string{"join": inv.PeerID}, nil)
 		}
 		ui.Notify("Device connected. Choose a shared conversation.", extensions.NotifyInfo)
-		return openSharedMitosisConversation(ctx, ui, profile, inv.PeerID)
+		return openSharedMitosisConversation(ctx, ui, profile, inv.PeerID, "")
 	case "SSH":
 		target, e := input("Connect using SSH · user@host or SSH alias")
 		if e != nil {
@@ -572,7 +569,7 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 			return e
 		}
 		ui.Notify("Server paired through SSH.", extensions.NotifyInfo)
-		return openSharedMitosisConversation(ctx, ui, profile, peer)
+		return openSharedMitosisConversation(ctx, ui, profile, peer, target)
 
 	case "Approve pairing":
 		choices := []string{}
@@ -593,7 +590,7 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 		if status.PeerStates[peer] == "blocked" {
 			return fmt.Errorf("this device is blocked.\nIts access has been revoked")
 		}
-		return openSharedMitosisConversation(ctx, ui, profile, peer)
+		return openSharedMitosisConversation(ctx, ui, profile, peer, status.PeerNames[peer])
 	}
 	return nil
 }
@@ -634,7 +631,8 @@ func mitosisConversationRows(ctx context.Context, client *protocol.Conn, peer st
 	return nil, mitosis.Fail("resource_exhausted")
 }
 
-func openSharedMitosisConversation(ctx context.Context, ui extensions.UI, profile, peer string) error {
+func openSharedMitosisConversation(ctx context.Context, ui extensions.UI, profile, peer, peerName string) error {
+	label := mitosisDeviceLabel(peer, map[string]string{peer: peerName})
 	cache, closeCache, cacheErr := daemon.Cache(ctx, stateFromContext(ctx), profile)
 	if cacheErr == nil {
 		defer closeCache()
@@ -665,7 +663,7 @@ func openSharedMitosisConversation(ctx context.Context, ui extensions.UI, profil
 	for ctx.Err() == nil {
 		result, ok, err := ui.Custom(ctx, func(host extensions.UIHost, th extensions.Theme, _ extensions.Keybindings, done extensions.CustomDone) (extensions.Component, error) {
 			panel := newMitosisSettingsPanel(profile, "", "", []tui.GridRow{{Header: true, Cells: []string{"Connecting…"}}}, th, host.Height, done)
-			panel.Title = mitosisDeviceLabel(peer)
+			panel.Title = label
 			if rows := cachedRows(th, nil); len(rows) > 0 {
 				panel.list.SetRows(rows)
 			}
@@ -741,7 +739,7 @@ func openSharedMitosisConversation(ctx context.Context, ui extensions.UI, profil
 			return err
 		}
 		if selected == "folder" {
-			session, err := openMitosisFolder(ctx, ui, profile, peer)
+			session, err := openMitosisFolder(ctx, ui, profile, peer, label)
 			if err != nil {
 				ui.Notify(err.Error(), extensions.NotifyError)
 			} else if session != "" {
@@ -929,7 +927,7 @@ func (p *qrPanel) Render(width int) []string {
 
 // openMitosisFolder picks a folder on the peer — one its threads live in, or any other — then a
 // new thread or a past one there, and starts Orb on it (host.launch). It returns that thread.
-func openMitosisFolder(ctx context.Context, ui extensions.UI, profile, peer string) (string, error) {
+func openMitosisFolder(ctx context.Context, ui extensions.UI, profile, peer, label string) (string, error) {
 	client, err := mitosisAdmin(ctx, profile)
 	if err != nil {
 		return "", err
@@ -983,7 +981,7 @@ func openMitosisFolder(ctx context.Context, ui extensions.UI, profile, peer stri
 		choices = append(choices, fmt.Sprintf("%s · %d thread%s", peerText(f, false), count[f], map[bool]string{true: "", false: "s"}[count[f] == 1]))
 	}
 	choices = append(choices, "Other folder…")
-	choice, ok, err := ui.Select(ctx, "Open a folder on "+mitosisDeviceLabel(peer), choices, nil)
+	choice, ok, err := ui.Select(ctx, "Open a folder on "+label, choices, nil)
 	if err != nil || !ok {
 		return "", err
 	}

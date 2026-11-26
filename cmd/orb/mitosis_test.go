@@ -364,7 +364,7 @@ func TestMitosisManagementNavigatesAndStopsNativeService(t *testing.T) {
 	if err := registry.Register("mitosis", mitosisExtension(CLIArgs{mitosisLink: link}, settings)); err != nil {
 		t.Fatal(err)
 	}
-	ui := &mitosisScriptUI{t: t, actions: []string{"Start", "page:add", "back", "page:advanced", "agent-calls", "back", "Stop", "close"}}
+	ui := &mitosisScriptUI{t: t, actions: []string{"Start", "page:add", "back", "Status", "Stop", "close"}}
 	observed := false
 	ui.observe = func(panel *mitosisSettingsPanel) {
 		if observed {
@@ -375,7 +375,7 @@ func TestMitosisManagementNavigatesAndStopsNativeService(t *testing.T) {
 			t.Fatal(err)
 		}
 		deadline := time.Now().Add(2 * time.Second)
-		for !strings.Contains(strings.Join(panel.Render(80), "\n"), mitosisDeviceLabel(b.PeerID())) {
+		for !strings.Contains(strings.Join(panel.Render(80), "\n"), mitosisDeviceLabel(b.PeerID(), nil)) {
 			if time.Now().After(deadline) {
 				t.Fatal("new device did not appear while the home screen stayed open")
 			}
@@ -387,14 +387,49 @@ func TestMitosisManagementNavigatesAndStopsNativeService(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	runner.ExecuteCommand(ctx, "mitosis", "")
-	if len(configured) != 2 || !configured[0] || configured[1] || settings.GetPlugins()["mitosis"] || !settings.GetPlugins()["mitosis-agent-calls"] || reloads != 1 {
+	if len(configured) != 2 || !configured[0] || configured[1] || settings.GetPlugins()["mitosis"] || reloads != 1 {
 		t.Fatalf("configured=%v settings=%v reloads=%d", configured, settings.GetPlugins(), reloads)
+	}
+	if !strings.Contains(ui.screens[0], "○ Off here") {
+		t.Fatalf("initial screen when daemon runs without plugin enabled should not claim Mitosis is on:\n%s", ui.screens[0])
 	}
 	if !strings.Contains(ui.screens[len(ui.screens)-1], "Enable Mitosis") {
 		t.Fatal("screen did not reflect stopped service")
 	}
 	if got := strings.Join(ui.status, " "); got != "● ○" {
 		t.Fatalf("footer dot = %q, want on after start then off after stop", got)
+	}
+}
+
+func TestMitosisExtensionRegistersAgentsToolOnlyWhenEnabled(t *testing.T) {
+	settings, err := config.NewSettingsManager(t.TempDir(), config.WithAgentDir(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	off := extensions.NewRegistry(t.TempDir())
+	if err := off.Register("mitosis", mitosisExtension(CLIArgs{}, settings)); err != nil {
+		t.Fatal(err)
+	}
+	if extensions.NewRunner(off, extensions.RunnerOptions{}).ToolDefinition("agents") != nil {
+		t.Fatal("agents tool registered while mitosis plugin is off")
+	}
+	settings.SetPluginEnabled("mitosis", true)
+	on := extensions.NewRegistry(t.TempDir())
+	if err := on.Register("mitosis", mitosisExtension(CLIArgs{}, settings)); err != nil {
+		t.Fatal(err)
+	}
+	if extensions.NewRunner(on, extensions.RunnerOptions{}).ToolDefinition("agents") == nil {
+		t.Fatal("agents tool not registered while mitosis plugin is on")
+	}
+}
+
+func TestMitosisDeviceLabelPrefersPeerName(t *testing.T) {
+	peer := "orb:ed25519:DF5dC9WqssPNO76eEYPcFNXm8ecV8ruSAmM0TD5bzt8"
+	if got := mitosisDeviceLabel(peer, map[string]string{peer: "fedora"}); got != "fedora" {
+		t.Fatalf("label with name = %q, want fedora", got)
+	}
+	if got := mitosisDeviceLabel(peer, nil); got != "Device DF5dC9Wqss" {
+		t.Fatalf("fallback label = %q, want Device DF5dC9Wqss", got)
 	}
 }
 

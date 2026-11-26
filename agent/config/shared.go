@@ -27,7 +27,7 @@ func (SharedSettings) Editable() {}
 var sharedDefaults = map[string][]string{"model": {"defaultProvider", "defaultModel"}, "thinking": {"defaultThinkingLevel"}}
 
 // localPlugins run against their device's programs, peers or permissions.
-var localPlugins = []string{"claude-sessions", "mitosis", "mitosis-agent-calls", "bridge", "bridge-agent-calls", "permissions", "plugin-control"}
+var localPlugins = []string{"claude-sessions", "mitosis", "permissions", "plugin-control"}
 
 const (
 	pluginEntry = "plugins/"

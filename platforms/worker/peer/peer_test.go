@@ -78,7 +78,7 @@ func object(t *testing.T, kv worker.KV, provider *faux.Provider) (*worker.Instan
 		return self, openErr
 	}
 	instance, err := worker.Open(t.Context(), worker.Options{KV: kv, Model: provider.GetModel(), StreamFn: provider.StreamSimple,
-		Settings: []byte(`{"plugins":{"mitosis-agent-calls":true}}`), Tools: AgentCalls(open)})
+		Settings: []byte(`{"plugins":{"mitosis":true}}`), Tools: AgentCalls(open)})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -192,7 +192,7 @@ try {
   } else {
     check(args.runtime === "workerd", "--runtime must be workerd or remote");
     const token = randomBytes(24).toString("hex");
-    const settings = JSON.stringify({ defaultProvider: "fake", defaultModel: "scripted", plugins: { "mitosis-agent-calls": true } });
+    const settings = JSON.stringify({ defaultProvider: "fake", defaultModel: "scripted", plugins: { mitosis: true } });
     writeFileSync(join(args.dir, ".dev.vars"), [
       `ORB_TOKEN=${token}`, "FAKE_MODEL_KEY=fake-key",
       `ORB_MODELS='${MODELS(`http://127.0.0.1:${modelServer.address().port}/v1`)}'`, `ORB_SETTINGS='${settings}'`, "",

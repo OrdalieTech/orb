@@ -164,8 +164,8 @@ func TestLongReasoningStreamsAsBoundedPreview(t *testing.T) {
 	}
 	component.UpdateContentStreaming(message, false)
 	lines := component.Render(80)
-	if !strings.Contains(strings.Join(lines, "\n"), "click to expand") {
-		t.Fatal("completed reasoning has no expand control")
+	if joined := strings.Join(lines, "\n"); !strings.Contains(joined, "thought") || !strings.Contains(joined, "tok") || strings.Contains(joined, "end of reasoning") {
+		t.Fatalf("completed reasoning did not collapse to a single quiet summary line: %q", joined)
 	}
 	if !component.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: component.toggleStart}) {
 		t.Fatal("reasoning expand control ignored click")
@@ -912,5 +912,20 @@ func TestAltVPastesBesideCtrlV(t *testing.T) {
 	keys := NewAppKeybindings(nil).Keys("app.clipboard.pasteImage")
 	if !slices.Equal(keys, []tui.KeyID{"ctrl+v", "alt+v"}) {
 		t.Fatalf("paste keys = %v", keys)
+	}
+}
+
+func TestExtensionInputPrefillsInitialValueAtEnd(t *testing.T) {
+	initTestTheme(t)
+	var submitted string
+	dialog := NewExtensionInputComponent("Rename session", "", func(v string) { submitted = v }, nil, nil)
+	dialog.SetValue("Old title")
+	if rendered := tui.StripANSI(strings.Join(dialog.Render(60), "\n")); !strings.Contains(rendered, "Old title") {
+		t.Fatalf("rename dialog did not show previous title: %q", rendered)
+	}
+	dialog.HandleInput(tui.KeyEvent{Raw: " v2"})
+	dialog.HandleInput(tui.KeyEvent{Raw: "\r"})
+	if submitted != "Old title v2" {
+		t.Fatalf("submitted = %q, want %q", submitted, "Old title v2")
 	}
 }

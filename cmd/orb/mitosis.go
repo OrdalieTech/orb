@@ -90,14 +90,14 @@ func runMitosisCommand(ctx context.Context, args []string, streams cliStreams) i
 orb mitosis --browser [--yes]   (the same for a browser tab, at the link it opens; this Mitosis listens for the page from now on)
 orb mitosis join <code>   (join the Orb that showed the code)
 orb mitosis ssh <user@host> [--remote-profile personal] [--remote-orb orb]   (the same for a server, over SSH; installs Orb there)
-orb mitosis status|stop|start|block <peer-id>|service install|remove   [--profile personal]
+orb mitosis status|stop|start|block <peer>|service install|remove   [--profile personal]
 
-Advanced:
-orb mitosis sync [add|remove|promote|demote <peer-id> | join <peer-id>]   (the sync group, which any of its owners changes; remove yourself to leave; a peer-id may be an unambiguous prefix)
+Advanced (<peer> is a device name, peer-id, or unambiguous prefix):
+orb mitosis sync [add|remove|promote|demote <peer> | join <peer>]   (the sync group, which any of its owners changes; remove yourself to leave)
 orb mitosis run [--web-listen 127.0.0.1:8789 --web-origin http://127.0.0.1:8787 --web-url wss://host/mitosis]
 orb mitosis pair invite | pair join < invitation.json | pair approve <invitation-id> <peer-id>
-orb mitosis trust <peer-id> | grant|revoke|scope|takeover|publish < request.json
-orb mitosis remote <peer-id> <method> < params.json | view <peer-id> <session-id> | shell <peer-id> [folder]
+orb mitosis trust <peer> | grant|revoke|scope|takeover|publish < request.json
+orb mitosis remote <peer> <method> [< params.json] | view <peer> <session-id> | shell <peer> [folder]
 orb mitosis instances|peers|grants|scopes|prune|pipe`)
 		return 0
 	}
@@ -150,6 +150,7 @@ orb mitosis instances|peers|grants|scopes|prune|pipe`)
 		} else if err := startMitosis(ctx, profile, true); err != nil {
 			return reportCLIError(streams.Stderr, err)
 		}
+		enableMitosisPlugin(ctx, profile)
 		_, _ = fmt.Fprintf(streams.Stdout, "Mitosis runs (profile %s).\n", profile)
 		return 0
 	}
@@ -194,7 +195,14 @@ orb mitosis instances|peers|grants|scopes|prune|pipe`)
 		return reportInSync(ctx, client, streams, peer, err)
 	}
 	if args[0] == "view" && len(args) == 3 {
-		return runMitosisView(ctx, remoteLink{profile: profile, peer: args[1], session: args[2]}, streams)
+		peer := args[1]
+		if admin, err := mitosisAdmin(ctx, profile); err == nil {
+			if resolved, rerr := peerArg(ctx, admin, peer); rerr == nil {
+				peer = resolved
+			}
+			_ = admin.Close()
+		}
+		return runMitosisView(ctx, remoteLink{profile: profile, peer: peer, session: args[2]}, streams)
 	}
 	if args[0] == "shell" && (len(args) == 2 || len(args) == 3) {
 		return runMitosisShell(ctx, profile, args[1], strings.Join(args[2:], ""), streams)
@@ -253,8 +261,8 @@ orb mitosis instances|peers|grants|scopes|prune|pipe`)
 		err = read()
 	case "trust":
 		if len(args) != 2 {
-			err = errors.New("trust requires PeerID")
-		} else {
+			err = errors.New("trust requires PeerID or device name")
+		} else if args[1], err = peerArg(ctx, client, args[1]); err == nil {
 			err = trustMitosisPeer(ctx, client, profile, args[1], true)
 			if err == nil {
 				return 0
@@ -262,7 +270,7 @@ orb mitosis instances|peers|grants|scopes|prune|pipe`)
 		}
 	case "block":
 		if len(args) != 2 {
-			err = errors.New("block requires PeerID")
+			err = errors.New("block requires PeerID or device name")
 		} else if args[1], err = peerArg(ctx, client, args[1]); err == nil {
 			params = mitosis.JSON(map[string]string{"peer_id": args[1]})
 		}
@@ -273,14 +281,27 @@ orb mitosis instances|peers|grants|scopes|prune|pipe`)
 				params = mitosis.JSON(map[string]string{args[1]: args[2]})
 			}
 		case len(args) != 1:
-			err = errors.New("sync takes join, add, remove, promote or demote <peer-id>")
+			err = errors.New("sync takes join, add, remove, promote or demote <peer>")
 		}
 	case "remote":
 		if len(args) != 3 {
-			err = errors.New("remote requires PeerID and method")
-		} else {
-			err = read()
-			params = mitosis.JSON(map[string]any{"peer_id": args[1], "method": args[2], "params": params})
+			err = errors.New("remote requires peer and method")
+		} else if args[1], err = peerArg(ctx, client, args[1]); err == nil {
+			if !streams.StdinTTY {
+				var raw []byte
+				raw, err = io.ReadAll(io.LimitReader(streams.Stdin, protocol.MaxFrame+1))
+				if err == nil {
+					if len(raw) > protocol.MaxFrame {
+						err = mitosis.Fail("resource_exhausted")
+					} else if strings.TrimSpace(string(raw)) != "" {
+						params = raw
+						err = protocol.Validate(params)
+					}
+				}
+			}
+			if err == nil {
+				params = mitosis.JSON(map[string]any{"peer_id": args[1], "method": args[2], "params": params})
+			}
 		}
 	case "prune":
 		method = "retire"
@@ -371,7 +392,11 @@ orb mitosis instances|peers|grants|scopes|prune|pipe`)
 					member = ", sync group"
 				}
 			}
-			_, _ = fmt.Fprintf(streams.Stdout, "  %s  %s%s\n", peer, status.PeerStates[peer], member)
+			name := ""
+			if n := strings.TrimSpace(status.PeerNames[peer]); n != "" {
+				name = "  " + n
+			}
+			_, _ = fmt.Fprintf(streams.Stdout, "  %s%s  %s%s\n", peer, name, status.PeerStates[peer], member)
 		}
 	default:
 		_, _ = fmt.Fprintln(streams.Stdout, string(result))
@@ -379,8 +404,9 @@ orb mitosis instances|peers|grants|scopes|prune|pipe`)
 	return 0
 }
 
-// peerArg is a PeerID typed whole or as an unambiguous prefix, with or without "orb:ed25519:", of
-// a device this Mitosis knows (paired peers or sync group members); anything else goes through as typed.
+// peerArg is a device name or a PeerID typed whole or as an unambiguous prefix, with or without
+// "orb:ed25519:", of a device this Mitosis knows (paired peers or sync group members); anything
+// else goes through as typed.
 func peerArg(ctx context.Context, client *protocol.Conn, arg string) (string, error) {
 	var status struct {
 		mitosisSettingsStatus
@@ -404,6 +430,14 @@ func peerArg(ctx context.Context, client *protocol.Conn, arg string) (string, er
 		}
 		if strings.HasPrefix(p, arg) || strings.HasPrefix(strings.TrimPrefix(p, "orb:ed25519:"), arg) {
 			match = append(match, p)
+		}
+	}
+	if len(match) == 0 {
+		query := strings.ToLower(strings.TrimSpace(arg))
+		for _, p := range known {
+			if name := strings.ToLower(strings.TrimSpace(status.PeerNames[p])); name != "" && name == query {
+				match = append(match, p)
+			}
 		}
 	}
 	if len(match) > 1 {
@@ -572,6 +606,7 @@ func runMitosisServiceCommand(ctx context.Context, profile string, args []string
 	case "install":
 		var note string
 		if note, err = daemon.Install(ctx, stateFromContext(ctx), profile); err == nil {
+			enableMitosisPlugin(ctx, profile)
 			_, _ = fmt.Fprintln(streams.Stdout, strings.TrimSpace("Mitosis runs as a service now: it starts with the machine and restarts if it crashes.\n"+note))
 		}
 	case "remove":

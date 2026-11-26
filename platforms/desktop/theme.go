@@ -320,33 +320,38 @@ func stretch(c *ui.Context, text string, height float32, color ui.Color, squeeze
 }
 
 // actionLine is one line per action (a tool call, a thought, a group of them): a mark, the verb,
-// what it acted on, what came of it. Live actions get the dot; ones that open show › or ⌄.
+// what it acted on, what came of it. Settled rows sit quiet in mute/meta; live actions get the
+// pulsing dot and full ink; failures surface in rupture.
 func actionLine(c *ui.Context, verb, target, result string, live, failed bool, open *bool) ui.Element {
 	pal := p(c)
-	ink := pal.mute
-	if live {
-		ink = pal.fg
+	verbInk, targetInk := pal.mute, pal.meta
+	if live || (open != nil && *open) {
+		verbInk, targetInk = pal.fg, pal.mute
 	}
-	return ui.Row(c).FillWidth().PaddingY(3).Children(func() {
-		ui.Row(c).Width(16).Children(func() {
+	return ui.Row(c).FillWidth().PaddingY(3).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Width(16).AlignItems(ui.Center).Children(func() {
 			switch {
 			case live:
-				dot(c, rupture, 6, true, false)
+				dot(c, rupture, 5, true, false)
+			case failed:
+				ui.Text(c, "×").FontSize(12).TextColor(rupture)
 			case open != nil:
 				mark := "›"
 				if *open {
 					mark = "⌄"
 				}
-				ui.Text(c, mark).TextColor(pal.meta)
+				ui.Text(c, mark).TextColor(pal.meta.Alpha(0.75))
 			}
 		})
-		ui.Text(c, verb).Width(80).FontSize(small).FontWeight(medium).TextColor(ink).SingleLine()
-		ui.Text(c, target).Grow(1).Basis(0).FontSize(12).TextColor(ink).SingleLine().Tooltip(target)
-		r := pal.meta
-		if failed {
-			r = rupture
+		ui.Text(c, verb).MinWidth(68).MarginEnd(8).FontSize(small).FontWeight(medium).TextColor(verbInk).SingleLine()
+		ui.Text(c, target).Grow(1).Basis(0).MinWidth(0).FontSize(12).TextColor(targetInk).SingleLine().Tooltip(target)
+		if result != "" {
+			r := pal.meta
+			if failed {
+				r = rupture
+			}
+			ui.Text(c, result).MaxWidthPercent(30).MarginStart(8).FontSize(11).TextColor(r).SingleLine()
 		}
-		ui.Text(c, result).MaxWidthPercent(30).MarginStart(8).FontSize(11).TextColor(r).SingleLine()
 	})
 }
 

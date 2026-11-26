@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from "svelte";
   import { orb } from "../lib/store.svelte.js";
   import { base, HOME_COMMANDS, tidy } from "../lib/utils.js";
 
@@ -38,10 +39,13 @@
     }
   });
 
-  // Focus textarea when requested by keyboard shortcuts or tab switches
+  // Focus textarea ONLY when explicitly requested (Alt+L / bumpFocus), never on tab switch or mount.
+  let seenFocusTick = 0;
   $effect(() => {
-    void orb.focusTick;
-    if (orb.screen === "app" && !orb.overview && !orb.modelDeckOpen && !orb.paletteOpen && !orb.shortcutsOpen && !orb.explorerPeer) {
+    const tick = orb.focusTick;
+    if (tick === 0 || tick === seenFocusTick) return;
+    seenFocusTick = tick;
+    if (orb.screen === "app" && !orb.overview && !orb.modelDeckOpen && !orb.paletteOpen && !orb.shortcutsOpen && !orb.explorerPeer && !orb.terminalTab) {
       if (!tab || orb.activeTabId() === tab.id) {
         textarea?.focus({ preventScroll: true });
       }
@@ -58,8 +62,9 @@
 
   // Ensure defaults loaded for Home target machine
   $effect(() => {
-    if (!tab && aim.machine?.id) {
-      orb.ensureDefaults(aim.machine.id);
+    const machineId = !tab ? aim.machine?.id : "";
+    if (machineId) {
+      untrack(() => orb.ensureDefaults(machineId));
     }
   });
 
@@ -369,7 +374,6 @@
   {/if}
 
   <div class="input-row">
-    <span class="prompt-sigil" aria-hidden="true">&gt;</span>
     <textarea
       bind:this={textarea}
       class="prompt-input scroll"
@@ -455,18 +459,15 @@
     flex-shrink: 0;
     width: calc(100% - 2 * var(--margin));
     max-width: 780px;
-    margin: 6px auto max(12px, env(safe-area-inset-bottom));
+    margin: 6px auto max(14px, env(safe-area-inset-bottom));
     padding: 0;
     border: 1px solid var(--rule);
-    border-radius: var(--radius-md);
+    border-radius: 14px;
     background: var(--raised);
     transition: border-color var(--t-fast) var(--ease);
   }
   .prompt-deck:focus-within {
     border-color: var(--rule-focus);
-  }
-  .prompt-deck:focus-within .prompt-sigil {
-    color: var(--rupture);
   }
   .prompt-deck.dragging {
     border-color: var(--rupture);
@@ -474,24 +475,17 @@
   .input-row {
     display: flex;
     align-items: flex-start;
-    padding: 10px 12px 6px 10px;
+    padding: 12px 15px 4px;
     gap: 8px;
-  }
-  .prompt-sigil {
-    font-weight: 700;
-    line-height: 1.5;
-    color: var(--meta);
-    user-select: none;
-    transition: color var(--t-fast) var(--ease);
   }
   .prompt-input {
     display: block;
     flex: 1;
     width: 100%;
-    min-height: 2.5em;
+    min-height: 2.3em;
     max-height: min(14lh, 30dvh);
     field-sizing: content;
-    padding: 0 0 4px;
+    padding: 0 0 2px;
     border: 0;
     resize: none;
     background: none;
@@ -508,10 +502,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 5px 8px;
-    border-top: 1px solid var(--rule-soft);
-    background: var(--bg);
-    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    padding: 4px 10px 8px;
   }
   .deck-chip {
     display: flex;
@@ -575,36 +566,35 @@
     width: 26px;
     height: 26px;
     flex-shrink: 0;
-    border: 1px solid var(--rule);
+    border: 0;
     border-radius: var(--radius-sm);
-    background: var(--raised);
-    color: var(--fg);
+    background: transparent;
+    color: var(--mute);
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 600;
     cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .deck-queue {
     padding: 4px 9px;
-    border: 1px solid var(--rule-focus);
+    border: 0;
     border-radius: var(--radius-sm);
-    background: var(--raised);
+    background: var(--recessed);
     color: var(--fg);
     font-size: 11.5px;
-    font-weight: 700;
+    font-weight: 600;
     cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
     .deck-chip:hover:enabled {
-      background: var(--fg);
-      color: var(--bg);
+      background: var(--hover);
+      color: var(--fg);
     }
     .deck-icon:hover:enabled,
     .deck-queue:hover {
-      background: var(--fg);
-      border-color: var(--fg);
-      color: var(--bg);
+      background: var(--hover);
+      color: var(--fg);
     }
   }
 

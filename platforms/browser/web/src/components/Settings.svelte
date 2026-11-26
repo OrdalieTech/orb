@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from "svelte";
   import { orb } from "../lib/store.svelte.js";
   import {
     newerVersion,
@@ -44,23 +45,27 @@
   let syncGroup = $state(null);
   let updatingPeer = $state({});
 
-  // Load page data reactively whenever page/peer/vendor changes
+  // Load page data reactively whenever page/peer/vendor changes.
+  // untrack() prevents reads inside loadProviders/loadPlugins (e.g. providersByPeer,
+  // accountsByPeer, defaultsByPeer) from re-triggering this effect in an infinite loop.
   $effect(() => {
     const p = pageName;
     const peer = peerId;
     const vendor = vendorId;
     if (!orb.rawTab) return;
 
-    if (p === "general") {
-      const aim = orb.getAim();
-      if (aim.machine?.id) orb.ensureDefaults(aim.machine.id);
-    } else if (p === "providers") {
-      loadProviders(peer, vendor);
-    } else if (p === "plugins") {
-      loadPlugins(peer);
-    } else if (p === "mitosis") {
-      loadMitosis();
-    }
+    untrack(() => {
+      if (p === "general") {
+        const aim = orb.getAim();
+        if (aim.machine?.id) orb.ensureDefaults(aim.machine.id);
+      } else if (p === "providers") {
+        loadProviders(peer, vendor);
+      } else if (p === "plugins") {
+        loadPlugins(peer);
+      } else if (p === "mitosis") {
+        loadMitosis();
+      }
+    });
   });
 
   // Auto-copy device code on first appearance

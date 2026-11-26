@@ -73,7 +73,7 @@ once, under an alias derived from the object name, and is attached as its
   Worker has no listener of its own). It reaches another peer over a channel
   that peer opened: a laptop Orb that joined keeps its channel, and the object's
   agent calls it with `mitosis_call`. That tool is active only when
-  `plugins.mitosis-agent-calls` is on in the object's settings. Each call also
+  `plugins.mitosis` is on in the object's settings. Each call also
   needs the object's own instance grant for the destination, and a grant on
   the destination for the object's instance subject.
 - **Plugins.** The object's settings turn on `titles`, `tasks`, `questions` (answered by the app

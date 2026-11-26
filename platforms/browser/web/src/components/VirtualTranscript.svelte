@@ -2,6 +2,7 @@
   import { onDestroy, onMount, tick } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
   import { orb } from "../lib/store.svelte.js";
+  import { selectionToMarkdown } from "../lib/markdownCopy.js";
   import TranscriptRow from "./TranscriptRow.svelte";
 
   let {
@@ -10,6 +11,7 @@
     earlier = false,
     loaded = false,
     asleep = false,
+    busy = false,
     streaming = false,
     status = "",
     onEarlier = () => {},
@@ -57,6 +59,11 @@
     }
     if (row.kind === "run") {
       return 30 + (row.images?.length ? 116 : 0);
+    }
+    if (row.kind === "peer") {
+      const len = row.exchange?.text?.length || row.text?.length || 0;
+      const lines = Math.max(1, Math.ceil(len / 68));
+      return 34 + lines * 20 + (row.exchange?.reply ? 24 : 0);
     }
     if (row.kind === "note") return 32;
     if (row.kind === "md") {
@@ -294,12 +301,21 @@
     else expandedMap.set(key, true);
   }
 
+  function handleCopy(e) {
+    const md = selectionToMarkdown(window.getSelection());
+    if (md && e.clipboardData) {
+      e.clipboardData.setData("text/plain", md);
+      e.preventDefault();
+    }
+  }
+
   let statusWorking = $derived(
     status === "sending…" || status === "opening the thread…" || status === "reconnecting",
   );
   let statusAlarm = $derived(
     !!status && !statusWorking && !status.startsWith("asleep") && !status.startsWith("offline"),
   );
+  let lastRowLive = $derived(rows.length > 0 && !!rows[rows.length - 1]?.live);
 </script>
 
 <div class="transcript-shell">
@@ -314,6 +330,7 @@
     onwheel={onWheel}
     ontouchmove={onTouchMove}
     onkeydown={onKeyDown}
+    oncopy={handleCopy}
     tabindex="-1"
   >
     <div class="chat-col">
@@ -331,6 +348,9 @@
           {:else if statusWorking}
             <i class="led round live"></i>
             <span>{status}</span>
+          {:else if busy}
+            <i class="led round live"></i>
+            <span>working…</span>
           {:else if statusAlarm}
             <p class="status-banner alarm" role="alert">{status}</p>
           {:else if asleep}
@@ -353,8 +373,18 @@
       <div class="tail-space">
         {#if streaming}
           <span class="caret" aria-hidden="true"></span>
+        {:else if statusWorking && rows.length > 0}
+          <div class="working-line">
+            <i class="led round live"></i>
+            <span>{status}</span>
+          </div>
+        {:else if busy && !lastRowLive && rows.length > 0}
+          <div class="working-line">
+            <i class="led round live"></i>
+            <span>working…</span>
+          </div>
         {/if}
-        {#if status && (rows.length > 0 || (!statusWorking && !statusAlarm))}
+        {#if status && !statusWorking && (rows.length > 0 || !statusAlarm)}
           <p class="status-line" class:alarm={statusAlarm}>{status}</p>
         {/if}
       </div>
@@ -382,7 +412,7 @@
     overflow-y: auto;
     overflow-anchor: none;
     overflow-wrap: anywhere;
-    padding: 16px var(--margin) 0;
+    padding: 44px var(--margin) 0;
   }
   .transcript:focus-visible { outline: 0; }
   .chat-col {
@@ -418,8 +448,8 @@
     contain: layout style;
   }
   .tail-space {
-    min-height: 40px;
-    padding: 8px 0 12px;
+    min-height: 136px;
+    padding: 8px 0 120px;
   }
   .caret {
     display: block;
@@ -428,6 +458,15 @@
     border-radius: 0;
     background: var(--rupture);
     animation: led-step 0.9s steps(1) infinite;
+  }
+  .working-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--meta);
   }
   .status-line {
     font-size: 12px;

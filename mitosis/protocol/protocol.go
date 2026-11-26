@@ -12,6 +12,7 @@ import (
 	"io"
 	"slices"
 	"strconv"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/OrdalieTech/orb/internal/jsonwire"
@@ -67,23 +68,48 @@ func Read(r io.Reader) ([]byte, error) {
 	}
 	return b, nil
 }
+
+var writeBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 0, 16<<10)
+		return &b
+	},
+}
+
 func Write(w io.Writer, b []byte) error {
 	if len(b) == 0 || len(b) > MaxFrame {
 		return errors.New("invalid frame length")
 	}
-	var h [4]byte
-	binary.BigEndian.PutUint32(h[:], uint32(len(b)))
-	for _, part := range [][]byte{h[:], b} {
-		for len(part) > 0 {
-			n, err := w.Write(part)
-			if err != nil {
-				return err
-			}
-			if n == 0 {
-				return io.ErrShortWrite
-			}
-			part = part[n:]
+	total := 4 + len(b)
+	// Coalesce length prefix and payload into one Write so TLS/WebSocket emit a single record/frame.
+	pooled := writeBufPool.Get().(*[]byte)
+	buf := *pooled
+	if cap(buf) < total {
+		buf = make([]byte, total)
+	} else {
+		buf = buf[:total]
+	}
+	defer func() {
+		// Cap retained pooled buffers so a rare 1 MiB frame does not pin memory forever.
+		if cap(buf) <= 64<<10 {
+			*pooled = buf[:0]
+		} else {
+			*pooled = make([]byte, 0, 16<<10)
 		}
+		writeBufPool.Put(pooled)
+	}()
+	binary.BigEndian.PutUint32(buf[:4], uint32(len(b)))
+	copy(buf[4:], b)
+	frame := buf
+	for len(frame) > 0 {
+		n, err := w.Write(frame)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+		frame = frame[n:]
 	}
 	return nil
 }
@@ -112,8 +138,316 @@ func Canonical(b []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// Validate accepts exactly the payloads Canonical does.
-func Validate(b []byte) error { _, err := parse(b); return err }
+// Validate accepts exactly the payloads Canonical does without materializing an AST.
+func Validate(b []byte) error {
+	if len(b) > MaxFrame || !utf8.Valid(b) {
+		return errors.New("invalid JSON encoding")
+	}
+	v := validator{b: b}
+	v.skipWS()
+	if v.i >= len(v.b) || v.b[v.i] != '{' {
+		return errors.New("JSON object required")
+	}
+	if err := v.object(0); err != nil {
+		return err
+	}
+	v.skipWS()
+	if v.i != len(v.b) {
+		return errors.New("trailing JSON")
+	}
+	return nil
+}
+
+type validator struct {
+	b []byte
+	i int
+}
+
+func (v *validator) skipWS() {
+	for v.i < len(v.b) {
+		switch v.b[v.i] {
+		case ' ', '\t', '\r', '\n':
+			v.i++
+		default:
+			return
+		}
+	}
+}
+
+func (v *validator) value(depth int) error {
+	if depth > MaxDepth {
+		return errors.New("JSON nesting limit")
+	}
+	v.skipWS()
+	if v.i >= len(v.b) {
+		return io.ErrUnexpectedEOF
+	}
+	switch v.b[v.i] {
+	case '{':
+		return v.object(depth)
+	case '[':
+		return v.array(depth)
+	case '"':
+		_, _, err := v.stringToken()
+		return err
+	case 't':
+		if v.i+4 <= len(v.b) && string(v.b[v.i:v.i+4]) == "true" {
+			v.i += 4
+			return nil
+		}
+		return errors.New("invalid JSON literal")
+	case 'f':
+		if v.i+5 <= len(v.b) && string(v.b[v.i:v.i+5]) == "false" {
+			v.i += 5
+			return nil
+		}
+		return errors.New("invalid JSON literal")
+	case 'n':
+		if v.i+4 <= len(v.b) && string(v.b[v.i:v.i+4]) == "null" {
+			v.i += 4
+			return nil
+		}
+		return errors.New("invalid JSON literal")
+	default:
+		return v.number()
+	}
+}
+
+func (v *validator) object(depth int) error {
+	if depth > MaxDepth {
+		return errors.New("JSON nesting limit")
+	}
+	v.i++ // '{'
+	v.skipWS()
+	if v.i >= len(v.b) {
+		return io.ErrUnexpectedEOF
+	}
+	if v.b[v.i] == '}' {
+		v.i++
+		return nil
+	}
+	// Stack-allocated slice avoids a map allocation for typical small RPC objects.
+	var smallKeys [8][]byte
+	nSmall := 0
+	var largeKeys map[string]struct{}
+	for {
+		v.skipWS()
+		if v.i >= len(v.b) || v.b[v.i] != '"' {
+			return errors.New("invalid object key")
+		}
+		rawKey, escaped, err := v.stringToken()
+		if err != nil {
+			return err
+		}
+		keyBytes := rawKey
+		if escaped {
+			var decoded string
+			if err := json.Unmarshal(v.b[v.i-len(rawKey)-2:v.i], &decoded); err != nil {
+				return err
+			}
+			keyBytes = []byte(decoded)
+		}
+		if largeKeys != nil {
+			k := string(keyBytes)
+			if _, dup := largeKeys[k]; dup {
+				return errors.New("duplicate object key")
+			}
+			largeKeys[k] = struct{}{}
+		} else {
+			for j := range nSmall {
+				if bytes.Equal(smallKeys[j], keyBytes) {
+					return errors.New("duplicate object key")
+				}
+			}
+			if nSmall < len(smallKeys) {
+				smallKeys[nSmall] = keyBytes
+				nSmall++
+			} else {
+				largeKeys = make(map[string]struct{}, 16)
+				for j := range nSmall {
+					largeKeys[string(smallKeys[j])] = struct{}{}
+				}
+				largeKeys[string(keyBytes)] = struct{}{}
+			}
+		}
+		v.skipWS()
+		if v.i >= len(v.b) || v.b[v.i] != ':' {
+			return errors.New("expected ':'")
+		}
+		v.i++
+		if err := v.value(depth + 1); err != nil {
+			return err
+		}
+		v.skipWS()
+		if v.i >= len(v.b) {
+			return io.ErrUnexpectedEOF
+		}
+		if v.b[v.i] == '}' {
+			v.i++
+			return nil
+		}
+		if v.b[v.i] != ',' {
+			return errors.New("expected ',' or '}'")
+		}
+		v.i++
+	}
+}
+
+func (v *validator) array(depth int) error {
+	if depth > MaxDepth {
+		return errors.New("JSON nesting limit")
+	}
+	v.i++ // '['
+	v.skipWS()
+	if v.i >= len(v.b) {
+		return io.ErrUnexpectedEOF
+	}
+	if v.b[v.i] == ']' {
+		v.i++
+		return nil
+	}
+	for {
+		if err := v.value(depth + 1); err != nil {
+			return err
+		}
+		v.skipWS()
+		if v.i >= len(v.b) {
+			return io.ErrUnexpectedEOF
+		}
+		if v.b[v.i] == ']' {
+			v.i++
+			return nil
+		}
+		if v.b[v.i] != ',' {
+			return errors.New("expected ',' or ']'")
+		}
+		v.i++
+	}
+}
+
+func (v *validator) stringToken() ([]byte, bool, error) {
+	v.i++ // '"'
+	start := v.i
+	escaped := false
+	for v.i < len(v.b) {
+		c := v.b[v.i]
+		if c == '"' {
+			raw := v.b[start:v.i]
+			v.i++
+			return raw, escaped, nil
+		}
+		if c < 0x20 {
+			return nil, false, errors.New("control character in string")
+		}
+		if c != '\\' {
+			v.i++
+			continue
+		}
+		escaped = true
+		v.i++
+		if v.i >= len(v.b) {
+			return nil, false, io.ErrUnexpectedEOF
+		}
+		switch v.b[v.i] {
+		case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
+			v.i++
+		case 'u':
+			u, ok := parseHex4(v.b[v.i+1:])
+			if !ok {
+				return nil, false, errors.New("invalid unicode escape")
+			}
+			v.i += 5
+			if u >= 0xdc00 && u <= 0xdfff {
+				return nil, false, errors.New("lone low surrogate")
+			}
+			if u >= 0xd800 && u <= 0xdbff {
+				if v.i+6 > len(v.b) || v.b[v.i] != '\\' || v.b[v.i+1] != 'u' {
+					return nil, false, errors.New("lone high surrogate")
+				}
+				low, ok := parseHex4(v.b[v.i+2:])
+				if !ok || low < 0xdc00 || low > 0xdfff {
+					return nil, false, errors.New("invalid surrogate pair")
+				}
+				v.i += 6
+			}
+		default:
+			return nil, false, errors.New("invalid escape character")
+		}
+	}
+	return nil, false, io.ErrUnexpectedEOF
+}
+
+func parseHex4(b []byte) (uint16, bool) {
+	if len(b) < 4 {
+		return 0, false
+	}
+	var out uint16
+	for i := range 4 {
+		c := b[i]
+		var d uint16
+		switch {
+		case c >= '0' && c <= '9':
+			d = uint16(c - '0')
+		case c >= 'a' && c <= 'f':
+			d = uint16(c-'a') + 10
+		case c >= 'A' && c <= 'F':
+			d = uint16(c-'A') + 10
+		default:
+			return 0, false
+		}
+		out = out<<4 | d
+	}
+	return out, true
+}
+
+func (v *validator) number() error {
+	start := v.i
+	if v.b[v.i] == '-' {
+		v.i++
+		if v.i >= len(v.b) {
+			return errors.New("invalid number")
+		}
+	}
+	if v.b[v.i] == '0' {
+		v.i++
+	} else if v.b[v.i] >= '1' && v.b[v.i] <= '9' {
+		for v.i < len(v.b) && v.b[v.i] >= '0' && v.b[v.i] <= '9' {
+			v.i++
+		}
+	} else {
+		return errors.New("invalid number")
+	}
+	hasExp := false
+	if v.i < len(v.b) && v.b[v.i] == '.' {
+		v.i++
+		if v.i >= len(v.b) || v.b[v.i] < '0' || v.b[v.i] > '9' {
+			return errors.New("invalid number")
+		}
+		for v.i < len(v.b) && v.b[v.i] >= '0' && v.b[v.i] <= '9' {
+			v.i++
+		}
+	}
+	if v.i < len(v.b) && (v.b[v.i] == 'e' || v.b[v.i] == 'E') {
+		hasExp = true
+		v.i++
+		if v.i < len(v.b) && (v.b[v.i] == '+' || v.b[v.i] == '-') {
+			v.i++
+		}
+		if v.i >= len(v.b) || v.b[v.i] < '0' || v.b[v.i] > '9' {
+			return errors.New("invalid number")
+		}
+		for v.i < len(v.b) && v.b[v.i] >= '0' && v.b[v.i] <= '9' {
+			v.i++
+		}
+	}
+	// Reject float64 overflow (e.g. 1e999) to match json.Decoder's IEEE 754 number parsing.
+	if hasExp || v.i-start > 300 {
+		if _, err := strconv.ParseFloat(string(v.b[start:v.i]), 64); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func parse(b []byte) (any, error) {
 	if len(b) > MaxFrame || !utf8.Valid(b) || !validSurrogates(b) {

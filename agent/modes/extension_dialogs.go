@@ -336,6 +336,13 @@ func NewExtensionInputComponent(
 	return component
 }
 
+func (component *ExtensionInputComponent) SetValue(value string) {
+	component.input.SetValue(value)
+	if value != "" {
+		component.input.HandleInput(tui.KeyEvent{Raw: "\x05"})
+	}
+}
+
 func (component *ExtensionInputComponent) HandleInput(event tui.KeyEvent) {
 	bindings := tui.GetKeybindings()
 	switch {

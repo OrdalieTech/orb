@@ -154,6 +154,7 @@ private struct Turn: View, Equatable {
                         switch r.kind {
                         case "md": if let b = r.block { Markdown(b: b) }
                         case "run": if r.actions.count == 1 { ActionView(a: r.actions[0], tab: tab) } else { Worked(r: r, tab: tab) }
+                        case "peer": if let ex = r.exchange { PeerExchangeView(ex: ex) }
                         case "note": Folded(text: r.text, color: r.alarm ? Ink.rupture : Ink.meta)
                         default: EmptyView()
                         }
@@ -454,5 +455,59 @@ private struct Details: View {
         }
         .formStyle(.grouped)
         .onChange(of: t.title, initial: true) { name = t.title }
+    }
+}
+
+/// A lightweight inter-agent message (Mitosis peer or local subagent) on a quiet recessed surface.
+private struct PeerExchangeView: View {
+    let ex: Exchange
+    @State private var open = false
+
+    private var accent: Color {
+        if ex.failed { return Ink.rupture }
+        if ex.scope == "peer" { return Ink.blue }
+        return Ink.meta
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(ex.dir == "in" ? "←" : "→").font(.caption.weight(.bold)).foregroundStyle(accent)
+                Text(ex.who).font(.caption.weight(.semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+                Spacer(minLength: 6)
+                if !ex.status.isEmpty {
+                    Text(ex.status).font(.caption2).foregroundStyle(ex.failed ? Ink.rupture : Ink.meta)
+                }
+            }
+            if !ex.text.isEmpty {
+                Text(ex.text).font(.body).foregroundStyle(Ink.fg).textSelection(.enabled)
+            }
+            if ex.scope == "subagent", !ex.live, !ex.reply.isEmpty || !ex.steps.isEmpty {
+                let preview = open ? "hide reply" : (ex.reply.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? "view details")
+                Button { open.toggle() } label: {
+                    HStack(spacing: 6) {
+                        Text("←").foregroundStyle(Ink.meta)
+                        Text(preview).foregroundStyle(Ink.meta).lineLimit(1)
+                    }.font(.caption)
+                }.buttonStyle(.plain)
+                if open {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if !ex.steps.isEmpty {
+                            Text(ex.steps).font(.caption2.monospaced()).foregroundStyle(Ink.meta).textSelection(.enabled)
+                        }
+                        if !ex.reply.isEmpty {
+                            Text(ex.reply).font(.caption).foregroundStyle(Ink.fg).textSelection(.enabled)
+                        }
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Ink.fg.opacity(0.04), in: .rect(cornerRadius: 4))
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Ink.fg.opacity(0.045), in: .rect(cornerRadius: 4))
     }
 }

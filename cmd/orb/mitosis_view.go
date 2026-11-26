@@ -395,6 +395,9 @@ func runMitosisShell(parent context.Context, profile, peer, cwd string, streams 
 		return reportCLIError(streams.Stderr, errors.New("mitosis unavailable; run orb mitosis start"))
 	}
 	defer func() { _ = admin.Close() }()
+	if peer, err = peerArg(parent, admin, peer); err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	call := func(method string, params, result any) error {

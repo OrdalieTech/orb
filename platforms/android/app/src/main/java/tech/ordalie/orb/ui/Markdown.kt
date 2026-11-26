@@ -3,10 +3,12 @@ package tech.ordalie.orb.ui
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextDecoration
@@ -33,7 +35,7 @@ fun Markdown(b: Block, size: Float = SIZE, ink: Color = p.fg) {
         "p" -> BasicText(spans(b.spans, p.mute, p.raised), indent, body)
         "h" -> BasicText(spans(b.spans, p.mute, p.raised), indent.padding(top = 4.dp), type(if (b.level <= 2) (size + 3).sp else (size + 1).sp, ink, Strong))
         "li" -> Row(indent) {
-            T(b.mark, Modifier.width(if (b.mark == "·") (size + 1).dp else (size * 1.8f).dp), size = size.sp, color = p.meta, weight = Medium)
+            DisableSelection { T(b.mark, Modifier.width(if (b.mark == "·") (size + 1).dp else (size * 1.8f).dp), size = size.sp, color = p.meta, weight = Medium) }
             BasicText(spans(b.spans, p.mute, p.raised), Modifier.weight(1f), body)
         }
         // A quote holds blocks of its own, its bar as tall as they are.
@@ -51,10 +53,19 @@ fun Markdown(b: Block, size: Float = SIZE, ink: Color = p.fg) {
 
 /** Code wraps, so a long line reads without sideways scrolling, which swipes pages here; a drawing scrolls, its lines flush. */
 @Composable
-private fun Code(b: Block, size: Float, modifier: Modifier) = Column(modifier.fillMaxWidth().background(p.raised, Pane).border(1.dp, p.rule, Pane).padding(12.dp)) {
-    if (b.lang.isNotEmpty()) T(b.lang, Modifier.padding(bottom = 6.dp), label = true, color = p.meta)
-    if (b.type == "art") Box(Modifier.horizontalScroll(rememberScrollState())) { BasicText(b.text, style = type((size - 3).sp, p.fg).copy(lineHeight = 1.1.em, letterSpacing = 0.sp), softWrap = false) }
-    else BasicText(b.text, style = type((size - 3).sp, p.fg))
+private fun Code(b: Block, size: Float, modifier: Modifier) {
+    val ctx = LocalContext.current
+    Column(modifier.fillMaxWidth().background(p.raised, Pane).border(1.dp, p.rule, Pane).padding(12.dp)) {
+        DisableSelection {
+            Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                if (b.lang.isNotEmpty()) T(b.lang, label = true, color = p.meta)
+                Spacer(Modifier.weight(1f))
+                T("copy", Modifier.press { ctx.copy(b.text) }, label = true, color = p.meta)
+            }
+        }
+        if (b.type == "art") Box(Modifier.horizontalScroll(rememberScrollState())) { BasicText(b.text, style = type((size - 3).sp, p.fg).copy(lineHeight = 1.1.em, letterSpacing = 0.sp), softWrap = false) }
+        else BasicText(b.text, style = type((size - 3).sp, p.fg))
+    }
 }
 
 /** A table as wide as its cells (each column up to 28 characters, wrapping beyond); a wide one scrolls sideways. */
@@ -63,12 +74,12 @@ private fun Grid(rows: List<List<List<Span>>>, size: Float, modifier: Modifier) 
     if (rows.isEmpty()) return
     val cols = rows.maxOf { it.size }
     val widths = (0 until cols).map { c -> ((rows.maxOf { r -> r.getOrNull(c)?.sumOf { it.text.length } ?: 0 }.coerceIn(3, 28)) * (size - 1) * 0.58f + 16).dp }
-    Column(modifier.horizontalScroll(rememberScrollState()).border(1.dp, p.rule, Soft)) {
+    Column(modifier.horizontalScroll(rememberScrollState())) {
         rows.forEachIndexed { r, row ->
-            if (r > 0) Box(Modifier.width(widths.fold(0.dp) { a, w -> a + w }).height(1.dp).background(p.rule))
-            Row(Modifier.background(if (r == 0) p.raised else Color.Transparent)) {
+            if (r > 0) Box(Modifier.width(widths.fold(0.dp) { a, w -> a + w }).height(1.dp).background(p.rule.copy(alpha = 0.6f)))
+            Row {
                 for (c in 0 until cols) BasicText(spans(row.getOrNull(c).orEmpty(), p.mute, p.raised), Modifier.width(widths[c]).padding(horizontal = 8.dp, vertical = 6.dp),
-                    type((size - 1).sp, p.fg, if (r == 0) Strong else Regular))
+                    type((size - 1).sp, if (r == 0) p.mute else p.fg, if (r == 0) Strong else Regular))
             }
         }
     }

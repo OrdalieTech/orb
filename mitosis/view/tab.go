@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/OrdalieTech/orb/agent/session/exporthtml"
 	"github.com/OrdalieTech/orb/mitosis"
@@ -341,8 +343,8 @@ func (t *tab) describe() bool {
 			}
 		}
 	}
-	// The strip already shows the provider's quota.
-	t.Slots = slices.DeleteFunc(d.Slots, func(s Slot) bool { return s.Key == "status:provider-usage" })
+	// The strip already shows provider quota and peer connectivity; drop terminal-only marks (e.g. mitosis "○").
+	t.Slots = slices.DeleteFunc(d.Slots, dropAppSlot)
 	t.Commands = nil
 	for _, c := range d.Commands {
 		t.Commands = append(t.Commands, Command{Name: c.Name, Hint: c.Description})
@@ -374,7 +376,7 @@ func (t *tab) describe() bool {
 
 func firstUserLine(t *transcript) string {
 	for _, it := range t.items {
-		if it.kind == "y" {
+		if it.kind == "y" || it.kind == "p" {
 			return firstLine(it.text, 48)
 		}
 	}
@@ -452,6 +454,7 @@ func (t *tab) snapshot() {
 	t.tr.clear()
 	t.tr.load(messages, from)
 	if partial != nil {
+		t.Busy = true
 		t.tr.apply(json.RawMessage(`{"type":"message_update","message":` + string(partial) + `}`))
 	}
 	t.cursor, t.Loaded = cursor, true
@@ -508,10 +511,19 @@ func (t *tab) events(waits bool) {
 	}
 	for _, e := range r.Events {
 		var info struct{ Type, Name string }
-		if json.Unmarshal(e.Data, &info) == nil && info.Type == "session_info_changed" && info.Name != "" {
-			t.Title = info.Name
+		if json.Unmarshal(e.Data, &info) == nil {
+			switch info.Type {
+			case "session_info_changed":
+				if info.Name != "" {
+					t.Title = info.Name
+				}
+			case "agent_start", "turn_start", "message_start", "message_update", "tool_execution_start", "tool_execution_update", "auto_retry_start", "compaction_start":
+				t.Busy = true
+			case "agent_end":
+				t.Busy = false
+				t.ended = true
+			}
 		}
-		t.ended = t.ended || info.Type == "agent_end"
 		t.tr.apply(e.Data)
 	}
 	t.cursor = cmp.Or(r.Cursor, t.cursor)
@@ -875,4 +887,17 @@ func (t *tab) render() {
 	if !unchanged {
 		t.a.o.Emit(map[string]any{"t": "rows", "tab": t.ID, "at": k + at, "rows": tail[at:]})
 	}
+}
+
+var slotANSI = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+
+// dropAppSlot filters out terminal-only status marks (such as mitosis's lone "○"/"●"
+// footer dot and provider-usage quota already rendered in the strip) so apps never
+// display stray glyphs above the prompt box.
+func dropAppSlot(s Slot) bool {
+	if s.Key == "status:provider-usage" || s.Key == "status:mitosis" {
+		return true
+	}
+	plain := slotANSI.ReplaceAllString(strings.Join(s.Lines, ""), "")
+	return !strings.ContainsFunc(plain, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) })
 }

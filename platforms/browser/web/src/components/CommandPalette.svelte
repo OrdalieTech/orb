@@ -13,7 +13,16 @@
     const items = [
       { group: "navigate", label: "Home", detail: "all devices & threads", kbd: "Alt+H", run: () => orb.focus("") },
       { group: "navigate", label: "Overview grid", detail: "live cards of open tabs", kbd: "Ctrl+G", run: () => orb.toggleOverview() },
-      { group: "navigate", label: "Toggle split view", detail: "two conversations side by side", kbd: "Alt+D", run: () => orb.toggleSplit() },
+      { group: "navigate", label: "Mitosis map", detail: "organic topology of devices, sessions & peer links", run: () => orb.toggleMitosisMap() },
+      { group: "navigate", label: "Split right", detail: "open a pane to the right", kbd: "⌘/Alt+D", run: () => orb.splitActiveTile("right") },
+      { group: "navigate", label: "Split down", detail: "open a pane below", kbd: "⌘/Alt+⇧D", run: () => orb.splitActiveTile("bottom") },
+      ...(orb.isSplit
+        ? [
+            { group: "navigate", label: orb.zoomedTileId ? "Restore split" : "Zoom tile", detail: "expand active pane to full screen", kbd: "⌘⇧↩", run: () => orb.toggleZoomTile() },
+            { group: "navigate", label: "Even out tiles", detail: "equalize split pane sizes", kbd: "Alt+⇧=", run: () => orb.equalizeTiles() },
+            { group: "navigate", label: "Close split tile", detail: "close the active pane", kbd: "Alt+⇧W", run: () => orb.closeTile() },
+          ]
+        : []),
       { group: "navigate", label: "Model & reasoning deck", detail: "switch model or effort", kbd: "Ctrl+M", run: () => orb.openModelDeck() },
       { group: "navigate", label: "Cycle reasoning level", detail: "step thinking effort", kbd: "Shift+Tab", run: () => orb.cycleReasoning() },
       { group: "navigate", label: "Toggle tool outputs", detail: "expand or collapse tool runs", kbd: "Ctrl+O", run: () => orb.toggleToolsExpanded() },

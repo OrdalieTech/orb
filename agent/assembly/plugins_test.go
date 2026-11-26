@@ -379,7 +379,7 @@ func TestToggleExternalCLIPreservesCommandsAndAddsKnownCLIs(t *testing.T) {
 func TestCapabilitiesWithDedicatedSettingsHaveNoPluginToggles(t *testing.T) {
 	settings := must(config.NewSettingsManager(t.TempDir(), config.WithAgentDir(t.TempDir())))
 	for _, row := range pluginGridRows(settings, extensions.NewNoopUI().Theme()) {
-		if row.Value == "mitosis" || row.Value == "mitosis-agent-calls" || row.Value == "provider-usage" {
+		if row.Value == "mitosis" || row.Value == "provider-usage" {
 			t.Fatalf("duplicate settings toggle: %s", row.Value)
 		}
 	}

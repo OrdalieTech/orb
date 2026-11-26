@@ -6,6 +6,33 @@
   let activeTab = $derived(orb.getTab(orb.activeTabId()));
   let contextShare = $derived(activeTab?.context || 0);
   let litSegments = $derived(Math.round(contextShare * 10));
+  let contextOpen = $state(false);
+  let contextWrap = $state(null);
+
+  $effect(() => {
+    if (!contextOpen) return;
+    const onDown = e => {
+      if (contextWrap && !contextWrap.contains(e.target)) contextOpen = false;
+    };
+    const onKey = e => {
+      if (e.key === "Escape") {
+        contextOpen = false;
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  });
+
+  function compactNow() {
+    if (!activeTab) return;
+    contextOpen = false;
+    orb.submitMessage(activeTab.id, "/compact").catch(() => {});
+  }
 
   function onDragStart(e, id) {
     e.dataTransfer.setData("text/orb-tab", id);
@@ -23,7 +50,7 @@
   <button
     type="button"
     class="orb-mark"
-    class:on={!orb.shown && !orb.overview}
+    class:on={!orb.shown && !orb.overview && !orb.mitosisMap}
     onclick={() => orb.focus("")}
     title="Home (Alt+H)"
     aria-label="Home"
@@ -33,15 +60,16 @@
 
   <div class="tab-strip scroll">
     {#each tabs as c, i (c.id)}
-      {@const isShown = !orb.overview && (c.id === orb.shown || c.id === orb.splitTab)}
+      {@const isActive = !orb.overview && c.id === orb.activeTabId()}
+      {@const isVisible = !orb.overview && orb.visibleTabs.includes(c.id)}
       {@const m = orb.getMachine(c.peer)}
       <div
         class="tab-chip"
-        class:on={isShown}
-        class:secondary={c.id === orb.splitTab}
+        class:on={isActive || isVisible}
+        class:secondary={isVisible && !isActive}
         role="tab"
         tabindex="0"
-        aria-selected={isShown}
+        aria-selected={isActive}
         title={[c.where, word(c)].filter(Boolean).join(" · ")}
         draggable="true"
         onclick={() => orb.focus(c.id)}
@@ -74,14 +102,53 @@
 
   <div class="bar-right">
     {#if contextShare > 0 && !orb.overview}
-      <span class="sync-bay" class:alarm={contextShare > 0.8} title="Context window usage">
-        <span class="sync-bars">
-          {#each Array(10) as _, idx}
-            <i class:lit={idx < litSegments}></i>
-          {/each}
-        </span>
-        <span>{Math.round(contextShare * 100)}%</span>
-      </span>
+      <div class="ctx-wrap" bind:this={contextWrap}>
+        <button
+          type="button"
+          class="sync-bay ctx-btn"
+          class:alarm={contextShare > 0.8}
+          class:on={contextOpen}
+          onclick={() => (contextOpen = !contextOpen)}
+          aria-expanded={contextOpen}
+          title="Context window usage · click for details"
+        >
+          <span class="sync-bars">
+            {#each Array(10) as _, idx}
+              <i class:lit={idx < litSegments}></i>
+            {/each}
+          </span>
+          <span>{Math.round(contextShare * 100)}%</span>
+        </button>
+
+        {#if contextOpen && activeTab}
+          {@const pct = Math.round(contextShare * 100)}
+          <div class="ctx-pop" role="dialog" aria-label="Context window usage">
+            <div class="ctx-head">
+              <span class="ctx-title">context window</span>
+              <span class="ctx-pct" class:alarm={contextShare > 0.8}>{pct}% used</span>
+            </div>
+            <div class="ctx-meter">
+              <div class="ctx-fill" class:alarm={contextShare > 0.8} style="width: {Math.min(100, pct)}%"></div>
+            </div>
+            <p class="ctx-desc">
+              Share of the model’s context window filled by this conversation. Compact summarizes earlier turns to free room.
+            </p>
+            <div class="ctx-meta">
+              {#if activeTab.model}
+                <span>model</span>
+                <strong>{activeTab.model.split("/").pop()}{activeTab.thinking && activeTab.thinking !== "off" ? ` · ${activeTab.thinking}` : ""}</strong>
+              {/if}
+              {#if activeTab.cost > 0}
+                <span>session cost</span>
+                <strong>${activeTab.cost.toFixed(2)}</strong>
+              {/if}
+            </div>
+            <button type="button" class="ctx-compact" onclick={compactNow} disabled={!!activeTab.busy}>
+              {activeTab.busy ? "turn running…" : "compact context (/compact)"}
+            </button>
+          </div>
+        {/if}
+      </div>
     {/if}
 
     <button
@@ -91,6 +158,24 @@
       title="Command palette (Ctrl+P / ⌘K)"
     >
       <kbd>^P</kbd>
+    </button>
+
+    <button
+      type="button"
+      class="bar-btn"
+      class:on={orb.mitosisMap}
+      onclick={() => orb.toggleMitosisMap()}
+      title="Mitosis topology map"
+      aria-label="Mitosis topology map"
+    >
+      <svg class="mt-ico" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.35" aria-hidden="true">
+        <path d="M8 8 C6.5 6 5.5 4.8 3.6 3.8 M8 8 C10 6.5 11.2 5.2 12.6 4.2 M8 8 C6.2 9.8 5.4 11 3.8 12.2 M8 8 C9.8 9.6 10.8 11 12.4 12" />
+        <circle cx="8" cy="8" r="2.1" fill={orb.mitosisMap ? "currentColor" : "var(--bg)"} />
+        <circle cx="3.2" cy="3.6" r="1.4" fill="currentColor" />
+        <circle cx="12.8" cy="4" r="1.4" fill="currentColor" />
+        <circle cx="3.5" cy="12.4" r="1.4" fill="currentColor" />
+        <circle cx="12.6" cy="12.2" r="1.4" fill="currentColor" />
+      </svg>
     </button>
 
     {#if tabs.length > 0}
@@ -106,18 +191,16 @@
       </button>
     {/if}
 
-    {#if tabs.length > 1}
-      <button
-        type="button"
-        class="bar-btn split-btn"
-        class:on={!!orb.splitTab}
-        onclick={() => orb.toggleSplit()}
-        title="Split view (Alt+D)"
-        aria-label="Split view"
-      >
-        <span class="split-ico"><i></i><i></i></span>
-      </button>
-    {/if}
+    <button
+      type="button"
+      class="bar-btn split-btn"
+      class:on={orb.isSplit}
+      onclick={() => orb.splitActiveTile("right")}
+      title="Split right (⌘/Alt+D · ⇧D down)"
+      aria-label="Split view"
+    >
+      <span class="split-ico"><i></i><i></i></span>
+    </button>
 
     <button
       type="button"
@@ -134,21 +217,22 @@
 <style>
   .topbar {
     display: flex;
-    align-items: stretch;
-    gap: 0;
+    align-items: center;
+    gap: 4px;
     height: 38px;
     flex-shrink: 0;
-    padding: 0;
+    padding: 0 8px;
     background: var(--bg);
-    border-bottom: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule-soft);
     z-index: 5;
   }
   .orb-mark {
     display: inline-flex;
     align-items: center;
-    padding: 0 14px;
+    height: 26px;
+    padding: 0 10px;
     border: 0;
-    border-right: 1px solid var(--rule-soft);
+    border-radius: var(--radius-sm);
     background: transparent;
     cursor: pointer;
     flex-shrink: 0;
@@ -158,18 +242,17 @@
     font-size: 11px;
     line-height: 14px;
     letter-spacing: 0.08em;
-    color: var(--fg);
+    color: var(--mute);
   }
   .orb-mark.on {
-    background: var(--raised);
-    border-right-color: var(--rule);
+    background: var(--recessed);
   }
   .orb-mark.on b { color: var(--fg); }
 
   .tab-strip {
     display: flex;
-    align-items: stretch;
-    gap: 0;
+    align-items: center;
+    gap: 2px;
     min-width: 0;
     overflow-x: auto;
     scrollbar-width: none;
@@ -178,15 +261,16 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 7px;
     flex-shrink: 1;
-    min-width: 84px;
-    max-width: 220px;
-    padding: 0 6px 0 12px;
+    height: 26px;
+    min-width: 72px;
+    max-width: 210px;
+    padding: 0 5px 0 10px;
     border: 0;
-    border-right: 1px solid var(--rule-soft);
+    border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--mute);
+    color: var(--meta);
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
@@ -195,31 +279,22 @@
   }
   .tab-chip.on {
     color: var(--fg);
-    font-weight: 700;
-    background: var(--raised);
-    border-right-color: var(--rule);
-  }
-  .tab-chip.on::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    height: 2px;
-    background: var(--rupture);
+    font-weight: 600;
+    background: var(--recessed);
   }
   .tab-chip.secondary {
-    background: var(--recessed);
-    color: var(--fg);
+    background: transparent;
+    color: var(--mute);
   }
-  .tab-chip.secondary::before {
+  .tab-chip.secondary::after {
     content: "";
     position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    height: 2px;
-    background: var(--amber);
+    left: 10px;
+    right: 10px;
+    bottom: 2px;
+    height: 1.5px;
+    background: var(--meta);
+    opacity: 0.45;
   }
   .tab-label {
     flex: 1;
@@ -230,12 +305,12 @@
   }
   .tab-asks {
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 600;
     color: var(--rupture);
   }
   .tab-unread {
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 600;
     color: var(--meta);
   }
   .tab-chip.on .tab-unread {
@@ -244,54 +319,155 @@
   .tab-x {
     display: grid;
     place-items: center;
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     flex-shrink: 0;
     border: 0;
+    border-radius: var(--radius-sm);
     background: none;
     color: inherit;
-    font-size: 14px;
+    font-size: 13px;
     cursor: pointer;
     opacity: 0;
     transition: opacity var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
   }
-  .tab-chip.on .tab-x { opacity: 0.78; }
+  .tab-chip.on .tab-x { opacity: 0.65; }
 
   .bar-btn {
     display: grid;
     place-items: center;
-    min-width: 36px;
-    padding: 0 9px;
+    height: 26px;
+    min-width: 28px;
+    padding: 0 7px;
     flex-shrink: 0;
     border: 0;
-    border-left: 1px solid var(--rule);
+    border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--mute);
+    color: var(--meta);
     cursor: pointer;
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .bar-btn.plus {
-    border-left: 0;
-    border-right: 1px solid var(--rule);
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--fg);
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--meta);
   }
   .bar-btn.on {
-    background: var(--fg);
-    color: var(--bg);
+    background: var(--recessed);
+    color: var(--fg);
   }
   .bar-right {
     display: flex;
-    align-items: stretch;
-    gap: 0;
+    align-items: center;
+    gap: 2px;
     margin-left: auto;
     flex-shrink: 0;
   }
   .bar-right .sync-bay {
-    height: auto;
-    padding: 0 10px;
+    height: 26px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease);
   }
+  .bar-right .sync-bay:hover,
+  .bar-right .sync-bay.on {
+    background: var(--recessed);
+  }
+  .ctx-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .ctx-pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 25;
+    width: 280px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: var(--raised);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg);
+    animation: drop-in 100ms var(--ease);
+  }
+  .ctx-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ctx-title {
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .ctx-pct {
+    font-size: 11.5px;
+    color: var(--mute);
+  }
+  .ctx-pct.alarm {
+    color: var(--rupture);
+    font-weight: 600;
+  }
+  .ctx-meter {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--recessed);
+    overflow: hidden;
+  }
+  .ctx-fill {
+    height: 100%;
+    background: var(--fg);
+    transition: width var(--t-med) var(--ease);
+  }
+  .ctx-fill.alarm {
+    background: var(--rupture);
+  }
+  .ctx-desc {
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--mute);
+  }
+  .ctx-meta {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    font-size: 11px;
+    color: var(--meta);
+  }
+  .ctx-meta strong {
+    font-weight: 500;
+    color: var(--mute);
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ctx-compact {
+    width: 100%;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--recessed);
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    transition: background-color var(--t-fast) var(--ease);
+  }
+  .ctx-compact:hover:enabled { background: var(--hover); }
+  .ctx-compact:disabled { color: var(--meta); cursor: default; }
 
   .grid-ico {
     display: grid;

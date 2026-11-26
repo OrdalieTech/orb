@@ -43,7 +43,7 @@ func (a *app) promptBox(c *ui.Context, t *Tab, placeholder string) {
 	// A short tile keeps its box to a line, leaving the room to the transcript.
 	short := a.building != nil && a.building.height > 0 && a.building.height < 360
 	ui.Column(c).FillWidth().PaddingX(margin).Children(func() {
-		box := ui.Column(c).FillWidth().MaxWidth(column+2*overhang).Margin(0, ui.Auto, map[bool]float32{true: 8, false: 16}[short]).Radius(pane).Background(pal.raised).
+		box := ui.Column(c).FillWidth().MaxWidth(column+2*overhang).Margin(0, ui.Auto, map[bool]float32{true: 8, false: 16}[short]).Radius(14).Background(pal.raised).
 			Border(1, pal.rule)
 		if a.building != nil {
 			box.Bind(&a.building.boxAt) // what the explorer floats out of

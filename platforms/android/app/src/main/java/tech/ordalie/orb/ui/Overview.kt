@@ -3,9 +3,14 @@ package tech.ordalie.orb.ui
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.alpha
@@ -14,8 +19,12 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.*
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -34,7 +43,156 @@ val LocalMorph = staticCompositionLocalOf<Morph?> { null }
 @Composable
 fun Modifier.morph(key: String): Modifier {
     val m = LocalMorph.current ?: return this
-    return with(m.shared) { this@morph.sharedBounds(rememberSharedContentState(key), m.scope, boundsTransform = { _, _ -> spring(0.9f, 380f) }) }
+    return with(m.shared) { this@morph.sharedBounds(rememberSharedContentState(key), m.scope, boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) }) }
+}
+
+/**
+ * Interactive two-finger pinch wrapper around the deck and overview:
+ * pinching inward on a conversation shrinks it 1:1 with rounded card corners and a haptic detent
+ * before handing off into the shared-element morph to Overview; pinching outward in Overview zooms
+ * back into the active conversation. Single-finger scrolls and swipes pass through untouched.
+ */
+@Composable
+fun PinchOverviewHost(
+    overview: Boolean,
+    enabled: Boolean,
+    onOverviewChange: (Boolean) -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val pinchScale = remember { Animatable(1f) }
+    val overviewState by rememberUpdatedState(overview)
+    val enabledState by rememberUpdatedState(enabled)
+    val onChangeState by rememberUpdatedState(onOverviewChange)
+
+    // Normalize live pinch progress (0 = resting, 1 = full pinch) for the active direction.
+    val s = pinchScale.value
+    val deckProgress = if (!overview && s < 1f) ((1f - s) / 0.30f).coerceIn(0f, 1f) else 0f
+    val overProgress = if (overview && s > 1f) ((s - 1f) / 0.32f).coerceIn(0f, 1f) else 0f
+    val activeScale = when {
+        !overview && s < 1f -> 1f - 0.22f * deckProgress
+        !overview && s > 1f -> 1f + ((s - 1f) * 0.08f).coerceAtMost(0.04f) // gentle rubber-band
+        overview && s > 1f -> 1f + 0.12f * overProgress
+        overview && s < 1f -> 1f - ((1f - s) * 0.06f).coerceAtMost(0.03f)
+        else -> 1f
+    }
+    val corner = (18f * deckProgress).dp
+    val ruleColor = p.rule
+    val bg = p.bg
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(bg)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    var engaged = false
+                    var cumZoom = 1f
+                    var detentHit = false
+                    var committed = false
+                    var lastZoom = 1f
+                    var lastTime = 0L
+                    var velocity = 0f
+
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val pressed = event.changes.count { it.pressed }
+                        if (pressed == 0) break
+                        if (!enabledState || pressed < 2) {
+                            if (engaged) {
+                                // One finger lifted after pinching: finalize immediately.
+                                break
+                            }
+                            continue
+                        }
+                        val zoomDelta = event.calculateZoom()
+                        val span = event.calculateCentroidSize(useCurrent = true)
+                        if (zoomDelta == 1f || span <= 0f) continue
+                        val nextZoom = (cumZoom * zoomDelta).coerceIn(0.55f, 1.55f)
+                        val wantOverview = !overviewState
+                        val towardsTarget = if (wantOverview) nextZoom < 1f else nextZoom > 1f
+                        if (!engaged) {
+                            if (abs(nextZoom - 1f) < 0.03f) {
+                                cumZoom = nextZoom
+                                continue
+                            }
+                            if (!towardsTarget) {
+                                cumZoom = nextZoom
+                                continue
+                            }
+                            engaged = true
+                        }
+                        val now = event.changes.firstOrNull()?.uptimeMillis ?: 0L
+                        if (lastTime > 0L && now > lastTime) {
+                            val dt = (now - lastTime) / 1000f
+                            velocity = (nextZoom - lastZoom) / dt
+                        }
+                        lastZoom = nextZoom
+                        lastTime = now
+                        cumZoom = nextZoom
+                        event.changes.forEach { if (it.positionChanged()) it.consume() }
+
+                        val progress = if (wantOverview) ((1f - cumZoom) / 0.30f).coerceIn(0f, 1f)
+                            else ((cumZoom - 1f) / 0.32f).coerceIn(0f, 1f)
+                        if (progress >= 0.42f && !detentHit) {
+                            detentHit = true
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        } else if (progress < 0.34f && detentHit) {
+                            detentHit = false
+                        }
+                        scope.launch { pinchScale.snapTo(cumZoom) }
+
+                        // Deep pinch commits seamlessly mid-gesture.
+                        if (progress >= 0.88f) {
+                            committed = true
+                            onChangeState(wantOverview)
+                            scope.launch { pinchScale.snapTo(1f) }
+                            break
+                        }
+                    }
+
+                    if (engaged && !committed) {
+                        val wantOverview = !overviewState
+                        val progress = if (wantOverview) ((1f - cumZoom) / 0.30f).coerceIn(0f, 1f)
+                            else ((cumZoom - 1f) / 0.32f).coerceIn(0f, 1f)
+                        val flick = if (wantOverview) velocity < -0.65f else velocity > 0.65f
+                        if (progress >= 0.42f || (progress >= 0.22f && flick)) {
+                            if (!detentHit) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onChangeState(wantOverview)
+                            scope.launch { pinchScale.snapTo(1f) }
+                        } else {
+                            scope.launch {
+                                pinchScale.animateTo(1f, spring(dampingRatio = 0.76f, stiffness = 460f))
+                            }
+                        }
+                    }
+                }
+            },
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = activeScale
+                    scaleY = activeScale
+                    alpha = 1f - 0.16f * overProgress
+                    if (deckProgress > 0.01f) {
+                        shape = RoundedCornerShape(corner)
+                        clip = true
+                        shadowElevation = (12f * deckProgress)
+                    }
+                }
+                .then(
+                    if (deckProgress > 0.01f) {
+                        Modifier.border(1.dp, ruleColor.copy(alpha = deckProgress.coerceIn(0f, 1f)), RoundedCornerShape(corner))
+                    } else Modifier,
+                ),
+        ) {
+            content()
+        }
+    }
 }
 
 /**

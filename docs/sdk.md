@@ -527,16 +527,21 @@ negotiation. Native/Tailcat hosting is an explicit CLI assembly; the portable `m
 `plugins/mitosisagents.Extension` gives an agent its owner's other agents and their conversations:
 an `agents` tool that lists them (agent id and name; conversation id, folder, title, state), reads
 one's latest messages and sends one a message headed with the sender's agent, conversation, title
-and machine. The host supplies its `Mitosis`: the machines, a call made with the owner's reach, and
-the conversation it holds. The tool shows only while another conversation is reachable. A Worker's
-`agent/mitosis/tool.NewTool` (`mitosis_call`) instead calls a peer's agent (`agent.call`, one of its
-conversations or its default one) under its agent's own grants, through the source attachment's
-outbound route. Discovery never authorizes execution.
+and machine (`agent/exchange.FormatIncoming`). `agent/exchange` is the UI-agnostic SDK layer that
+projects both incoming/outgoing Mitosis peer messages (`ParseIncoming` / `FromTool`) and local
+`subagent` delegations into one lightweight `exchange.Message` without altering pi's JSONL or wire
+formats, reused by the TUI, `mitosis/view`, and any Go SDK embedder. The host supplies its
+`Mitosis`: the machines, a call made with the owner's reach, and the conversation it holds. The
+tool shows only while another conversation is reachable. A Worker's `agent/mitosis/tool.NewTool`
+(`mitosis_call`) instead calls a peer's agent (`agent.call`, one of its conversations or its default
+one) under its agent's own grants, through the source attachment's outbound route. Discovery never
+authorizes execution.
 
 In Orb, open Mitosis directly from Settings, Ctrl+P, or `/mitosis`, then use its service switch.
-The home page shows the service switch, **Add device**, and your devices. Select a device to
-open its conversations; both lists update automatically. **Advanced** contains agent access and
-your fingerprint. Groups, grants, scopes, and receipts stay in the CLI.
+The home page shows the service switch, **Add device**, your devices (by name when known), and your
+fingerprint when running. Select a device to open its conversations; both lists update
+automatically. Enabling Mitosis also exposes the `agents` tool whenever another conversation is
+reachable. Groups, grants, scopes, and receipts stay in the CLI.
 Opening Mitosis before activation creates no profile or network service. `orb --mitosis personal --instance work` explicitly attaches a named runtime. The service survives TUI exit; `orb mitosis stop` remains effective until Start or
 re-enable. `orb mitosis view <peer-id> <session-id>` opens the same focused conversation view
 without constructing a local model or requiring provider credentials. Invitations contain a

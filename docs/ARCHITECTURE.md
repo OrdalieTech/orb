@@ -720,9 +720,10 @@ identity. A conversation is an address under its agent, `(peer, session_id)`; th
 running Orb, each holding one conversation at a time) register as instances, an internal detail
 that never crosses the wire.
 Mitosis management is built into Settings, Ctrl+P, and `/mitosis`; opening it starts no service.
-Its home page contains the service switch, Add device, pending approvals, and a live device list.
-Add device offers SSH setup or invitation exchange; selecting a device opens its live conversations
-directly. Advanced contains only agent access and the local fingerprint. Grants, scopes, and
+Its home page contains the service switch, Add device, pending approvals, a live device list (by
+device name when known), and the local fingerprint when running. Add device offers SSH setup or
+invitation exchange; selecting a device opens its live conversations directly. Turning Mitosis on
+also exposes the `agents` tool whenever another conversation is reachable. Grants, scopes, and
 receipts remain CLI administration. Mitosis has no duplicate toggles in Plugins.
 Pairing explicitly activates the service when needed. Invitations are bounded,
 versioned copy/paste codes; each owner confirms trust in the other identity. New TUI/SSH pairings

@@ -395,7 +395,7 @@ func legacyPluginsSelect(ctx context.Context, command extensions.CommandContext,
 		choices := make([]string, 0, len(names)+1)
 		choiceNames := make(map[string]string, len(names))
 		for _, name := range names {
-			if name == "mitosis" || name == "mitosis-agent-calls" || name == "provider-usage" {
+			if Paged(name) {
 				continue
 			}
 			mark := " "

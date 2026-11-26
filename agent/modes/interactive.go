@@ -23,6 +23,7 @@ import (
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/clipboard"
 	"github.com/OrdalieTech/orb/agent/config"
+	"github.com/OrdalieTech/orb/agent/exchange"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	sessionstore "github.com/OrdalieTech/orb/agent/session"
 	"github.com/OrdalieTech/orb/agent/session/exporthtml"
@@ -241,12 +242,39 @@ func (mode *InteractiveMode) newToolExecutionComponent(name, id string, args any
 	return component
 }
 
+// chatEndsWithWorkLocked reports whether the last visible chat child is a tool,
+// tool group, or leading reasoning block — consecutive work rows stack tightly
+// without blank lines between them.
+func (mode *InteractiveMode) chatEndsWithWorkLocked() bool {
+	if mode.lastReasoning != nil && mode.chat.EndsWith(mode.lastReasoning) {
+		return true
+	}
+	children := mode.chat.Children()
+	for i := len(children) - 1; i >= 0; i-- {
+		switch c := children[i].(type) {
+		case *ToolExecutionComponent, *toolActivityGroup:
+			return true
+		case *AssistantMessageComponent:
+			c.mu.Lock()
+			empty := c.folded || (c.message != nil && toolOnlyAssistant(c.message))
+			c.mu.Unlock()
+			if empty {
+				continue
+			}
+			return false
+		default:
+			return false
+		}
+	}
+	return false
+}
+
 func (mode *InteractiveMode) addToolComponent(component *ToolExecutionComponent) {
 	mode.mu.Lock()
 	defer mode.mu.Unlock()
 	mode.toolComponents[component.toolCallID] = component
 	component.SetExpanded(mode.toolsExpanded)
-	headed := mode.lastReasoning != nil && mode.chat.EndsWith(mode.lastReasoning)
+	headed := mode.chatEndsWithWorkLocked()
 	if toolActivityKind(component.toolName) == "" {
 		component.headed = headed
 		mode.chat.AddChild(component)
@@ -4380,6 +4408,9 @@ func (mode *InteractiveMode) handleEvent(event any) {
 		comp := NewAssistantMessageComponent(nil, hidden, mode.mdTheme, label, mode.currentOutputPad(), mode.markdownTransformers)
 		comp.onChange = func() { mode.requestChatRender(comp) }
 		mode.mu.Lock()
+		if mode.chatEndsWithWorkLocked() {
+			comp.SetCompactTop(true)
+		}
 		mode.currentStreaming = comp
 		mode.mu.Unlock()
 		mode.chat.AddChild(comp)
@@ -4613,6 +4644,8 @@ func (mode *InteractiveMode) addUserMessageToChat(text string) {
 		component.onChange = func() { mode.requestChatRender(component) }
 		mode.addExpandable(component)
 		mode.chat.AddChild(component)
+	} else if ex, ok := exchange.ParseIncoming(text); ok {
+		mode.chat.AddChild(NewExchangeComponent(ex, mode.currentOutputPad(), false))
 	} else {
 		mode.chat.AddChild(NewUserMessageComponent(text, mode.mdTheme, mode.currentOutputPad(), mode.markdownTransformers))
 	}
@@ -4657,20 +4690,15 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 		RenderCall: func(args any, palette extensions.Theme, context extensions.ToolRenderContext) extensions.Component {
 			container := &tui.Container{}
 			label, detail, _ := strings.Cut(renderer.RenderCall(args), " ")
-			color := "accent"
-			// Executors may register the same tools under their own capitalization.
 			kind := strings.ToLower(name)
-			switch kind {
-			case "bash":
-				color = "bashMode"
-			case "edit", "write":
-				color = "success"
+			title := palette.FG("toolTitle", palette.Bold(label))
+			if detail != "" {
+				title += palette.FG("muted", " "+detail)
 			}
-			title := palette.FG(color, palette.Bold(label)) + palette.FG("toolTitle", " "+detail)
 			container.AddChild(tui.NewText(title, 0, 0, nil))
-			if toolActivityKind(name) != "" || strings.EqualFold(name, "bash") {
-				header := toolCallHeader{inner: container, expanded: context.Expanded, title: title}
-				if strings.EqualFold(name, "read") {
+			if toolActivityKind(name) != "" || kind == "bash" || kind == "write" {
+				header := toolCallHeader{inner: container, expanded: context.Expanded, title: title, verb: label, detail: detail}
+				if kind == "read" || kind == "write" {
 					header.keepTailFrom = tui.VisibleWidth(label) + 1
 					if strings.HasPrefix(detail, "· ") {
 						header.keepTailFrom += 2
@@ -4679,6 +4707,9 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 				return header
 			}
 			if kind != "edit" || !context.ArgsComplete {
+				if kind == "edit" {
+					return toolCallHeader{inner: container, expanded: context.Expanded, title: title, verb: label, detail: detail, keepTailFrom: tui.VisibleWidth(label) + 1}
+				}
 				return container
 			}
 			// A final result makes the preview stale by construction: the edit
@@ -4686,18 +4717,18 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 			// report a mismatch error over a successful edit. RenderResult owns
 			// the display from that point.
 			if !context.IsPartial {
-				return container
+				return toolCallHeader{inner: container, expanded: context.Expanded, title: title, verb: label, detail: detail, keepTailFrom: tui.VisibleWidth(label) + 1}
 			}
 			path, edits, ok := editPreviewInput(args)
 			if !ok {
-				return container
+				return toolCallHeader{inner: container, expanded: context.Expanded, title: title, verb: label, detail: detail, keepTailFrom: tui.VisibleWidth(label) + 1}
 			}
 			diff, previewError := editPreview(context.State, path, edits, context.CWD)
 			if previewError != "" {
-				container.AddChild(toolResultClip{inner: tui.NewText(palette.FG("error", previewError), 0, 0, nil), expanded: context.Expanded})
+				container.AddChild(toolResultClip{inner: tui.NewText(palette.FG("error", previewError), 0, 0, nil), expanded: context.Expanded, bgRole: "toolErrorBg"})
 				return container
 			}
-			container.AddChild(toolResultClip{inner: NewEditDiffView(diff, path, ""), expanded: true})
+			container.AddChild(toolResultClip{inner: NewEditDiffViewNoHeader(diff, path, "toolSuccessBg"), expanded: context.Expanded, bgRole: "toolSuccessBg", isDiff: true})
 			return container
 		},
 		RenderResult: func(result engine.AgentToolResult, options extensions.ToolRenderResultOptions, palette extensions.Theme, context extensions.ToolRenderContext) extensions.Component {
@@ -4709,7 +4740,7 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 						if loadEditPreview(context.State).diff == diff {
 							return &tui.Container{}
 						}
-						return NewEditDiffView(diff, editArgsPath(context.Args), "")
+						return NewEditDiffViewNoHeader(diff, editArgsPath(context.Args), "toolSuccessBg")
 					}
 				} else if context.IsError {
 					if message := renderer.RenderResult(result); message != "" {
@@ -4719,7 +4750,7 @@ func nativeToolDefinition(name string, registered engine.AgentTool) *extensions.
 				} else if diff := editResultDiff(result.Details); diff != "" {
 					// Final success renders the recorded diff from the result
 					// details, never from re-reading the edited file.
-					return NewEditDiffView(diff, editArgsPath(context.Args), "")
+					return NewEditDiffViewNoHeader(diff, editArgsPath(context.Args), "toolSuccessBg")
 				}
 			}
 			return newToolOutputPreview(strings.TrimSpace(renderer.RenderResult(result)), options, palette)
@@ -4938,6 +4969,9 @@ func (mode *InteractiveMode) renderAgentMessage(message any) {
 		if !toolOnlyAssistant(assistant) {
 			mode.mu.Lock()
 			folded := mode.foldIntoActivityLocked(assistant, component)
+			if !folded && leadsTools(assistant) && mode.chatEndsWithWorkLocked() {
+				component.SetCompactTop(true)
+			}
 			mode.chat.AddChild(component)
 			if folded {
 				mode.toolActivityTail = component
@@ -5461,11 +5495,14 @@ func (mode *InteractiveMode) runPaletteCommand(value string) {
 	}
 	if value == "name" || value == "import" {
 		title := "Rename session"
-		if value == "import" {
+		initial := ""
+		if value == "name" {
+			initial = mode.SessionName()
+		} else {
 			title = "Import session · JSONL path"
 		}
 		go func() {
-			text, ok, err := mode.interactiveUI.Input(mode.authenticationContext(), title, nil, nil)
+			text, ok, err := mode.interactiveUI.inputWithInitialValue(mode.authenticationContext(), title, initial, nil)
 			if err != nil || !ok || strings.TrimSpace(text) == "" {
 				return
 			}

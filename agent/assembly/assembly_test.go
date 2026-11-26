@@ -54,7 +54,7 @@ func TestRowsEnumerateInBootOrder(t *testing.T) {
 		CWD: root, AgentDir: agentDir, Settings: settings,
 		Compiled: compiled("alpha", "beta"), MCP: true,
 	})
-	want := []string{"alpha", "beta", "plugin-control", "tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "provider-usage", "mitosis", "mitosis-agent-calls", "wake", "tool-search", "mcp"}
+	want := []string{"alpha", "beta", "plugin-control", "tasks", "titles", "questions", "websearch", "subagents", "jobs", "activity", "permissions", "memory", "memtree", "claude-sessions", "provider-usage", "mitosis", "wake", "tool-search", "mcp"}
 	got := rowIDs(rows)
 	if len(got) != len(want) {
 		t.Fatalf("row ids = %v, want %v", got, want)
@@ -165,18 +165,11 @@ func TestConcurrentAssembliesAreIndependent(t *testing.T) {
 }
 
 func TestMitosisManagementIsAvailableWithoutEnablingNetworking(t *testing.T) {
-	settings, root, dir := newTestSettings(t, `{"plugins":{"mitosis":false,"mitosis-agent-calls":false}}`)
+	settings, root, dir := newTestSettings(t, `{"plugins":{"mitosis":false}}`)
 	rows := assembly.Rows(assembly.Options{CWD: root, AgentDir: dir, Settings: settings, Mitosis: noopFactory, MitosisManagement: true})
 	for _, row := range assembly.Resolve(rows, settings, false) {
-		switch row.ID {
-		case "mitosis":
-			if !row.Enabled || !row.Hidden {
-				t.Fatalf("Mitosis management must be built in: %+v", row)
-			}
-		case "mitosis-agent-calls":
-			if row.Enabled || !row.Hidden {
-				t.Fatalf("Agent calls must remain optional inside Mitosis: %+v", row)
-			}
+		if row.ID == "mitosis" && (!row.Enabled || !row.Hidden) {
+			t.Fatalf("Mitosis management must be built in: %+v", row)
 		}
 	}
 	if settings.GetPlugins()["mitosis"] {

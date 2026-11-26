@@ -45,9 +45,13 @@ data class Home(val machines: List<Machine> = emptyList(), val entries: List<Ent
 data class Span(val text: String, val bold: Boolean, val italic: Boolean, val code: Boolean, val strike: Boolean, val href: String)
 data class Block(val type: String, val level: Int, val mark: String, val depth: Int, val spans: List<Span>, val lang: String, val text: String, val blocks: List<Block>, val rows: List<List<List<Span>>>)
 data class Action(val key: String, val verb: String, val target: String, val result: String, val live: Boolean, val failed: Boolean)
+data class Exchange(
+    val dir: String, val scope: String, val who: String, val peer: String, val session: String,
+    val text: String, val status: String, val reply: String, val steps: String, val live: Boolean, val failed: Boolean,
+)
 data class Row(
     val key: String, val kind: String, val text: String, val via: String, val alarm: Boolean, val images: List<String>, val block: Block?,
-    val live: Boolean, val what: String, val now: String, val failed: Int, val actions: List<Action>,
+    val exchange: Exchange?, val live: Boolean, val what: String, val now: String, val failed: Int, val actions: List<Action>,
 )
 data class Method(val auth: String, val label: String, val about: String, val account: Boolean)
 data class Provider(val id: String, val name: String, val methods: List<Method>, val models: Int, val ready: Boolean, val holds: String, val status: String, val source: String)
@@ -97,9 +101,13 @@ private fun block(o: JSONObject): Block = Block(
     o.optString("type"), o.optInt("level"), o.optString("mark"), o.optInt("depth"), spans(o.optJSONArray("spans")), o.optString("lang"), o.optString("text"),
     o.list("blocks", ::block), o.optJSONArray("rows")?.let { rows -> (0 until rows.length()).map { r -> rows.optJSONArray(r)?.let { cells -> (0 until cells.length()).map { spans(cells.optJSONArray(it)) } }.orEmpty() } }.orEmpty(),
 )
+private fun exchange(o: JSONObject) = Exchange(
+    o.optString("dir"), o.optString("scope"), o.optString("who"), o.optString("peer"), o.optString("session"),
+    o.optString("text"), o.optString("status"), o.optString("reply"), o.optString("steps"), o.optBoolean("live"), o.optBoolean("failed"),
+)
 private fun row(o: JSONObject) = Row(
     o.optString("k"), o.optString("kind"), o.optString("text"), o.optString("via"), o.optBoolean("alarm"), o.strings("images"), o.obj("block")?.let(::block),
-    o.optBoolean("live"), o.optString("what"), o.optString("now"), o.optInt("failed"),
+    o.obj("exchange")?.let(::exchange), o.optBoolean("live"), o.optString("what"), o.optString("now"), o.optInt("failed"),
     o.list("actions") { Action(it.optString("k"), it.optString("verb"), it.optString("target"), it.optString("result"), it.optBoolean("live"), it.optBoolean("failed")) },
 )
 

@@ -24,12 +24,15 @@ import (
 )
 
 const (
-	osc133ZoneStart  = "\x1b]133;A\x07"
-	osc133ZoneEnd    = "\x1b]133;B\x07"
-	osc133ZoneFinal  = "\x1b]133;C\x07"
-	toolPreviewLines = 3
-	reasoningLimit   = 4096
-	reasoningTail    = 512
+	osc133ZoneStart          = "\x1b]133;A\x07"
+	osc133ZoneEnd            = "\x1b]133;B\x07"
+	osc133ZoneFinal          = "\x1b]133;C\x07"
+	toolPreviewLines         = 3
+	toolExpandedPreviewLines = 12
+	editPreviewLines         = 5
+	thoughtStreamingLines    = 2
+	reasoningLimit           = 4096
+	reasoningTail            = 512
 )
 
 // ─────────────────────────────────────────────────────────────
@@ -244,14 +247,17 @@ type AssistantMessageComponent struct {
 	isStreaming       bool
 	message           *ai.AssistantMessage
 	hasToolCalls      bool
+	hasThinking       bool
 	hasLongReasoning  bool
 	expandedReasoning bool
-	toggleHint        *tui.Text
+	toggleHint        tui.Component
 	toggleStart       int
 	toggleEnd         int
 	onChange          func()
 	// folded reasoning shows inside the tool group it came between, not here.
 	folded bool
+	// compactTop suppresses the leading blank line for thought-only blocks sitting right after work.
+	compactTop bool
 }
 
 func NewAssistantMessageComponent(
@@ -351,15 +357,20 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 		c.contentContainer.AddChild(cached.component)
 	}
 	c.contentContainer.Clear()
+	c.hasThinking = false
 	c.hasLongReasoning = false
 	c.toggleHint = nil
 
 	hasVisible := false
+	hasProse := false
 	hasToolCalls := false
 	for _, block := range message.Content {
 		switch value := block.(type) {
 		case *ai.TextContent:
-			hasVisible = hasVisible || strings.TrimSpace(value.Text) != ""
+			if strings.TrimSpace(value.Text) != "" {
+				hasVisible = true
+				hasProse = true
+			}
 		case *ai.ThinkingContent:
 			hasVisible = hasVisible || strings.TrimSpace(value.Thinking) != ""
 		case *ai.ToolCall:
@@ -367,7 +378,7 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 		}
 	}
 	c.hasToolCalls = hasToolCalls
-	if hasVisible {
+	if hasVisible && (!c.compactTop || hasProse) {
 		c.contentContainer.AddChild(tui.NewSpacer(1))
 	}
 
@@ -394,15 +405,18 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 			if len(thinkingBlocks) == 0 {
 				continue
 			}
+			c.hasThinking = true
 			long := thinkingBytes > reasoningLimit
 			c.hasLongReasoning = c.hasLongReasoning || long
+			tokens := max(1, thinkingBytes/4)
+			title := firstReasoningLine(thinkingBlocks)
 			if c.hideThinking {
 				label := c.thinkingLabel
 				if label == "" {
 					label = "Thinking..."
 				}
 				c.contentContainer.AddChild(tui.NewText(theme.Italic(theme.FG("thinkingText", label)), c.outputPad+2, 0, nil))
-			} else if long && (c.isStreaming || !c.expandedReasoning) {
+			} else if c.isStreaming {
 				tail := thinkingBlocks[len(thinkingBlocks)-1]
 				if len(tail) > reasoningTail {
 					start := len(tail) - reasoningTail
@@ -411,19 +425,22 @@ func (c *AssistantMessageComponent) updateContentLocked(message *ai.AssistantMes
 					}
 					tail = tail[start:]
 				}
-				c.contentContainer.AddChild(visualLineTail{text: theme.Italic(theme.FG("thinkingText", tail)), maxLines: 3, paddingX: c.outputPad + 2})
-				label := "… earlier reasoning · click to expand"
-				if c.isStreaming {
-					label = "… earlier reasoning · available when done"
-				}
-				c.toggleHint = tui.NewText(theme.FG("muted", label), c.outputPad+2, 0, nil)
-				c.contentContainer.AddChild(c.toggleHint)
+				c.contentContainer.AddChild(railedComponent{
+					inner: visualLineTail{text: theme.Italic(theme.FG("thinkingText", tail)), maxLines: thoughtStreamingLines, paddingX: 0},
+				})
+			} else if !c.expandedReasoning {
+				row := &thoughtSummaryRow{title: title, tokens: tokens, expanded: false}
+				c.toggleHint = row
+				c.contentContainer.AddChild(row)
 			} else {
-				if long {
-					c.toggleHint = tui.NewText(theme.FG("muted", "… reasoning · click to collapse"), c.outputPad+2, 0, nil)
-					c.contentContainer.AddChild(c.toggleHint)
-				}
-				addMarkdown(index, joinReasoning(thinkingBlocks), true)
+				row := &thoughtSummaryRow{title: title, tokens: tokens, expanded: true}
+				c.toggleHint = row
+				c.contentContainer.AddChild(row)
+				body := tui.NewMarkdown(joinReasoning(thinkingBlocks), 0, 0, c.mdTheme,
+					&tui.DefaultTextStyle{Color: func(text string) string { return theme.FG("thinkingText", text) }, Italic: true},
+					&tui.MarkdownOptions{Transform: newMarkdownTransform("assistant-thinking", false, c.transformers)},
+				)
+				c.contentContainer.AddChild(railedComponent{inner: body})
 			}
 			for trailing := index + 1; trailing < len(message.Content); trailing++ {
 				switch next := message.Content[trailing].(type) {
@@ -474,7 +491,7 @@ func (c *AssistantMessageComponent) HandleMouse(event tui.MouseEvent) bool {
 		return false
 	}
 	c.mu.Lock()
-	if c.hideThinking || c.isStreaming || !c.hasLongReasoning || event.Row < c.toggleStart || event.Row >= c.toggleEnd {
+	if c.hideThinking || c.isStreaming || !c.hasThinking || event.Row < c.toggleStart || event.Row >= c.toggleEnd {
 		c.mu.Unlock()
 		return false
 	}
@@ -511,6 +528,17 @@ func (c *AssistantMessageComponent) Fold() {
 	c.mu.Unlock()
 }
 
+// SetCompactTop removes the leading blank line when this message is a thought-only
+// step directly following another tool or reasoning row.
+func (c *AssistantMessageComponent) SetCompactTop(compact bool) {
+	c.mu.Lock()
+	if c.compactTop != compact {
+		c.compactTop = compact
+		c.dirty = true
+	}
+	c.mu.Unlock()
+}
+
 // reasoningTitle is the first line of the message's latest reasoning, as
 // models title their reasoning summaries ("**Locating official docs**").
 func (c *AssistantMessageComponent) reasoningTitle() string {
@@ -529,6 +557,182 @@ func (c *AssistantMessageComponent) reasoningTitle() string {
 		}
 	}
 	return ""
+}
+
+func (c *AssistantMessageComponent) reasoningTokens() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.message == nil {
+		return 0
+	}
+	total := 0
+	for _, block := range c.message.Content {
+		if thinking, ok := block.(*ai.ThinkingContent); ok {
+			total += len(strings.TrimSpace(thinking.Thinking))
+		}
+	}
+	if total == 0 {
+		return 0
+	}
+	return max(1, total/4)
+}
+
+func (c *AssistantMessageComponent) renderGroupChild(width int) []string {
+	title := c.reasoningTitle()
+	tokens := c.reasoningTokens()
+	if title == "" && tokens == 0 {
+		return nil
+	}
+	verb := theme.FG("muted", padVerb("thought"))
+	detail := theme.Italic(theme.FG("muted", title))
+	right := ""
+	if tokens > 0 {
+		right = theme.Faint(fmt.Sprintf("%d tok", tokens))
+	}
+	return []string{formatRowWithRight(verb+detail, right, width, 0)}
+}
+
+func firstReasoningLine(blocks []string) string {
+	for index := len(blocks) - 1; index >= 0; index-- {
+		for line := range strings.SplitSeq(blocks[index], "\n") {
+			if line = strings.Trim(strings.TrimSpace(line), "*#_ :"); line != "" {
+				return line
+			}
+		}
+	}
+	return ""
+}
+
+type thoughtSummaryRow struct {
+	title    string
+	tokens   int
+	expanded bool
+}
+
+func (*thoughtSummaryRow) Invalidate() {}
+
+func (row *thoughtSummaryRow) Render(width int) []string {
+	if width <= 2 {
+		return []string{""}
+	}
+	marker := theme.Faint("›")
+	label := theme.FG("muted", "thought")
+	if row.expanded {
+		marker = theme.FG("muted", "⌄")
+		label = theme.FG("toolTitle", "thought")
+	}
+	left := " " + marker + " " + label
+	if !row.expanded && row.title != "" {
+		left += theme.FG("muted", " · "+row.title)
+	}
+	right := ""
+	if row.tokens > 0 {
+		right = theme.Faint(fmt.Sprintf("%d tok", row.tokens))
+	}
+	return []string{formatRowWithRight(left, right, width, 0)}
+}
+
+type railedComponent struct {
+	inner tui.Component
+}
+
+func (r railedComponent) Invalidate() {
+	if inv, ok := r.inner.(tui.Invalidatable); ok {
+		inv.Invalidate()
+	}
+}
+
+func (r railedComponent) Render(width int) []string {
+	if width <= 4 {
+		return r.inner.Render(width)
+	}
+	prefix := " " + theme.Rail() + "  "
+	lines := r.inner.Render(width - 4)
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		out[i] = prefix + line
+	}
+	return out
+}
+
+// formatRowWithRight lays out left and flush-right metadata within width,
+// keeping at least two spaces between them and dropping right when too narrow.
+func formatRowWithRight(left, right string, width, keepTailFrom int) string {
+	if width <= 0 {
+		return ""
+	}
+	rightW := tui.VisibleWidth(right)
+	if right == "" || rightW+6 > width {
+		if keepTailFrom > 0 && tui.VisibleWidth(left) > width {
+			left = middleCut(left, keepTailFrom, width)
+		}
+		return tui.TruncateToWidth(left, width, "…", false)
+	}
+	leftBudget := width - rightW - 2
+	if keepTailFrom > 0 && tui.VisibleWidth(left) > leftBudget {
+		left = middleCut(left, keepTailFrom, leftBudget)
+	}
+	clipped := tui.TruncateToWidth(left, leftBudget, "…", false)
+	gap := max(2, width-tui.VisibleWidth(clipped)-rightW)
+	return clipped + strings.Repeat(" ", gap) + right
+}
+
+const nestedVerbWidth = 10
+
+func padVerb(verb string) string {
+	w := tui.VisibleWidth(verb)
+	if w >= nestedVerbWidth-1 {
+		return verb + " "
+	}
+	return verb + strings.Repeat(" ", nestedVerbWidth-w)
+}
+
+func formatDurationShort(d time.Duration) string {
+	if d < 100*time.Millisecond {
+		return ""
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+}
+
+// renderTonalTray wraps body lines in a soft borderless background band
+// (toolSuccessBg or toolErrorBg) padded cleanly to width.
+func renderTonalTray(lines []string, width int, indent int, bgRole string) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	pad := strings.Repeat(" ", max(0, indent))
+	bg := ""
+	if bgRole != "" {
+		bg = theme.BGANSI(bgRole)
+	}
+	out := make([]string, len(lines))
+	if bg == "" || width <= indent+2 {
+		for i, line := range lines {
+			out[i] = pad + tui.TruncateToWidth(line, max(1, width-indent), "…", false)
+		}
+		return out
+	}
+	trayW := width - indent
+	innerW := max(1, trayW-2)
+	for i, line := range lines {
+		if tui.IsImageLine(line) {
+			out[i] = pad + line
+			continue
+		}
+		// Lines already carrying their own background (e.g. diff added/removed rows)
+		// keep their tint while aligning to the same indent.
+		if strings.Contains(line, "\x1b[48;") {
+			out[i] = pad + tui.TruncateToWidth(line, trayW, "", false)
+			continue
+		}
+		clipped := tui.TruncateToWidth(line, innerW, "…", false)
+		fill := max(0, innerW-tui.VisibleWidth(clipped))
+		out[i] = pad + bg + " " + tui.ReopenAfterReset(bg, clipped) + strings.Repeat(" ", fill+1) + "\x1b[49m"
+	}
+	return out
 }
 
 func (c *AssistantMessageComponent) Render(width int) []string {
@@ -582,6 +786,7 @@ type ToolExecutionComponent struct {
 	toolCallID      string
 	args            any
 	expanded        bool
+	showAll         bool
 	hovered         bool
 	showImages      bool
 	isPartial       bool
@@ -591,6 +796,8 @@ type ToolExecutionComponent struct {
 	cwd             string
 	execStarted     bool
 	argsComplete    bool
+	startedAt       time.Time
+	duration        time.Duration
 	rendererState   map[string]any
 	callComponent   extensions.Component
 	resultComponent extensions.Component
@@ -603,6 +810,10 @@ type ToolExecutionComponent struct {
 	fadedFrom, faded []string
 	// headed sits right under the reasoning that led to it.
 	headed bool
+	// nested marks a tool rendered inside an expanded toolActivityGroup.
+	nested bool
+	// moreRow is the rendered row index of the "click to show all" hint, or -1.
+	moreRow int
 }
 
 // restingOpacity is how a settled tool block sits behind the conversation;
@@ -647,6 +858,7 @@ func NewToolExecutionComponent(
 		ui:            ui,
 		cwd:           cwd,
 		rendererState: make(map[string]any),
+		moreRow:       -1,
 	}
 	return c
 }
@@ -662,6 +874,9 @@ func (c *ToolExecutionComponent) MarkExecutionStarted() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.execStarted = true
+	if c.startedAt.IsZero() {
+		c.startedAt = time.Now()
+	}
 	c.refresh()
 }
 
@@ -677,6 +892,9 @@ func (c *ToolExecutionComponent) UpdateResult(content ai.ToolResultContent, isEr
 	defer c.mu.Unlock()
 	c.result = &toolResult{Content: content, IsError: isError, Details: details}
 	c.isPartial = partial
+	if !partial && !c.startedAt.IsZero() && c.duration == 0 {
+		c.duration = time.Since(c.startedAt)
+	}
 	c.refresh()
 }
 
@@ -684,6 +902,7 @@ func (c *ToolExecutionComponent) SetExpanded(expanded bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.expanded = expanded
+	c.showAll = expanded
 	c.refresh()
 }
 
@@ -699,7 +918,12 @@ func (c *ToolExecutionComponent) HandleMouse(event tui.MouseEvent) bool {
 		}
 	case tui.MouseRelease:
 		if (event.Button == 0 || event.Button == 3) && (c.result != nil || c.callComponent != nil) {
-			c.expanded = !c.expanded
+			if c.expanded && !c.showAll && c.moreRow >= 0 && event.Row == c.moreRow {
+				c.showAll = true
+			} else {
+				c.expanded = !c.expanded
+				c.showAll = false
+			}
 			c.refresh()
 			changed = true
 		}
@@ -722,7 +946,12 @@ func (c *ToolExecutionComponent) refresh() {
 func (c *ToolExecutionComponent) updateDisplay() {
 	c.renderTheme = theme.Current().Palette()
 	c.contentBox.Clear()
+	if ex, ok := toolExchange(c); ok {
+		c.contentBox.AddChild(NewExchangeComponent(ex, 0, c.expanded))
+		return
+	}
 
+	rightStat := c.rightStatLocked()
 	// Tool call header
 	if c.callFailed {
 		c.contentBox.AddChild(c.rendererFallback(false))
@@ -748,18 +977,27 @@ func (c *ToolExecutionComponent) updateDisplay() {
 			c.contentBox.AddChild(c.rendererFallback(false))
 		} else if rendered != nil {
 			c.callComponent = rendered
-			if _, compact := rendered.(toolCallHeader); !compact && (toolActivityKind(c.toolName) != "" || strings.EqualFold(c.toolName, "bash")) {
-				rendered = toolCallHeader{inner: rendered, expanded: c.expanded}
+			if header, ok := rendered.(toolCallHeader); ok {
+				header.rightStat = rightStat
+				header.nested = c.nested
+				rendered = header
+			} else if toolActivityKind(c.toolName) != "" || strings.EqualFold(c.toolName, "bash") {
+				rendered = toolCallHeader{inner: rendered, expanded: c.expanded, rightStat: rightStat, nested: c.nested}
 			}
 			c.contentBox.AddChild(&safeToolRenderer{source: c.callComponent, inner: rendered, failed: &c.callFailed, fallback: func() tui.Component { return c.rendererFallback(false) }})
 		}
 	} else {
 		title, detailFrom := fallbackToolTitle(c.toolName, c.args)
-		c.contentBox.AddChild(toolCallHeader{inner: tui.NewText(title, 0, 0, nil), expanded: c.expanded, title: title, keepTailFrom: detailFrom})
+		_, detail, _ := strings.Cut(tui.StripANSI(title), " ")
+		c.contentBox.AddChild(toolCallHeader{inner: tui.NewText(title, 0, 0, nil), expanded: c.expanded, title: title, verb: c.toolName, detail: detail, keepTailFrom: detailFrom, rightStat: rightStat, nested: c.nested})
 	}
 
 	// Tool result
 	if c.result != nil {
+		bgRole := "toolSuccessBg"
+		if c.result.IsError {
+			bgRole = "toolErrorBg"
+		}
 		if c.resultFailed {
 			c.contentBox.AddChild(c.rendererFallback(true))
 		} else if c.toolDef != nil && c.toolDef.RenderResult != nil {
@@ -787,18 +1025,35 @@ func (c *ToolExecutionComponent) updateDisplay() {
 			} else if rendered != nil {
 				c.resultComponent = rendered
 				_, plainOutput := rendered.(*toolOutputPreview)
-				if !plainOutput || c.showOutput() {
-					c.contentBox.AddChild(&safeToolRenderer{source: rendered, inner: toolResultClip{inner: rendered, expanded: c.expanded}, failed: &c.resultFailed, fallback: func() tui.Component { return c.rendererFallback(true) }})
+				_, diffOutput := rendered.(*editDiffView)
+				if (!plainOutput && !diffOutput) || c.showOutput() {
+					c.contentBox.AddChild(&safeToolRenderer{
+						source: rendered,
+						inner: toolResultClip{
+							inner:    rendered,
+							expanded: c.expanded,
+							showAll:  c.showAll,
+							bgRole:   bgRole,
+							isDiff:   diffOutput,
+						},
+						failed:   &c.resultFailed,
+						fallback: func() tui.Component { return c.rendererFallback(true) },
+					})
 				}
 			}
 		} else if c.showOutput() {
 			output := c.getTextOutput()
 			if output != "" {
-				c.contentBox.AddChild(toolResultClip{inner: newToolOutputPreview(
-					output,
-					extensions.ToolRenderResultOptions{Expanded: c.expanded, IsPartial: c.isPartial},
-					themeAdapter{},
-				), expanded: c.expanded})
+				c.contentBox.AddChild(toolResultClip{
+					inner: newToolOutputPreview(
+						output,
+						extensions.ToolRenderResultOptions{Expanded: c.expanded, IsPartial: c.isPartial},
+						themeAdapter{},
+					),
+					expanded: c.expanded,
+					showAll:  c.showAll,
+					bgRole:   bgRole,
+				})
 			}
 		}
 	}
@@ -856,11 +1111,84 @@ func (c *ToolExecutionComponent) showOutput() bool {
 	return c.expanded || c.result != nil && c.result.IsError || c.isPartial && (kind == "" || kind == "command")
 }
 
+func (c *ToolExecutionComponent) rightStatLocked() string {
+	kind := strings.ToLower(c.toolName)
+	if c.result != nil && c.result.IsError {
+		if kind == "bash" {
+			if code := extractExitCode(c.getTextOutput()); code != "" {
+				return theme.FG("error", "× exit "+code)
+			}
+		}
+		return theme.FG("error", "× failed")
+	}
+	if kind == "edit" {
+		diff := ""
+		if c.result != nil {
+			diff = editResultDiff(c.result.Details)
+		}
+		if diff == "" {
+			diff = loadEditPreview(c.rendererState).diff
+		}
+		if diff != "" {
+			added, removed := DiffStats(diff)
+			var parts []string
+			if added > 0 {
+				parts = append(parts, theme.FG("toolDiffAdded", fmt.Sprintf("+%d", added)))
+			}
+			if removed > 0 {
+				parts = append(parts, theme.FG("toolDiffRemoved", fmt.Sprintf("-%d", removed)))
+			}
+			if len(parts) > 0 {
+				return strings.Join(parts, " ")
+			}
+		}
+	}
+	if kind == "write" {
+		if values, ok := c.args.(map[string]any); ok {
+			if content, ok := values["content"].(string); ok && content != "" {
+				return theme.Faint(fmt.Sprintf("+%d ln", strings.Count(strings.TrimRight(content, "\n"), "\n")+1))
+			}
+		}
+	}
+	if c.result != nil && !c.isPartial {
+		if out := strings.TrimSpace(c.getTextOutput()); out != "" {
+			lines := strings.Count(out, "\n") + 1
+			if kind == "read" || kind == "grep" || kind == "find" || kind == "ls" || kind == "bash" || kind == "web_search" || kind == "fetch_content" || lines > 1 {
+				return theme.Faint(fmt.Sprintf("%d ln", lines))
+			}
+		}
+		if dur := formatDurationShort(c.duration); dur != "" {
+			return theme.Faint(dur)
+		}
+	}
+	return ""
+}
+
+func extractExitCode(text string) string {
+	for _, prefix := range []string{"Command exited with code ", "exited with code ", "exit status "} {
+		if idx := strings.LastIndex(text, prefix); idx >= 0 {
+			rest := text[idx+len(prefix):]
+			end := 0
+			for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+				end++
+			}
+			if end > 0 {
+				return rest[:end]
+			}
+		}
+	}
+	return ""
+}
+
 type toolCallHeader struct {
 	inner        tui.Component
 	expanded     bool
 	title        string
+	verb         string
+	detail       string
 	keepTailFrom int
+	rightStat    string
+	nested       bool
 }
 
 func (header toolCallHeader) Invalidate() {
@@ -870,29 +1198,48 @@ func (header toolCallHeader) Invalidate() {
 }
 
 func (header toolCallHeader) Render(width int) []string {
-	if !header.expanded && header.title != "" {
-		title, _, multiline := strings.Cut(header.title, "\n")
-		budget := max(0, width-2)
-		if header.keepTailFrom > 0 && tui.VisibleWidth(title) > budget {
-			title = middleCut(title, header.keepTailFrom, budget)
+	title := header.title
+	keepTailFrom := header.keepTailFrom
+	if header.nested && header.verb != "" {
+		padded := padVerb(header.verb)
+		if header.detail != "" {
+			title = theme.FG("toolTitle", padded) + theme.FG("muted", header.detail)
+			if keepTailFrom > 0 {
+				keepTailFrom = tui.VisibleWidth(padded)
+			}
+		} else {
+			title = theme.FG("toolTitle", header.verb)
 		}
-		// A title cut for width already ends in "…"; the suffix says only
-		// whether a click shows more lines.
-		suffix := " ›"
-		if multiline {
-			suffix = " …"
+	}
+	if !header.expanded && title != "" {
+		firstLine, _, multiline := strings.Cut(title, "\n")
+		if multiline && header.rightStat == "" {
+			budget := max(0, width-2)
+			if keepTailFrom > 0 && tui.VisibleWidth(firstLine) > budget {
+				firstLine = middleCut(firstLine, keepTailFrom, budget)
+			}
+			return []string{tui.TruncateToWidth(firstLine, budget, "…", false) + theme.Faint(tui.TruncateToWidth(" …", width, "", false))}
 		}
-		return []string{tui.TruncateToWidth(title, budget, "…", false) + theme.FG("accent", tui.TruncateToWidth(suffix, width, "", false))}
+		return []string{formatRowWithRight(firstLine, header.rightStat, width, keepTailFrom)}
 	}
 	lines := header.inner.Render(width)
-	if header.expanded || len(lines) == 0 {
+	if len(lines) == 0 {
 		return lines
 	}
-	suffix := " ›"
-	if len(lines) > 1 {
-		suffix = " …"
+	if header.expanded {
+		if header.nested && header.verb != "" && len(lines) == 1 {
+			return []string{formatRowWithRight(title, header.rightStat, width, 0)}
+		}
+		if header.rightStat != "" && len(lines) == 1 {
+			return []string{formatRowWithRight(strings.TrimRight(lines[0], " "), header.rightStat, width, 0)}
+		}
+		return lines
 	}
-	return []string{tui.TruncateToWidth(strings.TrimRight(lines[0], " "), max(0, width-2), "…", false) + theme.FG("accent", tui.TruncateToWidth(suffix, width, "", false))}
+	first := strings.TrimRight(lines[0], " ")
+	if len(lines) > 1 && header.rightStat == "" {
+		return []string{tui.TruncateToWidth(first, max(0, width-2), "…", false) + theme.Faint(tui.TruncateToWidth(" …", width, "", false))}
+	}
+	return []string{formatRowWithRight(first, header.rightStat, width, 0)}
 }
 
 // middleCut fits a title whose tail from column from is a path or URL into
@@ -956,11 +1303,18 @@ func lastOutputLines(output string, count int) (string, bool) {
 type toolResultClip struct {
 	inner    tui.Component
 	expanded bool
+	showAll  bool
+	bgRole   string
+	isDiff   bool
 }
 
 func (preview toolResultClip) Render(width int) []string {
-	padding := min(2, max(0, width-1))
-	lines := preview.inner.Render(max(1, width-padding))
+	indent := 0
+	contentW := width
+	if preview.bgRole != "" && !preview.isDiff && width > 2 {
+		contentW = width - 2
+	}
+	lines := preview.inner.Render(max(1, contentW))
 	for len(lines) > 0 && !tui.IsImageLine(lines[0]) && strings.TrimSpace(tui.StripANSI(lines[0])) == "" {
 		lines = lines[1:]
 	}
@@ -969,17 +1323,29 @@ func (preview toolResultClip) Render(width int) []string {
 	}
 	_, alreadyClipped := preview.inner.(*toolOutputPreview)
 	count := len(lines)
+	hint := ""
 	if !preview.expanded && !alreadyClipped {
-		count = min(count, toolPreviewLines)
+		limit := toolPreviewLines
+		if preview.isDiff {
+			limit = editPreviewLines
+		}
+		if count > limit {
+			count = limit
+			hint = fmt.Sprintf("… %d more · click to expand", len(lines)-count)
+		}
+	} else if preview.expanded && !preview.showAll && count > toolExpandedPreviewLines {
+		count = toolExpandedPreviewLines
+		if preview.isDiff {
+			hint = fmt.Sprintf("… %d more diff lines · click to show all", len(lines)-count)
+		} else {
+			hint = fmt.Sprintf("… %d more lines · click to show all", len(lines)-count)
+		}
 	}
-	result := make([]string, 1, count+2)
-	for _, line := range lines[:count] {
-		result = append(result, strings.Repeat(" ", padding)+line)
+	visible := append([]string(nil), lines[:count]...)
+	if hint != "" {
+		visible = append(visible, theme.Faint(hint))
 	}
-	if count < len(lines) {
-		result = append(result, strings.Repeat(" ", padding)+tui.TruncateToWidth(theme.FG("muted", fmt.Sprintf("… %d more · click to expand", len(lines)-count)), width-padding, "…", false))
-	}
-	return result
+	return renderTonalTray(visible, width, indent, preview.bgRole)
 }
 
 func newToolOutputPreview(output string, options extensions.ToolRenderResultOptions, palette extensions.Theme) *toolOutputPreview {
@@ -1008,7 +1374,7 @@ func (preview *toolOutputPreview) Render(width int) []string {
 	truncated := tui.TruncateToVisualLines(style(output), toolPreviewLines, width, 0)
 	lines := append([]string(nil), truncated.VisualLines...)
 	if earlier || truncated.SkippedCount > 0 {
-		hint := preview.palette.FG("muted", "… earlier output · click to expand")
+		hint := theme.Faint("… earlier output · click to expand")
 		lines = append(lines, tui.TruncateToWidth(hint, width, "...", false))
 	}
 	return lines
@@ -1032,51 +1398,150 @@ func (c *ToolExecutionComponent) Invalidate() {
 	defer c.mu.Unlock()
 	c.contentBox.Invalidate()
 }
-func (c *ToolExecutionComponent) Render(width int) []string {
+
+func (c *ToolExecutionComponent) renderNested(width int) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.drawn || c.renderTheme != theme.Current().Palette() {
-		if c.drawn {
+	wasNested := c.nested
+	c.nested = true
+	if !c.drawn || !wasNested || c.renderTheme != theme.Current().Palette() {
+		if c.drawn && c.renderTheme != theme.Current().Palette() {
 			c.callComponent, c.resultComponent = nil, nil
 		}
 		c.drawn = true
 		c.updateDisplay()
 	}
-	marker, color := "✓", "success"
-	if c.isPartial {
-		marker, color = "○", "accent"
-		if c.execStarted || c.argsComplete {
-			marker = "●"
+	// Render children directly at width without outer band padding (the group rail supplies it).
+	var lines []string
+	c.moreRow = -1
+	children := c.contentBox.Children
+	for i, child := range children {
+		rendered := child.Render(width)
+		if i == 0 && len(rendered) > 0 {
+			rendered = append([]string(nil), rendered...)
+			rendered[0] = c.alignNestedHeaderLocked(rendered[0], width)
 		}
-	} else if c.result != nil && c.result.IsError {
-		marker, color = "×", "error"
+		lines = append(lines, rendered...)
 	}
-	if c.hovered && color != "error" {
-		color = "accent"
+	if c.expanded && !c.showAll && len(lines) > 1 && strings.Contains(tui.StripANSI(lines[len(lines)-1]), "click to show all") {
+		c.moreRow = len(lines) - 1
 	}
-	lines := renderBand(c.contentBox, width, "")
-	if width > 1 && len(lines) > 0 {
-		lines[0] = theme.FG(color, marker) + strings.TrimPrefix(lines[0], " ")
+	return lines
+}
+
+func (c *ToolExecutionComponent) alignNestedHeaderLocked(line string, width int) string {
+	if c.isPartial {
+		var elapsed time.Duration
+		if !c.startedAt.IsZero() {
+			elapsed = time.Since(c.startedAt)
+		}
+		dot := theme.FG("muted", "◌")
+		if c.execStarted || c.argsComplete {
+			dot = theme.PulseDot("accent", elapsed)
+		}
+		return tui.TruncateToWidth(dot+" "+line, width, "…", false)
 	}
-	if !c.hovered && !c.expanded && !c.isPartial && (c.result == nil || !c.result.IsError) {
+	if c.result != nil && c.result.IsError {
+		return tui.TruncateToWidth(theme.FG("error", "×")+" "+line, width, "…", false)
+	}
+	return line
+}
+
+func (c *ToolExecutionComponent) Render(width int) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	wasNested := c.nested
+	c.nested = false
+	if !c.drawn || wasNested || c.renderTheme != theme.Current().Palette() {
+		if c.drawn && c.renderTheme != theme.Current().Palette() {
+			c.callComponent, c.resultComponent = nil, nil
+		}
+		c.drawn = true
+		c.updateDisplay()
+	}
+	var marker string
+	isErr := c.result != nil && c.result.IsError
+	switch {
+	case c.isPartial:
+		if c.execStarted || c.argsComplete {
+			var elapsed time.Duration
+			if !c.startedAt.IsZero() {
+				elapsed = time.Since(c.startedAt)
+			}
+			marker = theme.PulseDot("accent", elapsed)
+		} else {
+			marker = theme.FG("muted", "◌")
+		}
+	case isErr:
+		marker = theme.FG("error", "×")
+	case c.expanded:
+		marker = theme.FG("muted", "⌄")
+	case c.hovered:
+		marker = theme.FG("toolTitle", "›")
+	default:
+		marker = theme.Faint("›")
+	}
+
+	var lines []string
+	c.moreRow = -1
+	headerPad := min(3, max(0, width-1))
+	bodyWidth := max(1, width-headerPad)
+	children := c.contentBox.Children
+	for i, child := range children {
+		if i == 0 {
+			rendered := child.Render(bodyWidth)
+			for j, row := range rendered {
+				if j == 0 && width > 2 {
+					lines = append(lines, " "+marker+" "+row)
+				} else if width > 3 {
+					lines = append(lines, " "+theme.Rail()+" "+row)
+				} else {
+					lines = append(lines, row)
+				}
+			}
+			continue
+		}
+		// Body lines (soft tray / diff) sit behind a whisper-quiet hairline rail
+		// aligned at column 1, directly below the header marker.
+		railWidth := max(1, width-4)
+		rendered := child.Render(railWidth)
+		railPrefix := " " + theme.Rail() + "  "
+		if width <= 4 {
+			railPrefix = ""
+		}
+		for _, row := range rendered {
+			if railPrefix != "" {
+				lines = append(lines, railPrefix+row)
+			} else {
+				lines = append(lines, row)
+			}
+		}
+	}
+	if !c.hovered && !c.expanded && !c.isPartial && !isErr {
 		lines = fade(lines, &c.fadedFrom, &c.faded)
 	}
-	if c.headed {
-		return lines
+	offset := 0
+	if !c.headed {
+		lines = append([]string{""}, lines...)
+		offset = 1
 	}
-	return append([]string{""}, lines...)
+	if c.expanded && !c.showAll && len(lines) > offset+1 && strings.Contains(tui.StripANSI(lines[len(lines)-1]), "click to show all") {
+		c.moreRow = len(lines) - 1
+	}
+	return lines
 }
 
 type toolActivityGroup struct {
 	mu    sync.Mutex
 	tools []*ToolExecutionComponent
 	// items keeps tools and the reasoning folded between them in order.
-	items    []tui.Component
-	expanded bool
-	hovered  bool
-	hover    *ToolExecutionComponent
-	rows     []toolActivityRow
-	ui       tui.RenderRequester
+	items     []tui.Component
+	expanded  bool
+	hovered   bool
+	hover     *ToolExecutionComponent
+	rows      []toolActivityRow
+	ui        tui.RenderRequester
+	startedAt time.Time
 	// faded caches the header's resting look.
 	fadedFrom, faded []string
 	// headed sits right under the reasoning that led to it.
@@ -1092,7 +1557,7 @@ type toolActivityRow struct {
 // argument, and returns where that argument starts when it is a path or URL,
 // whose ends matter more than its middle.
 func fallbackToolTitle(name string, args any) (string, int) {
-	title := theme.FG("accent", theme.Bold(name))
+	title := theme.FG("toolTitle", theme.Bold(name))
 	values, _ := args.(map[string]any)
 	for _, key := range []string{"file_path", "path", "command", "url", "urls", "query", "pattern", "description", "input"} {
 		value, more := values[key], 0
@@ -1111,7 +1576,7 @@ func fallbackToolTitle(name string, args any) (string, int) {
 		if more > 0 {
 			text += fmt.Sprintf(" +%d", more)
 		}
-		return title + theme.FG("toolTitle", " "+text), detailFrom
+		return title + theme.FG("muted", " "+text), detailFrom
 	}
 	return title, 0
 }
@@ -1132,6 +1597,8 @@ func toolActivityKind(name string) string {
 		return "web search"
 	case "fetch_content", "webfetch", "web_fetch":
 		return "page"
+	case "recall":
+		return "memory"
 	}
 	return ""
 }
@@ -1139,19 +1606,19 @@ func toolActivityKind(name string) string {
 // activityKinds orders a group's counts; plurals are irregular for two.
 var activityKinds = []struct{ kind, plural string }{
 	{"command", "commands"}, {"read", "reads"}, {"search", "searches"}, {"listing", "listings"},
-	{"web search", "web searches"}, {"page", "pages"},
+	{"web search", "web searches"}, {"page", "pages"}, {"memory", "memories"},
 }
 
 // activityVerb names a group by what it holds, as done or ongoing.
 func activityVerb(counts map[string]int, total int, active bool) string {
-	verbs := [2]string{"Explored", "Exploring"}
+	verbs := [2]string{"explored", "exploring"}
 	switch web := counts["web search"] + counts["page"]; {
 	case web == total:
-		verbs = [2]string{"Searched the web", "Searching the web"}
+		verbs = [2]string{"searched the web", "searching the web"}
 	case counts["command"] == total:
-		verbs = [2]string{"Ran", "Running"}
+		verbs = [2]string{"ran", "running"}
 	case counts["command"] > 0:
-		verbs = [2]string{"Worked", "Working"}
+		verbs = [2]string{"worked", "working"}
 	}
 	if active {
 		return verbs[1]
@@ -1182,6 +1649,9 @@ func (group *toolActivityGroup) Invalidate() {
 func (group *toolActivityGroup) add(item tui.Component) {
 	group.mu.Lock()
 	defer group.mu.Unlock()
+	if group.startedAt.IsZero() {
+		group.startedAt = time.Now()
+	}
 	if tool, ok := item.(*ToolExecutionComponent); ok {
 		group.tools = append(group.tools, tool)
 	}
@@ -1196,6 +1666,8 @@ func (group *toolActivityGroup) Render(width int) []string {
 	if len(group.tools) > 1 {
 		counts := map[string]int{}
 		active, running := false, ""
+		failed := 0
+		var totalDuration time.Duration
 		for _, tool := range group.tools {
 			counts[toolActivityKind(tool.toolName)]++
 			tool.mu.Lock()
@@ -1204,6 +1676,11 @@ func (group *toolActivityGroup) Render(width int) []string {
 				title, _ := fallbackToolTitle(tool.toolName, tool.args)
 				if argument, ok := strings.CutPrefix(tui.StripANSI(title), tool.toolName+" "); ok {
 					running = argument
+				}
+			} else {
+				totalDuration += tool.duration
+				if tool.result != nil && tool.result.IsError {
+					failed++
 				}
 			}
 			tool.mu.Unlock()
@@ -1216,23 +1693,38 @@ func (group *toolActivityGroup) Render(width int) []string {
 				labels = append(labels, fmt.Sprintf("%d %s", count, kind.plural))
 			}
 		}
-		// An open group needs no marker: its rows show it is open, and the
-		// label keeps the column of theirs.
-		marker, color := "›", "accent"
-		if group.expanded {
-			marker = " "
+		verbText := activityVerb(counts, len(group.tools), active)
+		var elapsed time.Duration
+		if !group.startedAt.IsZero() {
+			elapsed = time.Since(group.startedAt)
 		}
-		if group.hovered {
-			color = "toolTitle"
+		var prefix string
+		switch {
+		case active:
+			prefix = " " + theme.PulseDot("accent", elapsed) + " " + theme.Bold(theme.Shimmer(verbText, elapsed))
+		case group.expanded:
+			prefix = " " + theme.FG("muted", "⌄") + " " + theme.FG("toolTitle", theme.Bold(verbText))
+		case group.hovered:
+			prefix = " " + theme.FG("toolTitle", "›") + " " + theme.FG("toolTitle", theme.Bold(verbText))
+		default:
+			prefix = " " + theme.Faint("›") + " " + theme.FG("muted", theme.Bold(verbText))
 		}
-		header := theme.FG(color, marker+"  "+theme.Bold(activityVerb(counts, len(group.tools), active))) + theme.FG("toolTitle", " · "+strings.Join(labels, " · "))
+		header := prefix + theme.FG("muted", " · "+strings.Join(labels, " · "))
 		// While it works, the header says what it is doing now: a closed group keeps its height
 		// instead of showing each running tool below and then swallowing it.
 		if step := cmp.Or(group.stepLocked(), running); active && !group.expanded && step != "" {
 			header += theme.FG("muted", " · "+theme.Italic(step))
 		}
-		row := []string{tui.TruncateToWidth(header, width, "…", false)}
-		if !group.hovered && !group.expanded && !active {
+		right := ""
+		if failed > 0 {
+			right = theme.FG("error", fmt.Sprintf("%d failed", failed))
+		} else if !active {
+			if dur := formatDurationShort(totalDuration); dur != "" {
+				right = theme.Faint(dur)
+			}
+		}
+		row := []string{formatRowWithRight(header, right, width, 0)}
+		if !group.hovered && !group.expanded && !active && failed == 0 {
 			row = fade(row, &group.fadedFrom, &group.faded)
 		}
 		lines = row
@@ -1240,41 +1732,57 @@ func (group *toolActivityGroup) Render(width int) []string {
 			lines = append([]string{""}, row...)
 		}
 	}
-	// Rows sit tight under a header, and a step under its reasoning; under a header they are
-	// indented, as what it holds.
-	tight := len(group.tools) > 1 || group.headed
+	// Under an expanded group header, every nested row sits behind a hairline left rail.
+	grouped := len(group.tools) > 1
 	indent := 0
-	if len(group.tools) > 1 {
+	railPrefix := ""
+	if grouped && width > groupIndent+2 {
 		indent = groupIndent
+		railPrefix = " " + theme.Rail() + "  "
 	}
 	nest := func(rendered []string) []string {
+		if indent == 0 {
+			return rendered
+		}
 		for index, line := range rendered {
 			if line != "" {
-				rendered[index] = strings.Repeat(" ", indent) + line
+				rendered[index] = railPrefix + line
 			}
 		}
 		return rendered
 	}
+	tight := grouped || group.headed
 	for _, item := range group.items {
 		switch item := item.(type) {
 		case *ToolExecutionComponent:
 			item.mu.Lock()
-			visible := len(group.tools) == 1 || group.expanded || item.result != nil && item.result.IsError
+			isErr := item.result != nil && item.result.IsError
+			visible := !grouped || group.expanded || isErr
 			item.mu.Unlock()
 			if visible {
-				rendered := item.Render(width - indent)
-				if tight && len(rendered) > 0 && rendered[0] == "" {
-					rendered = rendered[1:]
+				var rendered []string
+				if grouped {
+					rendered = item.renderNested(max(1, width-indent))
+				} else {
+					rendered = item.Render(max(1, width-indent))
+					if tight && len(rendered) > 0 && rendered[0] == "" {
+						rendered = rendered[1:]
+					}
 				}
 				start := len(lines)
 				lines = append(lines, nest(rendered)...)
 				group.rows = append(group.rows, toolActivityRow{tool: item, start: start, end: len(lines), indent: indent})
-				tight = len(group.tools) > 1
+				tight = grouped
 			}
 		case *AssistantMessageComponent:
-			if group.expanded || len(group.tools) == 1 {
-				if rendered := item.renderUnfolded(width - indent); len(rendered) > 0 {
+			if group.expanded && grouped {
+				if rendered := item.renderGroupChild(max(1, width-indent)); len(rendered) > 0 {
 					lines = append(lines, nest(rendered)...)
+					tight = true
+				}
+			} else if !grouped {
+				if rendered := item.renderUnfolded(width); len(rendered) > 0 {
+					lines = append(lines, rendered...)
 					tight = true
 				}
 			}
@@ -1283,8 +1791,8 @@ func (group *toolActivityGroup) Render(width int) []string {
 	return lines
 }
 
-// groupIndent sets a group's actions in under its header.
-const groupIndent = 3
+// groupIndent sets a group's actions in under its header (" │  " = 4 cells).
+const groupIndent = 4
 
 // headerRow is the header's line in the group's render.
 func (group *toolActivityGroup) headerRow() int {
@@ -1467,9 +1975,10 @@ func NewBashExecutionComponent(command string, ui tui.RenderRequester, excludeFr
 		excludeCtx: excludeFromContext,
 		ui:         ui,
 	}
+	start := time.Now()
 	c.loader = tui.NewLoader(ui,
 		func(s string) string { return theme.FG("bashMode", s) },
-		func(s string) string { return theme.FG("muted", s) },
+		func(s string) string { return theme.Shimmer(s, time.Since(start)) },
 		"Running... ("+KeyText("tui.select.cancel")+" to cancel)", nil,
 	)
 	c.rebuild()
@@ -1649,9 +2158,10 @@ func NewWorkingStatusIndicator(ui tui.RenderRequester, message string, options .
 	})
 }
 
-// newStatusIndicator draws the message muted unless messageColor says otherwise.
+// newStatusIndicator draws the animated spinner in color and the message muted (or custom).
 func newStatusIndicator(ui tui.RenderRequester, kind StatusIndicatorKind, color, message string, indicator *tui.LoaderIndicatorOptions, messageColor ...tui.StyleFunc) *StatusIndicator {
-	style := tui.StyleFunc(func(s string) string { return theme.FG("muted", s) })
+	start := time.Now()
+	style := tui.StyleFunc(func(s string) string { return theme.Shimmer(s, time.Since(start)) })
 	if len(messageColor) > 0 {
 		style = messageColor[0]
 	}

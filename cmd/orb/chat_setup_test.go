@@ -22,6 +22,8 @@ func TestChatSetupSavesWhatOrbChatReads(t *testing.T) {
 	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
 	t.Setenv("ORB_CHAT_DATA_DIR", "")
 	t.Setenv("BUZZ_PRIVATE_KEY", "")
+	t.Setenv("BUZZ_AUTH_TAG", "")
+	t.Setenv("BUZZ_RELAY_URL", "")
 	run := func(args ...string) string {
 		var stdout bytes.Buffer
 		if code := runNativeCLI(context.Background(), append([]string{"chat", "setup"}, args...), cliStreams{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: io.Discard}); code != 0 {

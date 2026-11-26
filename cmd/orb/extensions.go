@@ -18,7 +18,6 @@ import (
 	"github.com/OrdalieTech/orb/engine"
 	"github.com/OrdalieTech/orb/plugins/claudesessions"
 	herdrext "github.com/OrdalieTech/orb/plugins/herdr"
-	"github.com/OrdalieTech/orb/plugins/mitosisagents"
 	"github.com/OrdalieTech/orb/plugins/permissions"
 )
 
@@ -82,8 +81,7 @@ func loadCompiledExtensions(cwd, agentDir string, args CLIArgs, settings *config
 		Policy:        policy,
 		CWD:           cwd, AgentDir: agentDir, Settings: settings,
 		Mitosis: mitosisExtension(args, settings), MitosisManagement: true,
-		MitosisAgentCalls: mitosisagents.Extension(ownerMitosis{args: args, settings: settings}),
-		ClaudeSessions:    claudesessions.Management(settings, agentDir, os.Environ()),
+		ClaudeSessions: claudesessions.Management(settings, agentDir, os.Environ()),
 		// Background jobs run through the same bash as the built-in: sandbox, shell and prefix.
 		Bash: func(cwd string) (engine.AgentTool, error) {
 			mode, err := permissions.SandboxMode(settings)

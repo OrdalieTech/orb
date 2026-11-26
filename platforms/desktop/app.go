@@ -187,9 +187,15 @@ func (a *app) makeDefault(peer, model, level string) {
 // show shows a conversation by its tab id, Home for "", closing any screen above them: in the
 // tile that has it as a tab, else as a new tab of the focused tile.
 func (a *app) show(tab string) {
+	a.showTab(tab, true)
+}
+
+func (a *app) showTab(tab string, focusPrompt bool) {
 	a.stack, a.fresh = nil, nil
 	a.listing = time.Now().Add(5 * time.Second)
-	a.focus++ // its prompt box takes the keys, and with them its tile
+	if focusPrompt {
+		a.focus++ // its prompt box takes the keys, and with them its tile
+	}
 	for _, x := range a.root.tiles(nil) {
 		if tab != "" && !x.shell && slices.Contains(x.tabs, tab) {
 			x.tab = tab
@@ -574,6 +580,11 @@ func (a *app) shortcuts(c *ui.Context) {
 		// TUI parity: Shift+Tab cycles reasoning level; Ctrl+O expands/collapses tool outputs.
 		on(ui.Shift, ui.KeyTab, a.cycleReasoning)
 		on(ui.Ctrl, ui.KeyO, a.toggleToolOutputs)
+		// Shift+Left / Shift+Right switch tabs whenever the cursor is not in a text field or modal.
+		if !c.FocusWithin(a.active.boxAt) && a.rename == nil && a.picker == nil && a.model == "" && len(a.stack) == 0 {
+			on(ui.Shift, ui.KeyLeft, func() { a.move(-1) })
+			on(ui.Shift, ui.KeyRight, func() { a.move(1) })
+		}
 	}
 	on(cmd, ui.KeyN, a.newSession)
 	on(cmd, ui.KeyK, a.openPalette)
@@ -707,7 +718,7 @@ func (a *app) move(by int) {
 	if at < 0 && by < 0 {
 		at = 0 // from Home, back to the last
 	}
-	a.show(tabs[(at+by+len(tabs))%len(tabs)])
+	a.showTab(tabs[(at+by+len(tabs))%len(tabs)], false)
 }
 
 // keys names a shortcut as the platform writes it.

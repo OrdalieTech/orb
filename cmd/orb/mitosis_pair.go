@@ -235,6 +235,16 @@ func parseMitosisCode(ctx context.Context, text string) (mitosis.Invitation, err
 // Orbs opened in a terminal there included. Only for the profile the plugin attaches to: pairing
 // another profile must not start a second, unpaired Mitosis behind every later Orb.
 func shareOrbsOnMitosis(ctx context.Context, profile string) {
+	setMitosisPlugin(ctx, profile, false)
+}
+
+// enableMitosisPlugin turns the mitosis plugin on for the personal profile after explicit CLI
+// activation (`orb mitosis start`, `orb mitosis service install`).
+func enableMitosisPlugin(ctx context.Context, profile string) {
+	setMitosisPlugin(ctx, profile, true)
+}
+
+func setMitosisPlugin(ctx context.Context, profile string, force bool) {
 	if profile != "personal" {
 		return
 	}
@@ -246,7 +256,7 @@ func shareOrbsOnMitosis(ctx context.Context, profile string) {
 	if err != nil {
 		return
 	}
-	if _, set := settings.GetPlugins()["mitosis"]; !set {
+	if _, set := settings.GetPlugins()["mitosis"]; force || !set {
 		settings.SetPluginEnabled("mitosis", true)
 		_ = settings.DrainErrors()
 	}

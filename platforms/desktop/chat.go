@@ -103,7 +103,7 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 					}
 				})
 			}
-		}).Grow(1).Basis(0).FillWidth().Justify(ui.End)
+		}).Grow(1).Basis(0).FillWidth().Justify(ui.End).Margin(0, 0, 6, 0)
 		switch {
 		case len(tt) > 0:
 		case !t.Loaded:
@@ -116,23 +116,27 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 				label(c, "ready").TextColor(pal.meta)
 			})
 		}
-		reading(c).Children(func() {
-			if t.Status != "" {
-				ui.Text(c, t.Status).Padding(4, margin+6).FontSize(small).TextColor(pal.meta)
+		var visibleSlots []Slot
+		for _, s := range t.Slots {
+			if strings.ContainsFunc(ansi.ReplaceAllString(strings.Join(s.Lines, ""), ""), func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+				visibleSlots = append(visibleSlots, s)
 			}
-			// What its plugins show beside it: the task list, a status, the last notice.
-			for _, s := range t.Slots {
-				// A status that is only a coloured mark in the terminal (a •) says nothing here.
-				if !strings.ContainsFunc(ansi.ReplaceAllString(strings.Join(s.Lines, ""), ""), func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
-					continue
+		}
+		if t.Status != "" || len(visibleSlots) > 0 {
+			reading(c).Padding(0, 0, 6).Gap(2).Children(func() {
+				if t.Status != "" {
+					ui.Text(c, t.Status).Padding(2, margin+6).FontSize(small).TextColor(pal.meta)
 				}
-				ink := pal.meta
-				if s.Alarm {
-					ink = rupture
+				// What its plugins show beside it: the task list, a status, the last notice.
+				for _, s := range visibleSlots {
+					ink := pal.meta
+					if s.Alarm {
+						ink = rupture
+					}
+					a.folded(c.Key(s.Key), strings.Join(s.Lines, "\n"), ink).PaddingX(margin + 6)
 				}
-				a.folded(c.Key(s.Key), strings.Join(s.Lines, "\n"), ink).PaddingX(margin + 6)
-			}
-		})
+			})
+		}
 		a.promptBox(c, t, "What next?")
 	})
 }
@@ -153,12 +157,15 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 			if t.Context > 0.8 {
 				ink = rupture
 			}
-			ui.Row(c).Gap(6).Shrink(0).Tooltip("Context in use").Children(func() {
+			ctxRow := ui.Row(c).Gap(6).Shrink(0).Children(func() {
 				if !a.tight {
 					gauge(c, t.Context, 0.8)
 				}
 				ui.Textf(c, "%d%%", int(math.Round(t.Context*100))).FontSize(12).TextColor(ink).SingleLine()
 			})
+			if press(ctxRow.Tooltip("Context window in use · click for details")) {
+				a.contextInfo(t)
+			}
 		}
 		if t.Usage != nil && len(t.Usage.Windows) > 0 && !a.tight {
 			w := slices.MinFunc(t.Usage.Windows, func(x, y Window) int { return int(x.Left - y.Left) })
@@ -196,6 +203,38 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 }
 
 // usage is a conversation's plan windows: what is left of each and when it resets, from its Orb's last reading.
+func (a *app) contextInfo(t *Tab) {
+	pct := int(math.Round(t.Context * 100))
+	lines := []string{
+		"Share of the model's context window filled by this conversation",
+	}
+	if t.Model != "" {
+		_, model, ok := strings.Cut(t.Model, "/")
+		if !ok {
+			model = t.Model
+		}
+		if t.Thinking != "" && t.Thinking != "off" {
+			model += " · " + t.Thinking
+		}
+		lines = append(lines, "model · "+model)
+	}
+	if t.Cost > 0 {
+		lines = append(lines, fmt.Sprintf("session cost · $%.2f", t.Cost))
+	}
+	if !t.Busy {
+		lines = append(lines, "compact context (/compact)")
+	}
+	a.picker = &picker{
+		title:   fmt.Sprintf("context window · %d%% used", pct),
+		options: lines,
+		pick: func(s string) {
+			if s == "compact context (/compact)" {
+				a.send(t, "/compact")
+			}
+		},
+	}
+}
+
 func (a *app) usage(t *Tab) {
 	u := t.Usage
 	provider, _, _ := strings.Cut(t.Model, "/")
@@ -252,6 +291,26 @@ func (a *app) pending(c *ui.Context) {
 	})
 }
 
+// copyButton draws a quiet "copy" trigger (unselectable so drag-selection skips it)
+// that flashes "copied" for 1.2s after writing text to the clipboard.
+func copyButton(c *ui.Context, text string) {
+	pal := p(c)
+	until := ui.Local(ui.Box(c).Width(0).Height(0), "copiedUntil", func() time.Time { return time.Time{} })
+	copied := !until.IsZero() && time.Now().Before(*until)
+	if copied {
+		c.After(time.Until(*until))
+	}
+	caption, ink := "copy", pal.meta
+	if copied {
+		caption, ink = "copied", pal.fg
+	}
+	if press(ui.Text(c, caption).FontSize(labelSize).TextColor(ink).Unselectable()) {
+		mygo.Clipboard.WriteText(text)
+		*until = time.Now().Add(1200 * time.Millisecond)
+		c.After(1200 * time.Millisecond)
+	}
+}
+
 // turn: what the person said sits at right on a soft ground (a peer's says it came by Mitosis); Orb
 // just speaks, full width, its actions inline.
 func (a *app) turn(c *ui.Context, rows []Row, first bool, t *Tab) {
@@ -262,9 +321,13 @@ func (a *app) turn(c *ui.Context, rows []Row, first bool, t *Tab) {
 		if first {
 			top = 12
 		}
-		reading(c).Padding(top, margin, 16, 48).Gap(6).AlignItems(ui.End).Selectable().Children(func() {
+		reading(c).Padding(top, margin, 16, 48).Gap(6).AlignItems(ui.End).Selectable().ContextMenu(func(m *ui.Menu) {
+			if strings.TrimSpace(you.Text) != "" && m.Item("Copy message").Chosen() {
+				mygo.Clipboard.WriteText(you.Text)
+			}
+		}).Children(func() {
 			if you.Via != "" {
-				ui.Text(c, "from a peer").FontSize(labelSize).TextColor(blue)
+				ui.Text(c, "from a peer").FontSize(labelSize).TextColor(blue).Unselectable()
 			}
 			a.pictures(c, you.Images, t)
 			if strings.TrimSpace(you.Text) != "" {
@@ -273,21 +336,35 @@ func (a *app) turn(c *ui.Context, rows []Row, first bool, t *Tab) {
 		})
 		return
 	}
-	reading(c).Padding(4, margin, 8).Gap(8).Selectable().Children(func() {
+	rec := newCopyRecorder()
+	turnEl := reading(c).Padding(4, margin, 8).Gap(8).Selectable()
+	turnEl.CopyData(rec.copyData).ContextMenu(func(m *ui.Menu) {
+		if md := turnToMarkdown(rows); md != "" {
+			if m.Item("Copy message as Markdown").Chosen() {
+				mygo.Clipboard.WriteText(md)
+			}
+		}
+	}).Children(func() {
 		for _, r := range rows {
 			switch r.Kind {
 			case "md":
 				if r.Block != nil {
-					markdown(c.Key(r.Key), *r.Block, size, pal.fg)
+					markdown(c.Key(r.Key), *r.Block, size, pal.fg, rec, 0)
 				}
 			case "run":
-				if len(r.Actions) == 1 {
-					a.action(c.Key(r.Key), r.Actions[0], t)
-				} else {
-					a.worked(c.Key(r.Key), r, t)
+				ui.Column(c.Key(r.Key)).FillWidth().Unselectable().Children(func() {
+					if len(r.Actions) == 1 {
+						a.action(c, r.Actions[0], t)
+					} else {
+						a.worked(c, r, t)
+					}
+					// What the tools showed the model stays in view, even while their run is folded.
+					a.pictures(c, r.Images, t)
+				})
+			case "peer":
+				if r.Exchange != nil {
+					a.peerExchange(c.Key(r.Key), r, t)
 				}
-				// What the tools showed the model stays in view, even while their run is folded.
-				a.pictures(c, r.Images, t)
 			case "note":
 				ink := pal.meta
 				if r.Alarm {
@@ -299,12 +376,112 @@ func (a *app) turn(c *ui.Context, rows []Row, first bool, t *Tab) {
 	})
 }
 
+// peerExchange renders a lightweight inter-agent message (Mitosis peer or local subagent)
+// as a flat recessed panel with a one-line header and clean body.
+func (a *app) peerExchange(c *ui.Context, r Row, t *Tab) {
+	ex := r.Exchange
+	pal := p(c)
+	accent := pal.meta
+	if ex.Scope == "peer" {
+		accent = hue(c, a.o.hue(ex.Peer), blue)
+	}
+	if ex.Failed {
+		accent = rupture
+	}
+	arrow := "→"
+	if ex.Dir == "in" {
+		arrow = "←"
+	}
+	rowKey := t.ID + "\x00" + r.Key
+	open := a.expanded[rowKey]
+	border := pal.rule.Alpha(0.55)
+	if ex.Failed {
+		border = rupture.Alpha(0.45)
+	}
+	ui.Column(c).FillWidth().Padding(7, 10).Radius(pane).Background(pal.recessed).Border(1, border).Gap(4).Unselectable().Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+			if ex.Scope == "peer" {
+				dot(c, accent, 5, ex.Live, false)
+			}
+			ui.Text(c, arrow).FontSize(labelSize).FontWeight(700).TextColor(pal.meta)
+			who := ui.Text(c, ex.Who).FontSize(labelSize).FontWeight(700).TextColor(pal.fg).Ellipsis("…")
+			if ex.Scope == "peer" && (ex.Session != "" || ex.Peer != "") {
+				if press(who) {
+					key := ""
+					if ex.Session != "" && ex.Peer != "" {
+						key = "t:" + ex.Peer + "|" + ex.Session
+						for _, e := range a.o.home.Entries {
+							if e.Key == "i:"+ex.Session {
+								key = e.Key
+								break
+							}
+						}
+					} else if ex.Session != "" {
+						key = "i:" + ex.Session
+					}
+					if key != "" {
+						a.open(key)
+					}
+				}
+			}
+			ui.Box(c).Grow(1)
+			if ex.Status != "" {
+				ink := pal.meta
+				if ex.Failed {
+					ink = rupture
+				} else if ex.Live {
+					ink = pal.fg
+				}
+				ui.Text(c, ex.Status).FontSize(11).TextColor(ink)
+			}
+		})
+		if strings.TrimSpace(ex.Text) != "" {
+			ui.Text(c, ex.Text).FontSize(13).TextColor(pal.fg)
+		}
+		if ex.Scope == "subagent" && !ex.Live && (ex.Reply != "" || ex.Steps != "") {
+			preview := "view details"
+			if open {
+				preview = "hide reply"
+			} else if first := firstNonEmptyLine(ex.Reply); first != "" {
+				preview = first
+			}
+			toggle := ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+				ui.Text(c, "←").FontSize(12).TextColor(pal.meta)
+				ui.Text(c, preview).FontSize(12).TextColor(pal.meta).Ellipsis("…")
+			})
+			if press(toggle) {
+				a.expanded[rowKey] = !open
+			}
+			if open {
+				ui.Column(c).FillWidth().Padding(8, 10).Radius(pane).Background(pal.recessed).Gap(4).Transition(fold).Children(func() {
+					if ex.Steps != "" {
+						ui.Text(c, ex.Steps).FontSize(11).TextColor(pal.meta)
+					}
+					if ex.Reply != "" {
+						ui.Text(c, ex.Reply).FontSize(12).TextColor(pal.fg)
+					}
+				})
+			}
+		}
+	})
+}
+
+func firstNonEmptyLine(s string) string {
+	for line := range strings.SplitSeq(s, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 // fold opens and closes what a line holds: its height and its ink together, in 200 ms.
 var fold = ui.ElementTransition{Enter: &ui.Motion{Collapse: true}, Exit: &ui.Motion{Collapse: true}, Animation: &opening}
 
 // worked folds a run of actions into one line, as the TUI folds exploration, naming what runs now;
 // it opens to the actions.
 func (a *app) worked(c *ui.Context, r Row, t *Tab) {
+	pal := p(c)
 	rowKey := t.ID + "\x00" + r.Key
 	open := a.expanded[rowKey]
 	ui.Column(c).FillWidth().Children(func() {
@@ -322,7 +499,7 @@ func (a *app) worked(c *ui.Context, r Row, t *Tab) {
 			a.expanded[rowKey] = !open
 		}
 		if open {
-			ui.Column(c).FillWidth().PaddingStart(16).Transition(fold).Children(func() {
+			ui.Column(c).FillWidth().MarginStart(5).PaddingStart(11).BorderWidth(0, 0, 0, 1).BorderColor(pal.rule).Transition(fold).Children(func() {
 				for _, x := range r.Actions {
 					a.action(c.Key(x.Key), x, t)
 				}
@@ -331,8 +508,8 @@ func (a *app) worked(c *ui.Context, r Row, t *Tab) {
 	})
 }
 
-// action is a thought or a tool call: one line that opens into its whole text, or what it was given
-// and returned.
+// action is a thought or a tool call: one line that opens into a quiet, height-capped scrollable
+// tray holding its full text, diff, or command and output.
 func (a *app) action(c *ui.Context, x Action, t *Tab) {
 	pal := p(c)
 	key := t.ID + "\x00" + x.Key
@@ -349,38 +526,68 @@ func (a *app) action(c *ui.Context, x Action, t *Tab) {
 			return
 		}
 		d := a.details[key]
-		ui.Column(c).FillWidth().Margin(4, 0, 0, 16).Padding(12).Gap(8).Radius(pane).Background(pal.raised).Border(1, pal.rule).Transition(fold).Children(func() {
-			if x.Verb == "thought" {
-				ui.Text(c, d["text"]).FontSize(size - 2).TextColor(pal.mute)
-				return
+		bg := pal.recessed
+		if x.Failed {
+			bg = pal.recessed.Mix(rupture, 0.05)
+		}
+		copyPayload := d["output"]
+		switch {
+		case x.Verb == "thought":
+			copyPayload = d["text"]
+		case strings.TrimRight(d["diff"], "\n") != "":
+			copyPayload = strings.TrimRight(d["diff"], "\n")
+		case d["args"] != "" && d["output"] != "":
+			copyPayload = d["args"] + "\n" + d["output"]
+		}
+		ui.Column(c).FillWidth().Margin(4, 0, 4, 16).Radius(pane).Background(bg).Clip().Transition(fold).ContextMenu(func(m *ui.Menu) {
+			if strings.TrimSpace(copyPayload) != "" && m.Item("Copy output").Chosen() {
+				mygo.Clipboard.WriteText(copyPayload)
 			}
-			// An edit shows what it changed: added lines in green, removed ones in the rupture.
-			if diff := strings.TrimRight(d["diff"], "\n"); diff != "" {
-				for i, l := range strings.Split(diff, "\n") {
-					ink := pal.mute
-					switch {
-					case strings.HasPrefix(l, "+"):
-						ink = hue(c, 5, ink)
-					case strings.HasPrefix(l, "-"):
+		}).Children(func() {
+			ui.Scroll(c).FillWidth().MaxHeight(260).Padding(10, 12).Selectable().Children(func() {
+				ui.Column(c).FillWidth().Gap(6).Children(func() {
+					if x.Verb == "thought" {
+						ui.Text(c, cmp.Or(d["text"], "…")).FontSize(size - 2).TextColor(pal.mute)
+						return
+					}
+					// An edit shows what it changed: muted ink over a soft tint per added/removed line.
+					if diff := strings.TrimRight(d["diff"], "\n"); diff != "" {
+						ui.Column(c).FillWidth().Gap(1).Children(func() {
+							for i, l := range strings.Split(diff, "\n") {
+								ink := pal.meta
+								row := ui.Row(c.Key(strconv.Itoa(i))).FillWidth().Padding(1, 6).Radius(soft)
+								switch {
+								case strings.HasPrefix(l, "+"):
+									ink = hue(c, 5, pal.mute)
+									row.Background(ink.Alpha(0.10))
+								case strings.HasPrefix(l, "-"):
+									ink = rupture
+									row.Background(rupture.Alpha(0.10))
+								}
+								row.Children(func() {
+									ui.Text(c, l).FontSize(12).TextColor(ink)
+								})
+							}
+						})
+						return
+					}
+					if args := d["args"]; args != "" {
+						if !strings.HasPrefix(args, "$ ") && x.Verb != "write" {
+							label(c, "input").TextColor(pal.meta).Unselectable()
+						}
+						ui.Text(c, args).FontSize(12).TextColor(pal.mute)
+						ui.Box(c).FillWidth().Height(1).Margin(2, 0).Background(pal.rule.Alpha(0.6))
+					}
+					out, ink := d["output"], pal.mute
+					if d == nil {
+						out = "…"
+					}
+					if x.Failed {
 						ink = rupture
 					}
-					ui.Text(c.Key(strconv.Itoa(i)), l).FontSize(12).TextColor(ink).Selectable()
-				}
-				return
-			}
-			if d["args"] != "" {
-				label(c, "input").TextColor(pal.meta)
-				ui.Text(c, d["args"]).FontSize(12).TextColor(pal.mute)
-			}
-			label(c, "output").TextColor(pal.meta)
-			out, ink := d["output"], pal.fg
-			if d == nil {
-				out = "…"
-			}
-			if x.Failed {
-				ink = rupture
-			}
-			ui.Text(c, out).FontSize(12).TextColor(ink)
+					ui.Text(c, out).FontSize(12).TextColor(ink)
+				})
+			})
 		})
 	})
 }
@@ -488,57 +695,60 @@ func (a *app) viewer(c *ui.Context) {
 
 // markdown is one block of what Orb wrote, parsed by the view: a paragraph, heading, list item,
 // quote, code, drawing, table or rule.
-func markdown(c *ui.Context, b Block, size float32, ink ui.Color) {
+func markdown(c *ui.Context, b Block, size float32, ink ui.Color, rec *copyRecorder, quoteDepth int) {
 	pal := p(c)
 	indent := float32(b.Depth * 18)
 	switch b.Type {
 	case "p":
-		spans(c, b.Spans).MarginStart(indent).FontSize(size).TextColor(ink)
+		e := spans(c, b.Spans).MarginStart(indent).FontSize(size).TextColor(ink)
+		rec.record(e, mdPart{kind: "p", depth: b.Depth, quoteDepth: quoteDepth, spans: b.Spans})
 	case "h":
 		s := size + 1
 		if b.Level <= 2 {
 			s = size + 3
 		}
-		spans(c, b.Spans).Margin(6, 0, 0, indent).FontSize(s).FontWeight(strong).LetterSpacing(-0.02 * s).LineHeight(1.25).TextColor(ink)
+		e := spans(c, b.Spans).Margin(6, 0, 0, indent).FontSize(s).FontWeight(strong).LetterSpacing(-0.02 * s).LineHeight(1.25).TextColor(ink)
+		rec.record(e, mdPart{kind: "h", level: b.Level, depth: b.Depth, quoteDepth: quoteDepth, spans: b.Spans})
 	case "li":
 		ui.Row(c).FillWidth().PaddingStart(indent).AlignItems(ui.Start).Children(func() {
 			w := size * 1.8
 			if b.Mark == "·" {
 				w = size + 1
 			}
-			ui.Text(c, b.Mark).Width(w).FontSize(size).FontWeight(medium).TextColor(pal.meta)
-			spans(c, b.Spans).Grow(1).Basis(0).FontSize(size).TextColor(ink)
+			ui.Text(c, b.Mark).Width(w).FontSize(size).FontWeight(medium).TextColor(pal.meta).Unselectable()
+			e := spans(c, b.Spans).Grow(1).Basis(0).FontSize(size).TextColor(ink)
+			rec.record(e, mdPart{kind: "li", mark: b.Mark, depth: b.Depth, quoteDepth: quoteDepth, spans: b.Spans})
 		})
 	case "quote":
 		// A quote holds blocks of its own, its bar as tall as they are.
 		ui.Column(c).FillWidth().MarginStart(indent).PaddingStart(14).Gap(size*0.6).BorderWidth(0, 0, 0, 2).BorderColor(pal.rule).Children(func() {
 			for _, q := range b.Blocks {
-				markdown(c, q, size, pal.mute)
+				markdown(c, q, size, pal.mute, rec, quoteDepth+1)
 			}
 		})
 	case "code", "art":
-		ui.Column(c).FillWidth().MarginStart(indent).Padding(12).Radius(pane).Background(pal.raised).Border(1, pal.rule).Children(func() {
-			ui.Row(c).FillWidth().Margin(0, 0, 6).Children(func() {
+		ui.Column(c).FillWidth().MarginStart(indent).Padding(10, 12).Radius(pane).Background(pal.recessed).Children(func() {
+			ui.Row(c).FillWidth().Margin(0, 0, 6).Unselectable().Children(func() {
 				if b.Lang != "" {
 					label(c, b.Lang).TextColor(pal.meta)
 				}
 				ui.Spacer(c)
-				if press(ui.Text(c, "copy").FontSize(labelSize).TextColor(pal.meta)) {
-					mygo.Clipboard.WriteText(b.Text)
-				}
+				copyButton(c, b.Text)
 			})
 			if b.Type == "art" {
 				// A drawing scrolls, its lines flush.
 				ui.ScrollHorizontal(c).FillWidth().Children(func() {
-					ui.Text(c, b.Text).NoWrap().FontSize(size - 3).LineHeight(1.1)
+					e := ui.Text(c, b.Text).NoWrap().FontSize(size - 3).LineHeight(1.1)
+					rec.record(e, mdPart{kind: "art", lang: b.Lang, quoteDepth: quoteDepth, text: b.Text})
 				})
 			} else {
 				// Tabs draw as nothing in a text: code keeps its indentation as spaces.
-				ui.Text(c, strings.ReplaceAll(b.Text, "\t", "    ")).FontSize(size - 3).LineHeight(1.5).TextColor(pal.fg)
+				e := ui.Text(c, strings.ReplaceAll(b.Text, "\t", "    ")).FontSize(size - 3).LineHeight(1.5).TextColor(pal.fg)
+				rec.record(e, mdPart{kind: "code", lang: b.Lang, quoteDepth: quoteDepth, text: b.Text})
 			}
 		})
 	case "table":
-		table(c, b.Rows, size, indent)
+		table(c, b.Rows, size, indent, rec, quoteDepth)
 	case "rule":
 		ui.Box(c).Height(4)
 	}
@@ -573,7 +783,7 @@ func spans(c *ui.Context, ss []Span) ui.Element {
 
 // table is as wide as its cells (each column up to 28 characters, wrapping beyond); a wide one
 // scrolls sideways, and fades at the side more of it is.
-func table(c *ui.Context, rows [][][]Span, size, indent float32) {
+func table(c *ui.Context, rows [][][]Span, size, indent float32, rec *copyRecorder, quoteDepth int) {
 	pal := p(c)
 	cols := 0
 	for _, r := range rows {
@@ -593,9 +803,18 @@ func table(c *ui.Context, rows [][][]Span, size, indent float32) {
 		}
 		widths[i] = float32(n)*(size-1)*0.58 + 16
 	}
+	tableID := 0
+	if rec != nil {
+		rec.nextTable++
+		tableID = rec.nextTable
+	}
 	sc := ui.ScrollHorizontal(c).FillWidth().MarginStart(indent)
 	at := ui.Local(sc, "scroll", func() ui.ScrollState { return ui.ScrollState{} })
-	sc.TrackScroll(at).DrawOver(func(pt *ui.Painter, r ui.Rect) {
+	sc.TrackScroll(at).ContextMenu(func(m *ui.Menu) {
+		if md := tableToMarkdown(rows); md != "" && m.Item("Copy table as Markdown").Chosen() {
+			mygo.Clipboard.WriteText(md)
+		}
+	}).DrawOver(func(pt *ui.Painter, r ui.Rect) {
 		if at.X < at.MaxX-1 {
 			x := r.X + r.W - 32
 			pt.FillPathGradient((&ui.Path{}).MoveTo(x, r.Y).LineTo(r.X+r.W, r.Y).LineTo(r.X+r.W, r.Y+r.H).LineTo(x, r.Y+r.H).Close(),
@@ -603,23 +822,21 @@ func table(c *ui.Context, rows [][][]Span, size, indent float32) {
 		}
 	})
 	sc.Children(func() {
-		ui.Column(c).Radius(soft).Border(1, pal.rule).Clip().Dividers(1, pal.rule).Children(func() {
+		ui.Column(c).Dividers(1, pal.rule.Alpha(0.55)).Children(func() {
 			for r, row := range rows {
 				e := ui.Row(c).AlignItems(ui.Stretch)
-				if r == 0 {
-					e.Background(pal.raised)
-				}
 				e.Children(func() {
 					for i := range cols {
 						var cell []Span
 						if i < len(row) {
 							cell = row[i]
 						}
-						w := 400
+						w, ink := 400, pal.fg
 						if r == 0 {
-							w = strong
+							w, ink = strong, pal.mute
 						}
-						spans(c, cell).Width(widths[i]).Padding(6, 8).FontSize(size - 1).FontWeight(w)
+						ce := spans(c, cell).Width(widths[i]).Padding(6, 8).FontSize(size - 1).FontWeight(w).TextColor(ink)
+						rec.record(ce, mdPart{kind: "cell", tableID: tableID, row: r, col: i, quoteDepth: quoteDepth, spans: cell})
 					}
 				})
 			}

@@ -490,11 +490,11 @@ func (p *Peer) Admin(ctx context.Context, method string, params json.RawMessage,
 }
 
 // AgentCalls adds the mitosis_call tool when the object's settings enable the
-// mitosis-agent-calls plugin, as on the native CLI. open returns the object's
-// peer when the tool runs.
+// mitosis plugin, as on the native CLI. open returns the object's peer when the
+// tool runs.
 func AgentCalls(open func(context.Context) (*Peer, error)) worker.ToolsFunc {
 	return func(settings *config.SettingsManager) []extensions.ToolDefinition {
-		if settings == nil || !settings.GetPlugins()["mitosis-agent-calls"] {
+		if settings == nil || !settings.GetPlugins()["mitosis"] {
 			return nil
 		}
 		return []extensions.ToolDefinition{callTool(open)}

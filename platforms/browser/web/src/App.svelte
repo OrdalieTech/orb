@@ -1,11 +1,12 @@
 <script>
   import { onDestroy, onMount } from "svelte";
   import { orb } from "./lib/store.svelte.js";
+  import { findLeaf } from "./lib/tiles.js";
   import PairScreen from "./components/PairScreen.svelte";
   import TopBar from "./components/TopBar.svelte";
-  import Home from "./components/Home.svelte";
   import Overview from "./components/Overview.svelte";
-  import ChatPane from "./components/ChatPane.svelte";
+  import MitosisMap from "./components/MitosisMap.svelte";
+  import TileTree from "./components/TileTree.svelte";
   import TerminalDrawer from "./components/TerminalDrawer.svelte";
   import Settings from "./components/Settings.svelte";
   import Interrupt from "./components/Interrupt.svelte";
@@ -17,15 +18,18 @@
     orb.init();
   });
 
-  let primaryTab = $derived(orb.getTab(orb.shown));
-  let secondaryTab = $derived(orb.splitTab ? orb.getTab(orb.splitTab) : null);
+  let displayTree = $derived(
+    orb.zoomedTileId ? (findLeaf(orb.tileTree, orb.zoomedTileId) || orb.tileTree) : orb.tileTree,
+  );
   let termTab = $derived(orb.terminalTab ? orb.getTab(orb.terminalTab) : null);
 
-  // An ask on a conversation currently on screen stops the world (Evangelion Rupture overlay).
+  // An ask on any conversation currently visible stops the world (Evangelion Rupture overlay).
   let askingTab = $derived.by(() => {
     if (orb.screen !== "app") return null;
-    if (primaryTab?.ask) return primaryTab;
-    if (secondaryTab?.ask) return secondaryTab;
+    for (const id of orb.visibleTabs) {
+      const t = orb.getTab(id);
+      if (t?.ask) return t;
+    }
     return null;
   });
 
@@ -47,14 +51,29 @@
     return e.key.toLowerCase() === letter || e.code === code;
   }
 
+  function isInTerminal(target) {
+    return !!target?.closest?.(".term-drawer");
+  }
+
+  function focusActivePromptInput() {
+    const el =
+      document.querySelector(".tile-leaf.focused textarea.prompt-input") ||
+      document.querySelector("textarea.prompt-input");
+    if (el) {
+      el.focus({ preventScroll: true });
+      return true;
+    }
+    return false;
+  }
+
   function closeTopOverlay() {
     if (orb.viewerImage) { orb.viewerImage = null; return true; }
     if (orb.pickerState) { orb.pickerState.resolve(null); return true; }
-    if (orb.shortcutsOpen) { orb.shortcutsOpen = false; orb.bumpFocus(); return true; }
-    if (orb.paletteOpen) { orb.paletteOpen = false; orb.bumpFocus(); return true; }
-    if (orb.modelDeckOpen) { orb.modelDeckOpen = false; orb.bumpFocus(); return true; }
-    if (orb.explorerPeer) { orb.explorerPeer = ""; orb.bumpFocus(); return true; }
-    if (orb.terminalTab) { orb.terminalTab = ""; orb.bumpFocus(); return true; }
+    if (orb.shortcutsOpen) { orb.shortcutsOpen = false; return true; }
+    if (orb.paletteOpen) { orb.paletteOpen = false; return true; }
+    if (orb.modelDeckOpen) { orb.modelDeckOpen = false; return true; }
+    if (orb.explorerPeer) { orb.explorerPeer = ""; return true; }
+    if (orb.terminalTab) { orb.terminalTab = ""; return true; }
     if (askingTab) { orb.send({ do: "answer", tab: askingTab.id, value: null }); return true; }
     return false;
   }
@@ -68,6 +87,16 @@
     const inApp = orb.screen === "app";
     const inAppOrSettings = inApp || orb.screen === "settings";
 
+    // When focus is inside the embedded terminal, let xterm receive every key
+    // (including Esc, Ctrl+C, Ctrl+R, Shift+Tab, arrows) except the toggle shortcut (Ctrl/Alt+J).
+    if (isInTerminal(e.target)) {
+      if ((ctrlOnly && key === "j") || (alt && altMatches(e, "j", "KeyJ"))) {
+        e.preventDefault();
+        orb.terminalTab = "";
+      }
+      return;
+    }
+
     // Deterministic capture-phase Escape stack: ALWAYS closes the topmost overlay regardless of focus.
     if (e.key === "Escape") {
       if (closeTopOverlay()) {
@@ -79,6 +108,11 @@
         e.preventDefault();
         orb.screen = "app";
         orb.bumpFocus();
+        return;
+      }
+      if (orb.mitosisMap) {
+        e.preventDefault();
+        orb.toggleMitosisMap();
         return;
       }
       if (orb.overview) {
@@ -161,6 +195,29 @@
       return;
     }
 
+    // Type-to-focus: starting to type any printable character anywhere in the app
+    // focuses the active tile's prompt box and lets the character land in it naturally.
+    if (
+      !orb.overview &&
+      !isEditable(e.target) &&
+      !e.ctrlKey && !e.metaKey && !e.altKey &&
+      e.key && e.key.length === 1 && e.key !== " "
+    ) {
+      focusActivePromptInput();
+      return;
+    }
+
+    // Shift+Left / Shift+Right: switch tabs when not typing in an input or selecting text
+    if (
+      (e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+      e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey &&
+      !isEditable(e.target) && !hasTextSelection(e.target)
+    ) {
+      e.preventDefault();
+      orb.stepTab(e.key === "ArrowRight" ? 1 : -1);
+      return;
+    }
+
     // Shift+Tab: cycle reasoning / thinking level (TUI app.thinking.cycle)
     if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
@@ -173,6 +230,38 @@
       e.preventDefault();
       orb.stepTab(e.shiftKey ? -1 : 1);
       return;
+    }
+
+    // Desktop-aligned Cmd/Ctrl split & tile shortcuts
+    if (mod) {
+      if (key === "d" || code === "KeyD") {
+        e.preventDefault();
+        orb.splitActiveTile(e.shiftKey ? "bottom" : "right");
+        return;
+      }
+      if (e.shiftKey && e.key === "Enter" && orb.isSplit) {
+        e.preventDefault();
+        orb.toggleZoomTile();
+        return;
+      }
+      if ((key === "[" || code === "BracketLeft") || (key === "]" || code === "BracketRight")) {
+        const dir = (key === "]" || code === "BracketRight") ? 1 : -1;
+        if (e.shiftKey) {
+          e.preventDefault();
+          orb.stepTab(dir);
+          return;
+        }
+        if (orb.isSplit) {
+          e.preventDefault();
+          orb.cycleTile(dir);
+          return;
+        }
+      }
+      if (e.shiftKey && (key === "=" || code === "Equal") && orb.isSplit) {
+        e.preventDefault();
+        orb.equalizeTiles();
+        return;
+      }
     }
 
     // TUI-aligned Ctrl+<key> bindings (layout-independent via e.key)
@@ -223,12 +312,21 @@
       }
       if (altMatches(e, "d", "KeyD")) {
         e.preventDefault();
-        orb.toggleSplit();
+        orb.splitActiveTile(e.shiftKey ? "bottom" : "right");
         return;
       }
-      if (altMatches(e, "w", "KeyW") && active) {
+      if (altMatches(e, "w", "KeyW")) {
         e.preventDefault();
-        orb.closeTab(active);
+        if (e.shiftKey && orb.isSplit) {
+          orb.closeTile();
+        } else if (active) {
+          orb.closeTab(active);
+        }
+        return;
+      }
+      if (e.shiftKey && (key === "=" || code === "Equal") && orb.isSplit) {
+        e.preventDefault();
+        orb.equalizeTiles();
         return;
       }
       if (altMatches(e, "t", "KeyT") && e.shiftKey) {
@@ -308,18 +406,14 @@
     <TopBar />
 
     <div class="workspace">
-      {#if orb.overview}
+      {#if orb.mitosisMap}
+        <MitosisMap />
+      {:else if orb.overview}
         <Overview />
-      {:else if primaryTab}
-        <div class="panes" class:split={!!secondaryTab}>
-          <ChatPane tab={primaryTab} pane="primary" />
-          {#if secondaryTab}
-            <div class="split-divider"></div>
-            <ChatPane tab={secondaryTab} pane="secondary" />
-          {/if}
-        </div>
       {:else}
-        <Home />
+        <div class="panes">
+          <TileTree node={displayTree} />
+        </div>
       {/if}
 
       {#if termTab}
@@ -346,7 +440,7 @@
 
 {#if orb.toastState}
   <div class="toast" role="status">
-    <span>{orb.toastState.text}</span>
+    <span class="toast-text">{orb.toastState.text}</span>
     {#if orb.toastState.undo}
       <button
         type="button"
@@ -358,6 +452,12 @@
         }}
       >undo</button>
     {/if}
+    <button
+      type="button"
+      class="toast-x"
+      aria-label="Dismiss"
+      onclick={() => orb.dismissToast()}
+    >×</button>
   </div>
 {/if}
 
@@ -394,11 +494,6 @@
     display: flex;
     animation: view-in var(--t-med) var(--ease);
   }
-  .split-divider {
-    width: 1px;
-    flex-shrink: 0;
-    background: var(--rule);
-  }
   .global-err {
     display: flex;
     align-items: center;
@@ -412,35 +507,64 @@
   }
   .toast {
     position: fixed;
-    left: 50%;
-    bottom: 92px;
+    right: 16px;
+    bottom: 16px;
     z-index: 30;
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 7px 12px;
-    font-size: var(--small);
-    font-weight: 700;
+    gap: 8px;
+    max-width: min(360px, calc(100vw - 32px));
+    padding: 5px 8px 5px 11px;
+    font-size: 12px;
+    font-weight: 600;
     color: var(--bg);
     background: var(--fg);
     border: 1px solid var(--fg);
     border-radius: var(--radius-sm);
-    transform: translateX(-50%);
-    animation: toast-in var(--t-fast) var(--ease);
+    animation: toast-in 110ms var(--ease);
   }
   @keyframes toast-in {
-    from { opacity: 0; transform: translate(-50%, 6px); }
-    to { opacity: 1; transform: translate(-50%, 0); }
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .toast-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .toast-undo {
-    padding: 1px 8px;
-    border: 1px solid color-mix(in srgb, var(--bg) 55%, transparent);
+    flex-shrink: 0;
+    padding: 1px 7px;
+    border: 1px solid color-mix(in srgb, var(--bg) 45%, transparent);
     border-radius: var(--radius-sm);
     background: none;
     color: var(--bg);
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 700;
     cursor: pointer;
   }
   .toast-undo:hover { background: color-mix(in srgb, var(--bg) 16%, transparent); }
+  .toast-x {
+    flex-shrink: 0;
+    padding: 0 3px;
+    border: 0;
+    background: none;
+    color: color-mix(in srgb, var(--bg) 65%, transparent);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .toast-x:hover { color: var(--bg); }
+  @media (max-width: 640px) {
+    .toast {
+      right: auto;
+      left: 50%;
+      bottom: 14px;
+      transform: translateX(-50%);
+    }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translate(-50%, 4px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+  }
 </style>

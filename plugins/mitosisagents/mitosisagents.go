@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OrdalieTech/orb/agent/exchange"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/ai"
 	"github.com/OrdalieTech/orb/engine"
@@ -42,17 +43,21 @@ func Extension(b Mitosis) extensions.Factory {
 		t := &tool{mitosis: b}
 		api.RegisterTool(extensions.ToolDefinition{
 			Name: name, Label: "Agents", Parameters: schema,
-			Description: "Your Orb agents, this machine's and those of connected devices, and their conversations. list gives each agent's id and name, and the conversations open in it with their id, folder, title and state; read shows a conversation's latest messages; send gives it a message, queued while it works. Without a conversation, read and send go to the agent's default one, its latest.",
+			Description: "Your Orb agents, this machine's and those of connected devices, and their conversations. list gives each agent's id and name, and the conversations open in it with their id, folder, title and state; read shows a conversation's latest messages; send gives it a message, queued while it works. agent accepts an agent's name, id, or unambiguous id prefix; without a conversation, read and send go to the agent's default one, its latest.",
 			Execute: func(ctx context.Context, _ string, raw any, _ engine.AgentToolUpdateCallback, _ extensions.Context) (engine.AgentToolResult, error) {
 				var input struct{ Action, Agent, Conversation, Text string }
 				if err := toolutil.Decode(raw, &input); err != nil {
 					return engine.AgentToolResult{}, err
 				}
-				text, err := t.run(ctx, input.Action, input.Agent, input.Conversation, input.Text)
+				text, details, err := t.run(ctx, input.Action, input.Agent, input.Conversation, input.Text)
 				if err != nil {
 					return engine.AgentToolResult{}, err
 				}
-				return toolutil.TextResult(text), nil
+				res := toolutil.TextResult(text)
+				if len(details) > 0 {
+					res.Details = details
+				}
+				return res, nil
 			},
 		})
 		// The tool shows only while someone is reachable; one the host left out
@@ -89,7 +94,8 @@ type tool struct {
 	mu      sync.Mutex
 	home    string // this machine's agent and its name, from the last list
 	machine string
-	seen    time.Time // when reachable last looked
+	names   map[string]string // peer -> clean machine name from the last list
+	seen    time.Time         // when reachable last looked
 	others  bool
 }
 
@@ -111,15 +117,15 @@ func (c conversation) state() string {
 	return map[string]string{"asking": "waiting for an answer", "running": "working"}[c.State]
 }
 
-func (t *tool) run(ctx context.Context, action, agentID, session, text string) (string, error) {
+func (t *tool) run(ctx context.Context, action, agentID, session, text string) (string, map[string]any, error) {
 	switch action {
 	case "list":
 		found, err := t.agents(ctx)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		if len(found) == 0 {
-			return "No other agent is reachable.", nil
+			return "No other agent is reachable.", nil, nil
 		}
 		var lines []string
 		for _, a := range found {
@@ -132,21 +138,22 @@ func (t *tool) run(ctx context.Context, action, agentID, session, text string) (
 				lines = append(lines, "  no conversation open: send reaches its default one")
 			}
 		}
-		return strings.Join(lines, "\n"), nil
+		return strings.Join(lines, "\n"), nil, nil
 	case "read", "send":
 		peer, err := t.locate(ctx, agentID, session)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		if action == "read" {
-			return t.read(ctx, peer, session)
+			out, err := t.read(ctx, peer, session)
+			return out, nil, err
 		}
 		if strings.TrimSpace(text) == "" {
-			return "", errors.New("agents: text is required")
+			return "", nil, errors.New("agents: text is required")
 		}
 		return t.send(ctx, peer, session, text)
 	}
-	return "", errors.New("agents: action must be list, read or send")
+	return "", nil, errors.New("agents: action must be list, read or send")
 }
 
 // agents are the reachable agents, this machine's first, each with its conversations but this one.
@@ -189,19 +196,33 @@ func (t *tool) agents(ctx context.Context) ([]orbAgent, error) {
 			continue
 		}
 		if i == 0 {
+			rawName := strings.TrimSpace(a.name)
 			a.name = cmp.Or(a.name, "this machine") + " (this machine)"
 			t.mu.Lock()
 			t.home, t.machine = a.peer, strings.TrimSuffix(a.name, " (this machine)")
+			if t.names == nil {
+				t.names = map[string]string{}
+			}
+			t.names[a.peer] = cmp.Or(rawName, "this machine")
 			t.mu.Unlock()
 		} else {
+			rawName := strings.TrimSpace(a.name)
 			a.name = cmp.Or(a.name, "a connected device")
+			if rawName != "" {
+				t.mu.Lock()
+				if t.names == nil {
+					t.names = map[string]string{}
+				}
+				t.names[a.peer] = rawName
+				t.mu.Unlock()
+			}
 		}
 		found = append(found, *a)
 	}
 	return found, nil
 }
 
-// locate is the agent an id or start of one names, or the one where a conversation from list is.
+// locate is the agent a name, id or start of one names, or the one where a conversation from list is.
 func (t *tool) locate(ctx context.Context, id, session string) (string, error) {
 	if id == "" {
 		if session == "" {
@@ -222,13 +243,44 @@ func (t *tool) locate(ctx context.Context, id, session string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	matches := slices.DeleteFunc(machines, func(peer string) bool {
+	matches := slices.DeleteFunc(slices.Clone(machines), func(peer string) bool {
 		return !strings.HasPrefix(peer, id) && !strings.HasPrefix(peer[strings.LastIndex(peer, ":")+1:], id)
 	})
-	if len(matches) != 1 {
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	if len(matches) > 1 {
 		return "", fmt.Errorf("agents: %d reachable agents match %q; list them again", len(matches), id)
 	}
-	return matches[0], nil
+	// No peer ID prefix matched: resolve by device name from list.
+	found, err := t.agents(ctx)
+	if err != nil {
+		return "", err
+	}
+	query := strings.ToLower(strings.TrimSpace(id))
+	var exact, prefixed []string
+	if query != "" {
+		for _, a := range found {
+			full := strings.ToLower(a.name)
+			short := strings.TrimSuffix(full, " (this machine)")
+			if full == query || short == query {
+				exact = append(exact, a.peer)
+			} else if strings.HasPrefix(short, query) {
+				prefixed = append(prefixed, a.peer)
+			}
+		}
+	}
+	if len(exact) == 1 {
+		return exact[0], nil
+	}
+	if len(exact) == 0 && len(prefixed) == 1 {
+		return prefixed[0], nil
+	}
+	count := len(exact)
+	if count == 0 {
+		count = len(prefixed)
+	}
+	return "", fmt.Errorf("agents: %d reachable agents match %q; list them again", count, id)
 }
 
 // descriptor is what the tool reads of a conversation (agent.call inspect) and the session it
@@ -327,44 +379,58 @@ func messageLine(raw json.RawMessage) string {
 	return role + ": " + text
 }
 
-func (t *tool) send(ctx context.Context, peer, session, text string) (string, error) {
+func (t *tool) send(ctx context.Context, peer, session, text string) (string, map[string]any, error) {
 	d, err := t.inspect(ctx, peer, session)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if self := t.mitosis.Self(); self != "" && d.SessionID == self {
-		return "", errors.New("agents: that is this conversation")
+		return "", nil, errors.New("agents: that is this conversation")
 	}
-	method, args, done := "prompt", map[string]any{"text": t.sender(ctx) + "\n\n" + text}, "Sent to conversation "+d.SessionID+"."
+	method, status, done := "prompt", "sent", "Sent to conversation "+d.SessionID+"."
+	args := map[string]any{"text": t.formatOutgoing(ctx, text)}
 	if d.Target.Execution != "" {
-		method, args["execution_id"], done = "follow_up", d.Target.Execution, "Queued: conversation "+d.SessionID+" reads it after its current turn."
+		method, status, args["execution_id"], done = "follow_up", "queued", d.Target.Execution, "Queued: conversation "+d.SessionID+" reads it after its current turn."
 	}
 	call := map[string]any{
 		"session_id": d.SessionID, "method": method, "operation_id": protocol.NewID(), "args": args,
 		"expected": map[string]string{"registration_generation": d.Generation, "session_revision": d.Target.Revision},
 	}
 	if err := t.mitosis.Call(ctx, peer, "agent.call", call, nil); err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return done, nil
+	t.mu.Lock()
+	peerName := t.names[peer]
+	t.mu.Unlock()
+	whoParts := slices.DeleteFunc([]string{peerName, strings.TrimSpace(d.Name)}, func(s string) bool { return s == "" })
+	who := strings.Join(whoParts, " · ")
+	if who == "" {
+		who = peer[strings.LastIndex(peer, ":")+1:]
+		if len(who) > 10 {
+			who = who[:10]
+		}
+	}
+	details := map[string]any{
+		"who":     who,
+		"peer":    peer,
+		"session": d.SessionID,
+		"status":  status,
+	}
+	return done, details, nil
 }
 
-// sender is the line a message opens with, so its recipient knows who wrote
-// and can answer with send.
-func (t *tool) sender(ctx context.Context) string {
+// formatOutgoing wraps text with the standard incoming peer envelope so its
+// recipient knows who wrote and can both render it as a peer exchange and reply.
+func (t *tool) formatOutgoing(ctx context.Context, text string) string {
 	t.mu.Lock()
 	home, machine := t.home, t.machine
 	t.mu.Unlock()
-	from, self := "Message from an Orb conversation", t.mitosis.Self()
+	self := t.mitosis.Self()
 	var d descriptor
 	if self != "" {
-		from = "Message from Orb agent " + home + ", conversation " + self
 		_ = t.mitosis.Call(ctx, home, "conversation.describe", map[string]string{"session_id": self}, &d)
 	}
-	if about := slices.DeleteFunc([]string{d.Name, machine}, func(field string) bool { return field == "" }); len(about) > 0 {
-		from += " (" + strings.Join(about, ", ") + ")"
-	}
-	return from + ":"
+	return exchange.FormatIncoming(home, self, d.Name, machine, text)
 }
 
 // reachable reports whether another conversation is reachable, looking at most
@@ -379,10 +445,11 @@ func (t *tool) reachable(ctx context.Context) bool {
 	t.mu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	others := false
-	if found, err := t.agents(ctx); err == nil {
-		others = len(found) > 1 || len(found) == 1 && len(found[0].conversations) > 0
+	found, err := t.agents(ctx)
+	if err != nil {
+		return false
 	}
+	others := len(found) > 1 || len(found) == 1 && len(found[0].conversations) > 0
 	t.mu.Lock()
 	t.seen, t.others = time.Now(), others
 	t.mu.Unlock()

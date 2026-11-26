@@ -33,33 +33,60 @@ func TestToolActivityMarkersTrackExecution(t *testing.T) {
 		t.Helper()
 		for _, width := range []int{12, 52, 88} {
 			lines := tool.Render(width)
-			if lines[0] != "" || !strings.HasPrefix(tui.StripANSI(lines[1]), marker+"  read") {
+			if lines[0] != "" || !strings.HasPrefix(tui.StripANSI(lines[1]), " "+marker+" read") {
 				t.Fatalf("width %d: unexpected activity header: %q", width, lines)
 			}
 			for _, line := range lines[2:] {
-				if !strings.HasPrefix(tui.StripANSI(line), "   ") || tui.VisibleWidth(line) > width {
-					t.Fatalf("width %d: output lost its plain indentation: %q", width, line)
+				if tui.VisibleWidth(line) > width {
+					t.Fatalf("width %d: output overflowed width: %q", width, line)
 				}
 			}
-			if strings.Contains(strings.Join(lines, "\n"), "\x1b[48;") {
-				t.Fatal("tool activity has a background fill")
+			// Collapsed header never carries a background fill; only expanded/error trays do.
+			if strings.Contains(lines[1], "\x1b[48;") {
+				t.Fatal("tool activity header has a background fill")
 			}
 			if strings.Join(tool.Render(width), "\n") != strings.Join(lines, "\n") {
 				t.Fatal("rendering mutated cached lines")
 			}
 		}
 	}
-	check("○")
+	check("◌")
 	tool.MarkExecutionStarted()
-	check("●")
+	check("•")
 	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "first\nsecond\nthird\nfourth"}}, false, nil, true)
-	check("●")
+	check("•")
 	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "first\nsecond\nthird\nfourth"}}, false, nil, false)
-	check("✓")
+	check("›")
 	tool.SetExpanded(true)
-	check("✓")
+	check("⌄")
 	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: "permission denied"}}, true, nil, false)
 	check("×")
+}
+
+func TestClickExpansionCapsLongOutputUntilShowAll(t *testing.T) {
+	initTestTheme(t)
+	longLines := make([]string, 30)
+	for i := range longLines {
+		longLines[i] = "output line " + twoDigits(i+1)
+	}
+	tool := NewToolExecutionComponent("read", "call", map[string]any{"path": "big.go"}, false,
+		nativeToolDefinition("read", tools.NewReadTool("/", nil)), &toolOutputRenderRequester{}, "/")
+	tool.UpdateResult(ai.ToolResultContent{&ai.TextContent{Text: strings.Join(longLines, "\n")}}, false, nil, false)
+	if collapsed := tui.StripANSI(strings.Join(tool.Render(80), "\n")); !strings.Contains(collapsed, "30 ln") || strings.Contains(collapsed, "output line 01") {
+		t.Fatalf("collapsed read should show line stat without body: %q", collapsed)
+	}
+	// First click opens a bounded tray capped at toolExpandedPreviewLines.
+	tool.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: 1})
+	bounded := tui.StripANSI(strings.Join(tool.Render(80), "\n"))
+	if !strings.Contains(bounded, "output line 01") || !strings.Contains(bounded, "click to show all") || strings.Contains(bounded, "output line 30") {
+		t.Fatalf("first click should cap long output with show-all hint: %q", bounded)
+	}
+	// Clicking the show-all footer reveals the full output.
+	tool.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: tool.moreRow})
+	full := tui.StripANSI(strings.Join(tool.Render(80), "\n"))
+	if !strings.Contains(full, "output line 30") || strings.Contains(full, "click to show all") {
+		t.Fatalf("clicking show-all footer did not reveal full output: %q", full)
+	}
 }
 
 func TestCommandDetailsStayAccessibleWithoutCompletedPreviews(t *testing.T) {
@@ -182,7 +209,7 @@ func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 			start("Grep", "b")
 			// A closed batch names its running tool in the header and keeps its height, so the
 			// tool never shows below it only to vanish when it finishes.
-			if got := render(); !strings.Contains(got, "Exploring · 1 read · 1 search") || mode.chat.LineCount(80) != 2 || strings.Contains(got, "first file") {
+			if got := render(); !strings.Contains(got, "exploring · 1 read · 1 search") || mode.chat.LineCount(80) != 2 || strings.Contains(got, "first file") {
 				t.Fatalf("running search should sit in the batch header without growing it: %q", got)
 			}
 			finish("Grep", "b", "search result", false)
@@ -193,8 +220,8 @@ func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 			if !group.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: 1}) {
 				t.Fatal("batch header did not expand")
 			}
-			if got := render(); !strings.Contains(got, "✓  read") || !strings.Contains(got, "✓  Grep") || strings.Contains(got, "first file") || strings.Contains(got, "search result") {
-				t.Fatalf("batch expansion should list actions without dumping their output: %q", got)
+			if got := render(); !strings.Contains(got, "│  read") || !strings.Contains(got, "│  Grep") || strings.Contains(got, "first file") || strings.Contains(got, "search result") {
+				t.Fatalf("batch expansion should list actions behind a hairline rail without dumping their output: %q", got)
 			}
 			group.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: 2})
 			if got := render(); !strings.Contains(got, "beginning") {
@@ -215,7 +242,7 @@ func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 			mode.setToolsExpanded(false)
 			start("Read", "c")
 			finish("Read", "c", "permission denied", true)
-			if got := render(); !strings.Contains(got, "2 reads · 1 search") || !strings.Contains(got, "×  Read") || !strings.Contains(got, "permission denied") {
+			if got := render(); !strings.Contains(got, "2 reads · 1 search") || !strings.Contains(got, "× Read") || !strings.Contains(got, "permission denied") {
 				t.Fatalf("collapsed group hid a failure: %q", got)
 			}
 			for _, boundary := range []string{"edit", "write", "custom"} {
@@ -248,13 +275,13 @@ func TestToolActivityBatchesLiveAndReplay(t *testing.T) {
 			finish("web_search", "w1", "results", false)
 			reasoning := &ai.AssistantMessage{Content: ai.AssistantContent{&ai.ThinkingContent{Thinking: "**Locating official docs**"}, &ai.ToolCall{Name: "fetch_content", ID: "w2"}}, StopReason: "toolUse"}
 			startWith(reasoning, "fetch_content", "w2")
-			if got := render(); !strings.Contains(got, "Exploring · 1 read · 1 web search · 1 page · Locating official docs") {
+			if got := render(); !strings.Contains(got, "exploring · 1 read · 1 web search · 1 page · Locating official docs") {
 				t.Fatalf("a working batch should say its current step: %q", got)
 			}
 			finish("fetch_content", "w2", "page", false)
 			start("bash", "w3")
 			finish("bash", "w3", "ok", false)
-			if got := render(); mode.toolActivity != previous || !strings.Contains(got, "Worked · 1 command · 1 read · 1 web search · 1 page") || strings.Contains(got, "Locating") {
+			if got := render(); mode.toolActivity != previous || !strings.Contains(got, "worked · 1 command · 1 read · 1 web search · 1 page") || strings.Contains(got, "Locating") {
 				t.Fatalf("reasoning or commands split the batch: %q", got)
 			}
 			mode.toolActivity.HandleMouse(tui.MouseEvent{Type: tui.MouseRelease, Button: 0, Row: 1})

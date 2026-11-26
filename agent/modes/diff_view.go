@@ -30,6 +30,7 @@ type editDiffView struct {
 	numberPad  int
 	added      int
 	removed    int
+	omitHeader bool
 	bandBG     string // ANSI backgrounds captured at construction
 	gutterBG   string
 	addedBG    string
@@ -42,6 +43,30 @@ type editDiffRow struct {
 	kind   byte // '+', '-', ' ' (context), or '.' (elided-context marker)
 	number int
 	text   string
+}
+
+// DiffStats counts added and removed lines in a display diff string.
+func DiffStats(diff string) (added, removed int) {
+	for line := range strings.SplitSeq(diff, "\n") {
+		if len(line) == 0 {
+			continue
+		}
+		switch line[0] {
+		case '+':
+			added++
+		case '-':
+			removed++
+		}
+	}
+	return added, removed
+}
+
+// NewEditDiffViewNoHeader renders the diff body without its own "+N -M"
+// summary line, for tool rows that already show the stat on the header.
+func NewEditDiffViewNoHeader(diff, path, bandRole string) *editDiffView {
+	view := NewEditDiffView(diff, path, bandRole)
+	view.omitHeader = true
+	return view
 }
 
 // NewEditDiffView parses the display diff produced by the edit tool. The
@@ -224,7 +249,9 @@ func (view *editDiffView) renderUnified(width int) []string {
 	textWidth := max(1, width-view.numberPad-3)
 	trail := view.bandTrail()
 	lines := make([]string, 0, len(view.rows)+1)
-	lines = append(lines, view.header())
+	if !view.omitHeader {
+		lines = append(lines, view.header())
+	}
 	for index, row := range view.rows {
 		if row.kind == '.' {
 			lines = append(lines, view.paneCell(row, "", textWidth)+trail)
@@ -257,7 +284,9 @@ func (view *editDiffView) renderSplit(width int) []string {
 	divider := tintSpan(view.bandBG, theme.FG("borderMuted", "│"))
 	trail := view.bandTrail()
 	lines := make([]string, 0, len(view.rows)+1)
-	lines = append(lines, view.header())
+	if !view.omitHeader {
+		lines = append(lines, view.header())
+	}
 
 	var removedRows, addedRows []int
 	flush := func() {
