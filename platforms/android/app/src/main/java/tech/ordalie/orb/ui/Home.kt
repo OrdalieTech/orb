@@ -142,26 +142,86 @@ private fun TitleCard() = Column(Modifier.fillMaxWidth().padding(start = Margin 
 @Composable
 private fun Magi(c: Ctx, device: String, pick: (String) -> Unit) {
     val v = c.v
-    val machines = v.home.machines.sortedByDescending { it.self }.ifEmpty { listOf(Machine(v.state.self, "", true, false, "", false, 0, emptyList(), emptyList())) }
+    val prefs = remember { c.context.getSharedPreferences("orb", android.content.Context.MODE_PRIVATE) }
+    var hidden by remember { mutableStateOf(prefs.getStringSet("hidden_peers", emptySet())?.toSet() ?: emptySet()) }
+    var showHidden by remember { mutableStateOf(false) }
+    fun setHidden(next: Set<String>) {
+        hidden = next
+        prefs.edit().putStringSet("hidden_peers", next).apply()
+        if (next.isEmpty()) showHidden = false
+    }
+    val allMachines = v.home.machines.sortedByDescending { it.self }.ifEmpty { listOf(Machine(v.state.self, "", true, false, "", false, 0, emptyList(), emptyList())) }
+    val hiddenCount = allMachines.count { it.id in hidden }
+    val visibleMachines = if (showHidden) allMachines else allMachines.filter { it.id !in hidden }.ifEmpty { allMachines }
     // A development build is the newest there is, whatever its number.
     val current = v.state.latest.isEmpty() || !Release.newer(v.state.latest, c.rt.version) || c.rt.version.endsWith("-dev")
-    val fit = machines.size <= 3
-    Row(Modifier.fillMaxWidth().then(if (fit) Modifier else Modifier.horizontalScroll(rememberScrollState())).padding(start = Margin, end = Margin, top = 10.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        machines.forEach { m ->
-            val up = if (m.self) v.state.up else m.connected
-            val yes = up && (!m.self || current)
-            val ink = if (yes) p.mute else Ink.Rupture
-            val on = device == m.id
-            Column(Modifier.then(if (fit) Modifier.weight(1f) else Modifier.width(128.dp)).clip(Pane).background(if (on) p.raised else Color.Transparent)
-                .border(1.dp, if (on) p.mute else p.rule, Pane).press { pick(m.id) }.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Where(v.hue(m.id))
-                    T(if (m.self) "this phone" else m.name, size = 12.sp, weight = Strong, color = if (on) p.fg else p.mute, lines = 1)
+    Column(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 10.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        visibleMachines.chunked(2).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { m ->
+                    val isHidden = m.id in hidden
+                    val up = if (m.self) v.state.up else m.connected
+                    val yes = up && (!m.self || current)
+                    val ink = if (yes) p.mute else Ink.Rupture
+                    val on = device == m.id
+                    val sub = when {
+                        !up -> if (m.self) "starting…" else "offline"
+                        !yes -> "update"
+                        else -> buildList {
+                            add("${m.running.size} running")
+                            if (m.folders.isNotEmpty()) add("${m.folders.size} folder" + if (m.folders.size == 1) "" else "s")
+                        }.joinToString(" · ")
+                    }
+                    Column(
+                        Modifier.weight(1f).clip(Pane)
+                            .background(if (on) p.raised else p.fg.copy(alpha = 0.03f))
+                            .border(1.dp, if (on) p.fg else p.rule, Pane)
+                            .press(onLong = {
+                                val opts = buildList {
+                                    if (!m.self && m.launch) add("browse folders")
+                                    add("providers & accounts")
+                                    add("plugins")
+                                    if (!m.self) add("rename")
+                                    add(if (isHidden) "unhide peer" else "hide peer")
+                                    if (!m.self) add("forget · revoke access")
+                                }
+                                c.pick(Picker(if (m.self) "this phone" else m.name, opts) { opt ->
+                                    when (opt) {
+                                        "browse folders" -> c.nav.go(Screen.Device(m.id))
+                                        "providers & accounts" -> c.nav.go(Screen.Providers(m.id))
+                                        "plugins" -> c.nav.go(Screen.Plugins(m.id))
+                                        "rename" -> c.rename(Rename(m.name) { name -> c.v.send("rename", "machine" to m.id, "name" to name) })
+                                        "hide peer" -> {
+                                            setHidden(hidden + m.id)
+                                            if (device == m.id) pick(m.id)
+                                        }
+                                        "unhide peer" -> setHidden(hidden - m.id)
+                                        "forget · revoke access" -> c.v.send("forget", "machine" to m.id)
+                                    }
+                                })
+                            }) { pick(m.id) }
+                            .padding(horizontal = 11.dp, vertical = 9.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Where(v.hue(m.id))
+                            T(if (m.self) "this phone" else m.name, Modifier.weight(1f), size = 14.sp, weight = Strong, color = if (on) p.fg else if (isHidden) p.meta else p.fg.copy(alpha = 0.88f), lines = 1)
+                            T(if (yes) "承認" else "否決", size = Size.Label, weight = Strong, color = ink)
+                        }
+                        T(sub, size = 12.sp, color = ink, lines = 1)
+                    }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    T(if (!up) (if (m.self) "starting…" else "offline") else if (!yes) "update" else "${m.running.size} running", Modifier.weight(1f), size = 12.sp, color = ink, lines = 1)
-                    T(if (yes) "承認" else "否決", size = Size.Label, weight = Strong, color = ink)
-                }
+                if (row.size == 1 && visibleMachines.size > 1) Spacer(Modifier.weight(1f))
+            }
+        }
+        if (hiddenCount > 0) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                T(
+                    if (showHidden) "$hiddenCount hidden · hide" else "$hiddenCount hidden · show",
+                    Modifier.press { showHidden = !showHidden }.padding(horizontal = 4.dp, vertical = 2.dp),
+                    size = 12.sp,
+                    color = p.meta,
+                )
             }
         }
     }

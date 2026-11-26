@@ -2345,10 +2345,15 @@ func (mode *InteractiveMode) showModelSelector(initialSearch string) {
 			}
 			mode.mu.Unlock()
 		}()
-		selected, persist, ok := mode.selectModelSearchable(ctx, current, defaultModel, models, scoped, initialSearch)
-		if !ok {
+		result := mode.selectModelSearchable(ctx, current, defaultModel, models, scoped, initialSearch)
+		if result.openAccounts {
+			mode.authenticateProvider("", false)
 			return
 		}
+		if !result.ok {
+			return
+		}
+		selected, persist := result.model, result.persist
 		if err := mode.session.SetModelWithOptions(ctx, selected, agent.ModelMutationOptions{Persist: persist}); err != nil {
 			if ctx.Err() != nil {
 				return

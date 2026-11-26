@@ -11,6 +11,7 @@ struct Conversation: View {
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var follow = true
     @State private var kept: String? = nil // the turn read at the top while earlier messages load above it
+    @State private var dismissedActing = false
 
     var body: some View {
         split
@@ -27,7 +28,9 @@ struct Conversation: View {
 
     private var page: some View {
         VStack(spacing: 0) {
-            if t.acting { PatternBlue { orb.send("abort", ["tab": t.id]) } }
+            if t.acting && !dismissedActing {
+                PatternBlue(stop: { orb.send("abort", ["tab": t.id]) }, dismiss: { dismissedActing = true })
+            }
             // The conversation scrolls on under the box, as in Messages.
             transcript.safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 6) {
@@ -59,6 +62,7 @@ struct Conversation: View {
         }
         .frame(minHeight: 240)
         .animation(.easeOut(duration: 0.15), value: follow)
+        .onChange(of: t.acting) { _, acting in if !acting { dismissedActing = false } }
     }
 
     private var transcript: some View {
@@ -401,8 +405,9 @@ struct Picture: View {
 /// Another Orb is driving this device. Blue fills space here and nowhere else.
 private struct PatternBlue: View {
     let stop: () -> Void
+    let dismiss: () -> Void
     var body: some View {
-        HStack {
+        HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 8) {
                 Stretch(text: "PATTERN BLUE", height: 26, color: Ink.paper)
                 Text("A peer is prompting \(device)").font(.mono(Size.body, .medium)).foregroundStyle(Ink.paper)
@@ -410,6 +415,11 @@ private struct PatternBlue: View {
             Spacer()
             Button("stop", action: stop).buttonStyle(.plain).font(.mono(Size.body, .semibold)).foregroundStyle(Ink.blue)
                 .padding(.horizontal, 14).padding(.vertical, 6).background(Ink.paper, in: .capsule)
+            Button(action: dismiss) {
+                Text("×").font(.mono(18, .semibold)).foregroundStyle(Ink.paper)
+                    .frame(width: 28, height: 28).contentShape(.rect)
+            }
+            .buttonStyle(.plain).help("Dismiss")
         }
         .padding(.horizontal, 24).padding(.vertical, 14).background(Ink.blue)
     }

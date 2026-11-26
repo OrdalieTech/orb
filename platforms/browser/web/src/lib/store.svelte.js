@@ -144,6 +144,16 @@ function createOrbStore() {
   let overview = $state(false);
   let mitosisMap = $state(typeof location !== "undefined" && new URLSearchParams(location.search).get("swarm") === "1");
   let deviceFilter = $state("");
+  let hiddenPeers = $state.raw(
+    (() => {
+      try {
+        const raw = JSON.parse(localStorage.getItem("orb.tab.hiddenPeers") || "[]");
+        return Array.isArray(raw) ? raw.filter(x => typeof x === "string") : [];
+      } catch {
+        return [];
+      }
+    })(),
+  );
   let dismissedLaunch = $state("");
   const initialTheme = localStorage.getItem("orb.tab.theme") || "auto";
   let theme = $state(initialTheme); // auto | light | dark
@@ -942,16 +952,44 @@ function createOrbStore() {
     }
   }
 
+  function saveHiddenPeers(next) {
+    hiddenPeers = next;
+    try {
+      localStorage.setItem("orb.tab.hiddenPeers", JSON.stringify(next));
+    } catch {}
+  }
+
+  function isPeerHidden(id) {
+    return hiddenPeers.includes(id);
+  }
+
+  function hidePeer(id) {
+    if (!id || hiddenPeers.includes(id)) return;
+    saveHiddenPeers([...hiddenPeers, id]);
+    if (deviceFilter === id) deviceFilter = "";
+  }
+
+  function unhidePeer(id) {
+    if (!id || !hiddenPeers.includes(id)) return;
+    saveHiddenPeers(hiddenPeers.filter(x => x !== id));
+  }
+
   async function openDeviceMenu(m) {
+    const hidden = isPeerHidden(m.id);
     const what = await pick(m.self ? "this tab" : m.name, [
-      ...(m.launch && m.connected ? [{ label: "browse folders" }] : []),
-      { label: "providers" },
+      ...(!m.self && m.launch && m.connected ? [{ label: "browse folders" }] : []),
+      { label: "providers & accounts" },
       { label: "plugins" },
-      ...(m.self ? [] : [{ label: "rename" }, { label: "forget", detail: "takes it out of this tab's view" }]),
+      ...(m.self ? [] : [{ label: "rename" }]),
+      { label: hidden ? "unhide peer" : "hide peer", detail: hidden ? "show on home" : "hide from home" },
+      ...(m.self ? [] : [{ label: "forget", detail: "takes it out of this tab's view" }]),
     ]);
     if (what === "browse folders") explorerPeer = m.id;
-    if (what === "providers" || what === "plugins") openSettings(what, m.id);
+    if (what === "providers & accounts") openSettings("providers", m.id);
+    if (what === "plugins") openSettings("plugins", m.id);
     if (what === "rename") renamePrompt(m.name, name => send({ do: "rename", machine: m.id, name }));
+    if (what === "hide peer") hidePeer(m.id);
+    if (what === "unhide peer") unhidePeer(m.id);
     if (
       what === "forget" &&
       (await pick(`forget ${m.name}?`, [{ label: "keep it" }, { label: "forget" }])) === "forget"
@@ -1283,6 +1321,7 @@ function createOrbStore() {
     get defaultsByPeer() { return defaultsByPeer; },
     get providersByPeer() { return providersByPeer; },
     get accountsByPeer() { return accountsByPeer; },
+    get hiddenPeers() { return hiddenPeers; },
     get aimVersion() { return aimVersion; },
     get focusTick() { return focusTick; },
     get rawTab() { return tab; },
@@ -1337,6 +1376,9 @@ function createOrbStore() {
     openTabMenu,
     openThreadMenu,
     openDeviceMenu,
+    hidePeer,
+    unhidePeer,
+    isPeerHidden,
     parseInvitationCode,
     joinInvitation,
     forgetTab,

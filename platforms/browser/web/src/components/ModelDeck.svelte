@@ -1,9 +1,11 @@
 <script>
+  import { untrack } from "svelte";
   import { orb } from "../lib/store.svelte.js";
   import { fuzzyFilterModels } from "../lib/modelSearch.js";
   import { REASONING } from "../lib/utils.js";
 
   let query = $state("");
+  let providerFilter = $state("");
   let deckAt = $state(-1);
   let filterEl = $state(null);
 
@@ -29,12 +31,58 @@
     return providers.find(p => p.id === id);
   }
 
+  let allAccounts = $derived(orb.accountsByPeer[peerId] || []);
+  let mineProvider = $derived(source.model?.split("/")[0] || "");
+
+  function tightestAcctWindow(acct) {
+    if (!acct?.windows?.length) return null;
+    return [...acct.windows].sort((x, y) => x.left - y.left)[0];
+  }
+
+  function formatReset(resets) {
+    if (!resets) return "";
+    const d = new Date(resets);
+    if (Number.isNaN(d.getTime())) return "";
+    const sameDay = d.toDateString() === new Date().toDateString();
+    return sameDay
+      ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  }
+
+  let availableProviders = $derived.by(() => {
+    const set = new Set((source.models || []).map(id => id.split("/")[0]).filter(Boolean));
+    return [...set]
+      .sort((x, y) => {
+        const xm = Number(x === mineProvider), ym = Number(y === mineProvider);
+        if (xm !== ym) return ym - xm;
+        const xs = Number(!!providerInfo(x)?.methods?.some(a => a.account));
+        const ys = Number(!!providerInfo(y)?.methods?.some(a => a.account));
+        if (xs !== ys) return ys - xs;
+        return x.localeCompare(y);
+      })
+      .map(id => {
+        const accts = allAccounts.filter(a => a.provider === id);
+        const active = accts.find(a => a.active) || accts[0] || null;
+        const tight = tightestAcctWindow(active);
+        return {
+          id,
+          label: providerInfo(id)?.name || id,
+          badge: tight ? `${Math.round(tight.left)}%` : active?.name || "",
+          alarm: !!tight && tight.left < 15,
+        };
+      });
+  });
+
+  let scopedModels = $derived(
+    providerFilter
+      ? (source.models || []).filter(id => id.split("/")[0] === providerFilter)
+      : source.models || [],
+  );
   let isSearching = $derived(query.trim().length > 0);
   let filteredModels = $derived(
-    fuzzyFilterModels(source.models || [], query, id => providerInfo(id)?.name || ""),
+    fuzzyFilterModels(scopedModels, query, id => providerInfo(id)?.name || ""),
   );
 
-  let mineProvider = $derived(source.model?.split("/")[0] || "");
   let usedModels = $derived.by(() => {
     if (isSearching) return [];
     const set = new Set([
@@ -73,14 +121,18 @@
         ],
   );
 
+  let focusedProvider = $derived(providerFilter || mineProvider);
   let providerAccounts = $derived(
-    (orb.accountsByPeer[peerId] || []).filter(a => a.provider === mineProvider),
+    allAccounts.filter(a => a.provider === focusedProvider),
   );
 
   $effect(() => {
     if (orb.modelDeckOpen) {
       query = "";
+      providerFilter = "";
       deckAt = -1;
+      const pid = peerId;
+      if (pid) untrack(() => orb.refreshPeerMeta(pid));
       requestAnimationFrame(() => filterEl?.focus());
     }
   });
@@ -139,8 +191,15 @@
             <button type="button" class="btn subtle" onclick={() => orb.setDefaultModel(peerId, activeTab.model, activeTab.thinking)}>
               make default
             </button>
-          {:else}
-            <span class="meta">{[source.model?.split("/")[0], activeTab && whereLabel].filter(Boolean).join(" · ")}</span>
+          {/if}
+          {#if peerId}
+            <button
+              type="button"
+              class="btn plain prov-head-btn"
+              onclick={() => { close(); orb.openSettings("providers", peerId); }}
+            >
+              providers ›
+            </button>
           {/if}
         </div>
       </div>
@@ -169,6 +228,32 @@
         autocomplete="off"
         spellcheck="false"
       />
+
+      {#if availableProviders.length > 1}
+        <div class="prov-pills" role="group" aria-label="Filter by provider">
+          <button
+            type="button"
+            class="prov-pill"
+            class:on={!providerFilter}
+            onclick={() => { providerFilter = ""; deckAt = -1; }}
+          >
+            all
+          </button>
+          {#each availableProviders as p (p.id)}
+            <button
+              type="button"
+              class="prov-pill"
+              class:on={providerFilter === p.id}
+              onclick={() => { providerFilter = providerFilter === p.id ? "" : p.id; deckAt = -1; }}
+            >
+              <span>{p.label}</span>
+              {#if p.badge}
+                <small class:alarm={p.alarm}>{p.badge}</small>
+              {/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
 
       <div class="deck-list scroll">
         {#if isSearching}
@@ -247,19 +332,25 @@
 
       {#if providerAccounts.length > 0}
         <div class="acct-sec">
-          <p class="sec-lbl">account · {whereLabel}</p>
+          <p class="sec-lbl">account · {providerInfo(focusedProvider)?.name || focusedProvider}{whereLabel ? ` · ${whereLabel}` : ""}</p>
           {#each providerAccounts as a (a.id)}
-            {@const tight = [...(a.windows || [])].sort((x, y) => x.left - y.left)[0]}
+            {@const tight = tightestAcctWindow(a)}
+            {@const resetStr = tight ? formatReset(tight.resets) : ""}
             <button
               type="button"
-              class="mdl-row"
+              class="mdl-row acct-row"
               class:on={a.active}
               onclick={() => orb.switchAccount(peerId, a.provider, a.id)}
             >
               <i class="led round" style="--hue: {a.active ? 'var(--fg)' : 'var(--rule)'}"></i>
-              <span>{a.name}</span>
+              <span class="acct-main">
+                <span class="acct-name">{a.name}</span>
+                {#if a.plan}<small class="acct-plan">{a.plan}</small>{/if}
+              </span>
               {#if tight}
-                <small class:alarm={tight.left < 15}>{tight.name} {Math.round(tight.left)}% left</small>
+                <small class="acct-quota" class:alarm={tight.left < 15}>
+                  {Math.round(tight.left)}%{resetStr ? ` · ${resetStr}` : ""}
+                </small>
               {/if}
             </button>
           {/each}
@@ -324,6 +415,71 @@
     font-size: 18px;
     font-weight: 600;
     letter-spacing: -0.025em;
+  }
+  .head-right {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .prov-head-btn {
+    font-size: 12px;
+    color: var(--mute);
+  }
+  .prov-head-btn:hover { color: var(--fg); }
+  .prov-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+  .prov-pill {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    padding: 3px 9px;
+    border: 1px solid var(--rule-soft);
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    color: var(--mute);
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+  .prov-pill small {
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--meta);
+  }
+  .prov-pill small.alarm { color: var(--rupture); font-weight: 700; }
+  .prov-pill:hover:not(.on) { border-color: var(--rule-focus); color: var(--fg); }
+  .prov-pill.on {
+    background: var(--fg);
+    border-color: var(--fg);
+    color: var(--bg);
+  }
+  .prov-pill.on small { color: var(--bg); opacity: 0.8; }
+  .prov-pill.on small.alarm { color: var(--rupture); opacity: 1; }
+  .acct-main {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+  }
+  .acct-name { flex: 0 1 auto !important; }
+  .acct-plan {
+    flex-shrink: 0;
+    font-size: 10.5px;
+    color: var(--meta);
+  }
+  .acct-quota {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--meta);
+  }
+  .acct-quota.alarm {
+    color: var(--rupture);
+    font-weight: 700;
   }
   .places {
     display: flex;

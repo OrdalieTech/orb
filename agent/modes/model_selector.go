@@ -28,23 +28,24 @@ type modelSelectorItem struct{ model ai.Model }
 
 // ModelSelectorComponent is the searchable picker used only by /model.
 type ModelSelectorComponent struct {
-	container      *tui.Container
-	searchInput    *tui.Input
-	listContainer  *tui.Container
-	scopeText      *tui.Text
-	allModels      []modelSelectorItem
-	scopedModels   []modelSelectorItem
-	activeModels   []modelSelectorItem
-	filteredModels []modelSelectorItem
-	selectedIndex  int
-	window         tui.ListWindow
-	currentModel   *ai.Model
-	defaultModel   *ai.Model // the one new sessions start on, marked default
-	scope          modelSelectorScope
-	onSelect       func(ai.Model)
-	onSaveDefault  func(ai.Model)
-	onCancel       func()
-	rows           listRowOffsets
+	container        *tui.Container
+	searchInput      *tui.Input
+	listContainer    *tui.Container
+	scopeText        *tui.Text
+	allModels        []modelSelectorItem
+	scopedModels     []modelSelectorItem
+	activeModels     []modelSelectorItem
+	filteredModels   []modelSelectorItem
+	selectedIndex    int
+	window           tui.ListWindow
+	currentModel     *ai.Model
+	defaultModel     *ai.Model // the one new sessions start on, marked default
+	scope            modelSelectorScope
+	onSelect         func(ai.Model)
+	onSaveDefault    func(ai.Model)
+	onManageAccounts func()
+	onCancel         func()
+	rows             listRowOffsets
 }
 
 func NewModelSelectorComponent(
@@ -77,12 +78,12 @@ func NewModelSelectorComponent(
 		component.scopeText = tui.NewText(component.scopeLabel(), 0, 0, nil)
 		component.container.AddChild(component.scopeText)
 		component.container.AddChild(tui.NewText(
-			KeyHint("tui.input.tab", "scope")+theme.FG("muted", " · ctrl+s default"),
+			KeyHint("tui.input.tab", "scope")+theme.FG("muted", " · ctrl+s default · ctrl+l accounts"),
 			0, 0, nil,
 		))
 	} else {
 		component.container.AddChild(tui.NewTruncatedText(
-			theme.FG("muted", "enter choose · ctrl+s default"),
+			theme.FG("muted", "enter choose · ctrl+s default · ctrl+l accounts"),
 			0, 0,
 		))
 	}
@@ -136,13 +137,78 @@ func modelSelectorModelsEqual(left, right *ai.Model) bool {
 	return left != nil && right != nil && left.Provider == right.Provider && left.ID == right.ID
 }
 
+func stripModelSeparators(value string) string {
+	var b strings.Builder
+	b.Grow(len(value))
+	for _, r := range value {
+		switch r {
+		case '-', '_', '.', '/', ':', ' ':
+			continue
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func modelSelectorProviderAliases(provider string) string {
+	switch strings.ToLower(provider) {
+	case "openai", "openai-codex":
+		return "oai"
+	case "anthropic":
+		return "anth claude"
+	case "google", "google-gemini-cli", "google-antigravity", "google-vertex":
+		return "gem gemini"
+	case "deepseek":
+		return "ds"
+	case "openrouter":
+		return "or"
+	case "xai":
+		return "grok"
+	case "mistral":
+		return "mst"
+	case "groq":
+		return "gq"
+	case "github-copilot":
+		return "gh copilot"
+	case "amazon-bedrock":
+		return "aws bedrock"
+	case "azure-openai-responses":
+		return "azure"
+	default:
+		return ""
+	}
+}
+
 func modelSelectorSearchText(model ai.Model) string {
 	provider := string(model.Provider)
-	name := ""
+	var b strings.Builder
+	b.WriteString(provider)
+	b.WriteByte(' ')
+	b.WriteString(provider)
+	b.WriteByte('/')
+	b.WriteString(model.ID)
+	b.WriteByte(' ')
+	b.WriteString(provider)
+	b.WriteByte(' ')
+	b.WriteString(model.ID)
 	if model.Name != "" {
-		name = " " + model.Name
+		b.WriteByte(' ')
+		b.WriteString(model.Name)
 	}
-	return provider + " " + provider + "/" + model.ID + " " + provider + " " + model.ID + name
+	if compactID := stripModelSeparators(model.ID); compactID != "" && compactID != model.ID {
+		b.WriteByte(' ')
+		b.WriteString(compactID)
+	}
+	if compactName := stripModelSeparators(model.Name); compactName != "" && compactName != model.Name {
+		b.WriteByte(' ')
+		b.WriteString(compactName)
+	}
+	if aliases := modelSelectorProviderAliases(provider); aliases != "" {
+		b.WriteByte(' ')
+		b.WriteString(aliases)
+	}
+	return b.String()
 }
 
 func (component *ModelSelectorComponent) modelsForScope() []modelSelectorItem {
@@ -339,6 +405,10 @@ func (component *ModelSelectorComponent) HandleInput(event tui.KeyEvent) {
 		if component.onSaveDefault != nil && component.selectedIndex >= 0 && component.selectedIndex < len(component.filteredModels) {
 			component.onSaveDefault(component.filteredModels[component.selectedIndex].model)
 		}
+	case tui.MatchesKey(event.Raw, "ctrl+l"):
+		if component.onManageAccounts != nil {
+			component.onManageAccounts()
+		}
 	case bindings.Matches(event.Raw, "tui.input.tab"):
 		if len(component.scopedModels) > 0 {
 			if component.scope == modelScopeAll {
@@ -418,20 +488,22 @@ func (component *ModelSelectorComponent) ListScroll(direction int) {
 // ListConfirm confirms the current selection.
 func (component *ModelSelectorComponent) ListConfirm() { component.confirmSelection() }
 
+type modelSelectionResult struct {
+	model        ai.Model
+	persist      bool
+	ok           bool
+	openAccounts bool
+}
+
 func (mode *InteractiveMode) selectModelSearchable(
 	ctx context.Context,
 	current, defaultModel *ai.Model,
 	models []ai.Model,
 	scoped []agent.ScopedModel,
 	initialSearch string,
-) (ai.Model, bool, bool) {
-	type selection struct {
-		model   ai.Model
-		ok      bool
-		persist bool
-	}
-	result := make(chan selection, 1)
-	resolve := func(value selection) {
+) modelSelectionResult {
+	result := make(chan modelSelectionResult, 1)
+	resolve := func(value modelSelectionResult) {
 		select {
 		case result <- value:
 		default:
@@ -439,11 +511,16 @@ func (mode *InteractiveMode) selectModelSearchable(
 	}
 	component := NewModelSelectorComponent(
 		current, defaultModel, models, scoped,
-		func(model ai.Model) { resolve(selection{model: model, ok: true}) },
-		func() { resolve(selection{}) },
+		func(model ai.Model) { resolve(modelSelectionResult{model: model, ok: true}) },
+		func() { resolve(modelSelectionResult{}) },
 		initialSearch,
 	)
-	component.onSaveDefault = func(model ai.Model) { resolve(selection{model: model, ok: true, persist: true}) }
+	component.onSaveDefault = func(model ai.Model) {
+		resolve(modelSelectionResult{model: model, ok: true, persist: true})
+	}
+	component.onManageAccounts = func() {
+		resolve(modelSelectionResult{openAccounts: true})
+	}
 	handle := mode.ui.ShowOverlay(menuFrame("Model", component), configOverlayOptions())
 	mode.ui.RequestRender()
 	defer func() {
@@ -455,8 +532,8 @@ func (mode *InteractiveMode) selectModelSearchable(
 	}
 	select {
 	case selected := <-result:
-		return selected.model, selected.persist, selected.ok
+		return selected
 	case <-ctx.Done():
-		return ai.Model{}, false, false
+		return modelSelectionResult{}
 	}
 }

@@ -56,8 +56,15 @@ func (a *app) chat(c *ui.Context, t *Tab) {
 func (a *app) conversation(c *ui.Context, t *Tab) {
 	o, pal := a.o, p(c)
 	ui.Column(c.Key("in:" + t.ID)).Grow(1).Basis(0).FillWidth().Transition(a.entering).Children(func() {
-		if t.Acting {
-			patternBlue(c, func() { o.send("abort", "tab", t.ID) })
+		if !t.Acting {
+			delete(a.dismissedBlue, t.ID)
+		} else if !a.dismissedBlue[t.ID] {
+			patternBlue(c, func() { o.send("abort", "tab", t.ID) }, func() {
+				if a.dismissedBlue == nil {
+					a.dismissedBlue = map[string]bool{}
+				}
+				a.dismissedBlue[t.ID] = true
+			})
 		}
 		tt := turns(o.rows[t.ID])
 		// A List takes one state: a second tile showing it (a layout saved so) scrolls on its own.
@@ -264,15 +271,18 @@ func (a *app) usage(t *Tab) {
 }
 
 // patternBlue says another Orb is driving this computer. Blue fills space here and nowhere else.
-func patternBlue(c *ui.Context, stop func()) {
+func patternBlue(c *ui.Context, stop, dismiss func()) {
 	hazard(c, 6, blue, texte.Alpha(0.5))
 	ui.Column(c).FillWidth().Background(blue).Padding(14, margin).Children(func() {
 		stretch(c, "PATTERN BLUE", 30, texte, 1)
 		label(c, "パターン青 · ANOTHER ORB IS DRIVING").TextColor(texte.Alpha(0.75)).MarginY(6)
-		ui.Row(c).FillWidth().MarginY(10).Children(func() {
+		ui.Row(c).FillWidth().MarginY(10).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "A peer is prompting this computer").Grow(1).FontWeight(medium).TextColor(texte)
 			if btn(c, "stop", true, texte, blue) {
 				stop()
+			}
+			if btn(c, "dismiss", false, texte.Alpha(0.85), blue) {
+				dismiss()
 			}
 		})
 	})
@@ -992,6 +1002,25 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 			}
 		}, "accounts", "machine", peer)
 	}
+	if a.providersOf != t.Peer {
+		a.providersOf, a.providers = t.Peer, nil
+		peer := t.Peer
+		then(o, func(list []Provider, err error) {
+			if a.providersOf == peer {
+				a.providers = list
+			}
+		}, "providers", "machine", peer)
+	}
+	// Unique providers present in t.Models, in order.
+	var modelProviders []string
+	for _, id := range t.Models {
+		if prov, _, ok := strings.Cut(id, "/"); ok && prov != "" && !slices.Contains(modelProviders, prov) {
+			modelProviders = append(modelProviders, prov)
+		}
+	}
+	if a.modelProvider != "" && !slices.Contains(modelProviders, a.modelProvider) {
+		a.modelProvider = ""
+	}
 	body := func() {
 		ui.Row(c).FillWidth().Padding(14, 16, 0).AlignItems(ui.End).Children(func() {
 			ui.Column(c).Grow(1).Basis(0).Gap(2).Children(func() {
@@ -1007,7 +1036,7 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 					Margin(0, 0, 2, 12).FontSize(12).TextColor(pal.meta).SingleLine()
 			}
 			if press(control(c, func() { ui.Text(c, "providers ›").FontSize(small).FontWeight(medium).TextColor(pal.mute) }).MarginStart(8).Tooltip("Connect and edit providers  " + keys(","))) {
-				a.model, a.query = "", ""
+				a.model, a.query, a.modelProvider = "", "", ""
 				a.push(screen{kind: "providers", peer: t.Peer})
 			}
 		})
@@ -1017,13 +1046,79 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 			} else {
 				o.send("model", "tab", t.ID, "name", id)
 			}
-			a.model, a.query = "", ""
+			a.model, a.query, a.modelProvider = "", "", ""
 		}
 		in := field(c, &a.query, "Search models", false).Margin(10, 12, 6).AutoFocus()
+		if len(modelProviders) > 1 {
+			ui.ScrollHorizontal(c).FillWidth().Padding(0, 12, 6).Children(func() {
+				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+					allOn := a.modelProvider == ""
+					allChip := ui.Row(c.Key("mp:all")).Padding(3, 8).Radius(6)
+					if allOn {
+						allChip.Background(pal.recessed)
+					} else {
+						hover(allChip, pal.hover)
+					}
+					allChip.Children(func() {
+						ui.Text(c, "all").FontSize(11.5).FontWeight(map[bool]int{true: medium, false: 400}[allOn]).TextColor(map[bool]ui.Color{true: pal.fg, false: pal.meta}[allOn]).SingleLine()
+					})
+					if press(allChip) {
+						a.modelProvider = ""
+					}
+					for _, prov := range modelProviders {
+						prov := prov
+						on := a.modelProvider == prov
+						var sub string
+						var low bool
+						for _, acc := range a.accounts {
+							if acc.Provider == prov && acc.Active {
+								if len(acc.Windows) > 0 {
+									win := slices.MinFunc(acc.Windows, func(p, q Window) int { return int(p.Left - q.Left) })
+									sub = fmt.Sprintf("%d%%", int(math.Round(win.Left)))
+									low = win.Left < 15
+								} else if acc.Name != "" {
+									sub = acc.Name
+								}
+								break
+							}
+						}
+						chip := ui.Row(c.Key("mp:"+prov)).Padding(3, 8).Gap(5).Radius(6).AlignItems(ui.Center)
+						if on {
+							chip.Background(pal.recessed)
+						} else {
+							hover(chip, pal.hover)
+						}
+						chip.Children(func() {
+							ui.Text(c, prov).FontSize(11.5).FontWeight(map[bool]int{true: medium, false: 400}[on]).TextColor(map[bool]ui.Color{true: pal.fg, false: pal.mute}[on]).SingleLine()
+							if sub != "" {
+								ui.Text(c, sub).FontSize(10.5).TextColor(map[bool]ui.Color{true: rupture, false: pal.meta}[low]).SingleLine()
+							}
+						})
+						if press(chip) {
+							if on {
+								a.modelProvider = ""
+							} else {
+								a.modelProvider = prov
+							}
+						}
+					}
+				})
+			})
+		}
+		models := t.Models
+		if a.modelProvider != "" {
+			prefix := a.modelProvider + "/"
+			models = make([]string, 0, len(t.Models))
+			for _, id := range t.Models {
+				if strings.HasPrefix(id, prefix) {
+					models = append(models, id)
+				}
+			}
+		}
 		q := strings.TrimSpace(a.query)
 		var matches []string
 		if q != "" {
-			matches = fuzzyFilterModels(t.Models, q)
+			matches = fuzzyFilterModels(models, q)
 			if in.Submitted() && len(matches) > 0 {
 				pick(matches[0])
 			}
@@ -1040,14 +1135,14 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 						pick(id)
 					}
 				}
-				if len(matches) == 0 && len(t.Models) > 0 {
+				if len(matches) == 0 && len(models) > 0 {
 					label(c, "no matching models").TextColor(pal.meta).Padding(10, 12)
 				}
 			} else {
 				// The default and what the machine's open conversations run on, above the rest.
 				var used []string
 				use := func(id string) {
-					if slices.Contains(t.Models, id) && !slices.Contains(used, id) {
+					if slices.Contains(models, id) && !slices.Contains(used, id) {
 						used = append(used, id)
 					}
 				}
@@ -1060,7 +1155,7 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 					}
 				}
 				var last string
-				for i, id := range append(used, t.Models...) {
+				for i, id := range append(used, models...) {
 					group, short, _ := strings.Cut(id, "/")
 					if i < len(used) {
 						group, short = "in use", id
@@ -1078,7 +1173,7 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 				label(c, map[bool]string{true: "no model: connect a provider", false: "reading models…"}[t.Loaded]).TextColor(pal.meta).Padding(10, 12)
 			}
 		})
-		a.accountsOn(c, t, provider)
+		a.accountsOn(c, t, cmp.Or(a.modelProvider, provider))
 		// Reasoning is what changes most often: it sits last.
 		if len(t.Levels) > 0 {
 			rule(c, pal.rule)
@@ -1116,7 +1211,7 @@ func (a *app) modelSheet(c *ui.Context, t *Tab) {
 		popover(c, &a.active.modelAt, &open, 400, a.keyed, body) // opened by a key, it shows at once
 	}
 	if !open {
-		a.model, a.query = "", ""
+		a.model, a.query, a.modelProvider = "", "", ""
 	}
 }
 
@@ -1135,32 +1230,52 @@ func (a *app) accountsOn(c *ui.Context, t *Tab, provider string) {
 		return
 	}
 	rule(c, pal.rule)
-	ui.Column(c).FillWidth().Padding(12, margin, 4).Children(func() {
-		label(c, "account · "+t.Where).TextColor(pal.meta)
+	ui.Column(c).FillWidth().Padding(10, 16, 6).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+			label(c, strings.Join(nonEmpty("account", provider, t.Where), " · ")).Grow(1).TextColor(pal.meta)
+			if press(control(c, func() { ui.Text(c, "+ sign in").FontSize(11).FontWeight(medium).TextColor(pal.mute) }).Tooltip("Sign in or manage accounts")) {
+				a.model, a.query, a.modelProvider = "", "", ""
+				a.push(screen{kind: "providers", peer: t.Peer})
+			}
+		})
 		for _, x := range mine {
-			row := ui.Row(c.Key(x.ID)).FillWidth().PaddingY(8).Gap(10).Children(func() {
+			x := x
+			row := ui.Row(c.Key("acc:"+x.Provider+":"+x.ID)).FillWidth().Padding(6, 4).Gap(8).Radius(6).AlignItems(ui.Center)
+			if !x.Active {
+				hover(row, pal.hover)
+			}
+			row.Children(func() {
 				ink, w := pal.rule, 400
 				if x.Active {
 					ink, w = pal.fg, strong
 				}
 				dot(c, ink, 8, false, false)
-				ui.Text(c, x.Name).Grow(1).FontSize(15).FontWeight(w).SingleLine()
+				ui.Text(c, x.Name).Grow(1).Basis(0).MinWidth(0).FontSize(13.5).FontWeight(w).SingleLine()
+				if x.Plan != "" {
+					ui.Text(c, x.Plan).FontSize(11).TextColor(pal.meta).SingleLine()
+				}
 				if len(x.Windows) > 0 {
 					win := slices.MinFunc(x.Windows, func(p, q Window) int { return int(p.Left - q.Left) })
-					ink := pal.meta
+					qInk := pal.meta
 					if win.Left < 15 {
-						ink = rupture
+						qInk = rupture
 					}
-					ui.Textf(c, "%s %d%% left", win.Name, int(math.Round(win.Left))).FontSize(12).TextColor(ink).SingleLine()
+					quota := fmt.Sprintf("%d%% left", int(math.Round(win.Left)))
+					if win.Resets > 0 {
+						quota += " · " + resetsAt(win.Resets)
+					}
+					ui.Text(c, quota).FontSize(11.5).TextColor(qInk).SingleLine()
 				}
 			})
 			if !x.Active && press(row) {
+				peer := t.Peer
 				then(a.o, func(_ struct{}, err error) {
 					if err != nil {
 						a.say(err.Error())
 					}
-					a.accountsOf = "" // read them again
-				}, "account", "machine", t.Peer, "provider", x.Provider, "account", x.ID)
+					a.accountsOf = "" // read them again in place
+					a.readDefault(peer, func(d *Tab) { a.defaults[peer] = d })
+				}, "account", "machine", peer, "provider", x.Provider, "account", x.ID)
 			}
 		}
 	})

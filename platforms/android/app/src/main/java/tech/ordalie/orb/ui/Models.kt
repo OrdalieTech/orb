@@ -23,28 +23,56 @@ import tech.ordalie.orb.core.*
 @Composable
 fun AnimatedVisibilityScope.ModelSheet(session: Tab, c: Ctx, dismiss: () -> Unit) = Sheet(dismiss, Modifier.heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.8f)) {
     var query by remember { mutableStateOf("") }
+    var providerFilter by remember(session.peer) { mutableStateOf("") }
+    var accountList by remember(session.peer) { mutableStateOf(emptyList<Account>()) }
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) { keyboard?.hide() }
     // Asked as it opens: a conversation elsewhere may have changed it.
-    LaunchedEffect(session.peer) { c.v.readDefault(session.peer) }
+    LaunchedEffect(session.peer) {
+        c.v.readDefault(session.peer)
+        accountList = accounts(c.v.ask("accounts", "machine" to session.peer).array)
+    }
     val def = c.v.defaults[session.peer]
     val home = session.id.isEmpty()
     val s = if (home) def ?: session else session
     // Run past the sheet, which a pick closes.
     fun default(model: String, level: String = "") = c.rt.scope.launch { c.v.makeDefault(s.peer, model, level) }
+    val providers = remember(s.models) { s.models.map { it.substringBefore('/') }.filter(String::isNotEmpty).distinct() }
+    val scopedModels = remember(s.models, providerFilter) {
+        if (providerFilter.isEmpty()) s.models else s.models.filter { it.substringBefore('/') == providerFilter }
+    }
     val searching = query.isNotBlank()
-    val ranked = remember(s.models, query) { if (searching) fuzzyFilterModels(s.models, query) else emptyList() }
-    val used = (listOfNotNull(def?.model) + c.v.state.tabs.filter { it.peer == s.peer }.map { it.model }).distinct().filter { it in s.models }
-    val groups = mapOf("in use" to used) + s.models.groupBy { it.substringBefore('/') }
-    Row(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 18.dp), verticalAlignment = Alignment.Bottom) {
+    val ranked = remember(scopedModels, query) { if (searching) fuzzyFilterModels(scopedModels, query) else emptyList() }
+    val used = (listOfNotNull(def?.model) + c.v.state.tabs.filter { it.peer == s.peer }.map { it.model }).distinct().filter { it in scopedModels }
+    val groups = if (providerFilter.isEmpty()) mapOf("in use" to used) + scopedModels.groupBy { it.substringBefore('/') }
+    else mapOf(providerFilter to scopedModels)
+    Row(Modifier.fillMaxWidth().padding(start = Margin, end = Margin, top = 18.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Column(Modifier.weight(1f)) {
             T(if (!home) "model" else "default · " + if (s.peer == c.v.state.self) "this phone" else s.where, label = true, color = p.meta, lines = 1)
             T(s.model.substringAfter('/').ifEmpty { "none" }, size = 19.sp, weight = Strong, lines = 1)
         }
-        if (!home && def != null && s.model.isNotEmpty() && s.model != def.model) Btn("make default", modifier = Modifier.padding(start = 12.dp)) { default(s.model, s.thinking) }
-        else T(listOf(s.model.substringBefore('/'), if (home) "" else s.where).filter(String::isNotEmpty).joinToString(" · "), Modifier.padding(start = 12.dp, bottom = 3.dp), size = 13.sp, color = p.meta, lines = 1)
+        if (!home && def != null && s.model.isNotEmpty() && s.model != def.model) Btn("make default") { default(s.model, s.thinking) }
+        Btn("providers ›") { dismiss(); c.nav.go(Screen.Providers(s.peer)) }
     }
     Field(query, "Search models", Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) { query = it }
+    if (providers.isNotEmpty()) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = Margin, end = Margin, bottom = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ProviderChip("all", selected = providerFilter.isEmpty()) { providerFilter = "" }
+            providers.forEach { prov ->
+                val activeAcct = accountList.firstOrNull { it.provider == prov && it.active } ?: accountList.firstOrNull { it.provider == prov }
+                val tightest = activeAcct?.windows?.minByOrNull { it.left }
+                val quota = tightest?.let { " ${it.left.roundToInt()}%" }.orEmpty()
+                val warn = tightest != null && tightest.left < 15
+                ProviderChip(shortProvider(prov) + quota, selected = providerFilter == prov, warn = warn) {
+                    providerFilter = if (providerFilter == prov) "" else prov
+                }
+            }
+        }
+    }
     LazyColumn(Modifier.weight(1f, fill = false)) {
         if (searching) {
             if (ranked.isEmpty()) {
@@ -89,9 +117,33 @@ fun AnimatedVisibilityScope.ModelSheet(session: Tab, c: Ctx, dismiss: () -> Unit
             Row(Modifier.fillMaxWidth().press { dismiss(); c.nav.go(Screen.Providers(s.peer)) }.padding(horizontal = Margin, vertical = 16.dp)) { T("+ connect a provider", weight = Medium, color = p.mute) }
         }
     }
-    Accounts(s, c)
+    val accountProvider = providerFilter.ifEmpty { s.model.substringBefore('/') }
+    Accounts(s, c, accountProvider, accountList) {
+        accountList = accounts(c.v.ask("accounts", "machine" to s.peer).array)
+    }
     // Reasoning is what changes most often: it sits last, where the thumb already is.
     if (s.levels.isNotEmpty()) { Rule(); Reasoning(s.levels, s.thinking) { if (home) default(s.model, it) else c.v.send("thinking", "tab" to s.id, "name" to it) } }
+}
+
+@Composable
+private fun ProviderChip(label: String, selected: Boolean, warn: Boolean = false, onClick: () -> Unit) =
+    Box(
+        Modifier.clip(Pane).background(if (selected) p.raised else Color.Transparent)
+            .border(1.dp, if (selected) p.fg else p.rule, Pane).press(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    ) {
+        T(label, size = 12.sp, weight = if (selected) Strong else Medium, color = when {
+            warn -> Ink.Rupture
+            selected -> p.fg
+            else -> p.mute
+        }, lines = 1)
+    }
+
+private fun shortProvider(provider: String): String = when (provider) {
+    "openai-codex" -> "codex"
+    "github-copilot" -> "copilot"
+    "google-antigravity" -> "antigravity"
+    else -> provider
 }
 
 /**
@@ -100,21 +152,19 @@ fun AnimatedVisibilityScope.ModelSheet(session: Tab, c: Ctx, dismiss: () -> Unit
  * plans have left.
  */
 @Composable
-private fun Accounts(session: Tab, c: Ctx) {
+private fun Accounts(session: Tab, c: Ctx, provider: String, list: List<Account>, onRefresh: suspend () -> Unit) {
     val scope = rememberCoroutineScope()
-    var list by remember { mutableStateOf(emptyList<Account>()) }
-    var note by remember { mutableStateOf("") }
-    LaunchedEffect(session.peer) { list = accounts(c.v.ask("accounts", "machine" to session.peer).array) }
-    val mine = list.filter { it.provider == session.model.substringBefore('/') }
+    var note by remember(provider) { mutableStateOf("") }
+    val mine = list.filter { it.provider == provider }
     if (mine.isEmpty()) return
     Rule()
     Column(Modifier.padding(start = Margin, end = Margin, top = 12.dp, bottom = 4.dp)) {
-        T("account · ${session.where}", label = true, color = p.meta)
+        T("account · $provider · ${session.where}", label = true, color = p.meta)
         mine.forEach { a ->
             Row(Modifier.fillMaxWidth().press(enabled = !a.active) {
                 scope.launch {
                     note = c.v.ask("account", "machine" to session.peer, "provider" to a.provider, "account" to a.id).error.orEmpty()
-                    list = accounts(c.v.ask("accounts", "machine" to session.peer).array)
+                    onRefresh()
                 }
             }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Dot(if (a.active) p.fg else p.rule)

@@ -40,7 +40,11 @@ private fun turns(rows: List<Row>): List<List<Row>> = buildList {
 fun ColumnScope.Chat(c: Ctx, t: Tab) {
     val v = c.v
     Strip(t, v.word(t), { c.usage(t) }) { c.nav.go(Screen.Terminal(t)) }
-    AnimatedVisibility(t.acting, enter = expandVertically(spring(stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) { PatternBlue { v.send("abort", "tab" to t.id) } }
+    var dismissedActing by remember(t.id) { mutableStateOf(false) }
+    LaunchedEffect(t.acting) { if (!t.acting) dismissedActing = false }
+    AnimatedVisibility(t.acting && !dismissedActing, enter = expandVertically(spring(stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        PatternBlue(stop = { v.send("abort", "tab" to t.id) }, dismiss = { dismissedActing = true })
+    }
     val turns = turns(v.rows[t.id].orEmpty())
     // Anchored at the top, the list never moves on its own: what streams in follows only a reader at
     // the bottom. Scrolling away leaves them where they read until they come back down, or send. It
@@ -254,17 +258,22 @@ private fun tokens(text: String, fg: Color, bg: Color): AnnotatedString = buildA
 
 /** Another Orb is driving this phone. Blue fills space here and nowhere else. */
 @Composable
-fun PatternBlue(stop: () -> Unit) = Column(Modifier.fillMaxWidth().background(Ink.Blue)) {
+fun PatternBlue(stop: () -> Unit, dismiss: (() -> Unit)? = null) = Column(Modifier.fillMaxWidth().background(Ink.Blue)) {
     Hazard(6.dp, Ink.Blue, Ink.Texte.copy(alpha = 0.5f))
-    Column(Modifier.padding(horizontal = Margin, vertical = 14.dp)) { PatternBlueBody(stop) }
+    Column(Modifier.padding(horizontal = Margin, vertical = 14.dp)) { PatternBlueBody(stop, dismiss) }
 }
 
 @Composable
-private fun PatternBlueBody(stop: () -> Unit) {
+private fun PatternBlueBody(stop: () -> Unit, dismiss: (() -> Unit)? = null) {
     Stretch("PATTERN BLUE", 30.dp, Ink.Texte)
     T("パターン青 · another orb is driving", Modifier.padding(top = 6.dp), label = true, color = Ink.Texte.copy(alpha = 0.75f))
-    Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         T("A peer is prompting this phone", Modifier.weight(1f), color = Ink.Texte, weight = Medium)
         Btn("stop", inverted = true, color = Ink.Texte, on = Ink.Blue, onClick = stop)
+        if (dismiss != null) {
+            Box(Modifier.clip(Soft).press(onClick = dismiss).padding(horizontal = 8.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
+                T("×", size = 18.sp, weight = Strong, color = Ink.Texte)
+            }
+        }
     }
 }

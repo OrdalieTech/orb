@@ -31,7 +31,7 @@ fun ColumnScope.MitosisScreen(c: Ctx) {
     val v = c.v
     val context = LocalContext.current
     Header("Mitosis", sub = if (v.state.up) "on · peer to peer" else "starting", back = c.nav::back)
-    if (v.state.acting) PatternBlue { v.state.tabs.filter { it.acting }.forEach { v.send("abort", "tab" to it.id) } }
+    if (v.state.acting) PatternBlue(stop = { v.state.tabs.filter { it.acting }.forEach { v.send("abort", "tab" to it.id) } })
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Margin)) {
         item {
             // One gesture pairs a computer: it shows a QR code, this phone photographs it, the computer says yes.

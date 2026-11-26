@@ -544,16 +544,28 @@ func (a *app) homeScopeBar(c *ui.Context) {
 		return strings.Compare(x.Name, y.Name)
 	})
 	if len(machines) > 1 {
-		reading(c).MaxWidth(680).Margin(0, ui.Auto, 10).PaddingX(margin).Children(func() {
-			ui.ScrollHorizontal(c).FillWidth().Children(func() {
-				ui.Row(c).Gap(6).Children(func() {
-					for _, m := range machines {
+		var visible []Machine
+		hiddenCount := 0
+		for _, m := range machines {
+			if a.hiddenPeers[m.ID] {
+				hiddenCount++
+				if !a.showHiddenPeers {
+					continue
+				}
+			}
+			visible = append(visible, m)
+		}
+		reading(c).MaxWidth(680).Margin(0, ui.Auto, 10).PaddingX(margin).Gap(6).Children(func() {
+			if len(visible) > 0 {
+				ui.Grid(c).FillWidth().Columns(map[bool]int{true: 2, false: 3}[a.narrow]).Gap(8).Children(func() {
+					for _, m := range visible {
 						m := m
 						up := m.Connected
 						if m.Self {
 							up = o.state.Up
 						}
 						on := a.deviceFilter == m.ID
+						hidden := a.hiddenPeers[m.ID]
 						name := m.Name
 						if m.Self {
 							name = device
@@ -562,18 +574,99 @@ func (a *app) homeScopeBar(c *ui.Context) {
 						if !up {
 							statusText = map[bool]string{true: "starting…", false: "offline"}[m.Self]
 						}
-						pill := ui.Row(c.Key("peer:"+m.ID)).Padding(5, 10).Gap(7).Radius(6).AlignItems(ui.Center)
+						border := pal.rule.Alpha(0.55)
 						if on {
-							pill.Background(pal.recessed)
-						} else {
-							hover(pill, pal.hover)
+							border = pal.fg.Alpha(0.55)
 						}
-						pill.Children(func() {
-							where(c, o.hue(m.ID), false, !up && !m.Self, map[bool]ui.Color{true: pal.fg, false: pal.mute}[on])
-							ui.Text(c, name).FontSize(12).FontWeight(map[bool]int{true: strong, false: medium}[on]).TextColor(map[bool]ui.Color{true: pal.fg, false: pal.mute}[on]).SingleLine()
-							ui.Text(c, statusText).FontSize(11).TextColor(map[bool]ui.Color{true: pal.meta, false: rupture}[up]).SingleLine()
+						card := ui.Column(c.Key("peer:"+m.ID)).FillWidth().Height(68).Padding(10, 12).Radius(8).
+							Background(pal.raised).Border(1, border).Justify(ui.SpaceBetween)
+						hover(card, pal.hover)
+						card.ContextMenu(func(menu *ui.Menu) {
+							if on {
+								if menu.Item("Clear filter").Chosen() {
+									a.deviceFilter, a.folderFilter = "", ""
+									a.aimHome("", "")
+								}
+							} else {
+								if menu.Item("Target for new sessions").Chosen() {
+									a.deviceFilter, a.folderFilter = m.ID, ""
+									if m.Self {
+										a.aimHome("", "")
+									} else {
+										a.aimHome(m.ID, "")
+									}
+								}
+							}
+							if m.Launch {
+								if menu.Item("Browse folders…").Chosen() {
+									a.exploring = m.ID
+								}
+							}
+							if menu.Item("Providers & accounts…").Chosen() {
+								a.push(screen{kind: "providers", peer: m.ID})
+							}
+							if menu.Item("Plugins…").Chosen() {
+								a.push(screen{kind: "plugins", peer: m.ID})
+							}
+							menu.Separator()
+							if !m.Self {
+								if menu.Item("Rename…").Chosen() {
+									a.rename = &renaming{name: m.Name, apply: func(newName string) {
+										o.send("rename", "machine", m.ID, "name", newName)
+									}}
+								}
+							}
+							hideLabel := "Hide peer"
+							if hidden {
+								hideLabel = "Unhide peer"
+							}
+							if menu.Item(hideLabel).Chosen() {
+								if a.hiddenPeers == nil {
+									a.hiddenPeers = map[string]bool{}
+								}
+								if hidden {
+									delete(a.hiddenPeers, m.ID)
+								} else {
+									a.hiddenPeers[m.ID] = true
+									if a.deviceFilter == m.ID {
+										a.deviceFilter, a.folderFilter = "", ""
+										a.aimHome("", "")
+									}
+								}
+							}
+							if !m.Self {
+								if menu.Item("Forget device…").Chosen() {
+									a.picker = &picker{
+										title:   "Forget " + m.Name + "?",
+										options: []string{"forget · revoke its access"},
+										pick: func(string) {
+											o.send("forget", "machine", m.ID)
+										},
+									}
+								}
+							}
 						})
-						if press(pill.Tooltip("Click to target " + name + " and filter threads")) {
+						card.Children(func() {
+							ui.Row(c).FillWidth().Gap(7).AlignItems(ui.Center).Children(func() {
+								where(c, o.hue(m.ID), len(m.Running) > 0, !up && !m.Self, map[bool]ui.Color{true: pal.fg, false: pal.mute}[on])
+								ui.Text(c, name).Grow(1).Basis(0).MinWidth(0).FontSize(13).FontWeight(strong).TextColor(pal.fg).SingleLine()
+								verdict, vInk := "承認", pal.meta
+								if !up {
+									verdict, vInk = "否決", rupture
+								}
+								ui.Text(c, verdict).FontSize(10.5).TextColor(vInk).SingleLine()
+							})
+							ui.Row(c).FillWidth().Gap(5).AlignItems(ui.Center).Children(func() {
+								ui.Text(c, statusText).FontSize(11).TextColor(map[bool]ui.Color{true: pal.meta, false: rupture}[up]).SingleLine()
+								if len(m.Folders) > 0 {
+									ui.Text(c, fmt.Sprintf("· %d folders", len(m.Folders))).FontSize(11).TextColor(pal.meta).SingleLine()
+								}
+								if hidden {
+									ui.Text(c, "· hidden").FontSize(10.5).TextColor(pal.meta).SingleLine()
+								}
+							})
+						})
+						if press(card.Tooltip("Click to target " + name + " · right-click for options")) {
 							if on {
 								a.deviceFilter, a.folderFilter = "", ""
 								a.aimHome("", "")
@@ -588,7 +681,22 @@ func (a *app) homeScopeBar(c *ui.Context) {
 						}
 					}
 				})
-			})
+			}
+			if hiddenCount > 0 {
+				ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
+					toggleText := fmt.Sprintf("%d hidden · show", hiddenCount)
+					if a.showHiddenPeers {
+						toggleText = "hide hidden"
+					}
+					link := hover(ui.Row(c.Key("peers:hidden-toggle")).Padding(2, 6).Radius(4), pal.hover)
+					link.Children(func() {
+						ui.Text(c, toggleText).FontSize(11).TextColor(pal.meta).SingleLine()
+					})
+					if press(link) {
+						a.showHiddenPeers = !a.showHiddenPeers
+					}
+				})
+			}
 		})
 	}
 

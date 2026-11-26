@@ -86,9 +86,15 @@ type app struct {
 	pics     map[string]*ui.Bitmap        // pictures by reference and size
 	loading  map[string]bool              // pictures asked for
 
-	query      string                  // the model sheet's search
-	accounts   []Account               // the accounts of the machine the model sheet shows
-	accountsOf string                  // that machine
+	query         string                  // the model sheet's search
+	modelProvider string                  // selected provider filter inside modelSheet
+	accounts      []Account               // the accounts of the machine the model sheet shows
+	accountsOf    string                  // that machine
+	providers     []Provider              // the providers of the machine the model sheet shows
+	providersOf   string                  // that machine
+	dismissedBlue map[string]bool         // tabs whose PATTERN BLUE banner was dismissed while acting
+	hiddenPeers   map[string]bool         // peers hidden from the Home peer grid
+	showHiddenPeers bool                  // whether hidden peers are currently revealed in the Home peer grid
 	found      map[string][]Completion // each conversation's @ completions
 	foundFor   map[string]string       // the @ token they were asked for
 	focused    int                     // the last focus request the prompt box took

@@ -8,6 +8,11 @@
 
   let transcriptRef = $state(null);
   let expandedSlots = $state({});
+  let dismissedActing = $state(false);
+
+  $effect(() => {
+    if (!tab.acting) dismissedActing = false;
+  });
 
   let rows = $derived(orb.rowsByTab[tab.id] || []);
   let statusWord = $derived(word(tab));
@@ -147,11 +152,20 @@
       </div>
     </div>
 
-    {#if tab.acting}
+    {#if tab.acting && !dismissedActing}
       <div class="acting">
         <b class="stretch">PATTERN BLUE</b>
         <p>パターン青 · another Orb is driving this tab</p>
-        <button type="button" class="btn" onclick={() => orb.send({ do: "abort", tab: tab.id })}>stop</button>
+        <div class="acting-actions">
+          <button type="button" class="btn" onclick={() => orb.send({ do: "abort", tab: tab.id })}>stop</button>
+          <button
+            type="button"
+            class="acting-dismiss"
+            onclick={() => (dismissedActing = true)}
+            title="Hide banner (peer keeps running)"
+            aria-label="Dismiss banner"
+          >×</button>
+        </div>
       </div>
     {/if}
   </div>
@@ -373,6 +387,7 @@
     border-radius: 1px;
   }
   .acting {
+    pointer-events: auto;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -391,10 +406,36 @@
     font-size: 12px;
     opacity: 0.85;
   }
+  .acting-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
   .acting .btn {
     color: var(--blue);
     background: var(--paper-ink);
     border-color: transparent;
+  }
+  .acting-dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid #FFFFFF44;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--paper-ink);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+  }
+  .acting-dismiss:hover {
+    background: #FFFFFF22;
+    border-color: #FFFFFF88;
   }
   .slots {
     width: 100%;

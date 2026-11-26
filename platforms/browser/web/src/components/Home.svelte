@@ -5,6 +5,7 @@
 
   let threadFilter = $state("");
   let folderFilter = $state("");
+  let showHiddenPeers = $state(false);
 
   let aim = $derived.by(() => {
     void orb.aimVersion;
@@ -14,10 +15,14 @@
   });
 
   let showOwn = $derived(orb.launchers().length === 0 || !!aim.machine?.self);
-  let machines = $derived(
+  let allMachines = $derived(
     [...(orb.home.machines || [])]
       .filter(m => showOwn || !m.self)
       .sort((x, y) => Number(!!y.self) - Number(!!x.self)),
+  );
+  let hiddenCount = $derived(allMachines.filter(m => orb.isPeerHidden(m.id)).length);
+  let machines = $derived(
+    showHiddenPeers ? allMachines : allMachines.filter(m => !orb.isPeerHidden(m.id)),
   );
   let openTabs = $derived.by(() => {
     const rank = t => (t.ask ? 0 : t.busy ? 1 : t.unread > 0 ? 2 : !t.asleep ? 3 : 4);
@@ -66,16 +71,19 @@
 </script>
 
 <div class="home">
-  <!-- 01 · MAGI machine unit strip -->
-  <div class="magi scroll">
+  <!-- 01 · MAGI machine unit grid -->
+  <div class="magi">
     {#each machines as m (m.id)}
       {@const up = m.self ? orb.state.up : m.connected}
       {@const ok = up && !m.outdated}
+      {@const isHidden = orb.isPeerHidden(m.id)}
+      {@const folderCount = m.folders?.length || 0}
       <button
         type="button"
         class="magi-unit"
         class:on={orb.deviceFilter === m.id}
         class:down={!ok}
+        class:hidden-peer={isHidden}
         onclick={() => selectPeer(m)}
         oncontextmenu={e => { e.preventDefault(); orb.openDeviceMenu(m); }}
         title="Click to filter · Right-click for options"
@@ -83,10 +91,12 @@
         <span class="magi-top">
           <i class="led" style="--hue: var(--hue{m.hue || 0})"></i>
           <span class="magi-name">{m.self ? "this tab" : m.name}</span>
+          <b class="magi-verdict">{ok ? "承認" : "否決"}</b>
         </span>
         <span class="magi-bot">
-          <span>{!up ? "offline" : m.outdated ? "update Orb" : `${m.running?.length || 0} running`}</span>
-          <b>{ok ? "承認" : "否決"}</b>
+          <span>
+            {!up ? "offline" : m.outdated ? "update Orb" : `${m.running?.length || 0} running`}{folderCount > 0 ? ` · ${folderCount} ${folderCount === 1 ? "folder" : "folders"}` : ""}
+          </span>
         </span>
       </button>
     {/each}
@@ -94,15 +104,26 @@
 
   <div class="summary-bar">
     <p class="summary" class:asks={(orb.state.summary || "").startsWith("needs")}>{orb.state.summary || ""}</p>
-    {#if selectedMachine && !selectedMachine.self && selectedMachine.launch && selectedMachine.connected && scopeFolders.length === 0}
-      <button
-        type="button"
-        class="btn plain browse-btn"
-        onclick={() => (orb.explorerPeer = selectedMachine.id)}
-      >
-        folders on {selectedMachine.name} ›
-      </button>
-    {/if}
+    <div class="summary-actions">
+      {#if hiddenCount > 0}
+        <button
+          type="button"
+          class="hidden-toggle"
+          onclick={() => (showHiddenPeers = !showHiddenPeers)}
+        >
+          {hiddenCount} hidden · {showHiddenPeers ? "hide" : "show"}
+        </button>
+      {/if}
+      {#if selectedMachine && !selectedMachine.self && selectedMachine.launch && selectedMachine.connected && scopeFolders.length === 0}
+        <button
+          type="button"
+          class="btn plain browse-btn"
+          onclick={() => (orb.explorerPeer = selectedMachine.id)}
+        >
+          folders on {selectedMachine.name} ›
+        </button>
+      {/if}
+    </div>
   </div>
 
   {#if scopeMachine && scopeFolders.length > 0}
@@ -275,70 +296,79 @@
     animation: view-in var(--t-med) var(--ease);
   }
 
-  /* NERV MAGI joined schematic matrix — flush shared quiet hairlines */
+  /* NERV MAGI multi-line wrapping peer grid — no horizontal scroll */
   .magi {
-    display: flex;
-    gap: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(188px, 1fr));
+    gap: 8px;
     flex-shrink: 0;
-    border: 1px solid var(--rule);
-    border-radius: var(--radius-md);
-    background: var(--raised);
   }
   .magi-unit {
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    flex: 1 0 150px;
-    padding: 8px 11px;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 70px;
+    padding: 11px 13px;
     text-align: left;
-    border: 0;
-    border-right: 1px solid var(--rule-soft);
-    background: transparent;
+    border: 1px solid var(--rule-soft);
+    border-radius: 8px;
+    background: var(--raised);
     cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .magi-unit:last-child { border-right: 0; }
+  .magi-unit.hidden-peer {
+    opacity: 0.58;
+    border-style: dashed;
+  }
   .magi-unit.on {
     background: var(--recessed);
+    border-color: var(--fg);
     color: var(--fg);
-    box-shadow: inset 0 -2px 0 var(--fg);
   }
   .magi-top {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     min-width: 0;
   }
   .magi-name {
-    font-size: 12.5px;
+    font-size: 13px;
     font-weight: 700;
     color: inherit;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  .magi-bot {
-    display: flex;
-    align-items: center;
-    font-size: 11.5px;
-    color: var(--meta);
-  }
-  .magi-unit.on .magi-bot { color: var(--mute); }
-  .magi-bot b {
+  .magi-verdict {
     margin-left: auto;
+    flex-shrink: 0;
     font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 0.06em;
     color: var(--amber);
   }
-  .magi-unit.on .magi-bot b { color: var(--amber); }
+  .magi-bot {
+    display: flex;
+    align-items: center;
+    font-size: 11.5px;
+    color: var(--meta);
+    min-width: 0;
+  }
+  .magi-bot span {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .magi-unit.on .magi-bot { color: var(--mute); }
   .magi-unit.down .magi-bot,
-  .magi-unit.down .magi-bot b { color: var(--rupture); }
+  .magi-unit.down .magi-verdict { color: var(--rupture); }
   @media (hover: hover) {
-    .magi-unit:hover:not(.on) { background: var(--hover); }
+    .magi-unit:hover:not(.on) {
+      background: var(--hover);
+      border-color: var(--rule);
+    }
   }
 
   .summary-bar {
@@ -348,6 +378,27 @@
     gap: 8px;
     padding: 7px 0 4px;
     flex-shrink: 0;
+  }
+  .summary-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .hidden-toggle {
+    padding: 2px 6px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--meta);
+    cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+  .hidden-toggle:hover {
+    background: var(--hover);
+    color: var(--fg);
   }
   .summary {
     font-size: 12px;

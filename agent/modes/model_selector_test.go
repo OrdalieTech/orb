@@ -97,3 +97,41 @@ func TestModelSelectorSaveDefaultUsesHighlightedFilteredModel(t *testing.T) {
 		t.Fatal("saved a model with no matching selection")
 	}
 }
+
+func TestModelSelectorFuzzyAliasesAndAccountsShortcut(t *testing.T) {
+	initTestTheme(t)
+	models := []ai.Model{
+		{Provider: "anthropic", ID: "claude-opus-4-5", Name: "Claude Opus 4.5"},
+		{Provider: "openai-codex", ID: "gpt-5.4-codex", Name: "GPT 5.4 Codex"},
+		{Provider: "google", ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro"},
+		{Provider: "deepseek", ID: "deepseek-r1", Name: "DeepSeek R1"},
+	}
+
+	selector := NewModelSelectorComponent(&models[0], nil, models, nil, nil, nil, "")
+
+	cases := []struct {
+		query  string
+		wantID string
+	}{
+		{query: "opus45", wantID: "claude-opus-4-5"},
+		{query: "opus 45", wantID: "claude-opus-4-5"},
+		{query: "anth opus", wantID: "claude-opus-4-5"},
+		{query: "gpt54", wantID: "gpt-5.4-codex"},
+		{query: "oai codex", wantID: "gpt-5.4-codex"},
+		{query: "gem 25", wantID: "gemini-2.5-pro"},
+		{query: "ds r1", wantID: "deepseek-r1"},
+	}
+	for _, tc := range cases {
+		selector.filterModels(tc.query)
+		if len(selector.filteredModels) == 0 || selector.filteredModels[0].model.ID != tc.wantID {
+			t.Fatalf("query %q -> filtered=%#v, want first ID %q", tc.query, selector.filteredModels, tc.wantID)
+		}
+	}
+
+	accountsOpened := false
+	selector.onManageAccounts = func() { accountsOpened = true }
+	selector.HandleInput(tui.KeyEvent{Raw: "\x0c"}) // ctrl+l
+	if !accountsOpened {
+		t.Fatal("ctrl+l did not invoke onManageAccounts")
+	}
+}
