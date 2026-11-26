@@ -11,15 +11,20 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// homeScreen starts a session: the prompt box in the middle of the window, where it runs a click
-// away, the latest threads under it. Every thread is a ⌘K away.
+// homeScreen starts a session: the prompt box pinned cleanly at the bottom (exact same position
+// and width as in a conversation — zero vertical jump when starting a session), with the Mitosis
+// peers, contextual folder scope, and unified threads list scrolling calmly above it.
 func (a *app) homeScreen(c *ui.Context) {
 	a.titleBar(c, func() {})
-	// A small tile keeps Home to its prompt box.
+	// A small tile keeps Home minimal above its prompt box.
 	small := a.narrow || a.building != nil && a.building.height > 0 && a.building.height < 480
-	// Centred while it fits; with many cards open, it scrolls from the top.
-	ui.Scroll(c.Key("in:home")).Grow(1).Basis(0).FillWidth().Transition(a.entering).Children(func() {
-		ui.Column(c).FillWidth().MinHeightPercent(100).Justify(ui.Center).Padding(56, margin, 64).Children(func() { a.homeBody(c, small) })
+	ui.Column(c.Key("in:home")).Grow(1).Basis(0).FillWidth().Transition(a.entering).Children(func() {
+		ui.Scroll(c.Key("in:home:scroll")).Grow(1).Basis(0).FillWidth().Children(func() {
+			ui.Column(c).FillWidth().MaxWidth(column).Margin(0, ui.Auto).Padding(20, margin, 24).Children(func() {
+				a.homeBody(c, small)
+			})
+		})
+		a.promptBox(c, nil, a.homePlaceholder())
 	})
 }
 
@@ -41,114 +46,47 @@ func (a *app) homePlaceholder() string {
 	}
 }
 
-// homeBody is Home under its bar: the title card, the prompt box, the cards open, the latest.
+// homeBody is Home above its pinned prompt box: Mitosis peers, quiet status summary, contextual
+// folder scope pills, and one unified threads list (open sessions first, then recent threads).
 func (a *app) homeBody(c *ui.Context, small bool) {
 	o, pal := a.o, p(c)
-	{
-		// An Evangelion title card: a rule, the title stretched tall.
-		reading(c).MaxWidth(680).PaddingX(margin).Children(func() {
-			if small {
-				a.launching(c)
-				return
-			}
-			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.End).Children(func() {
-				// The title wipes in the first time the app shows it, as a title card cuts in.
-				card := stretch(c, "NEW SESSION", 46, pal.fg, 1)
-				if !a.carded {
-					v := reveal(card, "card", 60*time.Millisecond)
-					wipe(card, v, pal.bg)
-					a.carded = v == 1
-				}
-			})
-			a.launching(c)
-		})
-		ui.Box(c).Height(18)
-		// Contextual peer (MAGI) + recent folder scope pills above the Home prompt box,
-		// matching Android and Web: picking a peer or folder aims the prompt and filters threads.
-		if !small {
-			a.homeScopeBar(c)
-		}
-		// The box a little past the column (8 a side, 2.5% of it), so it stands out of the page
-		// without leaving it; its own padding sets its text in.
-		ui.Column(c).FillWidth().MaxWidth(680+16).Margin(0, ui.Auto).Children(func() { a.promptBox(c, nil, a.homePlaceholder()) })
-		var recent []Entry
-		for _, e := range o.home.Entries {
-			if e.Open {
-				continue
-			}
-			if a.deviceFilter != "" && e.Machine != a.deviceFilter {
-				continue
-			}
-			if a.folderFilter != "" && e.CWD != a.folderFilter {
-				continue
-			}
-			recent = append(recent, e)
-			if len(recent) >= 6 {
-				break
-			}
-		}
+	if small {
+		a.launching(c)
 		a.boot(c)
-		if len(o.state.Tabs) > 0 && !small {
-			a.openCards(c)
-		}
-		if len(recent) > 0 && o.state.Up && !small {
-			reading(c).MaxWidth(680).Margin(36, ui.Auto, 0).PaddingX(margin).Children(func() {
-				ui.Row(c).FillWidth().Margin(0, 0, 6).AlignItems(ui.Center).Children(func() {
-					hudLabel(c, 2, "latest", "").Grow(1)
-					if link(c, "all threads", keys("K")) {
-						a.openPalette()
-					}
-				})
-				for _, e := range recent {
-					meta := ""
-					if m := o.machine(e.Machine); m != nil && !m.Self {
-						meta = m.Name
-					}
-					row := sessionRow(c.Key(e.Key), e.Title, meta, ago(e.Modified), e.Live, e.Asks, false, o.hue(e.Machine))
-					row.ContextMenu(func(m *ui.Menu) { a.threadMenu(m, e) })
-					if press(row) {
-						a.open(e.Key)
-					}
-				}
-			})
-		}
-		if !small {
-			reading(c).MaxWidth(680).Margin(32, ui.Auto, 0).PaddingX(margin).Children(func() {
-				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-					ink := pal.meta
-					if strings.HasPrefix(o.state.Summary, "needs you") {
-						ink = rupture
-					}
-					dot(c, map[bool]ui.Color{true: pal.fg, false: pal.rule}[o.state.Up], 6, !o.state.Up, false)
-					ui.Text(c, cmp.Or(o.state.Summary, "starting Mitosis…")).Grow(1).Basis(0).FontSize(12).TextColor(ink).SingleLine()
-					if link(c, "settings", keys(",")) {
-						a.settings()
-					}
-				})
-			})
-		}
-		if len(o.home.Machines) < 2 && o.state.Up && !small {
-			reading(c).MaxWidth(680).Margin(10, ui.Auto, 0).PaddingX(margin).Children(func() {
-				row := ui.Row(c).FillWidth().PaddingY(12).Children(func() {
-					ui.Text(c, "No paired devices").Grow(1).TextColor(pal.mute)
-					ui.Text(c, "Pair ›").FontWeight(medium)
-				})
-				if press(row) {
-					a.push(screen{kind: "mitosis"})
-				}
-			})
-		}
+		return
 	}
-}
 
-// openCards are the conversations open, as the phone's overview shows them: a card each, what it
-// does and where, the last thing it said; a click shows it, × closes it (its Orb runs on).
-func (a *app) openCards(c *ui.Context) {
-	o, pal := a.o, p(c)
-	// What needs a look first: what asks, works, has news; then what is awake. Six show, two
-	// rows, unless all are asked for.
-	tabs := slices.Clone(o.state.Tabs)
-	slices.SortStableFunc(tabs, func(x, y Tab) int {
+	// Top: compact Mitosis peer grid + quiet 1-line summary right under it.
+	a.homeScopeBar(c)
+	ui.Row(c).FillWidth().Margin(0, 0, 14).Gap(8).AlignItems(ui.Center).Children(func() {
+		ink := pal.meta
+		if strings.HasPrefix(o.state.Summary, "needs you") {
+			ink = rupture
+		}
+		dot(c, map[bool]ui.Color{true: pal.fg, false: pal.rule}[o.state.Up], 6, !o.state.Up, false)
+		ui.Text(c, cmp.Or(o.state.Summary, "starting Mitosis…")).Grow(1).Basis(0).FontSize(12).TextColor(ink).SingleLine()
+		if link(c, "settings", keys(",")) {
+			a.settings()
+		}
+	})
+
+	// Middle: contextual folder scope pills + launching/boot status.
+	a.homeFolders(c)
+	a.launching(c)
+	a.boot(c)
+
+	// Main body: ONE clean, unified threads list (open sessions first, then recent stored threads).
+	var openTabs []Tab
+	for _, t := range o.state.Tabs {
+		if a.deviceFilter != "" && t.Peer != a.deviceFilter {
+			continue
+		}
+		if a.folderFilter != "" && t.CWD != a.folderFilter {
+			continue
+		}
+		openTabs = append(openTabs, t)
+	}
+	slices.SortStableFunc(openTabs, func(x, y Tab) int {
 		rank := func(t Tab) int {
 			switch {
 			case t.Ask != nil:
@@ -164,78 +102,77 @@ func (a *app) openCards(c *ui.Context) {
 		}
 		return rank(x) - rank(y)
 	})
-	const few = 6
-	if !a.allOpen && len(tabs) > few {
-		tabs = tabs[:few]
+
+	var recent []Entry
+	for _, e := range o.home.Entries {
+		if e.Open {
+			continue
+		}
+		if a.deviceFilter != "" && e.Machine != a.deviceFilter {
+			continue
+		}
+		if a.folderFilter != "" && e.CWD != a.folderFilter {
+			continue
+		}
+		recent = append(recent, e)
+		if len(recent) >= 12 {
+			break
+		}
 	}
-	reading(c).MaxWidth(680).Margin(36, ui.Auto, 0).PaddingX(margin).Children(func() {
-		ui.Row(c).FillWidth().Margin(0, 0, 6).AlignItems(ui.Center).Children(func() {
-			hudLabel(c, 1, fmt.Sprintf("open · %d", len(o.state.Tabs)), "").Grow(1)
-			if len(o.state.Tabs) > few {
-				more := map[bool]string{true: "fewer", false: fmt.Sprintf("all %d", len(o.state.Tabs))}[a.allOpen]
-				if link(c, more, "") {
-					a.allOpen = !a.allOpen
+
+	if (len(openTabs) > 0 || len(recent) > 0) && o.state.Up {
+		ui.Column(c).FillWidth().Margin(10, 0, 0).Children(func() {
+			ui.Row(c).FillWidth().Margin(0, 0, 6).AlignItems(ui.Center).Children(func() {
+				hudLabel(c, 1, "threads", "").Grow(1)
+				if link(c, "all threads", keys("K")) {
+					a.openPalette()
 				}
-			}
-		})
-		ui.Grid(c).FillWidth().Columns(map[bool]int{true: 2, false: 3}[a.narrow]).Gap(8).Children(func() {
-			for _, t := range tabs {
-				border := pal.rule.Alpha(0.55)
-				if t.Ask != nil {
-					border = rupture
-				} else if t.Busy {
-					border = pal.mute
+			})
+			for _, t := range openTabs {
+				t := t
+				title := cmp.Or(t.Title, "new session")
+				meta := ""
+				if t.Remote {
+					meta = t.Where
 				}
-				card := ui.Column(c.Key(t.ID)).Height(78).Padding(9, 10).Gap(3).Radius(6).Background(pal.raised).Border(1, border).Clip()
-				hovered := card.Hovered()
-				hover(card, pal.hover)
-				card.Children(func() {
-					ui.Row(c).FillWidth().Gap(7).AlignItems(ui.Center).Children(func() {
-						// Asleep, it recedes as the phone's cards do, its words still legible.
-						where(c, o.hue(t.Peer), t.Busy, t.Ask != nil, map[bool]ui.Color{true: pal.rule, false: pal.mute}[t.Asleep])
-						ui.Text(c, cmp.Or(t.Title, "new session")).Grow(1).Basis(0).MinWidth(0).FontSize(small).FontWeight(map[bool]int{true: medium, false: strong}[t.Asleep]).TextColor(map[bool]ui.Color{true: pal.mute, false: pal.fg}[t.Asleep]).SingleLine().Tooltip(cmp.Or(t.Title, "new session"))
-						if hovered && press(ui.Row(c).Size(18, 18).Radius(4).Justify(ui.Center).Children(func() { ui.Text(c, "×").FontSize(14).TextColor(pal.meta) }).Tooltip("Close · it runs on")) {
-							a.close(t.ID)
-						}
-					})
-					state, ink := "", pal.meta
-					switch {
-					case t.Ask != nil:
-						state, ink = "asks", rupture
-					case t.Busy:
-						state, ink = "working", pal.fg
-					case strings.TrimSpace(t.Status) != "":
-						state = strings.Split(t.Status, " · ")[0]
-					case t.Unread > 0:
-						state, ink = fmt.Sprintf("%d new", t.Unread), pal.fg
-					case t.Asleep:
-						state = "asleep"
+				state := "live"
+				switch {
+				case t.Ask != nil:
+					state = "asks"
+				case t.Busy:
+					state = "working"
+				case t.Unread > 0:
+					state = fmt.Sprintf("%d new", t.Unread)
+				case t.Asleep:
+					state = "asleep"
+				}
+				row := sessionRow(c.Key("tab:"+t.ID), title, meta, state, t.Busy || !t.Asleep, t.Ask != nil, true, o.hue(t.Peer))
+				row.ContextMenu(func(m *ui.Menu) {
+					if m.Item("Rename…").Chosen() {
+						a.rename = &renaming{name: title, row: t.ID, apply: func(name string) { o.send("rename", "tab", t.ID, "name", name) }}
 					}
-					ui.Text(c, strings.Join(nonEmpty(map[bool]string{true: t.Where}[t.Remote], tidy(t.CWD), state), " · ")).FontSize(12).TextColor(ink).SingleLine()
-					if last := lastSaid(o.rows[t.ID]); last != "" {
-						ui.Text(c, last).FontSize(12).TextColor(pal.mute).MaxLines(1)
+					if m.Item("Close").Chosen() {
+						a.close(t.ID)
 					}
 				})
-				a.carry(card, carried{tab: t.ID})
-				if press(card) {
+				a.carry(row, carried{tab: t.ID})
+				if press(row) {
 					a.show(t.ID)
 				}
 			}
-		})
-	})
-}
-
-// lastSaid is the last line a conversation's rows say, for its card.
-func lastSaid(rows []Row) string {
-	for i := len(rows) - 1; i >= 0; i-- {
-		if t := strings.TrimSpace(rows[i].Text); t != "" {
-			if j := strings.LastIndexByte(t, '\n'); j >= 0 {
-				t = t[j+1:]
+			for _, e := range recent {
+				meta := ""
+				if m := o.machine(e.Machine); m != nil && !m.Self {
+					meta = m.Name
+				}
+				row := sessionRow(c.Key(e.Key), e.Title, meta, ago(e.Modified), e.Live, e.Asks, false, o.hue(e.Machine))
+				row.ContextMenu(func(m *ui.Menu) { a.threadMenu(m, e) })
+				if press(row) {
+					a.open(e.Key)
+				}
 			}
-			return t
-		}
+		})
 	}
-	return ""
 }
 
 // sessionRow is one line per session: its title, then where it lives and its condition in words
@@ -515,7 +452,7 @@ func (a *app) boot(c *ui.Context) {
 	if s := o.state.Summary; strings.HasPrefix(s, "orb app ended") {
 		lines = append(lines, line{"error", s})
 	}
-	reading(c).MaxWidth(680).Margin(18, ui.Auto, 0).PaddingX(margin).Gap(4).Children(func() {
+	ui.Column(c).FillWidth().Margin(10, 0, 0).Gap(4).Children(func() {
 		for _, l := range lines {
 			ink := pal.mute
 			if l.step == "error" {
@@ -529,9 +466,8 @@ func (a *app) boot(c *ui.Context) {
 	})
 }
 
-// homeScopeBar shows the MAGI peer strip (when paired devices exist) and inline recent folder
-// pills for the aimed peer. Clicking a peer or folder immediately aims Home's prompt box and
-// narrows the latest threads list below.
+// homeScopeBar shows the compact Mitosis peer grid (+ pair device card). Clicking a peer aims
+// Home's prompt box and narrows the threads list below.
 func (a *app) homeScopeBar(c *ui.Context) {
 	o, pal := a.o, p(c)
 	machines := slices.Clone(o.home.Machines)
@@ -544,21 +480,23 @@ func (a *app) homeScopeBar(c *ui.Context) {
 		}
 		return strings.Compare(x.Name, y.Name)
 	})
-	if len(machines) > 1 {
-		var visible []Machine
-		hiddenCount := 0
-		for _, m := range machines {
-			if a.hiddenPeers[m.ID] {
-				hiddenCount++
-				if !a.showHiddenPeers {
-					continue
-				}
+	if len(machines) == 0 {
+		return
+	}
+	var visible []Machine
+	hiddenCount := 0
+	for _, m := range machines {
+		if a.hiddenPeers[m.ID] {
+			hiddenCount++
+			if !a.showHiddenPeers {
+				continue
 			}
-			visible = append(visible, m)
 		}
-		reading(c).MaxWidth(680).Margin(0, ui.Auto, 10).PaddingX(margin).Gap(6).Children(func() {
-			if len(visible) > 0 {
-				ui.Grid(c).FillWidth().Columns(map[bool]int{true: 2, false: 3}[a.narrow]).Gap(8).Children(func() {
+		visible = append(visible, m)
+	}
+	ui.Column(c).FillWidth().Margin(0, 0, 10).Gap(6).Children(func() {
+		if len(visible) > 0 {
+			ui.Grid(c).FillWidth().Columns(map[bool]int{true: 2, false: 3}[a.narrow]).Gap(8).Children(func() {
 					for _, m := range visible {
 						m := m
 						up := m.Connected
@@ -723,9 +661,11 @@ func (a *app) homeScopeBar(c *ui.Context) {
 				})
 			}
 		})
-	}
+}
 
-	// Inline recent folder pills for the selected or aimed peer.
+// homeFolders shows inline recent folder scope pills for the selected or aimed peer.
+func (a *app) homeFolders(c *ui.Context) {
+	o, pal := a.o, p(c)
 	scopePeer := cmp.Or(a.deviceFilter, a.target[0], o.state.Self)
 	m := o.machine(scopePeer)
 	if m == nil || (len(m.Folders) == 0 && !m.Launch) {
@@ -738,7 +678,7 @@ func (a *app) homeScopeBar(c *ui.Context) {
 	if len(folders) == 0 && a.deviceFilter == "" {
 		return
 	}
-	reading(c).MaxWidth(680).Margin(0, ui.Auto, 10).PaddingX(margin).Children(func() {
+	ui.Column(c).FillWidth().Margin(0, 0, 10).Children(func() {
 		ui.ScrollHorizontal(c).FillWidth().Children(func() {
 			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 				if len(folders) > 0 {

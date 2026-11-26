@@ -705,6 +705,33 @@ export function createMockPeer({ emit, rowCount = 2000 }) {
         reply({ path: `/tmp/orb-attach/${m.name || "file"}` });
         return;
       }
+      if (m.do === "spread.info") {
+        reply({
+          machine: macId,
+          machine_name: "MacBook Pro",
+          ssh_hosts: ["ordalie-lab-3", "hetzner-01"],
+          clients: [
+            { id: "claude", name: "Claude Code" },
+            { id: "codex", name: "Codex" },
+            { id: "pi", name: "Pi" },
+          ],
+        });
+        return;
+      }
+      if (m.do === "spread.ssh") {
+        reply({
+          ok: true,
+          target: m.target || "",
+          output: "joined · Mitosis running",
+        });
+        return;
+      }
+      if (m.do === "invite") {
+        reply({
+          code: "orb-mitosis:v1:DEMO-INVITE-CODE-0001",
+        });
+        return;
+      }
       reply({});
     },
     async plugins() {

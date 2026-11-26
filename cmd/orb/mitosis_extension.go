@@ -260,7 +260,7 @@ func mitosisSettingsWindow(ctx context.Context, c extensions.CommandContext, arg
 				setMitosisStatus(ui, true)
 				return nil
 			}
-			if action == "Invite device" || action == "Join device" || action == "SSH" {
+			if action == "Invite device" || action == "Join device" || action == "SSH" || action == "Spread via SSH" {
 				if !running || args.MitosisProfile == "" && !settings.GetPlugins()["mitosis"] {
 					var err error
 					if running && (args.MitosisProfile != "" || settings.GetPlugins()["mitosis"]) {
@@ -344,6 +344,7 @@ func mitosisSettingsRows(page string, running, enabled bool, status mitosisSetti
 	}
 	if page == "add" {
 		return []tui.GridRow{
+			row("Spread via SSH", "Spread via SSH", "1-click", "Pick a host from ~/.ssh/config or enter a custom ssh command to install and join Orb."),
 			row("SSH", "Connect a server", "SSH", "Enter user@host. Orb handles installation and pairing."),
 			row("Join device", "Paste an invitation", "", "Connect using an invitation from another Orb."),
 			row("Invite device", "Create an invitation", "", "Invite another device. Both Orbs share all current and future conversations."),
@@ -554,6 +555,56 @@ func mitosisSettingsAction(ctx context.Context, ui extensions.UI, profile, actio
 		}
 		ui.Notify("Device connected. Choose a shared conversation.", extensions.NotifyInfo)
 		return openSharedMitosisConversation(ctx, ui, profile, inv.PeerID, "")
+	case "Spread via SSH":
+		const customOption = "Custom ssh command…"
+		hosts := daemon.DiscoverSSHHosts("")
+		choices := make([]string, 0, len(hosts)+1)
+		targets := map[string]string{}
+		for _, h := range hosts {
+			label := h.Alias
+			if h.HostName != "" && h.HostName != h.Alias {
+				if h.User != "" {
+					label += " (" + h.User + "@" + h.HostName + ")"
+				} else {
+					label += " (" + h.HostName + ")"
+				}
+			}
+			choices = append(choices, label)
+			targets[label] = h.Alias
+		}
+		choices = append(choices, customOption)
+		choice, ok, e := ui.Select(ctx, "Spread Orb via SSH", choices, nil)
+		if e != nil || !ok {
+			return e
+		}
+		rawTarget := targets[choice]
+		if choice == customOption {
+			rawTarget, e = input("SSH target · alias, user@host, or ssh -p 2222 user@host")
+			if e != nil {
+				return e
+			}
+		}
+		_, target, e := daemon.ParseSSHTarget(rawTarget)
+		if e != nil {
+			return e
+		}
+		ok, e = ui.Confirm(ctx, "Spread Orb to "+target+"?", "Installs Orb if needed and joins this Mitosis sync group automatically.", nil)
+		if e != nil || !ok {
+			return e
+		}
+		ui.Notify("Spreading Orb to "+target+"…", extensions.NotifyInfo)
+		peer, addedErr, e := spreadMitosisOverSSH(ctx, client, profile, status.PeerID, rawTarget)
+		if e != nil {
+			return e
+		}
+		if addedErr != nil && mitosis.Code(addedErr) != "unauthorized" {
+			return addedErr
+		}
+		ui.Notify("Orb spread to "+target+".", extensions.NotifyInfo)
+		if peer != "" {
+			return openSharedMitosisConversation(ctx, ui, profile, peer, target)
+		}
+		return nil
 	case "SSH":
 		target, e := input("Connect using SSH · user@host or SSH alias")
 		if e != nil {

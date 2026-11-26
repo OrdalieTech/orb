@@ -30,6 +30,7 @@
       { group: "navigate", label: "Settings · Providers", detail: "accounts, quotas, sign-in", run: () => orb.openSettings("providers", orb.defaultPeer()) },
       { group: "navigate", label: "Settings · Plugins", detail: "toggle capabilities", run: () => orb.openSettings("plugins", orb.defaultPeer()) },
       { group: "navigate", label: "Settings · Mitosis", detail: "devices, sync group, updates", run: () => orb.openSettings("mitosis", orb.defaultPeer()) },
+      { group: "navigate", label: "Pair / Spread Mitosis", detail: "SSH spread, invite link, code, or join", run: () => (orb.spreadModalOpen = true) },
       { group: "navigate", label: "Keyboard shortcuts", detail: "full reference", kbd: "?", run: () => (orb.shortcutsOpen = true) },
       { group: "navigate", label: `Theme: ${orb.theme}`, detail: "cycle auto → light → dark", run: () => orb.applyTheme({ auto: "light", light: "dark", dark: "auto" }[orb.theme] || "auto") },
       ...(orb.state.tabs || []).map(c => ({

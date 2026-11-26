@@ -89,6 +89,7 @@ func runMitosisCommand(ctx context.Context, args []string, streams cliStreams) i
 		_, _ = fmt.Fprintln(streams.Stdout, `orb mitosis [--yes]   (show a code; the machine that joins with it, once you confirm its fingerprint, gets this Orb's conversations, logins and memory; --yes takes the first that claims it, for agents)
 orb mitosis --browser [--yes]   (the same for a browser tab, at the link it opens; this Mitosis listens for the page from now on)
 orb mitosis join <code>   (join the Orb that showed the code)
+orb mitosis spread <ssh-target...>   (install Orb and join a server over SSH; accepts alias, user@host, or ssh flags)
 orb mitosis ssh <user@host> [--remote-profile personal] [--remote-orb orb]   (the same for a server, over SSH; installs Orb there)
 orb mitosis status|stop|start|block <peer>|service install|remove   [--profile personal]
 
@@ -153,6 +154,9 @@ orb mitosis instances|peers|grants|scopes|prune|pipe`)
 		enableMitosisPlugin(ctx, profile)
 		_, _ = fmt.Fprintf(streams.Stdout, "Mitosis runs (profile %s).\n", profile)
 		return 0
+	}
+	if args[0] == "spread" {
+		return runMitosisSpread(ctx, profile, args[1:], streams)
 	}
 	if args[0] == "ssh" {
 		if len(args) < 2 {

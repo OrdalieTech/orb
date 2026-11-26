@@ -157,6 +157,8 @@ type intent struct {
 	Level    string   `json:"level"`
 	Path     string   `json:"path"`
 	Data     []byte   `json:"data"`
+	Target   string   `json:"target"`
+	Code     string   `json:"code"`
 }
 
 // Do runs one intent. Those that wait on a machine run on their own; the rest apply at once and

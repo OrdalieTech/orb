@@ -302,9 +302,14 @@ func (d *Document) Update(ctx context.Context, change func([]byte) ([]byte, erro
 		return err
 	}
 	if next == nil {
+		if missing {
+			return nil
+		}
 		_, err = tx.ExecContext(ctx, "DELETE FROM documents WHERE namespace=? AND key=?", d.namespace, d.key)
 	} else if missing || !bytes.Equal(data, next) {
 		_, err = tx.ExecContext(ctx, "INSERT INTO documents VALUES(?,?,?) ON CONFLICT(namespace,key) DO UPDATE SET content=excluded.content", d.namespace, d.key, next)
+	} else {
+		return nil
 	}
 	if err != nil {
 		return err

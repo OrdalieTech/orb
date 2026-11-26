@@ -274,3 +274,30 @@ type Completion struct {
 	Label  string `json:"label"`
 	Detail string `json:"detail"`
 }
+
+// SpreadInfo is what `spread.info` returns: discovered SSH config hosts and local LLM clients.
+type SpreadInfo struct {
+	Machine     string           `json:"machine"`
+	MachineName string           `json:"machine_name"`
+	SSHHosts    []SSHHost        `json:"ssh_hosts"`
+	Clients     []DetectedClient `json:"clients"`
+}
+
+type SSHHost struct {
+	Alias    string `json:"alias"`
+	Hostname string `json:"hostname"`
+	User     string `json:"user"`
+	Port     string `json:"port"`
+}
+
+type DetectedClient struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Found bool   `json:"found"`
+}
+
+type SpreadSSHResult struct {
+	OK     bool   `json:"ok"`
+	Target string `json:"target"`
+	Output string `json:"output"`
+}

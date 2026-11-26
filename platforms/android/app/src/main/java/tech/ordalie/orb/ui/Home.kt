@@ -101,7 +101,6 @@ fun ColumnScope.Home(c: Ctx) {
         }
         item { Spacer(Modifier.height(12.dp)) }
     }
-    TitleCard()
     val target = c.nav.target
     val targetPeer = target?.first?.let(v::machine)
     val targetFolder = target?.second.orEmpty().substringAfterLast('/').ifEmpty { target?.second.orEmpty() }
@@ -123,15 +122,6 @@ private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) =
     ) {
         T(label, size = 12.sp, weight = if (selected) Strong else Medium, color = if (selected) p.fg else p.mute, lines = 1)
     }
-
-/** An Evangelion title card over the prompt box, as on the desktop: a rule, the title stretched tall. */
-@Composable
-private fun TitleCard() = Column(Modifier.fillMaxWidth().padding(start = Margin + 4.dp, end = Margin, top = 6.dp, bottom = 10.dp)) {
-    Rule()
-    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.Bottom) {
-        Stretch("NEW SESSION", 36.dp, p.fg)
-    }
-}
 
 /**
  * Every machine of the Mitosis put to the vote, as NERV's MAGI put each decision to their three

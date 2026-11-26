@@ -167,6 +167,7 @@ function createOrbStore() {
   let modelDeckTab = $state(null); // null = use active conversation or Home aim
   let paletteOpen = $state(false);
   let shortcutsOpen = $state(false);
+  let spreadModalOpen = $state(false);
   let explorerPeer = $state("");
   let terminalTab = $state("");
   let viewerImage = $state(null); // { src, tabId, ref }
@@ -1193,18 +1194,8 @@ function createOrbStore() {
     approval();
   }
 
-  async function pairDevicePrompt() {
-    const text = await pick("pair a device", [], {
-      field: true,
-      hint: "paste code from orb mitosis --browser",
-      action: { label: "settings · mitosis ›", run: () => openSettings("mitosis", defaultPeer()) },
-    });
-    if (!text || !text.trim()) return;
-    try {
-      await joinInvitation(text, true);
-    } catch (err) {
-      showError(err?.message || String(err));
-    }
+  function pairDevicePrompt() {
+    spreadModalOpen = true;
   }
 
   async function forgetTab() {
@@ -1320,6 +1311,8 @@ function createOrbStore() {
     set paletteOpen(v) { paletteOpen = v; },
     get shortcutsOpen() { return shortcutsOpen; },
     set shortcutsOpen(v) { shortcutsOpen = v; },
+    get spreadModalOpen() { return spreadModalOpen; },
+    set spreadModalOpen(v) { spreadModalOpen = v; },
     get explorerPeer() { return explorerPeer; },
     set explorerPeer(v) { explorerPeer = v; },
     get terminalTab() { return terminalTab; },

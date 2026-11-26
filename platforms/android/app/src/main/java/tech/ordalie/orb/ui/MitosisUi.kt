@@ -4,12 +4,18 @@ import android.content.*
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.*
@@ -89,25 +95,185 @@ private fun PeerRow(peer: Machine, c: Ctx) = Column(Modifier.animateContentSize(
     Rule()
 }
 
+private data class SpreadHost(val alias: String, val hostname: String, val user: String, val port: Int)
+private data class SpreadClient(val id: String, val name: String, val found: Boolean)
+
 @Composable
 fun ColumnScope.InviteScreen(c: Ctx) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val inv = c.v.state.invitation
     var now by remember { mutableLongStateOf(System.currentTimeMillis() / 1000) }
-    LaunchedEffect(Unit) { if (inv == null) c.v.send("invite"); while (true) { delay(1000); now = System.currentTimeMillis() / 1000 } }
+    var spreadMachine by remember { mutableStateOf("") }
+    var spreadMachineName by remember { mutableStateOf("") }
+    var sshHosts by remember { mutableStateOf<List<SpreadHost>>(emptyList()) }
+    var clients by remember { mutableStateOf<List<SpreadClient>>(emptyList()) }
+    var sshTarget by remember { mutableStateOf("") }
+    var spreading by remember { mutableStateOf(false) }
+    var spreadStatus by remember { mutableStateOf("") }
+    var spreadError by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        if (inv == null) c.v.send("invite")
+        launch {
+            val obj = c.v.ask("spread.info").obj ?: return@launch
+            spreadMachine = obj.optString("machine")
+            spreadMachineName = obj.optString("machine_name")
+            val hostsArr = obj.optJSONArray("ssh_hosts")
+            if (hostsArr != null) {
+                sshHosts = buildList {
+                    for (i in 0 until hostsArr.length()) {
+                        val h = hostsArr.optJSONObject(i) ?: continue
+                        val alias = h.optString("alias")
+                        if (alias.isNotEmpty()) {
+                            add(SpreadHost(alias, h.optString("hostname"), h.optString("user"), h.optInt("port", 22)))
+                        }
+                    }
+                }
+            }
+            val clientsArr = obj.optJSONArray("clients")
+            if (clientsArr != null) {
+                clients = buildList {
+                    for (i in 0 until clientsArr.length()) {
+                        val cl = clientsArr.optJSONObject(i) ?: continue
+                        val name = cl.optString("name")
+                        if (name.isNotEmpty() && cl.optBoolean("found")) {
+                            add(SpreadClient(cl.optString("id"), name, true))
+                        }
+                    }
+                }
+            }
+        }
+        while (true) { delay(1000); now = System.currentTimeMillis() / 1000 }
+    }
+
     val left = ((inv?.expires ?: now) - now).coerceAtLeast(0)
     val code = inv?.code.orEmpty()
+    val joinCmd = "orb mitosis join $code"
+    val installAndJoinCmd = "command -v orb >/dev/null || curl -fsSL https://raw.githubusercontent.com/OrdalieTech/orb/main/scripts/install.sh | sh; orb mitosis join $code"
+    val browserLink = "https://netapy.com/orb/#$code"
+
+    fun runSpread() {
+        val target = sshTarget.trim()
+        if (target.isEmpty() || code.isEmpty() || spreading) return
+        spreading = true
+        spreadError = ""
+        spreadStatus = "spreading to $target…"
+        scope.launch {
+            val reply = c.v.ask("spread.ssh", "machine" to spreadMachine, "target" to target, "code" to code)
+            spreading = false
+            if (reply.error != null) {
+                spreadStatus = ""
+                spreadError = reply.error
+            } else {
+                spreadError = ""
+                val msg = reply.obj?.optString("message").orEmpty().ifEmpty { reply.result?.toString().orEmpty() }
+                spreadStatus = msg.ifEmpty { "spread sent to $target" }
+            }
+        }
+    }
+
     Header("Invite a computer", back = c.nav::back)
-    Column(Modifier.weight(1f).padding(horizontal = Margin), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row { T("on the computer, run", Modifier.weight(1f), label = true); T(if (inv == null) "creating" else "%d:%02d · single use".format(left / 60, left % 60), size = Size.Label, color = p.meta) }
+    Column(
+        Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Margin),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            T("on the computer, run", Modifier.weight(1f), label = true)
+            T(if (inv == null) "creating" else "%d:%02d · single use".format(left / 60, left % 60), size = Size.Label, color = if (left > 0 || inv == null) p.meta else Ink.Rupture)
+        }
         Box(Modifier.fillMaxWidth().border(1.dp, p.fg, Pane).padding(14.dp)) {
             T("orb mitosis join " + code.ifEmpty { "…" }, size = 12.sp, color = if (left > 0) p.fg else p.meta)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Btn("share", inverted = true) { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "orb mitosis join $code"), "Orb invitation")) }
-            Btn("copy") { context.copy("orb mitosis join $code") }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Btn("install + join", inverted = true) { if (code.isNotEmpty()) context.copy(installAndJoinCmd, "install + join copied") }
+            Btn("browser link") { if (code.isNotEmpty()) context.copy(browserLink, "browser link copied") }
+            Btn("join") { if (code.isNotEmpty()) context.copy(joinCmd, "join command copied") }
+            Btn("share") { if (code.isNotEmpty()) context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, joinCmd), "Orb invitation")) }
+            Btn("new code") { c.v.send("invite") }
         }
-        Spacer(Modifier.weight(1f))
+
+        Rule()
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            T("spread via ssh", Modifier.weight(1f), label = true)
+            if (spreadMachineName.isNotEmpty()) T("via $spreadMachineName", size = Size.Label, color = p.meta)
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.weight(1f).border(1.dp, p.rule, Pane).padding(horizontal = 12.dp, vertical = 10.dp)) {
+                BasicTextField(
+                    value = sshTarget,
+                    onValueChange = { sshTarget = it; spreadError = "" },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    textStyle = type(13.sp, p.fg),
+                    cursorBrush = SolidColor(p.fg),
+                )
+                if (sshTarget.isEmpty()) T("ssh user@host or host alias", size = 13.sp, color = p.meta, lines = 1)
+            }
+            Btn(if (spreading) "…" else "spread", inverted = true) { runSpread() }
+        }
+        if (sshHosts.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                sshHosts.forEach { host ->
+                    val selected = sshTarget.trim() == host.alias
+                    Box(
+                        Modifier.clip(Pane)
+                            .background(if (selected) p.raised else Color.Transparent)
+                            .border(1.dp, if (selected) p.mute else p.rule, Pane)
+                            .press { sshTarget = host.alias; spreadError = "" }
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                    ) {
+                        T(host.alias, size = 12.sp, weight = if (selected) Strong else Medium, color = if (selected) p.fg else p.mute, lines = 1)
+                    }
+                }
+            }
+        }
+        if (spreadStatus.isNotEmpty()) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (spreading) Dot(p.mute, pulse = true)
+                T(spreadStatus, size = 12.sp, color = p.mute)
+            }
+        }
+        if (spreadError.isNotEmpty()) {
+            T(spreadError, size = 12.sp, color = Ink.Rupture)
+        }
+
+        if (clients.isNotEmpty()) {
+            Rule()
+            T("hand to an agent", label = true)
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                clients.forEach { client ->
+                    Box(
+                        Modifier.clip(Pane)
+                            .border(1.dp, p.rule, Pane)
+                            .press {
+                                if (code.isNotEmpty()) {
+                                    val prompt = "Install Orb if needed (curl -fsSL https://raw.githubusercontent.com/OrdalieTech/orb/main/scripts/install.sh | sh) and join my Mitosis mesh by running: orb mitosis join $code"
+                                    context.copy(prompt, "prompt for ${client.name} copied")
+                                }
+                            }
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                    ) {
+                        T("hand to ${client.name}", size = 12.sp, weight = Medium, color = p.mute, lines = 1)
+                    }
+                }
+            }
+        }
+
         Rule()
         Row(verticalAlignment = Alignment.CenterVertically) { Dot(p.mute, pulse = true); Spacer(Modifier.width(10.dp)); T("waiting for the computer", color = p.mute) }
         T("You approve it here by fingerprint once it runs the command. The code works once, for ten minutes.", Modifier.padding(bottom = 16.dp), size = Size.Label, color = p.meta)

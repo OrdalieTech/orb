@@ -13,6 +13,7 @@
   import ModelDeck from "./components/ModelDeck.svelte";
   import FolderExplorer from "./components/FolderExplorer.svelte";
   import CommandPalette from "./components/CommandPalette.svelte";
+  import SpreadModal from "./components/SpreadModal.svelte";
 
   onMount(() => {
     orb.init();
@@ -70,6 +71,7 @@
     if (orb.viewerImage) { orb.viewerImage = null; return true; }
     if (orb.pickerState) { orb.pickerState.resolve(null); return true; }
     if (orb.shortcutsOpen) { orb.shortcutsOpen = false; return true; }
+    if (orb.spreadModalOpen) { orb.spreadModalOpen = false; return true; }
     if (orb.paletteOpen) { orb.paletteOpen = false; return true; }
     if (orb.modelDeckOpen) { orb.modelDeckOpen = false; return true; }
     if (orb.explorerPeer) { orb.explorerPeer = ""; return true; }
@@ -146,6 +148,7 @@
         if (orb.screen === "settings") orb.screen = "app";
         orb.modelDeckOpen = false;
         orb.shortcutsOpen = false;
+        orb.spreadModalOpen = false;
         orb.explorerPeer = "";
         orb.paletteOpen = !orb.paletteOpen;
         if (!orb.paletteOpen) orb.bumpFocus();
@@ -156,6 +159,7 @@
         if (orb.screen === "settings") orb.screen = "app";
         orb.paletteOpen = false;
         orb.shortcutsOpen = false;
+        orb.spreadModalOpen = false;
         orb.explorerPeer = "";
         if (orb.modelDeckOpen) {
           orb.modelDeckOpen = false;
@@ -179,7 +183,7 @@
     }
 
     // Let active modal / interrupt handle its own navigation keys (↑/↓/Enter/etc.)
-    if (askingTab || orb.pickerState || orb.viewerImage || orb.explorerPeer || orb.modelDeckOpen || orb.paletteOpen || orb.shortcutsOpen) {
+    if (askingTab || orb.pickerState || orb.viewerImage || orb.explorerPeer || orb.modelDeckOpen || orb.paletteOpen || orb.shortcutsOpen || orb.spreadModalOpen) {
       return;
     }
 
@@ -438,6 +442,7 @@
 <ModelDeck />
 <FolderExplorer />
 <CommandPalette />
+<SpreadModal />
 
 {#if orb.toastState}
   <div class="toast" role="status">

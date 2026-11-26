@@ -1279,3 +1279,113 @@ func TestSyncGroupGrantsControllerAccessAndRevokesLive(t *testing.T) {
 		t.Fatal("blocked peer retained access")
 	}
 }
+
+type countingClass struct {
+	Class
+	merges int
+}
+
+func (c *countingClass) MergeShared(ctx context.Context, incoming []map[string]json.RawMessage, keepOwn bool, removed []string) ([]string, error) {
+	c.merges++
+	return c.Class.MergeShared(ctx, incoming, keepOwn, removed)
+}
+
+func TestSyncIdempotentConvergenceAndEmptyVaultDedup(t *testing.T) {
+	ctx := t.Context()
+	owner1, owner2, member := newMitosis(t), newMitosis(t), newMitosis(t)
+	connect := func(a, b *Mitosis) {
+		_ = a.SavePeer(b.PeerID(), "tc1")
+		_ = b.SavePeer(a.PeerID(), "tc1")
+		near, far := net.Pipe()
+		served := make(chan error, 1)
+		go func() { _, _, err := b.Connect(ctx, far, "", true); served <- err }()
+		if _, _, err := a.Connect(ctx, near, b.PeerID(), false); err != nil || <-served != nil {
+			t.Fatal("connect", err)
+		}
+	}
+	connect(owner1, owner2)
+	connect(owner1, member)
+	connect(owner2, member)
+
+	c1 := &countingClass{Class: kvClass{&sync.Mutex{}, map[string]string{"k": "v"}}}
+	c2 := &countingClass{Class: kvClass{&sync.Mutex{}, map[string]string{}}}
+	cm := &countingClass{Class: kvClass{&sync.Mutex{}, map[string]string{}}}
+	e1 := &countingClass{Class: kvClass{&sync.Mutex{}, map[string]string{}}}
+	e2 := &countingClass{Class: kvClass{&sync.Mutex{}, map[string]string{}}}
+	em := &countingClass{Class: kvClass{&sync.Mutex{}, map[string]string{}}}
+	owner1.SetClass("data", c1)
+	owner2.SetClass("data", c2)
+	member.SetClass("data", cm)
+	owner1.SetClass("empty", e1)
+	owner2.SetClass("empty", e2)
+	member.SetClass("empty", em)
+
+	if _, err := owner1.Admin(ctx, "sync", JSON(map[string]string{"add": owner2.PeerID()})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner1.Admin(ctx, "sync", JSON(map[string]string{"promote": owner2.PeerID()})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner1.Admin(ctx, "sync", JSON(map[string]string{"add": member.PeerID()})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner2.Admin(ctx, "sync", JSON(map[string]string{"join": owner1.PeerID()})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := member.Admin(ctx, "sync", JSON(map[string]string{"join": owner1.PeerID()})); err != nil {
+		t.Fatal(err)
+	}
+
+	syncAll := func() {
+		nodes := []*Mitosis{owner1, owner2, member}
+		for range 3 {
+			for _, n := range nodes {
+				if _, err := n.Sync(ctx, nil); err != nil {
+					t.Fatal(err)
+				}
+				for _, peer := range nodes {
+					if peer == n {
+						continue
+					}
+					recs, err := n.Contacts(peer.PeerID(), owner1.state.Group)
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, r := range recs {
+						_, _ = peer.MergeContact(n.PeerID(), r)
+					}
+				}
+			}
+		}
+	}
+	syncAll()
+
+	// Snapshot state after convergence.
+	merges1, merges2 := c1.merges, c2.merges
+	emptyMerges1, emptyMerges2 := e1.merges, e2.merges
+	vers1 := string(JSON(owner1.state.Versions))
+	vers2 := string(JSON(owner2.state.Versions))
+
+	// Co-owner2 should suppress its redundant empty vault once owner1 already published it.
+	group := owner1.state.Group
+	p1 := owner1.pointers(group, owner1.PeerID())
+	p2 := owner2.pointers(group, owner2.PeerID())
+	if _, bothHaveEmpty := p1["empty"]; bothHaveEmpty {
+		if _, dup := p2["empty"]; dup {
+			t.Fatalf("both co-owners published redundant empty vaults: p1=%v p2=%v", p1, p2)
+		}
+	}
+
+	// Additional idle rounds must not call MergeShared on owners or bump versions.
+	syncAll()
+	if c1.merges != merges1 || c2.merges != merges2 || e1.merges != emptyMerges1 || e2.merges != emptyMerges2 {
+		t.Fatalf("idle sync called MergeShared on owners: c1=%d->%d c2=%d->%d e1=%d->%d e2=%d->%d",
+			merges1, c1.merges, merges2, c2.merges, emptyMerges1, e1.merges, emptyMerges2, e2.merges)
+	}
+	if got := string(JSON(owner1.state.Versions)); got != vers1 {
+		t.Fatalf("owner1 versions changed on idle sync: %s -> %s", vers1, got)
+	}
+	if got := string(JSON(owner2.state.Versions)); got != vers2 {
+		t.Fatalf("owner2 versions changed on idle sync: %s -> %s", vers2, got)
+	}
+}

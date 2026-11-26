@@ -392,9 +392,104 @@ func (a *App) slow(in intent) func() (any, error) {
 			}
 			return nil, errors.New(r.Error)
 		})
+	case "spread.info":
+		return call(func() (any, error) {
+			var r struct {
+				SSHHosts json.RawMessage `json:"ssh_hosts"`
+				Clients  json.RawMessage `json:"clients"`
+			}
+			peer, err := a.spreadCall(ctx, in.Machine, "host.spread.info", "discover SSH hosts", struct{}{}, &r)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{
+				"machine":      peer,
+				"machine_name": a.machineName(peer),
+				"ssh_hosts":    r.SSHHosts,
+				"clients":      r.Clients,
+			}, nil
+		})
+	case "spread.ssh":
+		return func() (any, error) {
+			cancel()
+			sshCtx, sshCancel := context.WithTimeout(a.ctx, 100*time.Second)
+			defer sshCancel()
+			code := strings.TrimSpace(in.Code)
+			if code == "" {
+				a.mu.Lock()
+				inv := a.invitation
+				a.mu.Unlock()
+				if inv == nil || inv.Expires <= time.Now().Unix() {
+					var minted mitosis.Invitation
+					if err := a.o.Call(sshCtx, "invite", map[string]any{"grants": []mitosis.Grant{mitosis.FullGrant("")}}, &minted); err != nil {
+						return nil, err
+					}
+					inv = &Invitation{id: minted.ID, Code: mitosis.InvitationCode(minted), Expires: minted.Expires}
+					a.mu.Lock()
+					a.invitation = inv
+					a.flush()
+					a.mu.Unlock()
+				}
+				code = inv.Code
+			}
+			var r json.RawMessage
+			if _, err := a.spreadCall(sshCtx, in.Machine, "host.spread.ssh", "spread over SSH", map[string]string{
+				"target": in.Target,
+				"code":   code,
+			}, &r); err != nil {
+				return nil, err
+			}
+			a.wakeMachines()
+			return r, nil
+		}
 	}
 	cancel()
 	return nil
+}
+
+func (a *App) machineName(id string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if m := a.machine(id); m != nil {
+		return a.name(m)
+	}
+	if id == a.self {
+		return a.o.Name
+	}
+	return id
+}
+
+func (a *App) spreadFallbackPeer() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, m := range a.machines {
+		if m.id != a.self && m.state == "connected" && m.launch {
+			return m.id
+		}
+	}
+	return ""
+}
+
+func (a *App) spreadCall(ctx context.Context, explicit, method, what string, params, result any) (string, error) {
+	if explicit != "" {
+		return explicit, a.refused(explicit, what, a.remote(ctx, explicit, method, params, result))
+	}
+	a.mu.Lock()
+	self := a.self
+	a.mu.Unlock()
+	if self != "" {
+		err := a.remote(ctx, self, method, params, result)
+		if err == nil {
+			return self, nil
+		}
+		if mitosis.Code(err) != "method_not_found" {
+			return self, a.refused(self, what, err)
+		}
+	}
+	if fallback := a.spreadFallbackPeer(); fallback != "" {
+		return fallback, a.refused(fallback, what, a.remote(ctx, fallback, method, params, result))
+	}
+	return self, a.refused(self, what, mitosis.Fail("method_not_found"))
 }
 
 // refused says why a machine did not do [what]: it does not let this app, or its Orb predates the

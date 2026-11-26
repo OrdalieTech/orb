@@ -54,7 +54,7 @@ func (d document) Update(ctx context.Context, update func([]byte) ([]byte, error
 	next, err := update(current)
 	switch {
 	case err != nil:
-	case next != nil && bytes.Equal(next, current):
+	case (next == nil) == (current == nil) && bytes.Equal(next, current):
 		d.store.mu.Unlock()
 		return nil
 	case next == nil:

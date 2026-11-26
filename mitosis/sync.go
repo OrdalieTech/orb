@@ -624,9 +624,13 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 				removed = append(removed, entry)
 			}
 		}
-		changed, err := class.MergeShared(ctx, []map[string]json.RawMessage{incoming}, false, removed)
-		if err != nil {
-			return nil, err
+		var changed []string
+		if len(incoming) > 0 || len(removed) > 0 {
+			var err error
+			changed, err = class.MergeShared(ctx, []map[string]json.RawMessage{incoming}, false, removed)
+			if err != nil {
+				return nil, err
+			}
 		}
 		var folded []map[string]json.RawMessage
 		var held map[string]json.RawMessage // this owner's values, read once a hand-in carries an edit
@@ -769,8 +773,15 @@ func (b *Mitosis) sync(ctx context.Context, endpoints []Locator) (json.RawMessag
 				}
 			}
 			same := func(in vaultBody, to []string) bool {
-				return string(JSON([]any{in.Entries, in.Versions})) == string(JSON([]any{entries, body.Versions})) &&
-					!slices.ContainsFunc(recipients, func(p string) bool { return !slices.Contains(to, p) })
+				if !maps.Equal(in.Versions, body.Versions) || len(in.Entries) != len(entries) {
+					return false
+				}
+				for k, v := range entries {
+					if iv, ok := in.Entries[k]; !ok || digests(iv) != digests(v) {
+						return false
+					}
+				}
+				return !slices.ContainsFunc(recipients, func(p string) bool { return !slices.Contains(to, p) })
 			}
 			said := false
 			for i, in := range opens[name] {

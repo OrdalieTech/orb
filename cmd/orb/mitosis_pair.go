@@ -20,6 +20,7 @@ import (
 	"github.com/OrdalieTech/orb/internal/qr"
 	"github.com/OrdalieTech/orb/mitosis"
 	"github.com/OrdalieTech/orb/mitosis/protocol"
+	"github.com/OrdalieTech/orb/platforms/native/mitosis/daemon"
 	transport "github.com/OrdalieTech/orb/platforms/native/tailcat"
 )
 
@@ -283,5 +284,117 @@ func pollMitosisPairing(ctx context.Context, expires int64, poll func(context.Co
 			return mitosis.Invitation{}, errors.New("invitation expired; run orb mitosis again")
 		case <-time.After(time.Second):
 		}
+	}
+}
+
+// runMitosisSpread is `orb mitosis spread <ssh-target...>`: mints an invitation,
+// bootstraps Orb and runs `orb mitosis join` on the target over SSH, and auto-approves
+// the claim as soon as it arrives.
+func runMitosisSpread(ctx context.Context, profile string, args []string, streams cliStreams) int {
+	rawTarget := strings.TrimSpace(strings.Join(args, " "))
+	_, target, err := daemon.ParseSSHTarget(rawTarget)
+	if err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	client, err := startedMitosisAdmin(ctx, profile)
+	if err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	defer func() { _ = client.Close() }()
+	var status mitosisSettingsStatus
+	if err = client.Call(ctx, "status", struct{}{}, &status); err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	_, _ = fmt.Fprintf(streams.Stdout, "Spreading Orb to %s over SSH…\n", target)
+	peer, addedErr, err := spreadMitosisOverSSH(ctx, client, profile, status.PeerID, rawTarget)
+	if err != nil {
+		return reportCLIError(streams.Stderr, err)
+	}
+	if peer == "" {
+		_, _ = fmt.Fprintf(streams.Stdout, "Orb bootstrapped on %s.\n", target)
+		return 0
+	}
+	return reportInSync(ctx, client, streams, peer, addedErr)
+}
+
+// spreadMitosisOverSSH mints an invitation, runs host.spread.ssh on selfPeerID, and
+// auto-approves the remote host's claim while SSH is running.
+func spreadMitosisOverSSH(ctx context.Context, client *protocol.Conn, profile, selfPeerID, rawTarget string) (string, error, error) {
+	if _, _, err := daemon.ParseSSHTarget(rawTarget); err != nil {
+		return "", nil, err
+	}
+	var inv mitosis.Invitation
+	if err := client.Call(ctx, "invite", map[string]any{"grants": []mitosis.Grant{mitosis.FullGrant("")}}, &inv); err != nil {
+		return "", nil, err
+	}
+	defer func() {
+		done, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		_ = client.Call(done, "uninvite", map[string]string{"invitation_id": inv.ID}, nil)
+	}()
+
+	approveCtx, stopApprove := context.WithCancel(ctx)
+	defer stopApprove()
+	type approval struct {
+		peer  string
+		added error
+		err   error
+	}
+	approvedCh := make(chan approval, 1)
+	go func() {
+		claimed, err := pollMitosisPairing(approveCtx, inv.Expires, func(pctx context.Context) (mitosis.Invitation, bool, error) {
+			var st mitosisSettingsStatus
+			if err := client.Call(pctx, "status", struct{}{}, &st); err != nil {
+				return mitosis.Invitation{}, false, err
+			}
+			for _, i := range st.Pending {
+				if i.ID == inv.ID {
+					return i, i.Claimant != "", nil
+				}
+			}
+			return mitosis.Invitation{}, false, errors.New("invitation expired")
+		})
+		if err != nil {
+			approvedCh <- approval{err: err}
+			return
+		}
+		if err := client.Call(approveCtx, "approve", map[string]string{"invitation_id": claimed.ID, "claimant": claimed.Claimant}, nil); err != nil {
+			approvedCh <- approval{err: err}
+			return
+		}
+		shareOrbsOnMitosis(approveCtx, profile)
+		addedErr := client.Call(approveCtx, "sync", map[string]string{"add": claimed.Claimant}, nil)
+		approvedCh <- approval{peer: claimed.Claimant, added: addedErr}
+	}()
+
+	var res struct {
+		OK     bool   `json:"ok"`
+		Target string `json:"target"`
+		Output string `json:"output"`
+	}
+	sshErr := client.Call(ctx, "remote", map[string]any{
+		"peer_id": selfPeerID,
+		"method":  "host.spread.ssh",
+		"params": map[string]string{
+			"target": rawTarget,
+			"code":   mitosis.InvitationCode(inv),
+		},
+	}, &res)
+	if sshErr != nil {
+		stopApprove()
+		return "", nil, sshErr
+	}
+	select {
+	case ap := <-approvedCh:
+		if ap.err != nil {
+			return "", nil, ap.err
+		}
+		return ap.peer, ap.added, nil
+	case <-time.After(10 * time.Second):
+		stopApprove()
+		return "", nil, nil
+	case <-ctx.Done():
+		stopApprove()
+		return "", nil, ctx.Err()
 	}
 }

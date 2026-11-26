@@ -1,6 +1,6 @@
 <script>
   import { orb } from "../lib/store.svelte.js";
-  import { ago, base, named, tailPreview, tidy, word } from "../lib/utils.js";
+  import { ago, base, named, tidy, word } from "../lib/utils.js";
   import PromptBox from "./PromptBox.svelte";
 
   let threadFilter = $state("");
@@ -24,19 +24,17 @@
   let machines = $derived(
     showHiddenPeers ? allMachines : allMachines.filter(m => !orb.isPeerHidden(m.id)),
   );
-  let openTabs = $derived.by(() => {
-    const rank = t => (t.ask ? 0 : t.busy ? 1 : t.unread > 0 ? 2 : !t.asleep ? 3 : 4);
-    return [...(orb.state.tabs || [])].sort((a, b) => rank(a) - rank(b));
-  });
+  let openTabs = $derived(orb.state.tabs || []);
   let selectedMachine = $derived(orb.deviceFilter ? orb.getMachine(orb.deviceFilter) : null);
   let scopeMachine = $derived(selectedMachine || aim.machine);
   let scopeFolders = $derived((scopeMachine?.folders || []).filter(f => f.cwd).slice(0, 8));
   let reading = $derived(
     (orb.home.machines || []).filter(m => m.reading && (!orb.deviceFilter || m.id === orb.deviceFilter)),
   );
+
   let entries = $derived.by(() => {
     const q = threadFilter.trim().toLowerCase();
-    return (orb.home.entries || []).filter(e => {
+    const filtered = (orb.home.entries || []).filter(e => {
       if (orb.deviceFilter && e.machine !== orb.deviceFilter) return false;
       if (folderFilter && e.cwd !== folderFilter) return false;
       if (!showOwn && e.machine === orb.state.self && !e.open) return false;
@@ -44,6 +42,15 @@
       const m = orb.getMachine(e.machine);
       return `${e.title || ""} ${e.cwd || ""} ${m?.name || ""}`.toLowerCase().includes(q);
     });
+    const rank = e => {
+      const t = e.tab ? orb.getTab(e.tab) : null;
+      if (e.asks || t?.ask) return 0;
+      if (e.live || t?.busy) return 1;
+      if (t?.unread > 0) return 2;
+      if (e.open || t) return 3;
+      return 4;
+    };
+    return [...filtered].sort((a, b) => rank(a) - rank(b));
   });
 
   function selectPeer(m) {
@@ -71,204 +78,185 @@
 </script>
 
 <div class="home">
-  <!-- 01 · MAGI machine unit grid -->
-  <div class="magi">
-    {#each machines as m (m.id)}
-      {@const up = m.self ? orb.state.up : m.connected}
-      {@const ok = up && !m.outdated}
-      {@const isHidden = orb.isPeerHidden(m.id)}
-      {@const folderCount = m.folders?.length || 0}
-      <button
-        type="button"
-        class="magi-unit"
-        class:on={orb.deviceFilter === m.id}
-        class:down={!ok}
-        class:hidden-peer={isHidden}
-        onclick={() => selectPeer(m)}
-        oncontextmenu={e => { e.preventDefault(); orb.openDeviceMenu(m); }}
-        title="Click to filter · Right-click for options"
-      >
-        <span class="magi-top">
-          <i class="led" style="--hue: var(--hue{m.hue || 0})"></i>
-          <span class="magi-name">{m.self ? "this tab" : m.name}</span>
-          <b class="magi-verdict">{ok ? "承認" : "否決"}</b>
-        </span>
-        <span class="magi-bot">
-          <span>
-            {!up ? "offline" : m.outdated ? "update Orb" : `${m.running?.length || 0} running`}{folderCount > 0 ? ` · ${folderCount} ${folderCount === 1 ? "folder" : "folders"}` : ""}
+  <div class="home-scroll scroll">
+    <!-- Mitosis peer grid -->
+    <div class="magi">
+      {#each machines as m (m.id)}
+        {@const up = m.self ? orb.state.up : m.connected}
+        {@const ok = up && !m.outdated}
+        {@const isHidden = orb.isPeerHidden(m.id)}
+        {@const folderCount = m.folders?.length || 0}
+        <button
+          type="button"
+          class="magi-unit"
+          class:on={orb.deviceFilter === m.id}
+          class:down={!ok}
+          class:hidden-peer={isHidden}
+          onclick={() => selectPeer(m)}
+          oncontextmenu={e => { e.preventDefault(); orb.openDeviceMenu(m); }}
+          title="Click to filter · Right-click for options"
+        >
+          <span class="magi-top">
+            <i class="led" style="--hue: var(--hue{m.hue || 0})"></i>
+            <span class="magi-name">{m.self ? "this tab" : m.name}</span>
+            <b class="magi-verdict">{ok ? "承認" : "否決"}</b>
           </span>
-        </span>
-      </button>
-    {/each}
-    <button
-      type="button"
-      class="magi-unit magi-pair"
-      onclick={() => orb.pairDevicePrompt()}
-      title="Pair another device with a mitosis code"
-    >
-      <span class="magi-pair-title">+ pair device</span>
-      <span class="magi-pair-sub">paste code · mitosis</span>
-    </button>
-  </div>
-
-  <div class="summary-bar">
-    <p class="summary" class:asks={(orb.state.summary || "").startsWith("needs")}>{orb.state.summary || ""}</p>
-    <div class="summary-actions">
-      {#if hiddenCount > 0}
-        <button
-          type="button"
-          class="hidden-toggle"
-          onclick={() => (showHiddenPeers = !showHiddenPeers)}
-        >
-          {hiddenCount} hidden · {showHiddenPeers ? "hide" : "show"}
+          <span class="magi-bot">
+            <span>
+              {!up ? "offline" : m.outdated ? "update Orb" : `${m.running?.length || 0} running`}{folderCount > 0 ? ` · ${folderCount} ${folderCount === 1 ? "folder" : "folders"}` : ""}
+            </span>
+          </span>
         </button>
-      {/if}
-      {#if selectedMachine && !selectedMachine.self && selectedMachine.launch && selectedMachine.connected && scopeFolders.length === 0}
-        <button
-          type="button"
-          class="btn plain browse-btn"
-          onclick={() => (orb.explorerPeer = selectedMachine.id)}
-        >
-          folders on {selectedMachine.name} ›
-        </button>
-      {/if}
-    </div>
-  </div>
-
-  {#if scopeMachine && scopeFolders.length > 0}
-    <div class="folder-strip scroll" role="group" aria-label="Folder scope">
+      {/each}
       <button
         type="button"
-        class="folder-pill"
-        class:on={!folderFilter}
-        onclick={() => { folderFilter = ""; orb.aimAt(scopeMachine.id, ""); }}
+        class="magi-unit magi-pair"
+        onclick={() => (orb.spreadModalOpen = true)}
+        title="Spread or pair another device with Mitosis"
       >
-        all
+        <span class="magi-pair-title">+ pair device</span>
+        <span class="magi-pair-sub">ssh · link · code</span>
       </button>
-      {#each scopeFolders as f (f.cwd)}
+    </div>
+
+    <div class="summary-bar">
+      <p class="summary" class:asks={(orb.state.summary || "").startsWith("needs")}>{orb.state.summary || ""}</p>
+      <div class="summary-actions">
+        {#if hiddenCount > 0}
+          <button
+            type="button"
+            class="hidden-toggle"
+            onclick={() => (showHiddenPeers = !showHiddenPeers)}
+          >
+            {hiddenCount} hidden · {showHiddenPeers ? "hide" : "show"}
+          </button>
+        {/if}
+        {#if selectedMachine && !selectedMachine.self && selectedMachine.launch && selectedMachine.connected && scopeFolders.length === 0}
+          <button
+            type="button"
+            class="btn plain browse-btn"
+            onclick={() => (orb.explorerPeer = selectedMachine.id)}
+          >
+            folders on {selectedMachine.name} ›
+          </button>
+        {/if}
+      </div>
+    </div>
+
+    {#if scopeMachine && scopeFolders.length > 0}
+      <div class="folder-strip scroll" role="group" aria-label="Folder scope">
         <button
           type="button"
           class="folder-pill"
-          class:on={folderFilter === f.cwd}
-          onclick={() => selectFolder(f.cwd)}
-          title={tidy(f.cwd)}
+          class:on={!folderFilter}
+          onclick={() => { folderFilter = ""; orb.aimAt(scopeMachine.id, ""); }}
         >
-          <span>{base(f.cwd) || tidy(f.cwd)}</span>
-          {#if f.threads}<small>{f.threads}</small>{/if}
+          all
         </button>
-      {/each}
-      {#if !scopeMachine.self && scopeMachine.launch && scopeMachine.connected}
-        <button
-          type="button"
-          class="folder-pill browse"
-          onclick={() => (orb.explorerPeer = scopeMachine.id)}
-        >
-          browse ›
-        </button>
-      {/if}
-    </div>
-  {/if}
-
-  {#if launching && launching !== orb.dismissedLaunch}
-    <button
-      type="button"
-      class="launch-line"
-      class:alarm={!starting}
-      onclick={() => { if (!starting) orb.dismissedLaunch = launching; }}
-    >
-      <i class="led round" class:live={starting} style="--hue: {starting ? 'var(--mute)' : 'var(--rupture)'}"></i>
-      <span>{launching}</span>
-      {#if !starting}<span class="x">×</span>{/if}
-    </button>
-  {/if}
-
-  <div class="home-scroll scroll">
-    <!-- Live open sessions cards (Desktop openCards style) -->
-    {#if openTabs.length > 0 && !threadFilter}
-      <section class="home-section">
-        <div class="hud-label">
-          <span class="idx">01</span>
-          <span>open · {openTabs.length}</span>
-          <button type="button" class="hud-action" onclick={() => orb.toggleOverview()}>
-            overview <kbd>^G</kbd>
+        {#each scopeFolders as f (f.cwd)}
+          <button
+            type="button"
+            class="folder-pill"
+            class:on={folderFilter === f.cwd}
+            onclick={() => selectFolder(f.cwd)}
+            title={tidy(f.cwd)}
+          >
+            <span>{base(f.cwd) || tidy(f.cwd)}</span>
+            {#if f.threads}<small>{f.threads}</small>{/if}
           </button>
-        </div>
-        <div class="open-grid">
-          {#each openTabs.slice(0, 6) as t (t.id)}
-            {@const m = orb.getMachine(t.peer)}
-            {@const tail = tailPreview(orb.rowsByTab[t.id], 1)}
-            <div
-              class="open-card"
-              class:asks={!!t.ask}
-              class:busy={t.busy}
-              class:asleep={t.asleep}
-              role="button"
-              tabindex="0"
-              onclick={() => orb.focus(t.id)}
-              onkeydown={e => { if (e.key === "Enter") orb.focus(t.id); }}
-              oncontextmenu={e => { e.preventDefault(); orb.openTabMenu(t); }}
-            >
-              <div class="oc-head">
-                <i class="led" class:live={t.busy} class:asks={!!t.ask} style="--hue: var(--hue{m?.hue || 0})"></i>
-                <span class="oc-title">{named(t.title)}</span>
-                <button
-                  type="button"
-                  class="oc-x"
-                  onclick={e => { e.stopPropagation(); orb.closeTab(t); }}
-                  aria-label="Close"
-                >×</button>
-              </div>
-              <div class="oc-meta" class:alarm={!!t.ask}>
-                {[t.remote && t.where, t.cwd && tidy(t.cwd), t.ask ? "asks" : word(t) || (t.unread ? `${t.unread} new` : "")].filter(Boolean).join(" · ")}
-              </div>
-              {#if tail}
-                <div class="oc-tail">{tail}</div>
-              {/if}
-            </div>
-          {/each}
-        </div>
-      </section>
+        {/each}
+        {#if !scopeMachine.self && scopeMachine.launch && scopeMachine.connected}
+          <button
+            type="button"
+            class="folder-pill browse"
+            onclick={() => (orb.explorerPeer = scopeMachine.id)}
+          >
+            browse ›
+          </button>
+        {/if}
+      </div>
     {/if}
 
-    <!-- Unified threads list -->
+    {#if launching && launching !== orb.dismissedLaunch}
+      <button
+        type="button"
+        class="launch-line"
+        class:alarm={!starting}
+        onclick={() => { if (!starting) orb.dismissedLaunch = launching; }}
+      >
+        <i class="led round" class:live={starting} style="--hue: {starting ? 'var(--mute)' : 'var(--rupture)'}"></i>
+        <span>{launching}</span>
+        {#if !starting}<span class="x">×</span>{/if}
+      </button>
+    {/if}
+
+    <!-- Unified threads list (open/live/asking at top, then recent stored threads) -->
     <section class="home-section">
       <div class="hud-label">
-        <span class="idx">{openTabs.length > 0 && !threadFilter ? "02" : "01"}</span>
+        <span class="idx">01</span>
         <span>threads · {entries.length}</span>
-        {#if (orb.home.entries || []).length > 10}
-          <input
-            class="thread-search"
-            type="search"
-            bind:value={threadFilter}
-            placeholder="filter threads…"
-            aria-label="Filter threads"
-          />
-        {/if}
+        <div class="hud-tools">
+          {#if openTabs.length > 0}
+            <button type="button" class="hud-action" onclick={() => orb.toggleOverview()}>
+              overview <kbd>^G</kbd>
+            </button>
+          {/if}
+          {#if (orb.home.entries || []).length > 10}
+            <input
+              class="thread-search"
+              type="search"
+              bind:value={threadFilter}
+              placeholder="filter threads…"
+              aria-label="Filter threads"
+            />
+          {/if}
+        </div>
       </div>
 
       <div class="entries">
         {#each entries.slice(0, 200) as e (e.key)}
           {@const m = orb.getMachine(e.machine)}
           {@const followed = orb.getTab(e.tab)}
+          {@const isOpen = e.open || !!followed}
+          {@const isLive = e.live || !!followed?.busy}
+          {@const isAsks = e.asks || !!followed?.ask}
           {@const age = followed ? word(followed) : ""}
-          <button
-            type="button"
+          <div
             class="entry-row"
-            class:open={e.open}
+            class:open={isOpen}
+            class:live={isLive}
+            class:asks={isAsks}
+            role="button"
+            tabindex="0"
             onclick={() => (followed ? orb.focus(followed.id) : orb.openEntry(e.key))}
+            onkeydown={ev => {
+              if (ev.key === "Enter" || ev.key === " ") {
+                ev.preventDefault();
+                followed ? orb.focus(followed.id) : orb.openEntry(e.key);
+              }
+            }}
             oncontextmenu={ev => { ev.preventDefault(); orb.openThreadMenu(e); }}
           >
-            <i class="led" class:live={e.live} class:asks={e.asks} style="--hue: var(--hue{m?.hue || 0})"></i>
+            <i class="led" class:live={isLive} class:asks={isAsks} style="--hue: var(--hue{m?.hue || 0})"></i>
             <span class="entry-title">{named(e.title)}</span>
-            <small class="entry-meta" class:asks={e.asks}>
+            <small class="entry-meta" class:asks={isAsks}>
               {[
                 !orb.deviceFilter && m && (m.self ? "this tab" : m.name),
-                e.asks ? "asks" : e.live ? "working" : age || (e.unstored ? "open" : ago(e.modified)),
+                isAsks ? "asks" : isLive ? "working" : age || (e.unstored ? "open" : ago(e.modified)),
               ]
                 .filter(Boolean)
                 .join(" · ")}
             </small>
-          </button>
+            {#if followed}
+              <button
+                type="button"
+                class="entry-x"
+                onclick={ev => { ev.stopPropagation(); orb.closeTab(followed); }}
+                aria-label="Close session"
+                title="Close session"
+              >×</button>
+            {/if}
+          </div>
         {/each}
 
         {#if (orb.home.machines || []).length === 0}
@@ -280,13 +268,6 @@
         {/if}
       </div>
     </section>
-  </div>
-
-  <div class="title-card">
-    <b class="stretch">NEW SESSION</b>
-    <button type="button" class="kbd-hint" onclick={() => (orb.shortcutsOpen = true)} title="Keyboard shortcuts">
-      <kbd>?</kbd> keys
-    </button>
   </div>
 
   <PromptBox tab={null} />
@@ -301,16 +282,24 @@
     width: 100%;
     max-width: calc(780px + 2 * var(--margin));
     margin: 0 auto;
-    padding: 14px var(--margin) 0;
+    padding: 0 var(--margin);
     animation: view-in var(--t-med) var(--ease);
   }
 
-  /* NERV MAGI multi-line wrapping peer grid — no horizontal scroll */
+  .home-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 calc(-1 * var(--margin));
+    padding: 14px var(--margin) 18px;
+    mask-image: linear-gradient(#000 calc(100% - 14px), transparent);
+  }
+
+  /* Wrapping peer grid */
   .magi {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(188px, 1fr));
     gap: 8px;
-    flex-shrink: 0;
   }
   .magi-unit {
     position: relative;
@@ -406,8 +395,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 7px 0 4px;
-    flex-shrink: 0;
+    padding: 8px 0 4px;
   }
   .summary-actions {
     display: inline-flex;
@@ -444,8 +432,7 @@
     gap: 4px;
     overflow-x: auto;
     scrollbar-width: none;
-    padding: 2px 0 6px;
-    flex-shrink: 0;
+    padding: 2px 0 8px;
   }
   .folder-pill {
     display: inline-flex;
@@ -495,118 +482,39 @@
     font-size: var(--small);
     color: var(--fg);
     cursor: pointer;
-    flex-shrink: 0;
     animation: drop-in var(--t-fast) var(--ease);
   }
   .launch-line .x { margin-left: auto; font-size: 15px; }
 
-  .home-scroll {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    margin: 6px calc(-1 * var(--margin)) 0;
-    padding: 6px var(--margin) 18px;
-    mask-image: linear-gradient(transparent, #000 8px, #000 calc(100% - 14px), transparent);
-  }
   .home-section {
-    margin-bottom: 20px;
+    margin-top: 10px;
   }
-  .hud-action {
+  .hud-tools {
     margin-left: auto;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+  }
+  .hud-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     padding: 1px 6px;
     border: 0;
+    border-radius: var(--radius-sm);
     background: none;
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 500;
     color: var(--mute);
     cursor: pointer;
     transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   @media (hover: hover) {
-    .hud-action:hover { background: var(--fg); color: var(--bg); }
-  }
-
-  /* Flush joined console cells for open sessions — zero Cardocalypse */
-  .open-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-    gap: 0;
-    margin-top: 0;
-    border-left: 1px solid var(--rule);
-    border-right: 1px solid var(--rule);
-  }
-  .open-card {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    padding: 9px 11px;
-    border: 0;
-    border-right: 1px solid var(--rule-soft);
-    border-bottom: 1px solid var(--rule);
-    background: var(--raised);
-    cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease);
-  }
-  .open-card.busy {
-    background: var(--recessed);
-  }
-  .open-card.asks {
-    background: var(--rupture);
-    color: #FFFFFF;
-  }
-  .open-card.asks .oc-meta,
-  .open-card.asks .oc-tail,
-  .open-card.asks .oc-x { color: #FFFFFF; }
-  .open-card.asleep { opacity: 0.58; }
-  @media (hover: hover) {
-    .open-card:hover:not(.asks) { background: var(--hover); }
-    .open-card:hover .oc-x { opacity: 1; }
-  }
-  .oc-head {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-  }
-  .oc-title {
-    flex: 1;
-    min-width: 0;
-    font-size: var(--small);
-    font-weight: 700;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-  .oc-x {
-    padding: 0 4px;
-    border: 0;
-    background: none;
-    color: var(--meta);
-    font-size: 14px;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity var(--t-fast) var(--ease);
-  }
-  .oc-meta {
-    font-size: 11px;
-    color: var(--meta);
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-  .oc-tail {
-    font-size: 11.5px;
-    color: var(--mute);
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    .hud-action:hover { background: var(--hover); color: var(--fg); }
   }
 
   .thread-search {
-    margin-left: auto;
-    width: 190px;
+    width: 170px;
     padding: 2px 8px;
     font-size: 12px;
     text-transform: none;
@@ -642,18 +550,47 @@
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  .entry-row.open .entry-title { font-weight: 700; }
+  .entry-row.open .entry-title { font-weight: 650; color: var(--fg); }
+  .entry-row.live .entry-title { font-weight: 700; }
+  .entry-row.asks {
+    background: var(--rupture-soft);
+  }
+  .entry-row.asks .entry-title { font-weight: 700; color: var(--fg); }
   .entry-meta {
     flex-shrink: 0;
     font-size: 12px;
     color: var(--meta);
   }
   .entry-meta.asks { color: var(--rupture); font-weight: 700; }
+  .entry-x {
+    flex-shrink: 0;
+    padding: 0 5px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--meta);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+  .entry-x:hover {
+    background: var(--recessed);
+    color: var(--fg);
+  }
   @media (hover: hover) {
     .entry-row:hover {
       background: var(--hover);
       color: var(--fg);
     }
+    .entry-row:hover .entry-x,
+    .entry-row:focus-within .entry-x {
+      opacity: 1;
+    }
+  }
+  @media (hover: none) {
+    .entry-x { opacity: 0.7; }
   }
   .reading {
     display: flex;
@@ -662,42 +599,4 @@
     padding: 18px 0;
   }
   .empty-msg { padding: 18px 0; }
-
-  /* Authentic NERV Evangelion stretched title card */
-  .title-card {
-    display: flex;
-    align-items: flex-end;
-    gap: 9px;
-    flex-shrink: 0;
-    height: 54px;
-    padding: 8px 2px 3px;
-    border-top: 1px solid var(--rule);
-  }
-  .title-card b {
-    font-size: 20px;
-    line-height: 24px;
-    letter-spacing: 0.04em;
-    transform: scaleY(1.85);
-    transform-origin: 0 100%;
-    animation: wipe 220ms 30ms var(--ease) backwards;
-  }
-  .kbd-hint {
-    margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 6px;
-    border: 0;
-    background: none;
-    font-size: 11px;
-    color: var(--mute);
-    cursor: pointer;
-    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
-  }
-  @media (hover: hover) {
-    .kbd-hint:hover { background: var(--fg); color: var(--bg); }
-  }
-  @media (max-width: 600px) {
-    .kbd-hint { display: none; }
-  }
 </style>

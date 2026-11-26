@@ -764,7 +764,7 @@
           {/each}
 
           <div class="actions">
-            <button type="button" class="btn inverted" onclick={pairAnother}>+ pair a device</button>
+            <button type="button" class="btn inverted" onclick={() => (orb.spreadModalOpen = true)}>+ pair another device</button>
           </div>
         </div>
 

@@ -23,6 +23,15 @@ var pairing struct {
 	inviting   bool              // an invitation is being made
 	invited    bool              // one was asked for since the app started
 	updating   map[string]string // what updating each device came to
+
+	// Spread Mitosis state (inviteScreen).
+	spreadLoaded  bool
+	spreadLoading bool
+	spread        SpreadInfo
+	sshTarget     string
+	sshBusy       bool
+	sshStatus     string
+	sshErr        string
 }
 
 // fingerprint is the start of a fingerprint, large enough to compare at a glance.
@@ -198,8 +207,19 @@ func (a *app) inviteScreen(c *ui.Context) {
 	if inv != nil {
 		pairing.inviting = false
 	}
+	loadSpread := func() {
+		pairing.spreadLoaded, pairing.spreadLoading = true, true
+		then(o, func(info SpreadInfo, err error) {
+			pairing.spreadLoading = false
+			if err == nil {
+				pairing.spread = info
+			}
+		}, "spread.info")
+	}
 	invite := func() {
 		pairing.inviting, pairing.invited = true, true
+		pairing.sshStatus, pairing.sshErr = "", ""
+		loadSpread()
 		then(o, func(_ any, err error) {
 			if err != nil {
 				pairing.inviting = false
@@ -211,57 +231,211 @@ func (a *app) inviteScreen(c *ui.Context) {
 	if inv == nil && !pairing.invited {
 		invite()
 	}
-	page(c, func() { header(c, "Invite a device", "", a.back, nil) }, func() {
-		left, valid := "creating", false
-		code := ""
-		if inv != nil {
-			left, valid = countdown(c, inv.Expires)
-			left += " · single use"
-			if !valid {
-				left = "expired"
+	if !pairing.spreadLoaded {
+		loadSpread()
+	}
+
+	left, valid := "creating…", false
+	code := ""
+	if inv != nil {
+		left, valid = countdown(c, inv.Expires)
+		left += " · single use"
+		if !valid {
+			left = "expired"
+		}
+		code = inv.Code
+	}
+
+	runSSH := func(target string) {
+		target = strings.TrimSpace(target)
+		if target == "" || code == "" || !valid || pairing.sshBusy {
+			return
+		}
+		pairing.sshTarget = target
+		pairing.sshBusy = true
+		pairing.sshStatus = "spreading to " + target + "…"
+		pairing.sshErr = ""
+		then(o, func(res SpreadSSHResult, err error) {
+			pairing.sshBusy = false
+			if err != nil {
+				pairing.sshStatus = ""
+				pairing.sshErr = err.Error()
+				return
 			}
-			code = inv.Code
-		}
-		command := "orb mitosis join " + code
-		if code == "" {
-			command += "…"
-		}
-		ui.Row(c).FillWidth().Children(func() {
-			label(c, "photograph it with a phone, or run on the other computer").Grow(1)
-			ui.Text(c, left).FontSize(labelSize).TextColor(pal.meta)
-		})
-		ink := pal.meta
-		if valid {
-			ink = pal.fg
-		}
-		// A phone pairs by photographing the code, as it pairs with a terminal's.
-		if valid {
-			qrCode(c, code, 200)
-		}
-		ui.Column(c).FillWidth().Padding(14).Radius(pane).Border(1, pal.rule).Children(func() {
-			ui.Text(c, command).FontSize(12).TextColor(ink).Selectable()
-		})
-		ui.Row(c).Gap(8).Children(func() {
-			if code != "" && valid && btn(c, "copy", true, pal.fg, pal.bg) {
-				mygo.Clipboard.WriteText(command)
-				a.say("copied")
+			if !res.OK {
+				pairing.sshStatus = ""
+				pairing.sshErr = strings.TrimSpace(res.Output)
+				if pairing.sshErr == "" {
+					pairing.sshErr = "SSH spread failed on " + target
+				}
+				return
 			}
-			if code != "" && valid && btn(c, "copy code", false, pal.fg, pal.bg) {
-				mygo.Clipboard.WriteText(code)
-				a.say("copied")
+			msg := strings.TrimSpace(res.Output)
+			if msg == "" {
+				msg = "spread to " + target + " — approve fingerprint when it connects"
 			}
-			if (inv == nil && !pairing.inviting || inv != nil && !valid) && btn(c, "new code", true, pal.fg, pal.bg) {
+			pairing.sshStatus = msg
+			pairing.sshErr = ""
+		}, "spread.ssh", "target", target, "code", code)
+	}
+
+	installAndJoin := "command -v orb >/dev/null || curl -fsSL https://raw.githubusercontent.com/OrdalieTech/orb/main/scripts/install.sh | sh; orb mitosis join " + code
+	joinOnly := "orb mitosis join " + code
+	browserURL := "https://netapy.com/orb/#" + code
+	if code == "" {
+		installAndJoin += "…"
+		joinOnly += "…"
+		browserURL += "…"
+	}
+
+	page(c, func() {
+		header(c, "Spread Mitosis", left, a.back, func() {
+			if (inv == nil && !pairing.inviting || inv != nil && !valid || valid) && btn(c, "new code", !valid && !pairing.inviting, pal.fg, pal.bg) {
 				invite()
 			}
 		})
-		ui.Box(c).Height(18)
-		rule(c, pal.rule)
-		ui.Row(c).Gap(10).Children(func() {
-			dot(c, pal.mute, 8, true, false)
-			ui.Text(c, "waiting for the other device").TextColor(pal.mute)
+	}, func() {
+		// 1. Spread over SSH
+		section(c, "spread over ssh", "", func() {
+			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+				in := field(c, &pairing.sshTarget, "ssh user@host or ~/.ssh/config alias", false).Grow(1).Basis(0).FontSize(small)
+				if in.Submitted() {
+					runSSH(pairing.sshTarget)
+				}
+				btnLabel := "spread"
+				if pairing.sshBusy {
+					btnLabel = "spreading…"
+				}
+				if btn(c, btnLabel, valid && !pairing.sshBusy && strings.TrimSpace(pairing.sshTarget) != "", pal.fg, pal.bg) {
+					runSSH(pairing.sshTarget)
+				}
+			})
+			if pairing.sshBusy || pairing.sshStatus != "" {
+				ui.Row(c).FillWidth().Gap(8).Padding(6, 0, 2).AlignItems(ui.Center).Children(func() {
+					dot(c, pal.fg, 6, pairing.sshBusy, false)
+					ui.Text(c, pairing.sshStatus).Grow(1).Basis(0).FontSize(12).TextColor(pal.mute).MaxLines(3)
+				})
+			}
+			if pairing.sshErr != "" {
+				ui.Text(c, pairing.sshErr).FontSize(12).TextColor(rupture).Padding(6, 0, 2).MaxLines(4)
+			}
+			if len(pairing.spread.SSHHosts) > 0 {
+				ui.Row(c).FillWidth().Wrap().Gap(6).Padding(8, 0, 2).Children(func() {
+					for _, h := range pairing.spread.SSHHosts {
+						h := h
+						tip := h.Hostname
+						if h.User != "" && h.Hostname != "" {
+							tip = h.User + "@" + h.Hostname
+						} else if h.User != "" {
+							tip = h.User + "@" + h.Alias
+						}
+						if h.Port != "" && h.Port != "22" {
+							tip += ":" + h.Port
+						}
+						if tip == "" {
+							tip = h.Alias
+						}
+						active := pairing.sshTarget == h.Alias
+						chip := ui.Row(c.Key("ssh:"+h.Alias)).Padding(4, 10).Radius(soft).Border(1, map[bool]ui.Color{true: pal.fg, false: pal.rule}[active]).AlignItems(ui.Center)
+						if active {
+							chip.Background(pal.recessed)
+						} else {
+							hover(chip, pal.hover)
+						}
+						chip.Children(func() {
+							ui.Text(c, h.Alias).FontSize(12).FontWeight(map[bool]int{true: medium, false: 400}[active]).TextColor(map[bool]ui.Color{true: pal.fg, false: pal.mute}[active]).SingleLine()
+						})
+						chip.Tooltip(tip + " · click to fill, double-click to spread")
+						if chip.DoubleClicked() {
+							runSSH(h.Alias)
+						} else if press(chip) {
+							pairing.sshTarget = h.Alias
+						}
+					}
+				})
+			}
 		})
-		ui.Text(c, "A phone photographs the code, or pastes it in its Mitosis screen. You approve it here by fingerprint once it claims the code. The code works once, for ten minutes.").
-			FontSize(labelSize + 1).TextColor(pal.meta).PaddingY(4)
+
+		ui.Box(c).Height(12)
+
+		// 2. Quick Copy for Any Surface
+		section(c, "quick copy", "", func() {
+			ink := pal.meta
+			if valid {
+				ink = pal.fg
+			}
+			ui.Column(c).FillWidth().Padding(12).Radius(pane).Border(1, pal.rule).Gap(8).Children(func() {
+				ui.Text(c, installAndJoin).FontSize(11.5).TextColor(ink).Selectable()
+				ui.Row(c).FillWidth().Wrap().Gap(8).Children(func() {
+					if code != "" && valid && btn(c, "copy install + join", true, pal.fg, pal.bg) {
+						mygo.Clipboard.WriteText(installAndJoin)
+						a.say("copied install + join")
+					}
+					if code != "" && valid && btn(c, "copy join", false, pal.fg, pal.bg) {
+						mygo.Clipboard.WriteText(joinOnly)
+						a.say("copied join command")
+					}
+					if code != "" && valid && btn(c, "copy browser link", false, pal.fg, pal.bg) {
+						mygo.Clipboard.WriteText(browserURL)
+						a.say("copied browser link")
+					}
+				})
+			})
+
+			var foundClients []DetectedClient
+			for _, cl := range pairing.spread.Clients {
+				if cl.Found {
+					foundClients = append(foundClients, cl)
+				}
+			}
+			if len(foundClients) > 0 && code != "" && valid {
+				ui.Row(c).FillWidth().Wrap().Gap(6).Padding(8, 0, 2).AlignItems(ui.Center).Children(func() {
+					for _, cl := range foundClients {
+						cl := cl
+						name := cl.Name
+						if name == "" {
+							name = cl.ID
+						}
+						chip := hover(ui.Row(c.Key("client:"+cl.ID)).Padding(4, 10).Radius(soft).Border(1, pal.rule).AlignItems(ui.Center), pal.hover)
+						chip.Children(func() {
+							ui.Text(c, "hand to "+name).FontSize(12).FontWeight(medium).TextColor(pal.fg).SingleLine()
+						})
+						if press(chip.Tooltip("Copy a ready-to-paste prompt for " + name)) {
+							prompt := fmt.Sprintf("Install Orb if not already installed and join this Mitosis mesh by running:\n\n%s\n", installAndJoin)
+							mygo.Clipboard.WriteText(prompt)
+							a.say("copied prompt for " + name)
+						}
+					}
+				})
+			}
+		})
+
+		ui.Box(c).Height(12)
+
+		// 3. Mobile QR code & waiting status
+		section(c, "mobile qr", left, func() {
+			ui.Row(c).FillWidth().Gap(16).AlignItems(ui.Center).Children(func() {
+				if valid {
+					qrCode(c, code, 168)
+				}
+				ui.Column(c).Grow(1).Basis(0).Gap(8).Children(func() {
+					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+						dot(c, pal.mute, 7, true, false)
+						ui.Text(c, "waiting for the other device").FontSize(small).TextColor(pal.mute)
+					})
+					ui.Text(c, "Scan with Orb on iOS or Android, or open the browser link on any device. You approve it here by fingerprint once it claims the code. Single use, valid for ten minutes.").
+						FontSize(labelSize + 1).TextColor(pal.meta)
+					if code != "" && valid {
+						ui.Row(c).Gap(8).Children(func() {
+							if btn(c, "copy code", false, pal.fg, pal.bg) {
+								mygo.Clipboard.WriteText(code)
+								a.say("copied code")
+							}
+						})
+					}
+				})
+			})
+		})
 	})
 }
 

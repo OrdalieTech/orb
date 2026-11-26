@@ -79,3 +79,34 @@ test("createMockPeer host.terminal open/write/read echoes text, Enter, Backspace
   assert.ok(cur.text.includes("abc^C\r\n"));
   assert.match(cur.text, /orb@macbook/);
 });
+
+test("createMockPeer handles spread.info, spread.ssh, and invite", () => {
+  const { peer, replyFor } = makePeer();
+
+  peer.app(JSON.stringify({ do: "spread.info", id: "req-spread-info" }));
+  const info = replyFor("req-spread-info").result;
+  assert.equal(info.machine_name, "MacBook Pro");
+  assert.deepEqual(info.ssh_hosts, ["ordalie-lab-3", "hetzner-01"]);
+  assert.deepEqual(
+    info.clients.map(c => c.id),
+    ["claude", "codex", "pi"],
+  );
+
+  peer.app(JSON.stringify({ do: "invite", id: "req-invite" }));
+  const inv = replyFor("req-invite").result;
+  assert.match(inv.code, /^orb-mitosis:v1:/);
+
+  peer.app(
+    JSON.stringify({
+      do: "spread.ssh",
+      id: "req-spread-ssh",
+      machine: info.machine,
+      target: "ordalie-lab-3",
+      code: inv.code,
+    }),
+  );
+  const ssh = replyFor("req-spread-ssh").result;
+  assert.equal(ssh.ok, true);
+  assert.equal(ssh.target, "ordalie-lab-3");
+  assert.equal(ssh.output, "joined · Mitosis running");
+});

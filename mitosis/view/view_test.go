@@ -1142,3 +1142,81 @@ func TestRemoteUpdateWaitsForRestartAndRefreshesVersion(t *testing.T) {
 		t.Fatalf("machine version after update = %q, want 0.28.0", gotVersion)
 	}
 }
+
+func TestSpreadInfoFallbackAndSSH(t *testing.T) {
+	c := newClient()
+	var inviteCalls int
+	var gotSSHTarget, gotSSHCode, gotSSHPeer string
+	a := &App{
+		ctx:        t.Context(),
+		self:       "browser-tab",
+		machines:   []*machine{{id: "browser-tab", state: "connected"}, {id: "mac-1", host: "MacBook", state: "connected", launch: true}},
+		asked:      map[*tab]bool{},
+		refreshNow: make(chan struct{}, 1),
+		o: Options{
+			Name: "this tab",
+			Emit: func(m any) { c.out <- mitosis.JSON(m) },
+			Call: func(_ context.Context, method string, params, result any) error {
+				switch method {
+				case "invite":
+					inviteCalls++
+					inv := mitosis.Invitation{ID: "inv-1", PeerID: "browser-tab", Expires: time.Now().Add(10 * time.Minute).Unix()}
+					return json.Unmarshal(mitosis.JSON(inv), result)
+				case "remote":
+					var req struct {
+						PeerID string          `json:"peer_id"`
+						Method string          `json:"method"`
+						Params json.RawMessage `json:"params"`
+					}
+					_ = json.Unmarshal(mitosis.JSON(params), &req)
+					if req.PeerID == "browser-tab" {
+						return mitosis.Fail("method_not_found")
+					}
+					switch req.Method {
+					case "host.spread.info":
+						return json.Unmarshal([]byte(`{"ssh_hosts":[{"alias":"lab-3","hostname":"10.0.0.3"}],"clients":[{"id":"claude","name":"Claude Code","found":true}]}`), result)
+					case "host.spread.ssh":
+						var p struct {
+							Target string `json:"target"`
+							Code   string `json:"code"`
+						}
+						_ = json.Unmarshal(req.Params, &p)
+						gotSSHPeer, gotSSHTarget, gotSSHCode = req.PeerID, p.Target, p.Code
+						return json.Unmarshal([]byte(`{"ok":true,"target":"lab-3","output":"joined"}`), result)
+					}
+				}
+				return json.Unmarshal([]byte(`{}`), result)
+			},
+		},
+	}
+
+	// spread.info falls back from browser-tab (method_not_found) to connected native peer mac-1.
+	a.Do([]byte(`{"id":"s1","do":"spread.info"}`))
+	c.until(t, "spread.info reply", func() bool { return c.replies["s1"] != nil })
+	var info struct {
+		Machine     string `json:"machine"`
+		MachineName string `json:"machine_name"`
+		SSHHosts    []struct {
+			Alias string `json:"alias"`
+		} `json:"ssh_hosts"`
+		Clients []struct {
+			ID string `json:"id"`
+		} `json:"clients"`
+	}
+	if err := json.Unmarshal(c.replies["s1"], &info); err != nil {
+		t.Fatalf("unmarshal spread.info: %v", err)
+	}
+	if info.Machine != "mac-1" || info.MachineName != "MacBook" || len(info.SSHHosts) != 1 || info.SSHHosts[0].Alias != "lab-3" || len(info.Clients) != 1 || info.Clients[0].ID != "claude" {
+		t.Fatalf("unexpected spread.info: %#v", info)
+	}
+
+	// spread.ssh auto-mints an invitation when code is empty and calls host.spread.ssh on mac-1.
+	a.Do([]byte(`{"id":"s2","do":"spread.ssh","target":"lab-3"}`))
+	c.until(t, "spread.ssh reply", func() bool { return c.replies["s2"] != nil })
+	if inviteCalls != 1 {
+		t.Fatalf("inviteCalls = %d, want 1", inviteCalls)
+	}
+	if gotSSHPeer != "mac-1" || gotSSHTarget != "lab-3" || gotSSHCode == "" {
+		t.Fatalf("spread.ssh called peer=%q target=%q code=%q", gotSSHPeer, gotSSHTarget, gotSSHCode)
+	}
+}
