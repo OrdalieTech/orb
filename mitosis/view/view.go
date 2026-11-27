@@ -135,30 +135,32 @@ func (a *App) remote(ctx context.Context, peer, method string, params, result an
 
 // intent is one thing an app asks; each "do" reads only the fields it needs.
 type intent struct {
-	ID       string   `json:"id"`
-	Do       string   `json:"do"`
-	Tab      string   `json:"tab"`
-	Key      string   `json:"key"`
-	Machine  string   `json:"machine"`
-	CWD      string   `json:"cwd"`
-	Text     string   `json:"text"`
-	Value    *string  `json:"value"`
-	Ticked   []string `json:"ticked"`
-	Name     string   `json:"name"`
-	Ref      string   `json:"ref"`
-	Px       int      `json:"px"`
-	On       *bool    `json:"on"`
-	Tabs     []string `json:"tabs"`
-	Budget   int      `json:"budget"`
-	To       int      `json:"to"`
-	Provider string   `json:"provider"`
-	Account  string   `json:"account"`
-	Auth     string   `json:"auth"`
-	Level    string   `json:"level"`
-	Path     string   `json:"path"`
-	Data     []byte   `json:"data"`
-	Target   string   `json:"target"`
-	Code     string   `json:"code"`
+	ID        string   `json:"id"`
+	Do        string   `json:"do"`
+	Tab       string   `json:"tab"`
+	Key       string   `json:"key"`
+	Machine   string   `json:"machine"`
+	CWD       string   `json:"cwd"`
+	Text      string   `json:"text"`
+	Value     *string  `json:"value"`
+	Ticked    []string `json:"ticked"`
+	Name      string   `json:"name"`
+	Ref       string   `json:"ref"`
+	Px        int      `json:"px"`
+	On        *bool    `json:"on"`
+	Tabs      []string `json:"tabs"`
+	Budget    int      `json:"budget"`
+	To        int      `json:"to"`
+	Provider  string   `json:"provider"`
+	Account   string   `json:"account"`
+	Auth      string   `json:"auth"`
+	Level     string   `json:"level"`
+	Path      string   `json:"path"`
+	Data      []byte   `json:"data"`
+	Target    string   `json:"target"`
+	Code      string   `json:"code"`
+	Archived  *bool    `json:"archived,omitempty"`
+	SessionID string   `json:"session_id,omitempty"`
 }
 
 // Do runs one intent. Those that wait on a machine run on their own; the rest apply at once and

@@ -6,10 +6,51 @@
   let palQuery = $state("");
   let palAt = $state(0);
   let palInput = $state(null);
+  let showArchived = $state(false);
+  let archivedEntries = $state([]);
+  let archivedLoading = $state(false);
+
+  async function toggleArchived() {
+    showArchived = !showArchived;
+    palAt = 0;
+    if (showArchived) {
+      archivedLoading = true;
+      try {
+        const res = await orb.ask("threads.archived");
+        archivedEntries = res?.entries ?? [];
+      } catch {
+        archivedEntries = [];
+      } finally {
+        archivedLoading = false;
+      }
+    }
+    requestAnimationFrame(() => palInput?.focus());
+  }
+
+  function archiveThread(entry) {
+    orb.archiveEntry(entry.key, true);
+  }
+
+  function unarchiveThread(entry) {
+    archivedEntries = archivedEntries.filter(x => x.key !== entry.key);
+    orb.archiveEntry(entry.key, false);
+  }
 
   let paletteItems = $derived.by(() => {
     if (!orb.paletteOpen) return [];
     const q = palQuery.trim().toLowerCase();
+    if (showArchived) {
+      const items = archivedEntries.map(e => ({
+        group: "archived",
+        label: named(e.title),
+        detail: orb.getMachine(e.machine)?.name || e.cwd || "",
+        hue: orb.getMachine(e.machine)?.hue || 0,
+        entry: e,
+        run: () => unarchiveThread(e),
+      }));
+      if (!q) return items.slice(0, 80);
+      return items.filter(it => `${it.label} ${it.detail || ""}`.toLowerCase().includes(q)).slice(0, 80);
+    }
     const items = [
       { group: "navigate", label: "Home", detail: "all devices & threads", kbd: "Alt+H", run: () => orb.focus("") },
       { group: "navigate", label: "Overview grid", detail: "live cards of open tabs", kbd: "Ctrl+G", run: () => orb.toggleOverview() },
@@ -55,6 +96,7 @@
           label: named(e.title),
           detail: orb.getMachine(e.machine)?.name || "",
           hue: orb.getMachine(e.machine)?.hue || 0,
+          entry: e,
           run: () => orb.openEntry(e.key),
         })),
     ];
@@ -66,6 +108,9 @@
     if (orb.paletteOpen) {
       palQuery = "";
       palAt = 0;
+      showArchived = false;
+      archivedEntries = [];
+      archivedLoading = false;
       requestAnimationFrame(() => palInput?.focus());
     }
   });
@@ -83,9 +128,13 @@
       palAt = (palAt - 1 + paletteItems.length) % paletteItems.length;
     } else if (e.key === "Enter" && paletteItems[palAt]) {
       e.preventDefault();
-      const fn = paletteItems[palAt].run;
-      orb.paletteOpen = false;
-      fn();
+      const it = paletteItems[palAt];
+      if (it.group === "archived") {
+        it.run();
+      } else {
+        orb.paletteOpen = false;
+        it.run();
+      }
     }
   }
 
@@ -150,36 +199,93 @@
   <div class="backdrop" role="dialog" aria-modal="true" aria-label="Command palette" tabindex="-1" onclick={e => { if (e.target === e.currentTarget) orb.paletteOpen = false; }} onkeydown={onPalKey}>
     <div class="sheet wide">
       <div class="sheet-head">
-        <span class="hud-label"><span class="idx">GO</span><span>command palette</span></span>
-        <kbd>Esc</kbd>
+        <span class="hud-label"><span class="idx">GO</span><span>{showArchived ? "archived threads" : "command palette"}</span></span>
+        <div class="sheet-head-actions">
+          <button
+            type="button"
+            class="pal-toggle"
+            class:on={showArchived}
+            onclick={toggleArchived}
+          >
+            {showArchived ? "back to palette" : "show archived"}
+          </button>
+          <kbd>Esc</kbd>
+        </div>
       </div>
       <input
         bind:this={palInput}
         class="sheet-in"
         bind:value={palQuery}
         oninput={() => (palAt = 0)}
-        placeholder="Jump to conversation, thread, device, or action…"
+        placeholder={showArchived ? "Filter archived threads…" : "Jump to conversation, thread, device, or action…"}
         autocomplete="off"
         spellcheck="false"
       />
       <div class="sheet-list scroll">
-        {#each paletteItems as it, i}
-          <button
-            type="button"
-            class="sheet-row"
-            class:on={i === palAt}
-            onclick={() => { orb.paletteOpen = false; it.run(); }}
-          >
-            {#if it.hue !== undefined}
-              <i class="led" style="--hue: var(--hue{it.hue})"></i>
-            {/if}
-            <span class="sr-lbl">{it.label}</span>
-            {#if it.detail}<small class="sr-det">{it.detail}</small>{/if}
-            {#if it.kbd}<kbd>{it.kbd}</kbd>{/if}
-          </button>
-        {/each}
-        {#if paletteItems.length === 0}
-          <p class="meta pad">nothing matches</p>
+        {#if showArchived && archivedLoading}
+          <p class="meta pad">loading archived threads…</p>
+        {:else}
+          {#each paletteItems as it, i}
+            <div
+              class="sheet-row"
+              class:on={i === palAt}
+              role="button"
+              tabindex="0"
+              onclick={() => {
+                if (it.group === "archived") {
+                  it.run();
+                } else {
+                  orb.paletteOpen = false;
+                  it.run();
+                }
+              }}
+              onkeydown={ev => {
+                if (ev.key === "Enter" || ev.key === " ") {
+                  ev.preventDefault();
+                  if (it.group === "archived") {
+                    it.run();
+                  } else {
+                    orb.paletteOpen = false;
+                    it.run();
+                  }
+                }
+              }}
+              oncontextmenu={ev => {
+                if (it.group === "threads" && it.entry && !it.entry.unstored) {
+                  ev.preventDefault();
+                  orb.paletteOpen = false;
+                  orb.openThreadMenu(it.entry);
+                }
+              }}
+            >
+              {#if it.hue !== undefined}
+                <i class="led" style="--hue: var(--hue{it.hue})"></i>
+              {/if}
+              <span class="sr-lbl">{it.label}</span>
+              {#if it.detail}<small class="sr-det">{it.detail}</small>{/if}
+              {#if it.group === "threads" && it.entry && !it.entry.unstored}
+                <button
+                  type="button"
+                  class="sr-act"
+                  onclick={ev => { ev.stopPropagation(); archiveThread(it.entry); }}
+                  aria-label="Archive thread"
+                  title="Archive thread"
+                >archive</button>
+              {/if}
+              {#if it.group === "archived" && it.entry}
+                <button
+                  type="button"
+                  class="sr-act always"
+                  onclick={ev => { ev.stopPropagation(); unarchiveThread(it.entry); }}
+                  aria-label="Unarchive thread"
+                >unarchive</button>
+              {/if}
+              {#if it.kbd}<kbd>{it.kbd}</kbd>{/if}
+            </div>
+          {/each}
+          {#if paletteItems.length === 0}
+            <p class="meta pad">{showArchived ? "no archived threads" : "nothing matches"}</p>
+          {/if}
         {/if}
       </div>
     </div>
@@ -331,6 +437,31 @@
     justify-content: space-between;
     padding: 0 2px 10px;
   }
+  .sheet-head-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .pal-toggle {
+    padding: 2px 7px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: none;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--meta);
+    cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+  }
+  .pal-toggle:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+  .pal-toggle.on {
+    border-color: var(--rule);
+    background: var(--recessed);
+    color: var(--fg);
+  }
   .sheet-in {
     width: 100%;
     margin-bottom: 8px;
@@ -382,6 +513,44 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+  .sr-act {
+    flex-shrink: 0;
+    padding: 2px 7px;
+    border: 1px solid var(--rule-soft);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--meta);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+  }
+  .sr-act.always {
+    opacity: 1;
+  }
+  .sheet-row:hover .sr-act,
+  .sheet-row:focus-within .sr-act,
+  .sheet-row.on .sr-act {
+    opacity: 1;
+  }
+  .sr-act:hover {
+    background: var(--recessed);
+    border-color: var(--rule);
+    color: var(--fg);
+  }
+  .sheet-row.on .sr-act {
+    border-color: color-mix(in srgb, var(--bg) 35%, transparent);
+    color: var(--bg);
+  }
+  .sheet-row.on .sr-act:hover {
+    background: color-mix(in srgb, var(--bg) 16%, transparent);
+    border-color: color-mix(in srgb, var(--bg) 60%, transparent);
+    color: var(--bg);
+  }
+  @media (hover: none) {
+    .sr-act { opacity: 0.8; }
   }
   .field-actions {
     display: flex;

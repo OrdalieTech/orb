@@ -461,6 +461,7 @@ export function createMockPeer({ emit, rowCount = 2000 }) {
   };
 
   const closedTabs = new Map();
+  const archivedEntries = [];
   let termBuf = "\x1b[1;32morb@macbook\x1b[0m:\x1b[1;34m~/orb\x1b[0m$ ";
   let termLine = "";
   let termWaiters = [];
@@ -597,6 +598,40 @@ export function createMockPeer({ emit, rowCount = 2000 }) {
           emitState();
           emitHome();
         }
+        return;
+      }
+      if (m.do === "archive") {
+        const archived = m.archived !== false;
+        const matchesEntry = e => {
+          if (m.key && e.key === m.key) return true;
+          if (m.machine && m.session_id) {
+            return (
+              e.machine === m.machine &&
+              (e.key === m.session_id || e.key.endsWith(`|${m.session_id}`) || e.key.endsWith(`:${m.session_id}`))
+            );
+          }
+          return false;
+        };
+        if (archived) {
+          const idx = entries.findIndex(matchesEntry);
+          if (idx >= 0) {
+            const [entry] = entries.splice(idx, 1);
+            archivedEntries.unshift({ ...entry, open: false, live: false });
+            emitHome();
+          }
+        } else {
+          const idx = archivedEntries.findIndex(matchesEntry);
+          if (idx >= 0) {
+            const [entry] = archivedEntries.splice(idx, 1);
+            entries.push(entry);
+            emitHome();
+          }
+        }
+        reply({ ok: true });
+        return;
+      }
+      if (m.do === "threads.archived") {
+        reply({ entries: [...archivedEntries] });
         return;
       }
       if (m.do === "detail") {

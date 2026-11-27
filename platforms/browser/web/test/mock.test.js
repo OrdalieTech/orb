@@ -10,8 +10,9 @@ function makePeer() {
     rowCount: 12,
   });
   const latestState = () => frames.filter(f => f.t === "state").at(-1);
+  const latestHome = () => frames.filter(f => f.t === "home").at(-1);
   const replyFor = id => frames.find(f => f.t === "reply" && f.id === id);
-  return { peer, frames, latestState, replyFor };
+  return { peer, frames, latestState, latestHome, replyFor };
 }
 
 test("createMockPeer handles tab close + open (reopen), move, and rename", () => {
@@ -109,4 +110,31 @@ test("createMockPeer handles spread.info, spread.ssh, and invite", () => {
   assert.equal(ssh.ok, true);
   assert.equal(ssh.target, "ordalie-lab-3");
   assert.equal(ssh.output, "joined · Mitosis running");
+});
+
+test("createMockPeer handles archive, threads.archived, and unarchive", () => {
+  const { peer, latestHome, replyFor } = makePeer();
+  peer.app(JSON.stringify({ do: "hello" }));
+
+  const targetKey = "s:thread-0";
+  assert.ok(latestHome().entries.some(e => e.key === targetKey));
+
+  // Archive thread -> removed from active home.entries
+  peer.app(JSON.stringify({ do: "archive", id: "req-arch", key: targetKey, archived: true }));
+  assert.equal(replyFor("req-arch").result.ok, true);
+  assert.ok(!latestHome().entries.some(e => e.key === targetKey));
+
+  // threads.archived -> lists the archived thread
+  peer.app(JSON.stringify({ do: "threads.archived", id: "req-list" }));
+  const archived = replyFor("req-list").result.entries;
+  assert.equal(archived.length, 1);
+  assert.equal(archived[0].key, targetKey);
+
+  // Unarchive thread -> restored to active home.entries and removed from archived list
+  peer.app(JSON.stringify({ do: "archive", id: "req-unarch", key: targetKey, archived: false }));
+  assert.equal(replyFor("req-unarch").result.ok, true);
+  assert.ok(latestHome().entries.some(e => e.key === targetKey));
+
+  peer.app(JSON.stringify({ do: "threads.archived", id: "req-list-2" }));
+  assert.equal(replyFor("req-list-2").result.entries.length, 0);
 });

@@ -61,7 +61,7 @@ func MigrationStatus(ctx context.Context, path, name string) (bool, error) {
 			return false, nil
 		}
 	}
-	if id != applicationID || version < 1 || version > 4 {
+	if id != applicationID || version < 1 || version > 5 {
 		return false, errors.New("unsupported database schema")
 	}
 	return (&DB{DB: handle}).Migrated(ctx, name)
@@ -136,7 +136,7 @@ func Open(ctx context.Context, path string) (_ *DB, err error) {
 		if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 			return nil, err
 		}
-		if id == applicationID && version == 4 {
+		if id == applicationID && version == 5 {
 			var journal string
 			if err = db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&journal); err != nil {
 				return nil, err
@@ -166,7 +166,7 @@ func Open(ctx context.Context, path string) (_ *DB, err error) {
 	if err = tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return nil, err
 	}
-	if (id != 0 && id != applicationID) || version > 4 {
+	if (id != 0 && id != applicationID) || version > 5 {
 		return nil, errors.New("unsupported database schema")
 	}
 	if id == 0 {
@@ -245,6 +245,13 @@ ALTER TABLE sessions ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0;
 UPDATE sessions SET message_count=(SELECT count(*) FROM entries WHERE namespace=sessions.namespace AND session_id=sessions.id AND json_extract(payload,'$.type')='message'),
 preview=coalesce((SELECT substr(CASE json_type(payload,'$.message.content') WHEN 'text' THEN json_extract(payload,'$.message.content') WHEN 'array' THEN (SELECT group_concat(json_extract(value,'$.text'),'') FROM json_each(entries.payload,'$.message.content') WHERE json_extract(value,'$.type')='text') ELSE '' END,1,4096) FROM entries WHERE namespace=sessions.namespace AND session_id=sessions.id AND json_extract(payload,'$.message.role')='user' ORDER BY seq LIMIT 1),'');
 PRAGMA user_version=4;`)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if version < 5 {
+		_, err = tx.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN local_only INTEGER NOT NULL DEFAULT 0;
+PRAGMA user_version=5;`)
 		if err != nil {
 			return nil, err
 		}

@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -127,6 +129,99 @@ func (a *App) slow(in intent) func() (any, error) {
 		return call(func() (any, error) { return a.renameThread(in.Key, in.Name) })
 	case "delete":
 		return call(func() (any, error) { return a.delete(in.Key) })
+	case "archive":
+		return call(func() (any, error) {
+			peer, sessionID := machine, cmp.Or(in.SessionID, in.Target)
+			if strings.HasPrefix(in.Key, "t:") {
+				if p, s, ok := strings.Cut(strings.TrimPrefix(in.Key, "t:"), "|"); ok {
+					peer, sessionID = p, s
+				}
+			}
+			if sessionID == "" {
+				return nil, errors.New("missing session id")
+			}
+			archived := true
+			if in.Archived != nil {
+				archived = *in.Archived
+			}
+			var r json.RawMessage
+			if err := a.refused(peer, "archive a session", a.remote(ctx, peer, "host.session.archive", map[string]any{"id": sessionID, "archived": archived}, &r)); err != nil {
+				return nil, err
+			}
+			a.mu.Lock()
+			if m := a.machine(peer); m != nil {
+				if archived {
+					m.threads = slices.DeleteFunc(m.threads, func(th thread) bool { return th.id == sessionID })
+					a.flush()
+				} else {
+					m.loadDone = false
+					go a.loadThreads(peer)
+				}
+			}
+			a.mu.Unlock()
+			return map[string]any{"machine": peer, "session_id": sessionID, "archived": archived}, nil
+		})
+	case "threads.archived":
+		return call(func() (any, error) {
+			var peers []string
+			if in.Machine != "" {
+				peers = []string{in.Machine}
+			} else {
+				a.mu.Lock()
+				for _, m := range a.machines {
+					if m.state == "connected" && (m.launch || m.id == a.self) {
+						peers = append(peers, m.id)
+					}
+				}
+				a.mu.Unlock()
+			}
+			entries := []Entry{}
+			for _, peer := range peers {
+				cursor := ""
+				count := 0
+				for range 32 {
+					var page struct {
+						Cursor string
+						Items  []struct {
+							ID       string `json:"session_id"`
+							Name     string
+							CWD      string
+							First    string
+							Modified int64
+						}
+					}
+					if err := a.remote(ctx, peer, "host.sessions", map[string]any{"archived": true, "cursor": cursor}, &page); err != nil {
+						if in.Machine != "" {
+							return nil, a.refused(peer, "list archived sessions", err)
+						}
+						break
+					}
+					for _, it := range page.Items {
+						title := it.Name
+						if title == "" || title == "null" {
+							title = cmp.Or(firstLine(invocation(it.First), 200), path.Base(it.CWD))
+						}
+						entries = append(entries, Entry{
+							Key:      "t:" + peer + "|" + it.ID,
+							Title:    title,
+							Machine:  peer,
+							CWD:      it.CWD,
+							Modified: it.Modified,
+						})
+						count++
+						if count >= 256 {
+							break
+						}
+					}
+					if count >= 256 || page.Cursor == "" {
+						break
+					}
+					cursor = page.Cursor
+				}
+			}
+			slices.SortStableFunc(entries, func(x, y Entry) int { return cmp.Compare(y.Modified, x.Modified) })
+			return map[string]any{"entries": entries}, nil
+		})
 	case "attach":
 		// A file of this device a message cites: another machine gets a copy, in pieces a frame
 		// holds, and the message cites the copy. Hosts without disk paths (browser tabs) pass

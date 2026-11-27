@@ -933,17 +933,23 @@ function createOrbStore() {
     if (what === "close conversation") closeTab(c);
   }
 
+  async function archiveEntry(key, archived = true) {
+    return ask("archive", { key, archived }).catch(err => showError(err.message));
+  }
+
   async function openThreadMenu(e) {
     const c = getTab(e.tab);
     const what = await pick(named(e.title), [
       { label: "rename" },
       ...(c ? [{ label: "close conversation" }] : []),
+      ...(!e.unstored ? [{ label: "archive" }] : []),
       ...(e.deletable ? [{ label: "delete forever" }] : []),
     ]);
     if (what === "rename") {
       renamePrompt(e.title, name => ask("rename", { key: e.key, name }).catch(err => showError(err.message)));
     }
     if (what === "close conversation") closeTab(c);
+    if (what === "archive") archiveEntry(e.key, true);
     if (
       what === "delete forever" &&
       (await pick(`delete ${named(e.title)}? it cannot come back`, [{ label: "keep it" }, { label: "delete forever" }])) ===
@@ -1360,6 +1366,7 @@ function createOrbStore() {
     aimAt,
     defaultPeer,
     openEntry,
+    archiveEntry,
     openExchange,
     closeTab,
     reopenClosed,

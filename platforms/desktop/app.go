@@ -105,9 +105,12 @@ type app struct {
 	dirErr     string                  // why it could not list it
 	exploring  string                  // the machine the explorer shows, "" closed
 	gone       map[string]bool         // tabs closed here, until the view says so too
-	palette    bool                    // Go to (⌘K) shows
-	search     string                  // what it looks for
-	pick       int                     // the line ↩ chooses
+	palette         bool                    // Go to (⌘K) shows
+	search          string                  // what it looks for
+	pick            int                     // the line ↩ chooses
+	showArchived    bool                    // Go to (⌘K): whether archived threads are shown
+	archived        []Entry                 // Go to (⌘K): archived threads fetched via threads.archived
+	archivedLoading bool                    // Go to (⌘K): true while fetching archived threads
 	listing    time.Time               // until when a tab shown waits for the view to list it
 	answered   string                  // the pairing claim answered, until the view drops it
 	asked      map[string]time.Time    // when each question showed: its keys arm a moment later
@@ -434,6 +437,9 @@ func (a *app) renameThread(e Entry) {
 func (a *app) threadMenu(m *ui.Menu, e Entry) {
 	if m.Item("Rename…").Chosen() {
 		a.renameThread(e)
+	}
+	if m.Item("Archive").Chosen() {
+		a.o.send("archive", "key", e.Key, "archived", true)
 	}
 	if e.Deletable && m.Item("Delete forever…").Chosen() {
 		a.picker = &picker{title: "delete “" + e.Title + "”? it cannot come back", options: []string{"delete forever", "keep it"}, pick: func(s string) {

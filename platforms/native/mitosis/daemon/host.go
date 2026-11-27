@@ -62,12 +62,19 @@ func (s *Service) host(ctx context.Context, p mitosis.Principal, method string, 
 	switch method {
 	case "host.sessions":
 		var q struct {
-			Cursor string `json:"cursor,omitempty"`
+			Cursor   string `json:"cursor,omitempty"`
+			Archived bool   `json:"archived,omitempty"`
 		}
 		if err := protocol.Decode(params, &q); err != nil {
 			return nil, err
 		}
-		page, err := s.state.Sessions().Catalog(ctx, sqlite.CatalogQuery{Cursor: q.Cursor, Limit: min(max(protocol.PageLimit(ctx), 1), 128)})
+		excludeLocalOnly := p.PeerID != "" && (s.Mitosis == nil || p.PeerID != s.Mitosis.PeerID())
+		page, err := s.state.Sessions().Catalog(ctx, sqlite.CatalogQuery{
+			Cursor:           q.Cursor,
+			Limit:            min(max(protocol.PageLimit(ctx), 1), 128),
+			Archived:         q.Archived,
+			ExcludeLocalOnly: excludeLocalOnly,
+		})
 		if err != nil {
 			return nil, mitosis.Fail("invalid_params")
 		}
@@ -95,6 +102,30 @@ func (s *Service) host(ctx context.Context, p mitosis.Principal, method string, 
 			out.Items = append(out.Items, item{e.ID, e.Name, e.CWD, modified.UnixMilli(), e.MessageCount, string(first[:min(len(first), 160)])})
 		}
 		return mitosis.JSON(out), nil
+	case "host.session.archive":
+		var q struct {
+			ID        string `json:"id,omitempty"`
+			SessionID string `json:"session_id,omitempty"`
+			Archived  *bool  `json:"archived,omitempty"`
+		}
+		if err := protocol.Decode(params, &q); err != nil {
+			return nil, err
+		}
+		id := cmp.Or(q.ID, q.SessionID)
+		if id == "" {
+			return nil, mitosis.Fail("invalid_params")
+		}
+		archived := true
+		if q.Archived != nil {
+			archived = *q.Archived
+		}
+		if err := s.state.Sessions().ArchiveSession(ctx, id, archived); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, mitosis.Fail("not_found")
+			}
+			return nil, err
+		}
+		return mitosis.JSON(map[string]any{"id": id, "archived": archived}), nil
 	case "host.read":
 		// A thread's last messages, as an Orb serving it would open with: a conversation shown
 		// while no Orb runs it reads as it was.

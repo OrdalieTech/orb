@@ -246,6 +246,9 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	if len(argv) > 0 && argv[0] == "mitosis" {
 		return runMitosisCommand(ctx, argv[1:], streams)
 	}
+	if len(argv) > 0 && argv[0] == "session" {
+		return runSessionCommand(ctx, argv[1:], streams)
+	}
 	if len(argv) > 0 && argv[0] == "app" {
 		return runApp(ctx, argv[1:], streams)
 	}

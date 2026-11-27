@@ -212,3 +212,21 @@ func TestAgentsLocateByName(t *testing.T) {
 		t.Fatal("locate(\"unknown\") succeeded, want error")
 	}
 }
+
+// TestAgentsOnlyListsActiveOpenConversations verifies that the agents tool only queries
+// agent.describe (active open conversations) and never queries stored/archived sessions
+// (host.sessions), nor registers any additional LLM tools beyond "agents".
+func TestAgentsOnlyListsActiveOpenConversations(t *testing.T) {
+	others := &fakeMitosis{conversations: map[string][]string{"p0": {"s0", "s1"}}}
+	agents := &tool{mitosis: others}
+	// fakeMitosis.Call returns an error for any method other than agent.describe,
+	// conversation.describe, events.subscribe, events.unsubscribe, and agent.call
+	// (specifically rejecting host.sessions or host.session.archive).
+	out, _, err := agents.run(context.Background(), "list", "", "", "")
+	if err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+	if want := "Agent p0 · mac (this machine)\n  s1 · /work/docs · Docs · idle"; out != want {
+		t.Fatalf("list = %q, want %q", out, want)
+	}
+}

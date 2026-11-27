@@ -499,3 +499,128 @@ func TestHostTerminalRunsAShellInTheFolder(t *testing.T) {
 		t.Fatalf("a closed terminal still answers: %v", err)
 	}
 }
+
+func TestHostSessionArchiveAndLocalOnlyVisibility(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	t.Setenv(config.EnvAgentDir, agentDir)
+	t.Setenv("ORB_STATE_HOME", filepath.Join(root, "state"))
+	t.Setenv("ORB_MITOSIS_HOME", filepath.Join(root, "mitosis"))
+	t.Setenv("ORB_OFFLINE", "1")
+
+	state, err := native.Open(t.Context(), agentDir, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = state.Close() }()
+
+	b, err := mitosis.Open(&document.Memory{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = b.Close() }()
+
+	cwdJSON, _ := json.Marshal(root)
+	importSession := func(id, text string) {
+		t.Helper()
+		p := filepath.Join(root, id+".jsonl")
+		data := fmt.Sprintf(
+			"{\"type\":\"session\",\"version\":3,\"id\":%q,\"timestamp\":\"2026-09-27T10:00:00.000Z\",\"cwd\":%s}\n"+
+				"{\"type\":\"message\",\"id\":\"m1\",\"parentId\":null,\"timestamp\":\"2026-09-27T10:00:01.000Z\",\"message\":{\"role\":\"user\",\"content\":%q,\"timestamp\":1790503201000}}\n",
+			id, string(cwdJSON), text,
+		)
+		if err := os.WriteFile(p, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := state.Sessions().OpenPath(t.Context(), p); err != nil {
+			t.Fatal("import:", err)
+		}
+	}
+
+	const (
+		idNormal  = "11111111-1111-4111-8111-111111111111"
+		idPrivate = "22222222-2222-4222-8222-222222222222"
+	)
+	importSession(idNormal, "normal session")
+	importSession(idPrivate, "private session")
+	if err := state.Sessions().SetSessionLocalOnly(t.Context(), idPrivate, true); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(t.Context(), state, "personal", "dev", b, nil, "")
+	remotePeer := mitosis.Principal{PeerID: "orb:ed25519:remote", Subject: mitosis.Subject{Kind: "controller"}}
+	localPeer := mitosis.Principal{PeerID: b.PeerID(), Subject: mitosis.Subject{Kind: "controller"}}
+
+	listIDs := func(p mitosis.Principal, params any) []string {
+		t.Helper()
+		raw, err := s.host(t.Context(), p, "host.sessions", mitosis.JSON(params))
+		if err != nil {
+			t.Fatalf("host.sessions: %v", err)
+		}
+		var page struct {
+			Items []struct {
+				ID string `json:"session_id"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(raw, &page); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		ids := make([]string, 0, len(page.Items))
+		for _, it := range page.Items {
+			ids = append(ids, it.ID)
+		}
+		return ids
+	}
+
+	// Remote peer cannot see local_only session; local owner can see both.
+	if got := listIDs(remotePeer, struct{}{}); len(got) != 1 || got[0] != idNormal {
+		t.Fatalf("remote peer sessions = %v, want [%s]", got, idNormal)
+	}
+	if got := listIDs(localPeer, struct{}{}); len(got) != 2 {
+		t.Fatalf("local peer sessions = %v, want 2 sessions", got)
+	}
+
+	// Unknown ID returns not_found; missing ID returns invalid_params.
+	if _, err := s.host(t.Context(), localPeer, "host.session.archive", mitosis.JSON(map[string]any{})); mitosis.Code(err) != "invalid_params" {
+		t.Fatalf("missing id: got %v, want invalid_params", err)
+	}
+	if _, err := s.host(t.Context(), localPeer, "host.session.archive", mitosis.JSON(map[string]any{"id": "nonexistent"})); mitosis.Code(err) != "not_found" {
+		t.Fatalf("unknown id: got %v, want not_found", err)
+	}
+
+	// Archive idNormal (default archived=true).
+	raw, err := s.host(t.Context(), localPeer, "host.session.archive", mitosis.JSON(map[string]any{"session_id": idNormal}))
+	if err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	var archRes struct {
+		ID       string `json:"id"`
+		Archived bool   `json:"archived"`
+	}
+	if err := json.Unmarshal(raw, &archRes); err != nil || archRes.ID != idNormal || !archRes.Archived {
+		t.Fatalf("archive response = %s (%v)", raw, err)
+	}
+
+	// Default host.sessions hides archived; archived:true returns it.
+	if got := listIDs(remotePeer, struct{}{}); len(got) != 0 {
+		t.Fatalf("remote active after archive = %v, want []", got)
+	}
+	if got := listIDs(remotePeer, map[string]any{"archived": true}); len(got) != 1 || got[0] != idNormal {
+		t.Fatalf("remote archived = %v, want [%s]", got, idNormal)
+	}
+
+	// Unarchive idNormal (archived=false).
+	raw, err = s.host(t.Context(), localPeer, "host.session.archive", mitosis.JSON(map[string]any{"id": idNormal, "archived": false}))
+	if err != nil {
+		t.Fatalf("unarchive: %v", err)
+	}
+	if err := json.Unmarshal(raw, &archRes); err != nil || archRes.ID != idNormal || archRes.Archived {
+		t.Fatalf("unarchive response = %s (%v)", raw, err)
+	}
+	if got := listIDs(remotePeer, struct{}{}); len(got) != 1 || got[0] != idNormal {
+		t.Fatalf("remote active after unarchive = %v, want [%s]", got, idNormal)
+	}
+	if got := listIDs(remotePeer, map[string]any{"archived": true}); len(got) != 0 {
+		t.Fatalf("remote archived after unarchive = %v, want []", got)
+	}
+}

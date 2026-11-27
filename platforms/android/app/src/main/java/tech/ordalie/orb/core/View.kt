@@ -85,16 +85,17 @@ private fun state(o: JSONObject) = State(
     },
     o.optBoolean("acting"), o.optString("summary"), o.optString("latest"), o.list("commands", ::command),
 )
+private fun entry(e: JSONObject) = Entry(
+    e.optString("key"), e.optString("title"), e.optString("machine"), e.optString("cwd"), e.optLong("modified"), e.optBoolean("live"), e.optBoolean("asks"),
+    e.optBoolean("open"), e.optString("tab"), e.optBoolean("unstored"), e.optBoolean("deletable"),
+)
 private fun home(o: JSONObject) = Home(
     o.list("machines") { m ->
         Machine(m.optString("id"), m.optString("name"), m.optBoolean("self"), m.optBoolean("connected"), m.optString("version"), m.optBoolean("launch"), m.optInt("hue"),
             m.list("running") { Running(it.optString("instance"), it.optString("label"), it.optBoolean("busy"), it.optBoolean("open")) },
             m.list("folders") { Folder(it.optString("cwd"), it.optInt("threads"), it.optLong("modified"), it.optBoolean("live")) })
     },
-    o.list("entries") { e ->
-        Entry(e.optString("key"), e.optString("title"), e.optString("machine"), e.optString("cwd"), e.optLong("modified"), e.optBoolean("live"), e.optBoolean("asks"),
-            e.optBoolean("open"), e.optString("tab"), e.optBoolean("unstored"), e.optBoolean("deletable"))
-    },
+    o.list("entries", ::entry),
 )
 private fun spans(a: JSONArray?) = a.map { Span(it.optString("t"), it.optBoolean("b"), it.optBoolean("i"), it.optBoolean("c"), it.optBoolean("s"), it.optString("h")) }
 private fun block(o: JSONObject): Block = Block(
@@ -211,6 +212,23 @@ class View(private val scope: CoroutineScope, orb: Orb, private val budget: Int,
     fun machine(id: String) = home.machines.firstOrNull { it.id == id }
     /** The hue a machine's sessions are told apart by: 0 for this phone, 1 to 6 for a peer, as the view assigns them. */
     fun hue(peer: String?) = if (peer == null || peer == state.self) 0 else machine(peer)?.hue?.coerceAtLeast(1) ?: 1
+
+    /** Archives or unarchives a thread by key. */
+    fun archive(key: String, archived: Boolean = true, onDone: (String?) -> Unit = {}) {
+        scope.launch(Dispatchers.IO) {
+            val r = ask("archive", "key" to key, "archived" to archived)
+            withContext(Dispatchers.Main) { onDone(r.error) }
+        }
+    }
+
+    /** Loads archived threads, optionally filtered to a machine. */
+    fun archivedThreads(machine: String = "", onDone: (List<Entry>, String?) -> Unit) {
+        scope.launch(Dispatchers.IO) {
+            val r = if (machine.isEmpty()) ask("threads.archived") else ask("threads.archived", "machine" to machine)
+            val entries = r.obj?.list("entries", ::entry) ?: r.array.map(::entry)
+            withContext(Dispatchers.Main) { onDone(entries, r.error) }
+        }
+    }
 
     /** Stops this machine's Mitosis: it starts again with the current environment (the Linux). */
     fun restart() = send("restart")

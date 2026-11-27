@@ -91,9 +91,10 @@ class Ctx(
      *  which, unlike closing, removes it for good (and asks first). */
     fun threadMenu(e: Entry) {
         val t = v.tab(e.tab)
-        pick(Picker(named(e.title), listOfNotNull("rename", "close conversation".takeIf { t != null }, "delete forever".takeIf { e.deletable })) {
+        pick(Picker(named(e.title), listOfNotNull("rename", "archive", "close conversation".takeIf { t != null }, "delete forever".takeIf { e.deletable })) {
             when (it) {
                 "rename" -> rename(Rename(e.title) { name -> v.send("rename", "key" to e.key, "name" to name) })
+                "archive" -> v.archive(e.key, true)
                 "close conversation" -> t?.let(::close)
                 else -> pick(Picker("delete ${named(e.title)}? it cannot come back", listOf("delete forever", "keep it")) { yes -> if (yes == "delete forever") v.send("delete", "key" to e.key) })
             }

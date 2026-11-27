@@ -247,6 +247,21 @@
                 .filter(Boolean)
                 .join(" · ")}
             </small>
+            {#if !e.unstored}
+              <button
+                type="button"
+                class="entry-act"
+                onclick={ev => { ev.stopPropagation(); orb.archiveEntry(e.key, true); }}
+                aria-label="Archive session"
+                title="Archive session"
+              >
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="2" y="2.5" width="12" height="3" rx="0.75" />
+                  <path d="M3.5 5.5v7.25A1.25 1.25 0 0 0 4.75 14h6.5a1.25 1.25 0 0 0 1.25-1.25V5.5" />
+                  <path d="M6.5 9h3" />
+                </svg>
+              </button>
+            {/if}
             {#if followed}
               <button
                 type="button"
@@ -562,9 +577,13 @@
     color: var(--meta);
   }
   .entry-meta.asks { color: var(--rupture); font-weight: 700; }
+  .entry-act,
   .entry-x {
     flex-shrink: 0;
-    padding: 0 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 5px;
     border: 0;
     border-radius: var(--radius-sm);
     background: none;
@@ -575,6 +594,7 @@
     opacity: 0;
     transition: opacity var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
+  .entry-act:hover,
   .entry-x:hover {
     background: var(--recessed);
     color: var(--fg);
@@ -584,12 +604,15 @@
       background: var(--hover);
       color: var(--fg);
     }
+    .entry-row:hover .entry-act,
+    .entry-row:focus-within .entry-act,
     .entry-row:hover .entry-x,
     .entry-row:focus-within .entry-x {
       opacity: 1;
     }
   }
   @media (hover: none) {
+    .entry-act,
     .entry-x { opacity: 0.7; }
   }
   .reading {

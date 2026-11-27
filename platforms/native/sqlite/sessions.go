@@ -145,7 +145,7 @@ func (r *Sessions) Latest(ctx context.Context) (id, cwd string, err error) {
 }
 
 func (r *Sessions) List(ctx context.Context, options harness.SessionListOptions) ([]harness.SessionMetadata, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT header FROM sessions WHERE namespace=? AND (?='' OR cwd=?) ORDER BY modified DESC,id`, r.namespace, options.CWD, options.CWD)
+	rows, err := r.db.QueryContext(ctx, `SELECT header FROM sessions WHERE namespace=? AND archived=0 AND (?='' OR cwd=?) ORDER BY modified DESC,id`, r.namespace, options.CWD, options.CWD)
 	if err != nil {
 		return nil, err
 	}
@@ -349,6 +349,8 @@ type CatalogQuery struct {
 	CWD, Search, Cursor string
 	Limit               int
 	Archived            bool
+	ExcludeLocalOnly    bool
+	IncludeAll          bool
 }
 type CatalogEntry struct {
 	ParentID     string `json:"parent_id,omitempty"`
@@ -359,6 +361,8 @@ type CatalogEntry struct {
 	Name         string `json:"name"`
 	Created      string `json:"created"`
 	Modified     string `json:"modified"`
+	Archived     bool   `json:"archived,omitempty"`
+	LocalOnly    bool   `json:"local_only,omitempty"`
 }
 type CatalogPage struct {
 	Sessions []CatalogEntry `json:"sessions"`
@@ -375,8 +379,15 @@ func (r *Sessions) Catalog(ctx context.Context, q CatalogQuery) (CatalogPage, er
 	if q.Limit < 1 || q.Limit > 128 || len(q.Cursor) > 4096 || len(q.Search) > 1024 {
 		return result, errors.New("invalid catalog query")
 	}
-	query := "SELECT sessions.id,sessions.cwd,sessions.name,sessions.created,sessions.modified,sessions.preview,sessions.message_count,coalesce(sessions.parent_id,'') FROM sessions WHERE namespace=? AND archived=?"
-	args := []any{r.namespace, q.Archived}
+	query := "SELECT sessions.id,sessions.cwd,sessions.name,sessions.created,sessions.modified,sessions.preview,sessions.message_count,coalesce(sessions.parent_id,''),sessions.archived,sessions.local_only FROM sessions WHERE namespace=?"
+	args := []any{r.namespace}
+	if !q.IncludeAll {
+		query += " AND archived=?"
+		args = append(args, q.Archived)
+	}
+	if q.ExcludeLocalOnly {
+		query += " AND local_only=0"
+	}
 	if q.CWD != "" {
 		query += " AND sessions.cwd=?"
 		args = append(args, q.CWD)
@@ -393,9 +404,18 @@ func (r *Sessions) Catalog(ctx context.Context, q CatalogQuery) (CatalogPage, er
 		}
 	}
 	if q.Cursor != "" {
-		var cursor [6]string
+		var cursor []string
 		data, err := base64.RawURLEncoding.DecodeString(q.Cursor)
-		if err != nil || json.Unmarshal(data, &cursor) != nil || cursor[0] == "" || cursor[1] == "" || cursor[2] != q.CWD || cursor[3] != q.Search || cursor[4] != r.namespace || cursor[5] != strconv.FormatBool(q.Archived) {
+		if err != nil || json.Unmarshal(data, &cursor) != nil || (len(cursor) != 6 && len(cursor) != 8) {
+			return result, errors.New("invalid catalog cursor")
+		}
+		if cursor[0] == "" || cursor[1] == "" || cursor[2] != q.CWD || cursor[3] != q.Search || cursor[4] != r.namespace || cursor[5] != strconv.FormatBool(q.Archived) {
+			return result, errors.New("invalid catalog cursor")
+		}
+		if len(cursor) == 6 && (q.IncludeAll || q.ExcludeLocalOnly) {
+			return result, errors.New("invalid catalog cursor")
+		}
+		if len(cursor) == 8 && (cursor[6] != strconv.FormatBool(q.IncludeAll) || cursor[7] != strconv.FormatBool(q.ExcludeLocalOnly)) {
 			return result, errors.New("invalid catalog cursor")
 		}
 		query += " AND (created,id)<(?,?)"
@@ -410,7 +430,7 @@ func (r *Sessions) Catalog(ctx context.Context, q CatalogQuery) (CatalogPage, er
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var entry CatalogEntry
-		if err = rows.Scan(&entry.ID, &entry.CWD, &entry.Name, &entry.Created, &entry.Modified, &entry.Preview, &entry.MessageCount, &entry.ParentID); err != nil {
+		if err = rows.Scan(&entry.ID, &entry.CWD, &entry.Name, &entry.Created, &entry.Modified, &entry.Preview, &entry.MessageCount, &entry.ParentID, &entry.Archived, &entry.LocalOnly); err != nil {
 			return result, err
 		}
 		result.Sessions = append(result.Sessions, entry)
@@ -421,10 +441,191 @@ func (r *Sessions) Catalog(ctx context.Context, q CatalogQuery) (CatalogPage, er
 	if len(result.Sessions) > q.Limit {
 		result.Sessions = result.Sessions[:q.Limit]
 		last := result.Sessions[q.Limit-1]
-		data, _ := json.Marshal([6]string{last.Created, last.ID, q.CWD, q.Search, r.namespace, strconv.FormatBool(q.Archived)})
+		data, _ := json.Marshal([8]string{last.Created, last.ID, q.CWD, q.Search, r.namespace, strconv.FormatBool(q.Archived), strconv.FormatBool(q.IncludeAll), strconv.FormatBool(q.ExcludeLocalOnly)})
 		result.Next = base64.RawURLEncoding.EncodeToString(data)
 	}
 	return result, nil
+}
+
+// ArchiveSession marks a session as archived or active.
+func (r *Sessions) ArchiveSession(ctx context.Context, id string, archived bool) error {
+	tx, err := r.db.begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, "UPDATE sessions SET archived=? WHERE namespace=? AND id=?", boolInt(archived), r.namespace, id)
+	if err != nil {
+		return err
+	}
+	changed, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
+
+// SetSessionLocalOnly marks a session as local-only or visible remotely.
+func (r *Sessions) SetSessionLocalOnly(ctx context.Context, id string, localOnly bool) error {
+	tx, err := r.db.begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, "UPDATE sessions SET local_only=? WHERE namespace=? AND id=?", boolInt(localOnly), r.namespace, id)
+	if err != nil {
+		return err
+	}
+	changed, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
+
+type SessionFilter struct {
+	IDs      []string
+	CWD      string
+	Match    string
+	Before   time.Time
+	Archived *bool
+	Limit    int
+}
+
+type sessionQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func (r *Sessions) matchSessions(ctx context.Context, q sessionQueryer, f SessionFilter) ([]CatalogEntry, error) {
+	query := "SELECT id,cwd,name,created,modified,preview,message_count,coalesce(parent_id,''),archived,local_only FROM sessions WHERE namespace=?"
+	args := []any{r.namespace}
+	if f.Archived != nil {
+		query += " AND archived=?"
+		args = append(args, boolInt(*f.Archived))
+	}
+	query += " ORDER BY modified DESC,id DESC"
+	rows, err := q.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var all []CatalogEntry
+	for rows.Next() {
+		var entry CatalogEntry
+		if err = rows.Scan(&entry.ID, &entry.CWD, &entry.Name, &entry.Created, &entry.Modified, &entry.Preview, &entry.MessageCount, &entry.ParentID, &entry.Archived, &entry.LocalOnly); err != nil {
+			return nil, err
+		}
+		all = append(all, entry)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	var idSet map[string]bool
+	if len(f.IDs) > 0 {
+		idSet = make(map[string]bool, len(f.IDs))
+		for _, ref := range f.IDs {
+			if ref == "" {
+				continue
+			}
+			var exact string
+			var prefixes []string
+			for _, entry := range all {
+				if entry.ID == ref {
+					exact = entry.ID
+					break
+				}
+				if strings.HasPrefix(entry.ID, ref) {
+					prefixes = append(prefixes, entry.ID)
+				}
+			}
+			if exact != "" {
+				idSet[exact] = true
+			} else if len(prefixes) == 1 {
+				idSet[prefixes[0]] = true
+			} else if len(prefixes) > 1 {
+				return nil, fmt.Errorf("ambiguous session ID %q", ref)
+			}
+		}
+	}
+
+	var cleanCWD string
+	if f.CWD != "" {
+		cleanCWD = filepath.Clean(f.CWD)
+	}
+	needle := strings.ToLower(f.Match)
+
+	matched := make([]CatalogEntry, 0)
+	for _, entry := range all {
+		if idSet != nil && !idSet[entry.ID] {
+			continue
+		}
+		if cleanCWD != "" {
+			entryCWD := filepath.Clean(entry.CWD)
+			if entryCWD != cleanCWD {
+				prefix := cleanCWD
+				if !strings.HasSuffix(prefix, string(filepath.Separator)) {
+					prefix += string(filepath.Separator)
+				}
+				if !strings.HasPrefix(entryCWD, prefix) {
+					continue
+				}
+			}
+		}
+		if needle != "" {
+			if !strings.Contains(strings.ToLower(entry.ID), needle) &&
+				!strings.Contains(strings.ToLower(entry.Name), needle) &&
+				!strings.Contains(strings.ToLower(entry.CWD), needle) &&
+				!strings.Contains(strings.ToLower(entry.Preview), needle) {
+				continue
+			}
+		}
+		if !f.Before.IsZero() {
+			modTime, err := time.Parse(time.RFC3339Nano, entry.Modified)
+			if err != nil || !modTime.Before(f.Before) {
+				continue
+			}
+		}
+		matched = append(matched, entry)
+		if f.Limit > 0 && len(matched) >= f.Limit {
+			break
+		}
+	}
+	return matched, nil
+}
+
+// MatchSessions returns sessions matching the given filter, ordered by modified DESC, id DESC.
+func (r *Sessions) MatchSessions(ctx context.Context, f SessionFilter) ([]CatalogEntry, error) {
+	return r.matchSessions(ctx, r.db, f)
+}
+
+// ArchiveMatching archives or unarchives all sessions matching the filter in a single transaction.
+func (r *Sessions) ArchiveMatching(ctx context.Context, f SessionFilter, archived bool) ([]CatalogEntry, error) {
+	tx, err := r.db.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	matched, err := r.matchSessions(ctx, tx, f)
+	if err != nil {
+		return nil, err
+	}
+	for i := range matched {
+		if _, err := tx.ExecContext(ctx, "UPDATE sessions SET archived=? WHERE namespace=? AND id=?", boolInt(archived), r.namespace, matched[i].ID); err != nil {
+			return nil, err
+		}
+		matched[i].Archived = archived
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return matched, nil
 }
 
 // OpenPath accepts a true JSONL import path or a native session ID.

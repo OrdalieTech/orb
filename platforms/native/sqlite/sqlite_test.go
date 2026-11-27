@@ -224,7 +224,7 @@ func TestOpenRefusesUnsafeOrUnknownDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("DROP TABLE foreign_sessions; DROP TABLE foreign_sources; DROP TABLE memory_items; DROP TABLE chat_pending; ALTER TABLE sessions DROP COLUMN preview; ALTER TABLE sessions DROP COLUMN message_count; PRAGMA user_version=1"); err != nil {
+	if _, err := db.Exec("DROP TABLE foreign_sessions; DROP TABLE foreign_sources; DROP TABLE memory_items; DROP TABLE chat_pending; ALTER TABLE sessions DROP COLUMN preview; ALTER TABLE sessions DROP COLUMN message_count; ALTER TABLE sessions DROP COLUMN local_only; PRAGMA user_version=1"); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Document("upgrade", "retained").Update(ctx, func([]byte) ([]byte, error) { return []byte("retained"), nil }); err != nil {

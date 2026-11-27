@@ -292,16 +292,41 @@ func (a *app) renameField(c *ui.Context, row string) bool {
 }
 
 // openPalette opens Go to (⌘K): every conversation open, every thread, a new session anywhere.
-func (a *app) openPalette() { a.palette, a.search, a.pick = true, "", 0 }
+func (a *app) openPalette() {
+	a.palette, a.search, a.pick, a.showArchived = true, "", 0, false
+}
+
+func (a *app) loadArchived() {
+	a.archivedLoading = true
+	then(a.o, func(r struct{ Entries []Entry }, err error) {
+		a.archivedLoading = false
+		if err != nil {
+			a.say(err.Error())
+			return
+		}
+		a.archived = r.Entries
+	}, "threads.archived")
+}
+
+func (a *app) unarchiveThread(e Entry) {
+	a.archived = slices.DeleteFunc(a.archived, func(x Entry) bool { return x.Key == e.Key })
+	then(a.o, func(_ struct{}, err error) {
+		if err != nil {
+			a.say(err.Error())
+			a.loadArchived()
+		}
+	}, "archive", "key", e.Key, "archived", false)
+}
 
 // hit is one line of Go to, and what choosing it does: here, or (⌘↩) in a tile at the right.
 type hit struct {
 	title, meta string
 	score       int
 	live, asks  bool
+	archived    bool
 	hue         int
 	here, right func()
-	thread      *Entry // a closed thread: its menu renames or deletes it
+	thread      *Entry // a closed thread: its menu renames, archives/unarchives, or deletes it
 }
 
 func (a *app) paletteSheet(c *ui.Context) {
@@ -375,6 +400,22 @@ func (a *app) paletteSheet(c *ui.Context) {
 				here: func() { a.open(e.Key) }, right: func() { a.dropped(a.active, "right", carried{key: e.Key}) }, thread: &e}, e.Title, e.CWD, mName)
 		}
 	}
+	if a.showArchived {
+		for _, e := range a.archived {
+			e := e
+			meta := "archived"
+			if age := ago(e.Modified); age != "" {
+				meta = "archived · " + age
+			}
+			mName := ""
+			if m := o.machine(e.Machine); m != nil && !m.Self {
+				mName = m.Name
+				meta = m.Name + " · " + meta
+			}
+			add(hit{title: e.Title, meta: meta, archived: true, hue: o.hue(e.Machine),
+				here: func() { a.unarchiveThread(e) }, right: func() { a.unarchiveThread(e) }, thread: &e}, e.Title, e.CWD, mName, "archived")
+		}
+	}
 	if q != "" {
 		slices.SortStableFunc(hits, func(x, y hit) int { return y.score - x.score })
 		if len(hits) > 60 {
@@ -410,7 +451,10 @@ func (a *app) paletteSheet(c *ui.Context) {
 			for i, h := range hits {
 				row := ui.Row(c.Key(fmt.Sprint(i))).FillWidth().Padding(8, 10).Gap(10).Radius(8).Children(func() {
 					where(c, h.hue, h.live, h.asks, pal.mute)
-					ui.Text(c, h.title).Grow(1).Basis(0).SingleLine()
+					title := ui.Text(c, h.title).Grow(1).Basis(0).SingleLine()
+					if h.archived {
+						title.TextColor(pal.meta)
+					}
 					ink := pal.meta
 					if h.asks {
 						ink = rupture
@@ -424,14 +468,46 @@ func (a *app) paletteSheet(c *ui.Context) {
 					a.pick = i
 				}
 				if h.thread != nil {
-					row.ContextMenu(func(m *ui.Menu) { a.threadMenu(m, *h.thread) })
+					if h.archived {
+						e := *h.thread
+						row.ContextMenu(func(m *ui.Menu) {
+							if m.Item("Unarchive").Chosen() {
+								a.unarchiveThread(e)
+							}
+						})
+					} else {
+						row.ContextMenu(func(m *ui.Menu) { a.threadMenu(m, *h.thread) })
+					}
 				}
 				if press(row) {
 					choose(false)
 				}
 			}
 		})
-		ui.Text(c, "↩ open · "+keys("↩")+" open at the right · esc close").Padding(6, 16, 10).FontSize(labelSize + 1).TextColor(pal.meta)
+		ui.Row(c).FillWidth().Padding(6, 16, 10).AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Text(c, "↩ open · "+keys("↩")+" open at the right · esc close").Grow(1).FontSize(labelSize + 1).TextColor(pal.meta).SingleLine()
+			label := "Show archived"
+			if a.showArchived && a.archivedLoading {
+				label = "Archived…"
+			}
+			chip := hover(ui.Row(c.Key("palette:archived")).Padding(2, 8).Radius(4).Border(1, pal.rule), pal.hover)
+			if a.showArchived {
+				chip.Background(pal.raised).Border(1, pal.meta)
+			}
+			chip.Children(func() {
+				ink := pal.meta
+				if a.showArchived {
+					ink = pal.fg
+				}
+				ui.Text(c, label).FontSize(labelSize + 1).TextColor(ink).SingleLine()
+			})
+			if press(chip) {
+				a.showArchived = !a.showArchived
+				if a.showArchived {
+					a.loadArchived()
+				}
+			}
+		})
 	})
 	if !open {
 		a.palette = false
