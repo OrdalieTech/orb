@@ -179,10 +179,10 @@
               "totalTokens": 17,
               "cost": {
                 "input": 0.000008,
-                "output": 0.000019999999999999998,
+                "output": 0.00002,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997,
+                "total": 0.000029000000000000004,
                 "totalFromProvider": false
               }
             },
@@ -234,10 +234,10 @@
               "totalTokens": 17,
               "cost": {
                 "input": 0.000008,
-                "output": 0.000019999999999999998,
+                "output": 0.00002,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997,
+                "total": 0.000029000000000000004,
                 "totalFromProvider": false
               }
             },
@@ -290,10 +290,10 @@
               "totalTokens": 17,
               "cost": {
                 "input": 0.000008,
-                "output": 0.000019999999999999998,
+                "output": 0.00002,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997,
+                "total": 0.000029000000000000004,
                 "totalFromProvider": false
               }
             },
@@ -346,10 +346,10 @@
               "totalTokens": 17,
               "cost": {
                 "input": 0.000008,
-                "output": 0.000019999999999999998,
+                "output": 0.00002,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997,
+                "total": 0.000029000000000000004,
                 "totalFromProvider": false
               }
             },
@@ -401,10 +401,10 @@
               "totalTokens": 17,
               "cost": {
                 "input": 0.000008,
-                "output": 0.000019999999999999998,
+                "output": 0.00002,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997,
+                "total": 0.000029000000000000004,
                 "totalFromProvider": false
               }
             },
@@ -457,10 +457,10 @@
               "totalTokens": 17,
               "cost": {
                 "input": 0.000008,
-                "output": 0.000019999999999999998,
+                "output": 0.00002,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997,
+                "total": 0.000029000000000000004,
                 "totalFromProvider": false
               }
             },
@@ -525,10 +525,10 @@
               "totalTokens": 17,
               "cost": {
                 "input": 0.000008,
-                "output": 0.000019999999999999998,
+                "output": 0.00002,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997,
+                "total": 0.000029000000000000004,
                 "totalFromProvider": false
               }
             },
@@ -580,10 +580,10 @@
               "totalTokens": 17,
               "cost": {
                 "input": 0.000008,
-                "output": 0.000019999999999999998,
+                "output": 0.00002,
                 "cacheRead": 0.000001,
                 "cacheWrite": 0,
-                "total": 0.000028999999999999997,
+                "total": 0.000029000000000000004,
                 "totalFromProvider": false
               }
             },
@@ -1920,7 +1920,7 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "got status: undefined. {\"2\":\"two\",\"10\":\"ten\",\"error\":{\"code\":\"4.03e2\",\"message\":\"a\"}}",
+            "errorMessage": "Incomplete JSON segment at the end",
             "durationMs": 0
           }
         }

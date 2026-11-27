@@ -266,9 +266,10 @@ func buildMistralPayload(
 	}
 	payload := &MistralConversationsPayload{Model: model.ID, Stream: true, Messages: converted}
 	if requestContext.Tools != nil && len(*requestContext.Tools) > 0 {
+		supportsStrictMode := compat.SupportsStrictMode != nil && *compat.SupportsStrictMode
 		payload.Tools = make([]MistralConversationTool, 0, len(*requestContext.Tools))
 		for _, tool := range *requestContext.Tools {
-			strict, parameters, err := resolveJSONSchemaStrictSampling(tool, true, nil)
+			strict, parameters, err := resolveJSONSchemaStrictSampling(tool, supportsStrictMode, nil)
 			if err != nil {
 				return nil, err
 			}

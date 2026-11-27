@@ -180,7 +180,7 @@ func TestCatalogTakesPi151Changes(t *testing.T) {
 			t.Errorf("%s/%s compat = %s, want %s", item.provider, item.id, m.Compat, item.compat)
 		}
 	}
-	if m := catalog["qwen-token-plan-individual-cn"]["glm-5.3"]; m.BaseURL != "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1" || len(catalog["qwen-token-plan-individual-cn"]) != 10 {
+	if m := catalog["qwen-token-plan-individual-cn"]["glm-5.3"]; m.BaseURL != "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1" || len(catalog["qwen-token-plan-individual-cn"]) != 12 {
 		t.Errorf("qwen-token-plan-individual-cn = %d models, base URL %q", len(catalog["qwen-token-plan-individual-cn"]), m.BaseURL)
 	}
 	for _, id := range []string{"gpt-6-astra", "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-6.1-terra"} {

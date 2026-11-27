@@ -200,8 +200,14 @@ func EstimateTokens(message engine.AgentMessage) int64 {
 	case *CustomMessage:
 		return ceilQuarter(contentChars(typed.Content))
 	case BashExecutionMessage:
+		if typed.ExcludeFromContext != nil && *typed.ExcludeFromContext {
+			return 0
+		}
 		return ceilQuarter(jsLength(typed.Command) + jsLength(typed.Output))
 	case *BashExecutionMessage:
+		if typed == nil || (typed.ExcludeFromContext != nil && *typed.ExcludeFromContext) {
+			return 0
+		}
 		return ceilQuarter(jsLength(typed.Command) + jsLength(typed.Output))
 	case SummaryMessage:
 		return ceilQuarter(jsLength(typed.Summary))
@@ -1105,11 +1111,12 @@ func contentChars(content any) int64 {
 
 func estimateRawMessage(raw []byte) int64 {
 	var envelope struct {
-		Role    string          `json:"role"`
-		Content json.RawMessage `json:"content"`
-		Summary string          `json:"summary"`
-		Command string          `json:"command"`
-		Output  string          `json:"output"`
+		Role               string          `json:"role"`
+		Content            json.RawMessage `json:"content"`
+		Summary            string          `json:"summary"`
+		Command            string          `json:"command"`
+		Output             string          `json:"output"`
+		ExcludeFromContext bool            `json:"excludeFromContext"`
 	}
 	if json.Unmarshal(raw, &envelope) != nil {
 		return 0
@@ -1138,6 +1145,9 @@ func estimateRawMessage(raw []byte) int64 {
 		}
 		return ceilQuarter(chars)
 	case "bashExecution":
+		if envelope.ExcludeFromContext {
+			return 0
+		}
 		return ceilQuarter(jsLength(envelope.Command) + jsLength(envelope.Output))
 	case "branchSummary", "compactionSummary":
 		return ceilQuarter(jsLength(envelope.Summary))

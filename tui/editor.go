@@ -554,8 +554,8 @@ func (editor *Editor) SetAutocompleteProvider(provider AutocompleteProvider) {
 	}
 }
 
-// AddToHistory records a prompt for up/down navigation, skipping empties and
-// consecutive duplicates, keeping at most 100 entries.
+// AddToHistory records a prompt for up/down navigation, moving any existing
+// entry to the most recent position and keeping at most 100 entries.
 func (editor *Editor) AddToHistory(text string) {
 	editor.mu.Lock()
 	defer editor.mu.Unlock()
@@ -563,8 +563,8 @@ func (editor *Editor) AddToHistory(text string) {
 	if trimmed == "" {
 		return
 	}
-	if len(editor.history) > 0 && editor.history[0] == trimmed {
-		return
+	if existing := slices.Index(editor.history, trimmed); existing >= 0 {
+		editor.history = slices.Delete(editor.history, existing, existing+1)
 	}
 	editor.history = append([]string{trimmed}, editor.history...)
 	if len(editor.history) > 100 {
@@ -1124,36 +1124,16 @@ func (editor *Editor) handleData(data string) {
 			return
 		}
 		if kb.Matches(data, "tui.input.tab") {
-			if item, ok := editor.autocompleteList.GetSelectedItem(); ok && editor.autocompleteProvider != nil {
-				editor.pushUndoSnapshot()
-				editor.lastAction = ""
-				if editor.applyCompletionResult(item) {
-					editor.cancelAutocomplete()
-					editor.emitChange()
-				}
+			if editor.applySelectedCompletionLocked() {
+				editor.emitChange()
 			}
 			return
 		}
 		if kb.Matches(data, "tui.select.confirm") {
-			beforeCursor := runeSlice(editor.currentLine(), 0, editor.state.cursorCol)
-			submitSlash := strings.HasPrefix(editor.autocompletePrefix, "/") && editor.isInSlashCommandContext(beforeCursor)
-			if !strings.HasSuffix(beforeCursor, editor.autocompletePrefix) {
-				editor.cancelAutocomplete()
-			} else if item, ok := editor.autocompleteList.GetSelectedItem(); ok && editor.autocompleteProvider != nil {
-				editor.pushUndoSnapshot()
-				editor.lastAction = ""
-				if !editor.applyCompletionResult(item) {
-					return
-				}
-				if submitSlash {
-					editor.cancelAutocomplete()
-					// Fall through to submit.
-				} else {
-					editor.cancelAutocomplete()
-					editor.emitChange()
-					return
-				}
+			if result := editor.confirmAutocompleteLocked(); result == "applied" || result == "rejected" {
+				return
 			}
+			// "submit" or "none": fall through to submit.
 		}
 	}
 
@@ -2310,6 +2290,12 @@ func (editor *Editor) isInSlashCommandContext(textBeforeCursor string) bool {
 	return editor.isSlashMenuAllowed() && strings.HasPrefix(strings.TrimLeftFunc(textBeforeCursor, unicode.IsSpace), "/")
 }
 
+// isInSlashCommandNameContext reports whether a slash command name is being
+// typed ("/mo"), not arguments ("/model cla") or a path ("/open /tm").
+func (editor *Editor) isInSlashCommandNameContext(textBeforeCursor string) bool {
+	return editor.isInSlashCommandContext(textBeforeCursor) && !strings.Contains(strings.TrimLeftFunc(textBeforeCursor, unicode.IsSpace), " ")
+}
+
 // getBestAutocompleteMatchIndex prefers an exact value match, then the first
 // prefix match; -1 keeps the default highlight. Case-sensitive.
 func getBestAutocompleteMatchIndex(items []AutocompleteItem, prefix string) int {
@@ -2355,7 +2341,7 @@ func (editor *Editor) handleTabCompletion() {
 		return
 	}
 	beforeCursor := runeSlice(editor.currentLine(), 0, editor.state.cursorCol)
-	if editor.isInSlashCommandContext(beforeCursor) && !strings.Contains(strings.TrimLeftFunc(beforeCursor, unicode.IsSpace), " ") {
+	if editor.isInSlashCommandNameContext(beforeCursor) {
 		editor.requestAutocomplete(false, true)
 	} else {
 		editor.requestAutocomplete(true, true)
@@ -2555,6 +2541,69 @@ func (editor *Editor) syncMouseMotionSoon() {
 func (editor *Editor) cancelAutocomplete() {
 	editor.cancelAutocompleteRequest()
 	editor.clearAutocompleteUI()
+}
+
+// ConfirmAutocomplete applies the currently selected autocomplete suggestion.
+// It returns "none" if no completion was applied, "applied" if inserted without
+// submitting, or "submit" if a slash command name was completed and should be
+// submitted.
+func (editor *Editor) ConfirmAutocomplete() string {
+	editor.mu.Lock()
+	result := editor.confirmAutocompleteLocked()
+	pending := editor.pending
+	editor.pending = nil
+	editor.mu.Unlock()
+	for _, fn := range pending {
+		fn()
+	}
+	return result
+}
+
+func (editor *Editor) confirmAutocompleteLocked() string {
+	if !editor.popupOpenLocked() {
+		return "none"
+	}
+	beforeCursor := runeSlice(editor.currentLine(), 0, editor.state.cursorCol)
+	submitSlash := strings.HasPrefix(editor.autocompletePrefix, "/") && editor.isInSlashCommandNameContext(beforeCursor)
+	if !strings.HasSuffix(beforeCursor, editor.autocompletePrefix) {
+		editor.cancelAutocomplete()
+		return "none"
+	}
+	if editor.autocompleteProvider == nil {
+		return "none"
+	}
+	item, ok := editor.autocompleteList.GetSelectedItem()
+	if !ok {
+		return "none"
+	}
+	editor.pushUndoSnapshot()
+	editor.lastAction = ""
+	if !editor.applyCompletionResult(item) {
+		return "rejected"
+	}
+	editor.cancelAutocomplete()
+	if submitSlash {
+		return "submit"
+	}
+	editor.emitChange()
+	return "applied"
+}
+
+func (editor *Editor) applySelectedCompletionLocked() bool {
+	if !editor.popupOpenLocked() || editor.autocompleteProvider == nil {
+		return false
+	}
+	item, ok := editor.autocompleteList.GetSelectedItem()
+	if !ok {
+		return false
+	}
+	editor.pushUndoSnapshot()
+	editor.lastAction = ""
+	if !editor.applyCompletionResult(item) {
+		return false
+	}
+	editor.cancelAutocomplete()
+	return true
 }
 
 func (editor *Editor) IsShowingAutocomplete() bool {

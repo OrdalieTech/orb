@@ -256,6 +256,9 @@ func googleVertexModelPath(model string) (string, error) {
 // without an explicit table entry resolve to undefined, omitting the
 // thinkingConfig budget instead of sending 0. (OT-m9)
 func googleVertexThinkingBudget(model *ai.Model, effort ai.ThinkingLevel, custom *ai.ThinkingBudgets) *int64 {
+	if effort == ai.ThinkingXHigh {
+		effort = ai.ThinkingHigh
+	}
 	if custom != nil {
 		var value *int
 		switch effort {
@@ -277,6 +280,8 @@ func googleVertexThinkingBudget(model *ai.Model, effort ai.ThinkingLevel, custom
 	switch {
 	case strings.Contains(model.ID, "2.5-pro"):
 		budgets = map[ai.ThinkingLevel]int64{ai.ThinkingMinimal: 128, ai.ThinkingLow: 2048, ai.ThinkingMedium: 8192, ai.ThinkingHigh: 32768}
+	case strings.Contains(model.ID, "2.5-flash-lite"):
+		budgets = map[ai.ThinkingLevel]int64{ai.ThinkingMinimal: 512, ai.ThinkingLow: 2048, ai.ThinkingMedium: 8192, ai.ThinkingHigh: 24576}
 	case strings.Contains(model.ID, "2.5-flash"):
 		budgets = map[ai.ThinkingLevel]int64{ai.ThinkingMinimal: 128, ai.ThinkingLow: 2048, ai.ThinkingMedium: 8192, ai.ThinkingHigh: 24576}
 	default:

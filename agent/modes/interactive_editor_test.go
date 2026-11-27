@@ -1,7 +1,10 @@
 package modes
 
 import (
+	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrdalieTech/orb/agent/modes/theme"
 	"github.com/OrdalieTech/orb/tui"
@@ -124,4 +127,113 @@ func TestComposerExplicitAltEnterStillQueuesAndEnterSubmits(t *testing.T) {
 	if queued != 1 || submitted != 1 {
 		t.Fatalf("queued=%d submitted=%d", queued, submitted)
 	}
+}
+
+type followUpTestAutocompleteProvider struct {
+	suggestions func(line string) *tui.AutocompleteSuggestions
+}
+
+func (p *followUpTestAutocompleteProvider) GetSuggestions(_ context.Context, lines []string, cursorLine, cursorCol int, _ bool) *tui.AutocompleteSuggestions {
+	if cursorLine < 0 || cursorLine >= len(lines) {
+		return nil
+	}
+	return p.suggestions(lines[cursorLine][:cursorCol])
+}
+
+func (p *followUpTestAutocompleteProvider) ApplyCompletion(lines []string, cursorLine, cursorCol int, item tui.AutocompleteItem, prefix string) tui.CompletionResult {
+	line := lines[cursorLine]
+	before := strings.TrimSuffix(line[:cursorCol], prefix)
+	after := line[cursorCol:]
+	updated := make([]string, len(lines))
+	copy(updated, lines)
+	updated[cursorLine] = before + item.Value + after
+	return tui.CompletionResult{
+		Lines:      updated,
+		CursorLine: cursorLine,
+		CursorCol:  len(before) + len(item.Value),
+	}
+}
+
+func waitForEditorAutocomplete(t *testing.T, editor *CustomEditor) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if editor.IsShowingAutocomplete() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for autocomplete popup to open")
+}
+
+func TestFollowUpAutocomplete(t *testing.T) {
+	previous := tui.GetKeybindings()
+	t.Cleanup(func() { tui.SetKeybindings(previous); tui.SetKittyProtocolActive(false) })
+
+	t.Run("slash command name completes and queues follow-up", func(t *testing.T) {
+		editor := newFrameEditor(t, 80, 24)
+		tui.SetKeybindings(editor.keybindings)
+		editor.SetAutocompleteProvider(&followUpTestAutocompleteProvider{
+			suggestions: func(before string) *tui.AutocompleteSuggestions {
+				if strings.HasPrefix(before, "/") && !strings.Contains(before, " ") {
+					return &tui.AutocompleteSuggestions{
+						Prefix: before,
+						Items:  []tui.AutocompleteItem{{Value: "/model ", Label: "model"}},
+					}
+				}
+				return nil
+			},
+		})
+		var queued []string
+		editor.OnAction("app.message.followUp", func() { queued = append(queued, editor.GetText()) })
+
+		for _, ch := range "/mo" {
+			editor.HandleInput(tui.KeyEvent{Raw: string(ch)})
+		}
+		waitForEditorAutocomplete(t, editor)
+
+		editor.HandleInput(tui.KeyEvent{Raw: "\x1b[13;3u"}) // Alt+Enter
+		if editor.IsShowingAutocomplete() {
+			t.Fatal("expected autocomplete popup to close")
+		}
+		if len(queued) != 1 || queued[0] != "/model " {
+			t.Fatalf("queued=%q, want [\"/model \"]", queued)
+		}
+	})
+
+	t.Run("non-command completion inserts without queuing follow-up", func(t *testing.T) {
+		editor := newFrameEditor(t, 80, 24)
+		tui.SetKeybindings(editor.keybindings)
+		editor.SetAutocompleteProvider(&followUpTestAutocompleteProvider{
+			suggestions: func(before string) *tui.AutocompleteSuggestions {
+				if strings.HasSuffix(before, "/tm") {
+					return &tui.AutocompleteSuggestions{
+						Prefix: "/tm",
+						Items: []tui.AutocompleteItem{
+							{Value: "/tmp/file.txt", Label: "/tmp/file.txt"},
+							{Value: "/tmp/other.txt", Label: "/tmp/other.txt"},
+						},
+					}
+				}
+				return nil
+			},
+		})
+		queued := 0
+		editor.OnAction("app.message.followUp", func() { queued++ })
+
+		editor.SetText("/open /tm")
+		editor.HandleInput(tui.KeyEvent{Raw: "\t"})
+		waitForEditorAutocomplete(t, editor)
+
+		editor.HandleInput(tui.KeyEvent{Raw: "\x1b[13;3u"}) // Alt+Enter
+		if editor.IsShowingAutocomplete() {
+			t.Fatal("expected autocomplete popup to close")
+		}
+		if queued != 0 {
+			t.Fatalf("queued=%d, want 0", queued)
+		}
+		if got := editor.GetText(); got != "/open /tmp/file.txt" {
+			t.Fatalf("text=%q, want %q", got, "/open /tmp/file.txt")
+		}
+	})
 }

@@ -29,7 +29,7 @@ import { extractGoogleF2 } from "./f2-google.ts";
 import { extractGoogleVertexF2 } from "./f2-google-vertex.ts";
 import { extractMistralAzureF2 } from "./f2-mistral-azure.ts";
 import { extractPiMessagesF2 } from "./f2-pi-messages.ts";
-import { extractProvidersF2 } from "./f2-providers.ts";
+import { extractProvidersF2, providerApis } from "./f2-providers.ts";
 import { cloneStreamEvent } from "./orb-owned.ts";
 
 type OpenAIAPI = "openai-responses" | "openai-completions";
@@ -307,11 +307,10 @@ const togetherCompatModel = model("openai-completions", {
   cost: { input: 1.32, output: 3.96, cacheRead: 0.13, cacheWrite: 0 },
   contextWindow: 1_048_576,
   maxTokens: 384_000,
-  thinkingLevelMap: { minimal: null, low: null, medium: null, high: "high", xhigh: null },
+  thinkingLevelMap: { minimal: null, low: null, medium: null },
   compat: {
     supportsStore: false,
-    supportsDeveloperRole: false,
-    supportsReasoningEffort: true,
+    supportsReasoningEffort: false,
     maxTokensField: "max_tokens",
     thinkingFormat: "together",
     supportsStrictMode: false,
@@ -333,7 +332,6 @@ const zaiCompatModel = model("openai-completions", {
   thinkingLevelMap: { off: "none", minimal: null, low: null, medium: null, high: "high", xhigh: null, max: "max" },
   compat: {
     supportsStore: false,
-    supportsDeveloperRole: false,
     supportsReasoningEffort: true,
     maxTokensField: "max_tokens",
     thinkingFormat: "zai",
@@ -1469,7 +1467,7 @@ async function extractOpenAIProvider(upstreamRoot: string): Promise<ProviderFixt
     });
     if (!resolved?.auth.apiKey) throw new Error("openaiProvider() did not resolve its environment API key");
 
-    const apis = [...new Set(provider.getModels().map((entry) => entry.api))].sort();
+    const apis = providerApis(await readFile(path.join(packageRoot, "src/providers/openai.ts"), "utf8"));
     if (apis.length === 0) throw new Error("openaiProvider() exposed no model API shapes");
     return {
       id: provider.id,

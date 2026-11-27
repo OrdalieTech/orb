@@ -467,15 +467,16 @@
     },
     {
       "id": "qwen-token-plan",
-      "name": "Qwen Token Plan",
-      "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+      "name": "Qwen Token Plan Team",
+      "baseUrl": "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1",
       "apis": [
         "openai-completions"
       ],
       "auth": {
         "kind": "api_key",
-        "name": "Qwen Token Plan API key",
+        "name": "Qwen Token Plan Team API key",
         "env": [
+          "QWEN_TOKEN_PLAN_TEAM_API_KEY",
           "QWEN_TOKEN_PLAN_API_KEY"
         ],
         "oauth": false
@@ -483,15 +484,16 @@
     },
     {
       "id": "qwen-token-plan-cn",
-      "name": "Qwen Token Plan CN",
-      "baseUrl": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      "name": "Qwen Token Plan Team CN",
+      "baseUrl": "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1",
       "apis": [
         "openai-completions"
       ],
       "auth": {
         "kind": "api_key",
-        "name": "Qwen Token Plan CN API key",
+        "name": "Qwen Token Plan Team CN API key",
         "env": [
+          "QWEN_TOKEN_PLAN_TEAM_CN_API_KEY",
           "QWEN_TOKEN_PLAN_CN_API_KEY"
         ],
         "oauth": false
@@ -500,7 +502,7 @@
     {
       "id": "qwen-token-plan-individual",
       "name": "Qwen Token Plan Individual",
-      "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+      "baseUrl": "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1",
       "apis": [
         "openai-completions"
       ],
@@ -508,6 +510,7 @@
         "kind": "api_key",
         "name": "Qwen Token Plan Individual API key",
         "env": [
+          "QWEN_TOKEN_PLAN_INDIVIDUAL_API_KEY",
           "QWEN_TOKEN_PLAN_API_KEY"
         ],
         "oauth": false
@@ -516,7 +519,7 @@
     {
       "id": "qwen-token-plan-individual-cn",
       "name": "Qwen Token Plan Individual CN",
-      "baseUrl": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      "baseUrl": "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1",
       "apis": [
         "openai-completions"
       ],
@@ -524,6 +527,7 @@
         "kind": "api_key",
         "name": "Qwen Token Plan Individual CN API key",
         "env": [
+          "QWEN_TOKEN_PLAN_INDIVIDUAL_CN_API_KEY",
           "QWEN_TOKEN_PLAN_CN_API_KEY"
         ],
         "oauth": false

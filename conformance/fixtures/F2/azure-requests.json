@@ -146,7 +146,7 @@
           "x-fixture": "azure-env",
           "x-model-header": "azure"
         },
-        "body": "{\"model\":\"fixture-deployment\",\"input\":[{\"role\":\"developer\",\"content\":\"Use the Azure deployment.\"},{\"type\":\"reasoning\",\"id\":\"rs_prior\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"prior plan\"}],\"encrypted_content\":\"encrypted-prior\"},{\"type\":\"function_call\",\"id\":\"fc_azure\",\"call_id\":\"call_azure\",\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"azure\\\"}\"},{\"type\":\"function_call_output\",\"call_id\":\"call_azure\",\"output\":\"done\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"continue\"}]}],\"stream\":true,\"prompt_cache_key\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"store\":false,\"max_output_tokens\":16,\"temperature\":0,\"tools\":[{\"type\":\"function\",\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false},\"strict\":false}],\"reasoning\":{\"effort\":\"xhigh\",\"summary\":\"detailed\"},\"include\":[\"reasoning.encrypted_content\"]}"
+        "body": "{\"model\":\"fixture-deployment\",\"input\":[{\"role\":\"developer\",\"content\":\"Use the Azure deployment.\"},{\"type\":\"reasoning\",\"id\":\"rs_prior\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"prior plan\"}],\"encrypted_content\":\"encrypted-prior\"},{\"type\":\"function_call\",\"id\":\"fc_azure\",\"call_id\":\"call_azure\",\"name\":\"echo\",\"status\":\"completed\",\"arguments\":\"{\\\"text\\\":\\\"azure\\\"}\"},{\"type\":\"function_call_output\",\"call_id\":\"call_azure\",\"output\":\"done\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"continue\"}]}],\"stream\":true,\"prompt_cache_key\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"store\":false,\"max_output_tokens\":16,\"temperature\":0,\"tools\":[{\"type\":\"function\",\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false},\"strict\":false}],\"reasoning\":{\"effort\":\"xhigh\",\"summary\":\"detailed\"},\"include\":[\"reasoning.encrypted_content\"]}"
       }
     },
     {
@@ -254,7 +254,7 @@
       },
       "expected": {
         "method": "POST",
-        "url": "https://azure-proxy.fixture.invalid/custom/v1?custom=true%2Fresponses&api-version=v1",
+        "url": "https://azure-proxy.fixture.invalid/custom/v1/responses?custom=true&api-version=v1",
         "headers": {
           "accept": "application/json",
           "api-key": "fixture-key",

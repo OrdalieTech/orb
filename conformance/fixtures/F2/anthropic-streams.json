@@ -829,10 +829,10 @@
               "totalTokens": 17,
               "cost": {
                 "input": 0.000036,
-                "output": 0.00007500000000000001,
+                "output": 0.000075,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 0.00011100000000000001,
+                "total": 0.00011099999999999999,
                 "totalFromProvider": false
               },
               "cacheWrite1h": 0

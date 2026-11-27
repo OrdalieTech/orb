@@ -61,14 +61,18 @@ func TestReadToolReturnsImageAttachmentForVisionAndTextOnlyModels(t *testing.T) 
 	if !ok || imageBlock.Data != tinyPNG || imageBlock.MimeType != "image/png" {
 		t.Fatalf("image block = %#v", result.Content[1])
 	}
-	ctx := engine.WithToolExecutionModel(context.Background(), &ai.Model{Input: ai.InputModalities{ai.InputText}})
+	ctx := engine.WithToolExecutionModel(context.Background(), &ai.Model{ID: "text-only-model", Input: ai.InputModalities{ai.InputText}})
 	result, err = tool.Execute(ctx, "call", map[string]any{"path": "tiny.png"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	textBlock, textOK := result.Content[0].(*ai.TextContent)
-	if len(result.Content) != 2 || !textOK || !strings.Contains(textBlock.Text, "Current model does not support images") {
+	if len(result.Content) != 2 || !textOK || strings.Contains(textBlock.Text, "Current model does not support images") {
 		t.Fatalf("text-only content = %#v", result.Content)
+	}
+	details, detailsOK := result.Details.(*ReadToolDetails)
+	if !detailsOK || details == nil || details.ImageUnsupportedByModel != "text-only-model" {
+		t.Fatalf("text-only details = %#v", result.Details)
 	}
 	imageBlock, ok = result.Content[1].(*ai.ImageContent)
 	if !ok || imageBlock.Data != tinyPNG || imageBlock.MimeType != "image/png" {

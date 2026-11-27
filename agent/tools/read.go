@@ -27,6 +27,9 @@ type ReadToolInput struct {
 
 type ReadToolDetails struct {
 	Truncation *truncate.Result `json:"truncation,omitempty"`
+	// ImageUnsupportedByModel is the ID of the model selected when an image was read if it
+	// has no image input. Shown to the user only so stored results stay valid after a model switch.
+	ImageUnsupportedByModel string `json:"imageUnsupportedByModel,omitempty"`
 }
 
 // ReadOperations is the delegation seam for the read tool.
@@ -294,29 +297,25 @@ func (tool *readTool) imageResult(ctx context.Context, data []byte, mimeType str
 	autoResize := tool.autoResizeImages
 	model := engine.ToolExecutionModel(ctx)
 	processed := ProcessImage(data, mimeType, &ProcessImageOptions{AutoResizeImages: &autoResize, ResizeOptions: ModelResizeOptions(model)})
-	vision := model == nil || slices.Contains(model.Input, ai.InputImage)
-	nonVisionNote := ""
-	if !vision {
-		nonVisionNote = "[Current model does not support images. The image will be omitted from this request.]"
-	}
 	if !processed.OK {
 		text := "Read image file [" + mimeType + "]\n" + processed.Message
-		if nonVisionNote != "" {
-			text += "\n" + nonVisionNote
-		}
 		return engine.AgentToolResult{Content: ai.ToolResultContent{&ai.TextContent{Text: text}}}
 	}
 	text := "Read image file [" + processed.MimeType + "]"
 	if len(processed.Hints) > 0 {
 		text += "\n" + strings.Join(processed.Hints, "\n")
 	}
-	if nonVisionNote != "" {
-		text += "\n" + nonVisionNote
+	var details any
+	if model != nil && !slices.Contains(model.Input, ai.InputImage) {
+		details = &ReadToolDetails{ImageUnsupportedByModel: model.ID}
 	}
-	return engine.AgentToolResult{Content: ai.ToolResultContent{
-		&ai.TextContent{Text: text},
-		&ai.ImageContent{Data: processed.Data, MimeType: processed.MimeType},
-	}}
+	return engine.AgentToolResult{
+		Content: ai.ToolResultContent{
+			&ai.TextContent{Text: text},
+			&ai.ImageContent{Data: processed.Data, MimeType: processed.MimeType},
+		},
+		Details: details,
+	}
 }
 
 func readInput(params any) (ReadToolInput, error) {

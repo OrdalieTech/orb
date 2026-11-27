@@ -488,14 +488,11 @@
         "thinkingLevelMap": {
           "minimal": null,
           "low": null,
-          "medium": null,
-          "high": "high",
-          "xhigh": null
+          "medium": null
         },
         "compat": {
           "supportsStore": false,
-          "supportsDeveloperRole": false,
-          "supportsReasoningEffort": true,
+          "supportsReasoningEffort": false,
           "maxTokensField": "max_tokens",
           "thinkingFormat": "together",
           "supportsStrictMode": false,
@@ -562,7 +559,7 @@
           "authorization": "Bearer fixture-together-key",
           "content-type": "application/json"
         },
-        "body": "{\"model\":\"deepseek-ai/DeepSeek-V4-Pro-0813\",\"messages\":[{\"role\":\"system\",\"content\":\"Use the provider reasoning controls.\"},{\"role\":\"user\",\"content\":\"solve it\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"max_tokens\":321,\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false}}}],\"reasoning\":{\"enabled\":true},\"reasoning_effort\":\"high\"}"
+        "body": "{\"model\":\"deepseek-ai/DeepSeek-V4-Pro-0813\",\"messages\":[{\"role\":\"system\",\"content\":\"Use the provider reasoning controls.\"},{\"role\":\"user\",\"content\":\"solve it\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"max_tokens\":321,\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false}}}],\"reasoning\":{\"enabled\":true}}"
       }
     },
     {
@@ -598,7 +595,6 @@
         },
         "compat": {
           "supportsStore": false,
-          "supportsDeveloperRole": false,
           "supportsReasoningEffort": true,
           "maxTokensField": "max_tokens",
           "thinkingFormat": "zai",
@@ -885,7 +881,7 @@
           "authorization": "Bearer fixture-key",
           "content-type": "application/json"
         },
-        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"system\",\"content\":\"Use tools.\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"echo once\"}]},{\"type\":\"function_call\",\"id\":\"fc_echo\",\"call_id\":\"call_echo\",\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"first\\\",\\\"mode\\\":\\\"plain\\\",\\\"metadata\\\":{\\\"count\\\":1}}\"},{\"type\":\"function_call_output\",\"call_id\":\"call_echo\",\"output\":\"(no tool output)\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"continue\"}]}],\"stream\":true,\"store\":false,\"tools\":[{\"type\":\"function\",\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false}},{\"type\":\"function\",\"name\":\"late_tool\",\"description\":\"A tool loaded after a tool result\",\"parameters\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"boolean\"}},\"required\":[\"value\"],\"additionalProperties\":false}}],\"tool_choice\":\"required\"}"
+        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"system\",\"content\":\"Use tools.\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"echo once\"}]},{\"type\":\"function_call\",\"id\":\"fc_echo\",\"call_id\":\"call_echo\",\"name\":\"echo\",\"status\":\"completed\",\"arguments\":\"{\\\"text\\\":\\\"first\\\",\\\"mode\\\":\\\"plain\\\",\\\"metadata\\\":{\\\"count\\\":1}}\"},{\"type\":\"function_call_output\",\"call_id\":\"call_echo\",\"output\":\"(no tool output)\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"continue\"}]}],\"stream\":true,\"store\":false,\"tools\":[{\"type\":\"function\",\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false}},{\"type\":\"function\",\"name\":\"late_tool\",\"description\":\"A tool loaded after a tool result\",\"parameters\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"boolean\"}},\"required\":[\"value\"],\"additionalProperties\":false}}],\"tool_choice\":\"required\"}"
       }
     },
     {
@@ -1000,7 +996,7 @@
           "content-type": "application/json",
           "x-fixture": "responses-images"
         },
-        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"system\",\"content\":\"Inspect images.\"},{\"type\":\"function_call\",\"call_id\":\"call_image\",\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"image\\\"}\"},{\"type\":\"function_call_output\",\"call_id\":\"call_image\",\"output\":[{\"type\":\"input_text\",\"text\":\"tool caption\"},{\"type\":\"input_image\",\"detail\":\"auto\",\"image_url\":\"data:image/png;base64,AAEC\"}]},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"user image\"},{\"type\":\"input_image\",\"detail\":\"auto\",\"image_url\":\"data:image/jpeg;base64,AQID\"}]}],\"stream\":true,\"store\":false,\"reasoning\":{\"effort\":\"none\"}}"
+        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"system\",\"content\":\"Inspect images.\"},{\"type\":\"function_call\",\"call_id\":\"call_image\",\"name\":\"echo\",\"status\":\"completed\",\"arguments\":\"{\\\"text\\\":\\\"image\\\"}\"},{\"type\":\"function_call_output\",\"call_id\":\"call_image\",\"output\":[{\"type\":\"input_text\",\"text\":\"tool caption\"},{\"type\":\"input_image\",\"detail\":\"auto\",\"image_url\":\"data:image/png;base64,AAEC\"}]},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"user image\"},{\"type\":\"input_image\",\"detail\":\"auto\",\"image_url\":\"data:image/jpeg;base64,AQID\"}]}],\"stream\":true,\"store\":false,\"reasoning\":{\"effort\":\"none\"}}"
       }
     },
     {
@@ -1783,7 +1779,7 @@
           "openai-intent": "conversation-edits",
           "x-initiator": "agent"
         },
-        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"developer\",\"content\":\"Use tools.\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"inspect\"}]},{\"type\":\"function_call\",\"call_id\":\"call_copilot\",\"name\":\"echo\",\"arguments\":\"{\\\"text\\\":\\\"vision\\\"}\"},{\"type\":\"function_call_output\",\"call_id\":\"call_copilot\",\"output\":[{\"type\":\"input_text\",\"text\":\"tool caption\"},{\"type\":\"input_image\",\"detail\":\"auto\",\"image_url\":\"data:image/png;base64,AAEC\"}]}],\"stream\":true,\"store\":false,\"tools\":[{\"type\":\"function\",\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false}}]}"
+        "body": "{\"model\":\"gpt-fixture-responses\",\"input\":[{\"role\":\"developer\",\"content\":\"Use tools.\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"inspect\"}]},{\"type\":\"function_call\",\"call_id\":\"call_copilot\",\"name\":\"echo\",\"status\":\"completed\",\"arguments\":\"{\\\"text\\\":\\\"vision\\\"}\"},{\"type\":\"function_call_output\",\"call_id\":\"call_copilot\",\"output\":[{\"type\":\"input_text\",\"text\":\"tool caption\"},{\"type\":\"input_image\",\"detail\":\"auto\",\"image_url\":\"data:image/png;base64,AAEC\"}]}],\"stream\":true,\"store\":false,\"tools\":[{\"type\":\"function\",\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]},\"metadata\":{\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\"}},\"required\":[\"count\"],\"additionalProperties\":false}},\"required\":[\"text\"],\"additionalProperties\":false}}]}"
       }
     },
     {

@@ -97,7 +97,7 @@ func (flow *GitHubCopilot) Login(ctx context.Context, interaction auth.AuthInter
 	if err != nil {
 		return nil, err
 	}
-	available, policies, err := flow.fetchModels(ctx, credential.Access, enterpriseDomain, 2)
+	available, classifiers, policies, err := flow.fetchModels(ctx, credential.Access, enterpriseDomain, 2)
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +119,7 @@ func (flow *GitHubCopilot) Login(ctx context.Context, interaction auth.AuthInter
 	}
 	available = unique
 	setCredentialJSON(credential, "availableModelIds", available)
+	setCredentialJSON(credential, "availableClassifierModelIds", classifiers)
 	return credential, nil
 }
 
@@ -131,11 +132,12 @@ func (flow *GitHubCopilot) Refresh(ctx context.Context, credential *auth.Credent
 	if err != nil {
 		return nil, err
 	}
-	available, err := flow.fetchAvailableModels(ctx, refreshed.Access, enterpriseDomain)
+	available, classifiers, err := flow.fetchAvailableModels(ctx, refreshed.Access, enterpriseDomain)
 	if err != nil {
 		return nil, err
 	}
 	setCredentialJSON(refreshed, "availableModelIds", available)
+	setCredentialJSON(refreshed, "availableClassifierModelIds", classifiers)
 	return refreshed, nil
 }
 
@@ -257,12 +259,12 @@ func (flow *GitHubCopilot) exchangeCopilotToken(ctx context.Context, refreshToke
 	return credential, nil
 }
 
-func (flow *GitHubCopilot) fetchAvailableModels(ctx context.Context, token, enterpriseDomain string) ([]string, error) {
-	available, _, err := flow.fetchModels(ctx, token, enterpriseDomain, 0)
-	return available, err
+func (flow *GitHubCopilot) fetchAvailableModels(ctx context.Context, token, enterpriseDomain string) ([]string, []string, error) {
+	available, classifiers, _, err := flow.fetchModels(ctx, token, enterpriseDomain, 0)
+	return available, classifiers, err
 }
 
-func (flow *GitHubCopilot) fetchModels(ctx context.Context, token, enterpriseDomain string, retries int) ([]string, []string, error) {
+func (flow *GitHubCopilot) fetchModels(ctx context.Context, token, enterpriseDomain string, retries int) ([]string, []string, []string, error) {
 	headers := githubCopilotStaticHeaders()
 	headers.Set("Accept", "application/json")
 	headers.Set("Authorization", "Bearer "+token)
@@ -270,26 +272,28 @@ func (flow *GitHubCopilot) fetchModels(ctx context.Context, token, enterpriseDom
 	baseURL := flow.copilotBaseURL(token, enterpriseDomain)
 	status, statusText, body, err := flow.fetchWithRateLimitRetry(ctx, http.MethodGet, baseURL+"/models", nil, headers, retries)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if status < 200 || status >= 300 {
-		return nil, nil, fmt.Errorf("%s: %s", statusText, body)
+		return nil, nil, nil, fmt.Errorf("%s: %s", statusText, body)
 	}
 	var response map[string]any
 	if json.Unmarshal(body, &response) != nil {
-		return nil, nil, errors.New("Invalid JSON response") //nolint:staticcheck // Upstream diagnostic text is observable.
+		return nil, nil, nil, errors.New("Invalid JSON response") //nolint:staticcheck // Upstream diagnostic text is observable.
 	}
 	raw, ok := response["data"].([]any)
 	if !ok {
-		return nil, nil, errors.New("Invalid Copilot models response") //nolint:staticcheck // Upstream diagnostic text is observable.
+		return nil, nil, nil, errors.New("Invalid Copilot models response") //nolint:staticcheck // Upstream diagnostic text is observable.
 	}
 	type accountModel struct {
 		id     string
+		typ    any
 		picker bool
 		state  any
 	}
 	var models []accountModel
 	available := []string{}
+	classifiers := []string{}
 	for _, value := range raw {
 		item, ok := value.(map[string]any)
 		if !ok {
@@ -306,7 +310,11 @@ func (flow *GitHubCopilot) fetchModels(ctx context.Context, token, enterpriseDom
 		}
 		policy, _ := item["policy"].(map[string]any)
 		picker, _ := item["model_picker_enabled"].(bool)
-		models = append(models, accountModel{id, picker, policy["state"]})
+		modelType := capabilities["type"]
+		models = append(models, accountModel{id, modelType, picker, policy["state"]})
+		if modelType == "decisions" && policy["state"] != "disabled" {
+			classifiers = append(classifiers, id)
+		}
 		if picker && policy["state"] != "disabled" {
 			available = append(available, id)
 		}
@@ -329,7 +337,7 @@ func (flow *GitHubCopilot) fetchModels(ctx context.Context, token, enterpriseDom
 			policies = append(policies, model.id)
 		}
 	}
-	return available, policies, nil
+	return available, classifiers, policies, nil
 }
 
 func (flow *GitHubCopilot) enableModels(ctx context.Context, token, enterpriseDomain string, ids []string) ([]string, error) {

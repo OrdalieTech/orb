@@ -81,7 +81,8 @@ type ModelCostTier struct {
 
 type ModelCost struct {
 	ModelCostRates
-	Tiers *[]ModelCostTier `json:"tiers,omitempty"`
+	ImageOutput *float64         `json:"imageOutput,omitempty"`
+	Tiers       *[]ModelCostTier `json:"tiers,omitempty"`
 }
 
 type ModelPromptCache struct {
@@ -274,11 +275,17 @@ type AnthropicMessagesCompat struct {
 }
 
 type BedrockCompat struct {
+	SupportsStrictMode      *bool `json:"supportsStrictMode,omitempty"`
+	SupportsReasoningReplay *bool `json:"supportsReasoningReplay,omitempty"`
+}
+
+type GoogleCompat struct {
 	SupportsStrictMode *bool `json:"supportsStrictMode,omitempty"`
 }
 
 type MistralConversationsCompat struct {
 	SupportsMidConvoSystemMessages *bool `json:"supportsMidConvoSystemMessages,omitempty"`
+	SupportsStrictMode             *bool `json:"supportsStrictMode,omitempty"`
 }
 
 type CacheControlFormat string

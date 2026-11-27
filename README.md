@@ -89,7 +89,7 @@ Orb executes many upstream TypeScript extensions unmodified through a local Node
 pirate example from the pinned upstream revision and load it:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/earendil-works/pi/b4afdddf44e059c67ccf5097e5317d913521b470/packages/coding-agent/examples/extensions/pirate.ts
+curl -fsSLO https://raw.githubusercontent.com/earendil-works/pi/fb0fe823539f6d04850f6e34748c01f01f212e1f/packages/coding-agent/examples/extensions/pirate.ts
 orb --extension ./pirate.ts
 ```
 

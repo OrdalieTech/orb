@@ -74,13 +74,13 @@ type OpenAICodexResponsesPayload struct {
 	Model             string                     `json:"model"`
 	Store             bool                       `json:"store"`
 	Stream            bool                       `json:"stream"`
-	Instructions      string                     `json:"instructions"`
 	Input             []any                      `json:"input"`
 	Text              openAICodexText            `json:"text"`
 	Include           []string                   `json:"include"`
 	PromptCacheKey    *string                    `json:"prompt_cache_key,omitempty"`
 	ToolChoice        string                     `json:"tool_choice"`
 	ParallelToolCalls bool                       `json:"parallel_tool_calls"`
+	MaxOutputTokens   *int                       `json:"max_output_tokens,omitempty"`
 	Temperature       *float64                   `json:"temperature,omitempty"`
 	ServiceTier       *string                    `json:"service_tier,omitempty"`
 	Tools             []openAICodexResponsesTool `json:"tools,omitempty"`
@@ -409,17 +409,27 @@ func buildOpenAICodexResponsesPayload(
 		return nil, nil, err
 	}
 	requestContext = prepared.context
-	withoutSystem := requestContext
-	withoutSystem.SystemPrompt = nil
-	prepared.messages.supportsDeveloperRole = false
-	prepared.messages.toolOptions.strictNull = true
-	input, err := convertResponsesMessagesWithOptions(model, withoutSystem, prepared.deferred, prepared.messages)
+	compat, err := getOpenAIResponsesCompat(model, true)
 	if err != nil {
 		return nil, nil, err
 	}
-	instructions := "You are a helpful assistant."
-	if requestContext.SystemPrompt != nil && *requestContext.SystemPrompt != "" {
-		instructions = *requestContext.SystemPrompt
+	prepared.messages.supportsDeveloperRole = true
+	prepared.messages.toolOptions.strictNull = true
+	var configurationUpdateEffort string
+	if compat.supportsMidConvoEffort && options != nil && options.ReasoningEffort != nil {
+		level, fallback := *options.ReasoningEffort, *options.ReasoningEffort
+		if level == "none" {
+			level, fallback = "off", "none"
+		}
+		configurationUpdateEffort = mappedThinkingLevel(model, level, fallback)
+	}
+	var requestEffortBaseline string
+	prepared.messages.configurationUpdateEffort = configurationUpdateEffort
+	prepared.messages.effortBaselineInitial = true
+	prepared.messages.requestEffortBaseline = &requestEffortBaseline
+	input, err := convertResponsesMessagesWithOptions(model, requestContext, prepared.deferred, prepared.messages)
+	if err != nil {
+		return nil, nil, err
 	}
 	verbosity := "low"
 	toolChoice := "auto"
@@ -432,12 +442,16 @@ func buildOpenAICodexResponsesPayload(
 		}
 	}
 	payload := &OpenAICodexResponsesPayload{
-		Model: model.ID, Store: false, Stream: true, Instructions: instructions, Input: input,
+		Model: model.ID, Store: false, Stream: true, Input: input,
 		Text: openAICodexText{Verbosity: verbosity}, Include: []string{"reasoning.encrypted_content"},
 		ToolChoice: toolChoice, ParallelToolCalls: true,
 	}
 	streamOptions := codexStreamOptions(options)
 	if streamOptions != nil {
+		if streamOptions.MaxTokens != nil && *streamOptions.MaxTokens > 0 && compat.supportsMaxOutputTokens {
+			maxTokens := max(int(*streamOptions.MaxTokens), 16)
+			payload.MaxOutputTokens = &maxTokens
+		}
 		payload.Temperature = streamOptions.Temperature
 		if streamOptions.SessionID != nil && resolveCacheRetention(streamOptions) != ai.CacheRetentionNone {
 			clamped := clampOpenAIPromptCacheKey(streamOptions.SessionID)
@@ -455,11 +469,15 @@ func buildOpenAICodexResponsesPayload(
 			if level == "none" {
 				level, fallback = "off", "none"
 			}
+			effort := requestEffortBaseline
+			if effort == "" {
+				effort = mappedThinkingLevel(model, level, fallback)
+			}
 			summary := "auto"
 			if options.ReasoningSummary != nil {
 				summary = *options.ReasoningSummary
 			}
-			payload.Reasoning = &OpenAIReasoningParams{Effort: mappedThinkingLevel(model, level, fallback), Summary: &summary}
+			payload.Reasoning = &OpenAIReasoningParams{Effort: effort, Summary: &summary}
 		}
 	}
 	if payload.Reasoning == nil && model.Reasoning && supportsOffReasoning(model) {

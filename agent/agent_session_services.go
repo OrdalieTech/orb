@@ -92,6 +92,12 @@ func CreateAgentSessionServices(options CreateAgentSessionServicesOptions) (*Age
 			Type: "error", Message: fmt.Sprintf("Extension %q error: %s", extensionError.ExtensionPath, extensionError.Error),
 		})
 	})
+	if modelsJSONErr := modelRegistry.Error(); modelsJSONErr != "" {
+		diagnostics = append(diagnostics, AgentSessionRuntimeDiagnostic{
+			Type:    "warning",
+			Message: "models.json error: " + modelsJSONErr,
+		})
+	}
 	flags := make([]ExtensionFlag, 0, len(options.ExtensionFlagValues))
 	for _, name := range slices.Sorted(maps.Keys(options.ExtensionFlagValues)) {
 		flag := ExtensionFlag{Name: name}

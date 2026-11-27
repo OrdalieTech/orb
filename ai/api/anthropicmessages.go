@@ -471,7 +471,7 @@ func getAnthropicCompat(model *ai.Model) (resolvedAnthropicCompat, error) {
 		supportsMidConvoEffort:          raw.SupportsMidConvoEffort != nil && *raw.SupportsMidConvoEffort,
 		// Gateways that drop unknown request fields would turn a continue into a request without the
 		// earlier conversation, so only Anthropic's own endpoint defaults to threads.
-		supportsMessageThreads: model.Provider == "anthropic" && strings.Contains(model.BaseURL, "api.anthropic.com"),
+		supportsMessageThreads: strings.Contains(model.BaseURL, "api.anthropic.com"),
 	}
 	if raw.AllowedFallbackModels != nil {
 		compat.fallbackModels = *raw.AllowedFallbackModels
@@ -862,7 +862,7 @@ func anthropicInputSchema(toolName string, parameters jsonschema.Schema, strict 
 		required = json.RawMessage(`[]`)
 	}
 	legacy := jsonwire.RawObject{{Name: "type", Value: json.RawMessage(`"object"`)}, {Name: "properties", Value: properties}, {Name: "required", Value: required}}
-	for _, name := range []string{"$defs", "definitions"} {
+	for _, name := range []string{"additionalProperties", "$schema", "$defs", "definitions"} {
 		if value, ok := members.Get(name); ok {
 			legacy = append(legacy, jsonwire.RawMember{Name: name, Value: value})
 		}

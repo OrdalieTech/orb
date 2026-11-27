@@ -28,8 +28,18 @@ func CalculateCost(model *Model, usage *Usage) {
 		longWrite = *usage.CacheWrite1h
 	}
 	shortWrite := usage.CacheWrite - longWrite
+	imageRate := float64(0)
+	imageTokens := int64(0)
+	if model.Cost.ImageOutput != nil {
+		imageRate = *model.Cost.ImageOutput
+		if usage.ImageOutput != nil {
+			imageTokens = min(usage.Output, *usage.ImageOutput)
+		} else {
+			imageTokens = usage.Output
+		}
+	}
 	usage.Cost.Input = rates.Input / 1_000_000 * float64(usage.Input)
-	usage.Cost.Output = rates.Output / 1_000_000 * float64(usage.Output)
+	usage.Cost.Output = (rates.Output*float64(usage.Output-imageTokens) + imageRate*float64(imageTokens)) / 1_000_000
 	usage.Cost.CacheRead = rates.CacheRead / 1_000_000 * float64(usage.CacheRead)
 	usage.Cost.CacheWrite = (rates.CacheWrite*float64(shortWrite) + rates.Input*2*float64(longWrite)) / 1_000_000
 	usage.Cost.Total = TotalCost(usage.Cost)

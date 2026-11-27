@@ -600,6 +600,11 @@ func convertBedrockMessages(
 	retention ai.CacheRetention,
 	options *ai.StreamOptions,
 ) ([]BedrockMessage, error) {
+	compat, err := decodeCompat[ai.BedrockCompat](model)
+	if err != nil {
+		return nil, err
+	}
+	supportsReasoningReplay := compat.SupportsReasoningReplay == nil || *compat.SupportsReasoningReplay
 	transformed := transformMessages(requestContext.Messages, model, func(id string, _ *ai.Model, _ *ai.AssistantMessage) string {
 		return normalizeBedrockToolCallID(id)
 	})
@@ -613,7 +618,7 @@ func convertBedrockMessages(
 			}
 			result = append(result, BedrockMessage{Role: "user", Content: blocks})
 		case *ai.AssistantMessage:
-			blocks, err := convertBedrockAssistantContent(message.Content, model)
+			blocks, err := convertBedrockAssistantContent(message.Content, model, supportsReasoningReplay)
 			if err != nil {
 				return nil, err
 			}
@@ -717,7 +722,7 @@ func sanitizeBedrockDocument(value any) any {
 	return value
 }
 
-func convertBedrockAssistantContent(content ai.AssistantContent, model *ai.Model) ([]BedrockContentBlock, error) {
+func convertBedrockAssistantContent(content ai.AssistantContent, model *ai.Model, supportsReasoningReplay bool) ([]BedrockContentBlock, error) {
 	result := make([]BedrockContentBlock, 0, len(content))
 	for _, raw := range content {
 		switch block := raw.(type) {
@@ -730,6 +735,9 @@ func convertBedrockAssistantContent(content ai.AssistantContent, model *ai.Model
 				ToolUseID: block.ID, Name: block.Name, Input: sanitizeBedrockDocument(block.Arguments),
 			}})
 		case *ai.ThinkingContent:
+			if !supportsReasoningReplay {
+				continue
+			}
 			if block.Redacted != nil && *block.Redacted {
 				if block.ThinkingSignature != nil {
 					raw, err := base64.StdEncoding.DecodeString(*block.ThinkingSignature)
@@ -943,36 +951,99 @@ func supportsBedrockPromptCaching(model *ai.Model, options *ai.StreamOptions) bo
 }
 
 func buildBedrockAdditionalFields(model *ai.Model, options *BedrockConverseStreamOptions) map[string]any {
-	if options == nil || options.Reasoning == nil || !model.Reasoning || !isBedrockClaudeModel(model) {
+	if !model.Reasoning {
 		return nil
 	}
-	display := any(BedrockThinkingSummarized)
-	if options.ThinkingDisplay != nil {
-		display = *options.ThinkingDisplay
+	candidates := bedrockModelCandidates(model)
+	isOpenAIGpt := false
+	for _, candidate := range candidates {
+		if strings.Contains(candidate, "gpt-") {
+			isOpenAIGpt = true
+			break
+		}
 	}
-	if isBedrockGovCloudTarget(model, options) {
-		display = nil
+	if !isBedrockClaudeModel(model) && !isOpenAIGpt {
+		level := ai.ModelThinkingOff
+		if options != nil && options.Reasoning != nil {
+			level = ai.ModelThinkingLevel(*options.Reasoning)
+		}
+		if model.ThinkingLevelMap != nil {
+			if effort, ok := (*model.ThinkingLevelMap)[level]; ok && effort != nil {
+				return map[string]any{"reasoning_effort": *effort}
+			}
+		}
+		return nil
 	}
-	if supportsBedrockAdaptiveThinking(model) {
-		thinking := map[string]any{"type": "adaptive"}
+	if options == nil || options.Reasoning == nil {
+		return nil
+	}
+	if isBedrockClaudeModel(model) {
+		display := any(BedrockThinkingSummarized)
+		if options.ThinkingDisplay != nil {
+			display = *options.ThinkingDisplay
+		}
+		if isBedrockGovCloudTarget(model, options) {
+			display = nil
+		}
+		if supportsBedrockAdaptiveThinking(model) {
+			thinking := map[string]any{"type": "adaptive"}
+			if display != nil {
+				thinking["display"] = display
+			}
+			return map[string]any{
+				"thinking":      thinking,
+				"output_config": map[string]any{"effort": mapBedrockThinkingEffort(model, *options.Reasoning)},
+			}
+		}
+		budget := bedrockThinkingBudget(*options.Reasoning, options.ThinkingBudgets)
+		thinking := map[string]any{"type": "enabled", "budget_tokens": budget}
 		if display != nil {
 			thinking["display"] = display
 		}
-		return map[string]any{
-			"thinking":      thinking,
-			"output_config": map[string]any{"effort": mapBedrockThinkingEffort(model, *options.Reasoning)},
+		result := map[string]any{"thinking": thinking}
+		if options.InterleavedThinking == nil || *options.InterleavedThinking {
+			result["anthropic_beta"] = []string{"interleaved-thinking-2025-05-14"}
+		}
+		return result
+	}
+	for _, candidate := range candidates {
+		if strings.Contains(candidate, "gpt-oss") {
+			return map[string]any{"reasoning_effort": mapBedrockOpenAIGptOSSEffort(*options.Reasoning)}
 		}
 	}
-	budget := bedrockThinkingBudget(*options.Reasoning, options.ThinkingBudgets)
-	thinking := map[string]any{"type": "enabled", "budget_tokens": budget}
-	if display != nil {
-		thinking["display"] = display
+	effort := mapBedrockOpenAIGptEffort(*options.Reasoning)
+	if model.ThinkingLevelMap != nil {
+		if mapped, ok := (*model.ThinkingLevelMap)[ai.ModelThinkingLevel(*options.Reasoning)]; ok && mapped != nil {
+			effort = *mapped
+		}
 	}
-	result := map[string]any{"thinking": thinking}
-	if options.InterleavedThinking == nil || *options.InterleavedThinking {
-		result["anthropic_beta"] = []string{"interleaved-thinking-2025-05-14"}
+	return map[string]any{"reasoning": map[string]any{"effort": effort}}
+}
+
+func mapBedrockOpenAIGptOSSEffort(level ai.ThinkingLevel) string {
+	switch level {
+	case ai.ThinkingMinimal, ai.ThinkingLow:
+		return "low"
+	case ai.ThinkingMedium:
+		return "medium"
+	default:
+		return "high"
 	}
-	return result
+}
+
+func mapBedrockOpenAIGptEffort(level ai.ThinkingLevel) string {
+	switch level {
+	case ai.ThinkingMinimal, ai.ThinkingLow:
+		return "low"
+	case ai.ThinkingMedium:
+		return "medium"
+	case ai.ThinkingHigh:
+		return "high"
+	case ai.ThinkingXHigh:
+		return "xhigh"
+	default:
+		return "max"
+	}
 }
 
 func mapBedrockThinkingEffort(model *ai.Model, level ai.ThinkingLevel) string {

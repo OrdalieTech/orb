@@ -92,7 +92,8 @@ func (usage Usage) appendWire(dst []byte) ([]byte, error) {
 	dst = strconv.AppendInt(append(dst, `,"cacheWrite":`...), usage.CacheWrite, 10)
 	optionals := func(dst []byte) []byte {
 		dst = appendOptionalInt(dst, `,"cacheWrite1h":`, usage.CacheWrite1h)
-		return appendOptionalInt(dst, `,"reasoning":`, usage.Reasoning)
+		dst = appendOptionalInt(dst, `,"reasoning":`, usage.Reasoning)
+		return appendOptionalInt(dst, `,"imageOutput":`, usage.ImageOutput)
 	}
 	if beforeTotals {
 		dst = optionals(dst)
@@ -122,9 +123,9 @@ func (usage *Usage) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*usage = Usage(decoded)
-	if usage.CacheWrite1h != nil || usage.Reasoning != nil {
+	if usage.CacheWrite1h != nil || usage.Reasoning != nil || usage.ImageOutput != nil {
 		usage.optionalOrder = usageOptionalsAfterCost
-		if topLevelMemberBefore(data, "cacheWrite1h", "totalTokens") || topLevelMemberBefore(data, "reasoning", "totalTokens") {
+		if topLevelMemberBefore(data, "cacheWrite1h", "totalTokens") || topLevelMemberBefore(data, "reasoning", "totalTokens") || topLevelMemberBefore(data, "imageOutput", "totalTokens") {
 			usage.optionalOrder = usageOptionalsBeforeTotals
 		}
 	}
@@ -133,7 +134,7 @@ func (usage *Usage) UnmarshalJSON(data []byte) error {
 
 // SetUsageOptionalsBeforeTotals preserves the order of upstream usage objects built by compaction aggregation.
 func SetUsageOptionalsBeforeTotals(usage *Usage) {
-	if usage != nil && (usage.CacheWrite1h != nil || usage.Reasoning != nil) {
+	if usage != nil && (usage.CacheWrite1h != nil || usage.Reasoning != nil || usage.ImageOutput != nil) {
 		usage.optionalOrder = usageOptionalsBeforeTotals
 	}
 }

@@ -156,6 +156,7 @@ type responsesFunctionCall struct {
 	ID        *string `json:"id,omitempty"`
 	CallID    string  `json:"call_id"`
 	Name      string  `json:"name"`
+	Status    string  `json:"status,omitempty"`
 	Arguments string  `json:"arguments"`
 	Namespace *string `json:"namespace,omitempty"`
 }
@@ -165,6 +166,7 @@ type responsesCustomToolCall struct {
 	ID        *string `json:"id,omitempty"`
 	CallID    string  `json:"call_id"`
 	Name      string  `json:"name"`
+	Status    string  `json:"status,omitempty"`
 	Input     string  `json:"input"`
 	Namespace *string `json:"namespace,omitempty"`
 }
@@ -631,6 +633,10 @@ type responsesMessageOptions struct {
 	// changing reasoning.effort never invalidates the prompt cache: one before each earlier reply of this
 	// model with the level recorded on it, and one with this effort at the end.
 	configurationUpdateEffort string
+	// effortBaselineInitial, when true, pins the first effort into requestEffortBaseline instead of emitting
+	// a configuration_update for it, and suppresses consecutive duplicate configuration_update items (#12361).
+	effortBaselineInitial bool
+	requestEffortBaseline *string
 }
 
 type responsesConfigurationUpdate struct {
@@ -748,6 +754,26 @@ func convertResponsesMessagesWithOptions(
 		instructionRole = "developer"
 	}
 	declared, unavailable := false, []string{}
+	var previousEffort string
+	hasPreviousEffort := false
+	hasEffortBaseline := false
+	pushConfigurationUpdate := func(effort string) {
+		if options.effortBaselineInitial {
+			if hasPreviousEffort && previousEffort == effort {
+				return
+			}
+			previousEffort = effort
+			hasPreviousEffort = true
+			if !hasEffortBaseline {
+				hasEffortBaseline = true
+				if options.requestEffortBaseline != nil {
+					*options.requestEffortBaseline = effort
+				}
+				return
+			}
+		}
+		result = append(result, configurationUpdate(effort))
+	}
 	declare := func(tools []ai.Tool) error {
 		unavailable = slices.DeleteFunc(unavailable, func(name string) bool {
 			return slices.ContainsFunc(tools, func(tool ai.Tool) bool { return tool.Name == name })
@@ -930,7 +956,7 @@ func convertResponsesMessagesWithOptions(
 						}
 						output = append(output, responsesCustomToolCall{
 							Type: "custom_tool_call", ID: itemID, CallID: callID, Name: block.Name,
-							Input: sanitizeText(input), Namespace: namespace,
+							Status: "completed", Input: sanitizeText(input), Namespace: namespace,
 						})
 						continue
 					}
@@ -943,6 +969,7 @@ func convertResponsesMessagesWithOptions(
 						ID:        itemID,
 						CallID:    callID,
 						Name:      block.Name,
+						Status:    "completed",
 						Arguments: string(encoded),
 						Namespace: namespace,
 					})
@@ -952,7 +979,7 @@ func convertResponsesMessagesWithOptions(
 				continue
 			}
 			if options.configurationUpdateEffort != "" && isSameModel && value.ProviderThinkingLevel != nil {
-				result = append(result, configurationUpdate(*value.ProviderThinkingLevel))
+				pushConfigurationUpdate(*value.ProviderThinkingLevel)
 			}
 			result = append(result, output...)
 		case *ai.ToolResultMessage:
@@ -1006,7 +1033,7 @@ func convertResponsesMessagesWithOptions(
 		messageIndex++
 	}
 	if options.configurationUpdateEffort != "" {
-		result = append(result, configurationUpdate(options.configurationUpdateEffort))
+		pushConfigurationUpdate(options.configurationUpdateEffort)
 	}
 	return result, nil
 }

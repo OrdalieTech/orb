@@ -43,9 +43,29 @@ func (manager *SettingsManager) GetHideThinkingBlock() bool {
 	return value
 }
 
+type NoticeSettings struct {
+	CacheMisses     bool `json:"cacheMisses"`
+	CacheWarming    bool `json:"cacheWarming"`
+	CompactionCosts bool `json:"compactionCosts"`
+	ReasoningDrops  bool `json:"reasoningDrops"`
+}
+
+func (manager *SettingsManager) GetNotices() NoticeSettings {
+	notices := manager.objectValue("notices")
+	boolField := func(key string) bool {
+		value, _ := notices[key].(bool)
+		return value
+	}
+	return NoticeSettings{
+		CacheMisses:     boolField("cacheMisses"),
+		CacheWarming:    boolField("cacheWarming"),
+		CompactionCosts: boolField("compactionCosts"),
+		ReasoningDrops:  boolField("reasoningDrops"),
+	}
+}
+
 func (manager *SettingsManager) GetShowCacheMissNotices() bool {
-	value, _ := manager.boolValue("showCacheMissNotices")
-	return value
+	return manager.GetNotices().CacheMisses
 }
 
 // Settings value takes precedence, then ORB_HARDWARE_CURSOR, then false.

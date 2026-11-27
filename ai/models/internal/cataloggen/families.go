@@ -51,7 +51,7 @@ func supportsClaudeMidConvoSystemMessages(id string) bool {
 func enableClaudeMidConvoEffort(m *model) {
 	m.mergeCompat(compat("supportsMidConvoEffort", true))
 	bare := claudeDatedSuffixPattern().ReplaceAllString(stripClaudePrefix(m.ID), "")
-	if !slices.Contains([]string{"claude-opus-5", "claude-haiku-5-5", "claude-haiku-5.5"}, bare) {
+	if !slices.Contains([]string{"claude-haiku-5-5", "claude-haiku-5.5"}, bare) {
 		m.mergeThinking(levels("off", ""))
 	}
 }
@@ -255,7 +255,7 @@ const kimiK3MaxTokens = 131072
 var kimiK3Cost = ai.ModelCostRates{Input: 3, Output: 15, CacheRead: .3}
 
 func kimiCompat() jsonwire.OrderedObject {
-	return compat("supportsStore", false, "supportsDeveloperRole", false, "supportsReasoningEffort", false,
+	return compat("supportsStore", false, "supportsReasoningEffort", false,
 		"maxTokensField", "max_tokens", "supportsStrictMode", false, "thinkingFormat", "deepseek")
 }
 

@@ -22,8 +22,7 @@
         "maxTokens": 384000,
         "compat": {
           "supportsStore": false,
-          "supportsDeveloperRole": false,
-          "supportsReasoningEffort": true,
+          "supportsReasoningEffort": false,
           "maxTokensField": "max_tokens",
           "thinkingFormat": "together",
           "supportsLongCacheRetention": false,
@@ -32,9 +31,7 @@
         "thinkingLevelMap": {
           "minimal": null,
           "low": null,
-          "medium": null,
-          "high": "high",
-          "xhigh": null
+          "medium": null
         },
         "type": "chat"
       }
@@ -70,7 +67,6 @@
         },
         "compat": {
           "supportsStore": false,
-          "supportsDeveloperRole": false,
           "supportsReasoningEffort": true,
           "maxTokensField": "max_tokens",
           "thinkingFormat": "zai",
@@ -131,7 +127,7 @@
         "provider": "openrouter",
         "reasoning": true,
         "thinkingLevelMap": {
-          "off": "none",
+          "off": null,
           "minimal": null,
           "low": "low",
           "medium": "medium",
@@ -198,6 +194,9 @@
         },
         "contextWindow": 1000000,
         "maxTokens": 64000,
+        "thinkingLevelMap": {
+          "off": null
+        },
         "inputLimits": {
           "images": {
             "resize": {
@@ -343,7 +342,8 @@
         "maxTokens": 128000,
         "thinkingLevelMap": {
           "xhigh": "xhigh",
-          "max": "max"
+          "max": "max",
+          "off": null
         },
         "compat": {
           "forceAdaptiveThinking": true,
@@ -394,9 +394,9 @@
         "contextWindow": 1000000,
         "maxTokens": 128000,
         "thinkingLevelMap": {
-          "off": null,
           "xhigh": "xhigh",
-          "max": "max"
+          "max": "max",
+          "off": null
         },
         "compat": {
           "forceAdaptiveThinking": true,
@@ -468,7 +468,6 @@
         "maxTokens": 32768,
         "compat": {
           "supportsStore": false,
-          "supportsDeveloperRole": false,
           "supportsReasoningEffort": false,
           "maxTokensField": "max_tokens",
           "thinkingFormat": "zai",
@@ -519,7 +518,6 @@
         },
         "compat": {
           "supportsStore": false,
-          "supportsDeveloperRole": false,
           "supportsReasoningEffort": true,
           "maxTokensField": "max_tokens",
           "thinkingFormat": "zai",
@@ -536,7 +534,7 @@
         "name": "GLM-5.2",
         "api": "openai-completions",
         "provider": "qwen-token-plan",
-        "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+        "baseUrl": "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1",
         "reasoning": true,
         "input": [
           "text"
@@ -552,7 +550,6 @@
         "compat": {
           "supportsStrictMode": true,
           "thinkingFormat": "qwen",
-          "supportsDeveloperRole": false,
           "supportsStore": false,
           "supportsReasoningEffort": true
         },
@@ -575,7 +572,7 @@
         "name": "GLM-5",
         "api": "openai-completions",
         "provider": "qwen-token-plan",
-        "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+        "baseUrl": "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1",
         "reasoning": true,
         "input": [
           "text"
@@ -591,7 +588,6 @@
         "compat": {
           "supportsStrictMode": true,
           "thinkingFormat": "qwen",
-          "supportsDeveloperRole": false,
           "supportsStore": false,
           "supportsReasoningEffort": true
         },
@@ -613,7 +609,7 @@
         "name": "Qwen3.8 Flash",
         "api": "openai-completions",
         "provider": "qwen-token-plan-individual",
-        "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+        "baseUrl": "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1",
         "reasoning": true,
         "input": [
           "text",
@@ -630,7 +626,6 @@
         "compat": {
           "supportsStrictMode": true,
           "thinkingFormat": "qwen",
-          "supportsDeveloperRole": false,
           "supportsStore": false,
           "supportsReasoningEffort": true
         },
@@ -686,7 +681,6 @@
         "maxTokens": 384000,
         "compat": {
           "supportsStore": false,
-          "supportsDeveloperRole": false,
           "maxTokensField": "max_tokens",
           "requiresReasoningContentOnAssistantMessages": true,
           "thinkingFormat": "deepseek",
@@ -732,14 +726,20 @@
           "Editor-Plugin-Version": "copilot-chat/0.35.0",
           "Copilot-Integration-Id": "vscode-chat"
         },
-        "thinkingLevelMap": {
-          "off": null,
-          "xhigh": "xhigh",
-          "max": "max"
-        },
         "compat": {
+          "supportsStrictTools": true,
           "forceAdaptiveThinking": true,
-          "supportsMidConvoSystemMessages": true
+          "supportsMidConvoSystemMessages": true,
+          "supportsMidConvoToolChanges": true
+        },
+        "thinkingLevelMap": {
+          "xhigh": "xhigh",
+          "max": "max",
+          "off": null
+        },
+        "promptCache": {
+          "short": 300,
+          "long": 3600
         },
         "inputLimits": {
           "images": {
@@ -778,7 +778,6 @@
         "compat": {
           "supportsStrictMode": false,
           "supportsStore": false,
-          "supportsDeveloperRole": false,
           "supportsReasoningEffort": true,
           "maxTokensField": "max_tokens",
           "thinkingFormat": "openai",
@@ -832,7 +831,6 @@
         "compat": {
           "supportsStrictMode": false,
           "supportsStore": false,
-          "supportsDeveloperRole": false,
           "supportsReasoningEffort": false,
           "maxTokensField": "max_tokens",
           "thinkingFormat": "deepseek",
@@ -878,7 +876,6 @@
         "compat": {
           "supportsStrictMode": false,
           "supportsStore": false,
-          "supportsDeveloperRole": false,
           "supportsReasoningEffort": true,
           "maxTokensField": "max_tokens",
           "thinkingFormat": "openai",
@@ -1069,7 +1066,8 @@
           "supportsOpenAIGrammarTools": true,
           "supportsAdditionalTools": true,
           "supportsToolSearch": true,
-          "supportsMidConvoSystemMessages": true
+          "supportsMidConvoSystemMessages": true,
+          "supportsMidConvoEffort": true
         },
         "inputLimits": {
           "images": {

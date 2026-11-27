@@ -295,8 +295,12 @@ func (manager *SettingsManager) SetMermaidRenderingMode(mode string) {
 	manager.setGlobalNested("markdown", "mermaid", mode)
 }
 
+func (manager *SettingsManager) SetNotice(key string, shown bool) {
+	manager.setGlobalNested("notices", key, shown)
+}
+
 func (manager *SettingsManager) SetShowCacheMissNotices(show bool) {
-	manager.setGlobalValues(settingMember("showCacheMissNotices", show))
+	manager.SetNotice("cacheMisses", show)
 }
 
 func (manager *SettingsManager) SetQuietStartup(quiet string) {

@@ -64,8 +64,16 @@ func providers() []provider {
 						if strings.HasPrefix(m.ID, "eu.") {
 							m.BaseURL = "https://bedrock-runtime.eu-central-1.amazonaws.com"
 						}
+						if strings.Contains(source.ID, "moonshotai.kimi-k3") || strings.Contains(source.ID, "zai.glm-5.3") {
+							if effort := effortThinkingLevels(source.ReasoningOptions); effort != nil {
+								m.setThinking(effort)
+							}
+						}
 						if source.StructuredOutput {
-							m.compat = compat("supportsStrictMode", true)
+							m.mergeCompat(compat("supportsStrictMode", true))
+						}
+						if strings.Contains(source.ID, "moonshotai.kimi-k3") {
+							m.mergeCompat(compat("supportsReasoningReplay", false))
 						}
 						return m
 					},
@@ -75,8 +83,19 @@ func providers() []provider {
 		},
 		{
 			id: "ant-ling",
-			models: func(*buildContext) []*model {
-				var models []*model
+			models: func(ctx *buildContext) []*model {
+				models := ctx.modelsDevModels("bailing", devOptions{
+					api: ai.APIOpenAICompletions, baseURL: "https://api.ant-ling.com/v1", skipDeprecated: true, skipReasoning: true,
+					mapModel: func(m *model, _ sourceModel) *model {
+						if m.Reasoning {
+							m.setThinking(levels("off", "off", "minimal", "", "low", "", "medium", "", "high", "high", "xhigh", "", "max", ""))
+						}
+						return m
+					},
+				})
+				if len(models) > 0 {
+					return models
+				}
 				for _, item := range []struct {
 					id, name  string
 					reasoning bool
@@ -89,23 +108,18 @@ func providers() []provider {
 					m := &model{Model: ai.Model{
 						ID: item.id, Name: item.name, API: ai.APIOpenAICompletions, BaseURL: "https://api.ant-ling.com/v1", Provider: "ant-ling",
 						Reasoning: item.reasoning, Input: ai.InputModalities{ai.InputText}, Cost: item.cost, ContextWindow: 262144, MaxTokens: 65536,
-					}, compat: compat("supportsStore", false, "supportsDeveloperRole", false, "supportsReasoningEffort", false,
+					}, compat: compat("supportsStore", false, "supportsReasoningEffort", false,
 						"maxTokensField", "max_tokens", "supportsLongCacheRetention", false)}
 					if item.reasoning {
-						m.mergeCompat(compat("thinkingFormat", "ant-ling"))
+						m.mergeCompat(compat("thinkingFormat", "deepseek"))
+						m.setThinking(levels("off", "off", "minimal", "", "low", "", "medium", "", "high", "high", "xhigh", "", "max", ""))
 					}
 					models = append(models, m)
 				}
 				return models
 			},
-			completionsCompat: static(compat("supportsStore", false, "supportsDeveloperRole", false, "supportsReasoningEffort", false,
-				"maxTokensField", "max_tokens", "thinkingFormat", "ant-ling", "supportsStrictMode", true, "supportsLongCacheRetention", false)),
-			finalize: func(m *model, _ *buildContext) {
-				// Ring reasons by default; only high and xhigh have documented effort controls.
-				if m.Reasoning {
-					m.mergeThinking(levels("off", "", "minimal", "", "low", "", "medium", "", "high", "high", "xhigh", "xhigh"))
-				}
-			},
+			completionsCompat: static(compat("supportsStore", false, "supportsReasoningEffort", false,
+				"maxTokensField", "max_tokens", "thinkingFormat", "deepseek", "supportsStrictMode", true, "supportsLongCacheRetention", false)),
 		},
 		{
 			id: "anthropic",
@@ -207,7 +221,7 @@ func providers() []provider {
 				if m.API == ai.APIOpenAICompletions {
 					// Azure 400s on DeepSeek's thinking field and on every prompt cache parameter, and
 					// discards a developer system message once reasoning_effort is set (#9645).
-					m.mergeCompat(compat("supportsDeveloperRole", false, "supportsMidConvoSystemMessages", true,
+					m.mergeCompat(compat("supportsMidConvoSystemMessages", true,
 						"thinkingFormat", "openai", "supportsLongCacheRetention", false))
 				}
 			},
@@ -215,7 +229,7 @@ func providers() []provider {
 		{
 			id: "baseten",
 			models: func(ctx *buildContext) []*model {
-				base := compat("supportsStore", false, "supportsDeveloperRole", false, "supportsReasoningEffort", false,
+				base := compat("supportsStore", false, "supportsReasoningEffort", false,
 					"supportsUsageInStreaming", true, "maxTokensField", "max_tokens", "supportsStrictMode", true,
 					// Automatic prompt caching needs session affinity to land on the same replica.
 					"sendSessionAffinityHeaders", true, "supportsLongCacheRetention", false)
@@ -259,7 +273,7 @@ func providers() []provider {
 			models: func(ctx *buildContext) []*model {
 				return ctx.modelsDevModels("cerebras", devOptions{api: ai.APIOpenAICompletions, baseURL: "https://api.cerebras.ai/v1"})
 			},
-			completionsCompat: static(compat("supportsStore", false, "supportsDeveloperRole", false)),
+			completionsCompat: static(compat("supportsStore", false)),
 		},
 		{
 			id: "cloudflare-ai-gateway",
@@ -301,7 +315,7 @@ func providers() []provider {
 					mapModel: func(m *model, _ sourceModel) *model { m.ID = "workers-ai/" + m.ID; return m },
 				})...)
 			},
-			completionsCompat: static(compat("supportsStore", false, "supportsDeveloperRole", false, "supportsReasoningEffort", false,
+			completionsCompat: static(compat("supportsStore", false, "supportsReasoningEffort", false,
 				"maxTokensField", "max_tokens", "supportsLongCacheRetention", false)),
 			finalize: func(m *model, _ *buildContext) {
 				if m.API == ai.APIOpenAIResponses {
@@ -318,7 +332,7 @@ func providers() []provider {
 					compat: compat("sendSessionAffinityHeaders", true),
 				})
 			},
-			completionsCompat: static(compat("supportsStore", false, "supportsDeveloperRole", false, "supportsStrictMode", true, "supportsLongCacheRetention", false)),
+			completionsCompat: static(compat("supportsStore", false, "supportsStrictMode", true, "supportsLongCacheRetention", false)),
 		},
 		{
 			id: "deepseek",
@@ -335,7 +349,7 @@ func providers() []provider {
 				}, compat: deepSeekCompat()}
 				return []*model{flash, pro}
 			},
-			completionsCompat: static(compat("supportsStore", false, "supportsDeveloperRole", false, "maxTokensField", "max_tokens",
+			completionsCompat: static(compat("supportsStore", false, "maxTokensField", "max_tokens",
 				"requiresReasoningContentOnAssistantMessages", true, "thinkingFormat", "deepseek", "supportsStrictMode", true)),
 			finalize: func(m *model, _ *buildContext) {
 				// DeepSeek V4 Pro accepts plain system text in place mid-conversation.
@@ -371,7 +385,7 @@ func providers() []provider {
 			id: "huggingface",
 			models: func(ctx *buildContext) []*model {
 				return ctx.modelsDevModels("huggingface", devOptions{
-					api: ai.APIOpenAICompletions, baseURL: "https://router.huggingface.co/v1", compat: compat("supportsDeveloperRole", false),
+					api: ai.APIOpenAICompletions, baseURL: "https://router.huggingface.co/v1", compat: compat(),
 				})
 			},
 			completionsCompat: static(compat("supportsStrictMode", true)),
@@ -444,7 +458,7 @@ func fireworks() provider {
 	// affinity and rejects cache_control on tools and eager input streaming.
 	anthropicCompat := compat("allowEmptySignature", true, "sendSessionAffinityHeaders", true, "supportsEagerToolInputStreaming", false,
 		"supportsCacheControlOnTools", false, "supportsLongCacheRetention", false)
-	openAICompat := compat("supportsStore", false, "supportsDeveloperRole", false, "sendSessionAffinityHeaders", true, "supportsLongCacheRetention", false)
+	openAICompat := compat("supportsStore", false, "sendSessionAffinityHeaders", true, "supportsLongCacheRetention", false)
 	kimiK3 := spread(openAICompat, compat("requiresReasoningContentOnAssistantMessages", true, "thinkingFormat", "openai"))
 	// Verified adaptive thinking where models.dev omits effort metadata (#9323); not an allowlist.
 	adaptiveFallback := []string{
@@ -530,10 +544,11 @@ func githubCopilot() provider {
 					switch {
 					case copilotMessagesPattern().MatchString(m.ID):
 						m.API = ai.APIAnthropicMessages
+						m.compat = compat("supportsStrictTools", true)
 					case copilotResponsesPattern().MatchString(m.ID):
 						m.API = ai.APIOpenAIResponses
 					default:
-						m.compat = compat("supportsStore", false, "supportsDeveloperRole", false, "supportsReasoningEffort", false)
+						m.compat = compat("supportsStore", false, "supportsReasoningEffort", false)
 					}
 					if m.ID == "claude-opus-5.5" {
 						m.mergeThinking(claude55ThinkingLevels(m.ID))
@@ -569,9 +584,9 @@ func githubCopilot() provider {
 				m.mergeThinking(override)
 			}
 			if m.API == ai.APIAnthropicMessages {
-				// Copilot forwards mid-conversation system messages but rejects tool_addition/tool_removal blocks.
+				m.PromptCache = &ai.ModelPromptCache{Short: ptr(300.0), Long: ptr(3600.0)}
 				if supportsClaudeMidConvoSystemMessages(m.ID) {
-					m.mergeCompat(compat("supportsMidConvoSystemMessages", true))
+					m.mergeCompat(compat("supportsMidConvoSystemMessages", true, "supportsMidConvoToolChanges", true))
 				}
 				if slices.Contains([]string{"claude-haiku-4.5", "claude-sonnet-4", "claude-sonnet-4.5"}, m.ID) {
 					m.mergeCompat(compat("supportsEagerToolInputStreaming", false))
@@ -751,7 +766,7 @@ func moonshot(id, baseURL string) provider {
 				},
 			})
 		},
-		completionsCompat: static(compat("supportsStore", false, "supportsDeveloperRole", false, "supportsReasoningEffort", false, "maxTokensField", "max_tokens")),
+		completionsCompat: static(compat("supportsStore", false, "supportsReasoningEffort", false, "maxTokensField", "max_tokens")),
 		finalize: func(m *model, _ *buildContext) {
 			// Kimi K2.7 Code is always-thinking and rejects thinking disabled.
 			if slices.Contains(alwaysThinking, m.ID) {
@@ -783,7 +798,7 @@ func nvidia() provider {
 		// Orb-only: absent from the live NIM listing; kept so a NIM rollout cannot resurrect it silently.
 		"qwen/qwen3.5-122b-a10b",
 	}
-	completions := compat("supportsStore", false, "supportsDeveloperRole", false, "supportsReasoningEffort", false,
+	completions := compat("supportsStore", false, "supportsReasoningEffort", false,
 		"maxTokensField", "max_tokens", "supportsLongCacheRetention", false)
 	return provider{
 		id: "nvidia",
@@ -797,7 +812,7 @@ func nvidia() provider {
 			}
 			return ctx.modelsDevModels("nvidia", devOptions{
 				api: ai.APIOpenAICompletions, baseURL: "https://integrate.api.nvidia.com/v1", headers: map[string]string{"NVCF-POLL-SECONDS": "3600"},
-				compat: compat("supportsStore", false, "supportsDeveloperRole", false, "supportsReasoningEffort", false,
+				compat: compat("supportsStore", false, "supportsReasoningEffort", false,
 					"maxTokensField", "max_tokens", "supportsStrictMode", false, "supportsLongCacheRetention", false),
 				// Only models the live NIM API serves, under the id it uses.
 				include: func(source sourceModel) bool {
@@ -852,6 +867,9 @@ func openAICodex() provider {
 				m.mergeCompat(compat("supportsAdditionalTools", true, "supportsToolSearch", true))
 			}
 			enableOpenAIMidConvoSystemMessages(m, false)
+			if slices.Contains([]string{"gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol", "gpt-6.1-terra"}, m.ID) {
+				m.mergeCompat(compat("supportsMidConvoEffort", true))
+			}
 		},
 	}
 }
@@ -1017,7 +1035,7 @@ func opencode(id string) provider {
 				},
 			})
 		},
-		completionsCompat: static(compat("supportsStore", false, "supportsDeveloperRole", false, "supportsStrictMode", true)),
+		completionsCompat: static(compat("supportsStore", false, "supportsStrictMode", true)),
 		finalize: func(m *model, _ *buildContext) {
 			if id == "opencode-go" && m.ID == "glm-5.2" {
 				m.mergeThinking(levels("off", "", "minimal", "", "low", "", "medium", "", "high", "high", "max", "max"))
@@ -1072,7 +1090,7 @@ func openRouter() provider {
 					m.Cost.Input, m.Cost.Output, m.Cost.CacheRead, m.MaxTokens = .41, 2.06, .07, 4096
 				}
 				if strings.HasPrefix(m.ID, "moonshotai/kimi-k2.6") {
-					m.mergeCompat(compat("supportsDeveloperRole", false, "requiresReasoningContentOnAssistantMessages", true))
+					m.mergeCompat(compat("requiresReasoningContentOnAssistantMessages", true))
 				}
 				if m.ID == "z-ai/glm-5" {
 					m.Cost.Input, m.Cost.Output, m.Cost.CacheRead = .6, 1.9, .119
@@ -1091,7 +1109,7 @@ func openRouter() provider {
 			// OpenRouter passes developer messages through to Anthropic and OpenAI models only.
 			defaults := jsonwire.OrderedObject{}
 			if !strings.HasPrefix(m.ID, "anthropic/") && !strings.HasPrefix(m.ID, "openai/") {
-				defaults = compat("supportsDeveloperRole", false)
+				defaults = compat()
 			}
 			defaults = spread(defaults, compat("thinkingFormat", "openrouter", "supportsStrictMode", true))
 			if strings.HasPrefix(strings.TrimPrefix(m.ID, "~"), "anthropic/") {
@@ -1103,6 +1121,9 @@ func openRouter() provider {
 			// OpenRouter rejects configuration_update system messages on Opus 5.
 			if m.API == ai.APIAnthropicMessages && supportsClaudeMidConvoEffort(m.ID) && m.ID != "anthropic/claude-opus-5" {
 				enableClaudeMidConvoEffort(m)
+			}
+			if m.API == ai.APIAnthropicMessages && m.Reasoning {
+				m.mergeThinking(levels("off", ""))
 			}
 			// Mercury 2's instant mode (effort none) disables tool calling.
 			if strings.HasPrefix(m.ID, "inception/mercury-2") {
@@ -1122,15 +1143,15 @@ func openRouter() provider {
 // qwenInternationalBaseURL is Alibaba Cloud Model Studio Token Plan's
 // international endpoint; China uses its own endpoint and keys.
 const (
-	qwenInternationalBaseURL = "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
-	qwenCNBaseURL            = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+	qwenInternationalBaseURL = "https://token-plan.maas.qwencloudapi.com/compatible-mode/v1"
+	qwenCNBaseURL            = "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1"
 )
 
-// QwenCloud Token Plan Individual allowlist, verified 2026-11-01: each region's
+// QwenCloud Token Plan Individual allowlist, verified 2026-11-25: each region's
 // endpoint with a narrower catalog.
 var qwenIndividualModelIDs = []string{
-	"deepseek-v4-flash-0731", "deepseek-v4-pro", "deepseek-v4-pro-0813", "glm-5.2", "glm-5.3", "qwen3.6-flash",
-	"qwen3.7-max", "qwen3.7-plus", "qwen3.8-flash", "qwen3.8-max",
+	"deepseek-v4-flash-0731", "deepseek-v4-pro", "deepseek-v4-pro-0813", "deepseek-v4.1-flash", "deepseek-v4.1-flash-1017",
+	"glm-5.2", "glm-5.3", "qwen3.6-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.8-flash", "qwen3.8-max", "qwen4-max",
 }
 
 func qwenTokenPlan(id, source, baseURL string, allowed []string) provider {
@@ -1149,7 +1170,7 @@ func qwenTokenPlan(id, source, baseURL string, allowed []string) provider {
 						effort = thinking{ai.ModelThinkingMinimal: nil, ai.ModelThinkingLow: nil, ai.ModelThinkingMedium: nil,
 							ai.ModelThinkingHigh: ptr("high"), ai.ModelThinkingXHigh: nil, ai.ModelThinkingMax: ptr("max")}
 					}
-					m.compat = compat("thinkingFormat", "qwen", "supportsDeveloperRole", false, "supportsStore", false, "supportsReasoningEffort", effort != nil)
+					m.compat = compat("thinkingFormat", "qwen", "supportsStore", false, "supportsReasoningEffort", effort != nil)
 					if effort != nil {
 						m.setThinking(effort)
 					}
@@ -1162,7 +1183,7 @@ func qwenTokenPlan(id, source, baseURL string, allowed []string) provider {
 }
 
 func together() provider {
-	base := compat("supportsStore", false, "supportsDeveloperRole", false, "supportsReasoningEffort", false,
+	base := compat("supportsStore", false, "supportsReasoningEffort", false,
 		"maxTokensField", "max_tokens", "supportsStrictMode", false, "supportsLongCacheRetention", false)
 	toggle := spread(base, compat("thinkingFormat", "together"))
 	return provider{
@@ -1177,9 +1198,6 @@ func together() provider {
 					case m.ID == "openai/gpt-oss-20b" || m.ID == "openai/gpt-oss-120b":
 						m.compat = spread(base, compat("supportsReasoningEffort", true, "thinkingFormat", "openai"))
 						m.setThinking(levels("off", "", "minimal", ""))
-					case m.ID == "deepseek-ai/DeepSeek-V4-Pro-0813":
-						m.compat = spread(toggle, compat("supportsReasoningEffort", true))
-						m.setThinking(levels("minimal", "", "low", "", "medium", "", "high", "high", "xhigh", ""))
 					default:
 						m.compat = toggle
 						m.setThinking(levels("minimal", "", "low", "", "medium", ""))
@@ -1188,7 +1206,7 @@ func together() provider {
 				},
 			})
 		},
-		completionsCompat: static(compat("supportsStore", false, "supportsDeveloperRole", false, "supportsReasoningEffort", false,
+		completionsCompat: static(compat("supportsStore", false, "supportsReasoningEffort", false,
 			"maxTokensField", "max_tokens", "thinkingFormat", "together", "supportsLongCacheRetention", false)),
 	}
 }
@@ -1238,7 +1256,7 @@ func zai(id, source, baseURL string) provider {
 					if api, ok := apiModels[m.ID]; ok && api.HasCost {
 						m.Cost = modelsDevCost(api.Cost)
 					}
-					m.compat = compat("supportsDeveloperRole", false, "thinkingFormat", "zai")
+					m.compat = compat("thinkingFormat", "zai")
 					if effort != nil {
 						m.mergeCompat(compat("supportsReasoningEffort", true))
 					}
@@ -1249,7 +1267,7 @@ func zai(id, source, baseURL string) provider {
 				},
 			})
 		},
-		completionsCompat: static(compat("supportsStore", false, "supportsDeveloperRole", false, "supportsReasoningEffort", false,
+		completionsCompat: static(compat("supportsStore", false, "supportsReasoningEffort", false,
 			"maxTokensField", "max_tokens", "thinkingFormat", "zai", "supportsStrictMode", true)),
 	}
 }

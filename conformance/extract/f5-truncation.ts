@@ -269,15 +269,28 @@ function materializeChunk(spec: AccumulatorChunk): Buffer {
   }
 }
 
+type UpstreamOutputFileResult =
+  | { kind: "saved"; path: string }
+  | { kind: "failed"; error: string };
+
+function snapshotFullOutputPath(snapshot: {
+  fullOutputPath?: string;
+  fullOutputFile?: UpstreamOutputFileResult;
+}): string | undefined {
+  if (snapshot.fullOutputFile?.kind === "saved") return snapshot.fullOutputFile.path;
+  return snapshot.fullOutputPath;
+}
+
 function canonicalizeAccumulatorSnapshot(snapshot: {
   content: string;
   truncation: unknown;
   fullOutputPath?: string;
+  fullOutputFile?: UpstreamOutputFileResult;
 }) {
   return {
     content: snapshot.content,
     truncation: snapshot.truncation,
-    hasFullOutputPath: snapshot.fullOutputPath !== undefined,
+    hasFullOutputPath: snapshotFullOutputPath(snapshot) !== undefined,
   };
 }
 
@@ -294,6 +307,7 @@ async function generateAccumulatorCases(moduleURL: string) {
         content: string;
         truncation: unknown;
         fullOutputPath?: string;
+        fullOutputFile?: UpstreamOutputFileResult;
       };
       closeTempFile(): Promise<void>;
       getLastLineBytes(): number;
@@ -309,16 +323,16 @@ async function generateAccumulatorCases(moduleURL: string) {
         for (const chunk of fixtureCase.chunks) {
           accumulator.append(materializeChunk(chunk));
           const snapshot = accumulator.snapshot();
-          fullOutputPath = snapshot.fullOutputPath ?? fullOutputPath;
+          fullOutputPath = snapshotFullOutputPath(snapshot) ?? fullOutputPath;
           chunkSnapshots.push(canonicalizeAccumulatorSnapshot(snapshot));
         }
 
         accumulator.finish();
         const finalSnapshot = accumulator.snapshot({ persistIfTruncated: true });
-        fullOutputPath = finalSnapshot.fullOutputPath ?? fullOutputPath;
+        fullOutputPath = snapshotFullOutputPath(finalSnapshot) ?? fullOutputPath;
         accumulator.finish();
         const idempotentFinishSnapshot = accumulator.snapshot({ persistIfTruncated: true });
-        fullOutputPath = idempotentFinishSnapshot.fullOutputPath ?? fullOutputPath;
+        fullOutputPath = snapshotFullOutputPath(idempotentFinishSnapshot) ?? fullOutputPath;
 
         let appendAfterFinishError: string | null = null;
         try {

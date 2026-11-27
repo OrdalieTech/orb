@@ -760,9 +760,6 @@ func executeToolCallsSequential(
 		}
 		finalized = append(finalized, outcome)
 		messages = append(messages, message)
-		if ctx.Err() != nil {
-			break
-		}
 	}
 	return executedToolBatch{messages: messages, terminate: shouldTerminate(finalized)}, nil
 }
@@ -786,15 +783,9 @@ func executeToolCallsParallel(
 				return executedToolBatch{}, err
 			}
 			entries = append(entries, toolEntry{finalized: immediate})
-			if ctx.Err() != nil {
-				break
-			}
 			continue
 		}
 		entries = append(entries, toolEntry{prepared: prepared})
-		if ctx.Err() != nil {
-			break
-		}
 	}
 
 	for index := range entries {
@@ -877,6 +868,11 @@ func prepareToolCall(
 	toolCall *ai.ToolCall,
 	config AgentLoopConfig,
 ) (*preparedToolCall, *finalizedToolCall) {
+	// Once aborted, skip preparation and hooks; callers still record this result so no call is left without one (#9986).
+	if ctx.Err() != nil {
+		outcome := finalizedToolCall{toolCall: toolCall, result: createErrorToolResult("Operation aborted"), isError: true}
+		return nil, &outcome
+	}
 	tool := findAgentTool(currentContext.Tools, toolCall.Name)
 	if tool == nil {
 		outcome := finalizedToolCall{toolCall: toolCall, result: createErrorToolResult("Tool " + toolCall.Name + " not found"), isError: true}

@@ -26,8 +26,9 @@ type BashToolInput struct {
 }
 
 type BashToolDetails struct {
-	Truncation     *truncate.Result `json:"truncation,omitempty"`
-	FullOutputPath string           `json:"fullOutputPath,omitempty"`
+	Truncation      *truncate.Result `json:"truncation,omitempty"`
+	FullOutputPath  string           `json:"fullOutputPath,omitempty"`
+	FullOutputError string           `json:"fullOutputError,omitempty"`
 }
 
 type BashExecOptions struct {
@@ -245,6 +246,9 @@ func (tool *bashTool) Execute(
 	if truncated && snapshot.FullOutputPath != "" {
 		structured["full_output_path"] = snapshot.FullOutputPath
 	}
+	if truncated && snapshot.FullOutputError != "" {
+		structured["full_output_error"] = snapshot.FullOutputError
+	}
 	structured["exit_code"] = *result.ExitCode
 	structured["wall_time_seconds"] = math.Round(time.Since(startedAt).Seconds()*10) / 10
 	// A non-zero exit is an error result for the model; programmatic callers
@@ -312,15 +316,19 @@ func formatBashOutput(
 	truncation := snapshot.Truncation
 	startLine := truncation.TotalLines - truncation.OutputLines + 1
 	endLine := truncation.TotalLines
+	fullOutput := "Full output: " + snapshot.FullOutputPath
+	if snapshot.FullOutputError != "" {
+		fullOutput = "Could not save the full output: " + snapshot.FullOutputError
+	}
 	switch {
 	case truncation.LastLinePartial:
-		text += fmt.Sprintf("\n\n[Showing last %s of line %d (line is %s). Full output: %s]", truncate.FormatSize(truncation.OutputBytes), endLine, truncate.FormatSize(output.LastLineBytes()), snapshot.FullOutputPath)
+		text += fmt.Sprintf("\n\n[Showing last %s of line %d (line is %s). %s]", truncate.FormatSize(truncation.OutputBytes), startLine, truncate.FormatSize(output.LastLineBytes()), fullOutput)
 	case truncation.TruncatedBy != nil && *truncation.TruncatedBy == truncate.ReasonLines:
-		text += fmt.Sprintf("\n\n[Showing lines %d-%d of %d. Full output: %s]", startLine, endLine, truncation.TotalLines, snapshot.FullOutputPath)
+		text += fmt.Sprintf("\n\n[Showing lines %d-%d of %d. %s]", startLine, endLine, truncation.TotalLines, fullOutput)
 	default:
-		text += fmt.Sprintf("\n\n[Showing lines %d-%d of %d (%s limit). Full output: %s]", startLine, endLine, truncation.TotalLines, truncate.FormatSize(truncate.DefaultMaxBytes), snapshot.FullOutputPath)
+		text += fmt.Sprintf("\n\n[Showing lines %d-%d of %d (%s limit). %s]", startLine, endLine, truncation.TotalLines, truncate.FormatSize(truncate.DefaultMaxBytes), fullOutput)
 	}
-	return text, BashToolDetails{Truncation: &truncation, FullOutputPath: snapshot.FullOutputPath}
+	return text, BashToolDetails{Truncation: &truncation, FullOutputPath: snapshot.FullOutputPath, FullOutputError: snapshot.FullOutputError}
 }
 
 func formatBashSnapshot(output *OutputAccumulator, snapshot OutputSnapshot, emptyText string) string {

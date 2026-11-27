@@ -245,6 +245,21 @@ func migrateSettings(settings map[string]any) {
 		}
 	}
 
+	if shown, ok := settings["showCacheMissNotices"].(bool); ok {
+		notices, _ := settings["notices"].(map[string]any)
+		migrated := map[string]any{
+			"cacheMisses":     shown,
+			"cacheWarming":    shown,
+			"compactionCosts": shown,
+			"reasoningDrops":  shown,
+		}
+		for key, value := range notices {
+			migrated[key] = value
+		}
+		settings["notices"] = migrated
+	}
+	delete(settings, "showCacheMissNotices")
+
 	if legacySkills, ok := settings["skills"].(map[string]any); ok {
 		if enabled, exists := legacySkills["enableSkillCommands"]; exists {
 			if _, alreadySet := settings["enableSkillCommands"]; !alreadySet {

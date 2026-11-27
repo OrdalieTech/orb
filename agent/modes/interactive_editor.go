@@ -241,6 +241,11 @@ func (ce *CustomEditor) interceptInput(event tui.KeyEvent) bool {
 				continue
 			}
 			if ce.keybindings.Matches(data, action) {
+				if action == "app.message.followUp" {
+					if result := ce.ConfirmAutocomplete(); result == "applied" || result == "rejected" {
+						return true
+					}
+				}
 				ce.actionHandlers[action]()
 				return true
 			}

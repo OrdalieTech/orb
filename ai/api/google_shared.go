@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	googleMajorVersionPattern    = lazyregexp.New(`^gemini(?:-live)?-(\d+)`)
+	googleMajorVersionPattern    = lazyregexp.New(`gemini(?:-live)?-(\d+)`)
 	googleBase64SignaturePattern = lazyregexp.New(`^[A-Za-z0-9+/]+={0,2}$`)
 )
 
@@ -235,7 +235,7 @@ func buildGoogleParameters(model *ai.Model, requestContext ai.Context, options *
 		config.SystemInstruction = encoded
 	}
 	if requestContext.Tools != nil && len(*requestContext.Tools) > 0 {
-		supportsStrictMode := supportsGoogleStrictToolSampling(model.ID)
+		supportsStrictMode := supportsGoogleStrictToolSampling(model)
 		toolChoice := GoogleToolChoice("")
 		if options != nil {
 			toolChoice = options.ToolChoice
@@ -547,13 +547,51 @@ func mapGoogleToolChoice(choice GoogleToolChoice) string {
 	}
 }
 
-func supportsGoogleStrictToolSampling(modelID string) bool {
-	match := googleMajorVersionPattern().FindStringSubmatch(strings.ToLower(modelID))
+func supportsGoogleStrictToolSampling(model *ai.Model) bool {
+	if model == nil {
+		return false
+	}
+	if compat, err := decodeCompat[ai.GoogleCompat](model); err == nil && compat.SupportsStrictMode != nil {
+		return *compat.SupportsStrictMode
+	}
+	match := googleMajorVersionPattern().FindStringSubmatch(strings.ToLower(model.ID))
 	if len(match) != 2 {
 		return false
 	}
 	major, err := strconv.Atoi(match[1])
 	return err == nil && major >= 3
+}
+
+func formatGooglePromptBlockError(providerName string, feedback *googlePromptFeedback) string {
+	reason := feedback.BlockReason
+	if reason == "" {
+		reason = "unknown reason"
+	}
+	details := []string{providerName + " prompt blocked: " + reason}
+	if feedback.BlockReasonMessage != "" {
+		details = append(details, feedback.BlockReasonMessage)
+	}
+	if len(feedback.SafetyRatings) > 0 {
+		ratings := make([]string, 0, len(feedback.SafetyRatings))
+		for _, rating := range feedback.SafetyRatings {
+			if rating.Category == "" {
+				continue
+			}
+			if rating.Probability != "" {
+				ratings = append(ratings, rating.Category+" ("+rating.Probability+")")
+			} else {
+				ratings = append(ratings, rating.Category)
+			}
+		}
+		if len(ratings) > 0 {
+			label := "Safety ratings: "
+			if len(ratings) == 1 {
+				label = "Safety rating: "
+			}
+			details = append(details, label+strings.Join(ratings, ", "))
+		}
+	}
+	return strings.Join(details, ". ")
 }
 
 func resolveGoogleFunctionCallingMode(
@@ -587,12 +625,14 @@ func mapGoogleStopReason(reason string) (ai.StopReason, error) {
 	switch reason {
 	case "STOP":
 		return ai.StopReasonStop, nil
-	case "MAX_TOKENS":
+	case "MAX_TOKENS", "CONTINUATION":
 		return ai.StopReasonLength, nil
 	case "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "SAFETY", "IMAGE_SAFETY",
 		"IMAGE_PROHIBITED_CONTENT", "IMAGE_RECITATION", "IMAGE_OTHER", "RECITATION",
 		"FINISH_REASON_UNSPECIFIED", "OTHER", "LANGUAGE", "MALFORMED_FUNCTION_CALL",
-		"UNEXPECTED_TOOL_CALL", "TOO_MANY_TOOL_CALLS", "NO_IMAGE":
+		"UNEXPECTED_TOOL_CALL", "TOO_MANY_TOOL_CALLS", "NO_IMAGE",
+		"MISSING_THOUGHT_SIGNATURE", "MALFORMED_RESPONSE", "ESCALATION",
+		"PUP_LIMITED_DISABLED", "MODEL_ARMOR":
 		return ai.StopReasonError, nil
 	default:
 		return ai.StopReasonError, fmt.Errorf("Unhandled stop reason: %s", reason) //nolint:staticcheck // Exact upstream text.

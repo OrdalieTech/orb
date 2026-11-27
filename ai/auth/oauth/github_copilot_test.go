@@ -66,7 +66,7 @@ func TestGitHubCopilotDeviceLoginRefreshAndHeaders(t *testing.T) {
 		t.Fatal(err)
 	}
 	encoded, _ := credential.MarshalJSON()
-	want := `{"type":"oauth","refresh":"github-access","access":"tid=1;proxy-ep=proxy.enterprise.githubcopilot.example;exp=1800000000","expires":1799999700000,"enterpriseUrl":"company.ghe.test","availableModelIds":["gpt-4.1"]}`
+	want := `{"type":"oauth","refresh":"github-access","access":"tid=1;proxy-ep=proxy.enterprise.githubcopilot.example;exp=1800000000","expires":1799999700000,"enterpriseUrl":"company.ghe.test","availableModelIds":["gpt-4.1"],"availableClassifierModelIds":[]}`
 	if string(encoded) != want {
 		t.Fatalf("credential = %s, want %s", encoded, want)
 	}

@@ -74,10 +74,14 @@ var retryableProviderPatterns = anyOf([]string{
 	`subscription_sharing_usage_unavailable`, `subscription_sharing_user_unavailable`,
 	// Busy or full providers (upstream 8b5708db, 3874b3e9).
 	`server_busy`, `servers are currently busy`, `model is at capacity`,
+	// v1.6/v1.7 transient transport, gateway, and provider errors.
+	`\b525\b`, `connection closed\.`, `request rate increased too quickly`,
+	`\b(?:econnreset|epipe|etimedout)\b`, `gateway (?:error|timeout)`,
+	`"type"\s*:\s*"api_error"`, `finish_reason['"]?\s*[:=]\s*['"]?error`,
 })
 
 var overflowPatterns = anyOf([]string{
-	`prompt (is )?too long`, `prompt exceeds max length`, `request_too_large`, `input is too long for requested model`,
+	`prompt (is )?too long`, `prompt exceeds max length`, `\brequest_too_large\b`, `input is too long for requested model`,
 	`exceeds the context window`, `exceeds (the )?(model'?s )?maximum context length( of [0-9,]+ tokens?|[[:space:]]*\([0-9,]+\))`,
 	`context window exceeded`, // LiteLLM's pre-call ContextWindowExceededError
 	`input token count.*exceeds the maximum`, `maximum prompt length is [0-9]+`,

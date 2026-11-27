@@ -29,8 +29,9 @@ func InputOptionsFromContext(ctx context.Context) InputOptions {
 }
 
 type DialogOptions struct {
-	Signal  context.Context
-	Timeout *int64
+	Signal      context.Context
+	Timeout     *int64
+	BlockedKind string
 }
 
 type WidgetPlacement string

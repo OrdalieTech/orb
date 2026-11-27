@@ -82,7 +82,7 @@ func TestGoogleVertexStreamRequestHeadersAndEvents(t *testing.T) {
 	if got := capturedHeader.Get("X-Goog-Api-Key"); got != overrideKey {
 		t.Fatalf("X-Goog-Api-Key = %q", got)
 	}
-	wantBody := `{"contents":[{"parts":[{"text":"hello"}],"role":"user"}],"systemInstruction":{"parts":[{"text":"system"}],"role":"user"},"generationConfig":{"temperature":0,"maxOutputTokens":12,"thinkingConfig":{"includeThoughts":true,"thinkingBudget":128}}}`
+	wantBody := `{"contents":[{"parts":[{"text":"hello"}],"role":"user"}],"systemInstruction":{"parts":[{"text":"system"}],"role":"user"},"generationConfig":{"temperature":0,"maxOutputTokens":12,"thinkingConfig":{"includeThoughts":true,"thinkingBudget":512}}}`
 	if string(capturedBody) != wantBody {
 		t.Fatalf("request body mismatch\nwant: %s\n got: %s", wantBody, capturedBody)
 	}

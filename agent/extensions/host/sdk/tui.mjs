@@ -1,5 +1,5 @@
 // orb-extension-sdk: @earendil-works/pi-tui surface.
-// Implemented symbols are ported from pi-tui (pi 1.5.2, commit b4afdddf,
+// Implemented symbols are ported from pi-tui (pi 1.7.0, commit fb0fe823,
 // MIT © Mario Zechner), trimmed to the D15 Component contract published
 // extensions exercise: render(width) → string[] flowing through the host's
 // ui_component_render push bridge — no per-frame RPC, no terminal ownership.
@@ -436,6 +436,8 @@ export const deleteKittyImage = stub("deleteKittyImage");
 export const detectCapabilities = stub("detectCapabilities");
 export const encodeITerm2 = stub("encodeITerm2");
 export const encodeKitty = stub("encodeKitty");
+export const formatProgramResume = stub("formatProgramResume");
+export const formatProgramResumeClear = stub("formatProgramResumeClear");
 export const formatProgramStatus = stub("formatProgramStatus");
 export const fuzzyFilter = stub("fuzzyFilter");
 export const fuzzyMatch = stub("fuzzyMatch");
@@ -473,4 +475,5 @@ export const setKeybindings = stub("setKeybindings");
 export const setKittyProtocolActive = stub("setKittyProtocolActive");
 export const sliceByColumn = stub("sliceByColumn");
 export const stripTerminalSequences = stub("stripTerminalSequences");
+export const takeProgramResumeToken = stub("takeProgramResumeToken");
 

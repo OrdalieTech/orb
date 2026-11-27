@@ -27,9 +27,10 @@ type OutputSnapshotOptions struct {
 }
 
 type OutputSnapshot struct {
-	Content        string
-	Truncation     truncate.Result
-	FullOutputPath string
+	Content         string
+	Truncation      truncate.Result
+	FullOutputPath  string
+	FullOutputError string
 }
 
 // OutputAccumulator incrementally retains a bounded decoded tail while
@@ -55,8 +56,9 @@ type OutputAccumulator struct {
 	hasOpenLine              bool
 	finished                 bool
 
-	tempFilePath string
-	tempFile     *os.File
+	tempFilePath  string
+	tempFile      *os.File
+	tempFileError string
 
 	// The first and last fullOutputHalf bytes of the persisted output, for
 	// FullOutput without reading the temp file back.
@@ -115,12 +117,15 @@ func (output *OutputAccumulator) append(rawSize int, persisted []byte, decoded s
 	output.totalRawBytes += rawSize
 	output.appendDecodedText(decoded)
 	output.captureFull(persisted)
-	if output.tempFile != nil || output.shouldUseTempFile() {
+	if output.tempFile != nil || (output.tempFileError == "" && output.shouldUseTempFile()) {
 		if err := output.ensureTempFile(); err != nil {
-			return err
+			output.recordTempFileError(err)
+			return nil
 		}
 		if output.tempFile != nil {
-			return writeAll(output.tempFile, persisted)
+			if err := writeAll(output.tempFile, persisted); err != nil {
+				output.recordTempFileError(err)
+			}
 		}
 		return nil
 	}
@@ -185,8 +190,10 @@ func (output *OutputAccumulator) Finish() error {
 	}
 	output.finished = true
 	output.appendDecodedText(output.decoder.Decode(nil, true))
-	if output.shouldUseTempFile() {
-		return output.ensureTempFile()
+	if output.tempFileError == "" && output.shouldUseTempFile() {
+		if err := output.ensureTempFile(); err != nil {
+			output.recordTempFileError(err)
+		}
 	}
 	return nil
 }
@@ -195,7 +202,7 @@ func (output *OutputAccumulator) Snapshot(options ...OutputSnapshotOptions) (Out
 	output.mu.Lock()
 	defer output.mu.Unlock()
 
-	tailTruncation := truncate.TruncateTail(output.snapshotText(), truncate.Options{
+	tailTruncation := truncate.TruncateTail(output.retainedText(), truncate.Options{
 		MaxLines: truncate.Int(output.maxLines),
 		MaxBytes: truncate.Int(output.maxBytes),
 	})
@@ -217,15 +224,16 @@ func (output *OutputAccumulator) Snapshot(options ...OutputSnapshotOptions) (Out
 	tailTruncation.MaxLines = output.maxLines
 	tailTruncation.MaxBytes = output.maxBytes
 
-	if len(options) > 0 && options[0].PersistIfTruncated && truncated {
+	if len(options) > 0 && options[0].PersistIfTruncated && truncated && output.tempFileError == "" {
 		if err := output.ensureTempFile(); err != nil {
-			return OutputSnapshot{}, err
+			output.recordTempFileError(err)
 		}
 	}
 	return OutputSnapshot{
-		Content:        tailTruncation.Content,
-		Truncation:     tailTruncation,
-		FullOutputPath: output.tempFilePath,
+		Content:         tailTruncation.Content,
+		Truncation:      tailTruncation,
+		FullOutputPath:  output.tempFilePath,
+		FullOutputError: output.tempFileError,
 	}, nil
 }
 
@@ -237,7 +245,28 @@ func (output *OutputAccumulator) CloseTempFile() error {
 	}
 	file := output.tempFile
 	output.tempFile = nil
-	return file.Close()
+	if err := file.Close(); err != nil {
+		output.recordTempFileError(err)
+	}
+	return nil
+}
+
+func (output *OutputAccumulator) recordTempFileError(err error) {
+	if err == nil {
+		return
+	}
+	if output.tempFileError == "" {
+		output.tempFileError = err.Error()
+	}
+	if output.tempFile != nil {
+		_ = output.tempFile.Close()
+		output.tempFile = nil
+	}
+	if output.tempFilePath != "" {
+		removeTempFile(output.tempFilePath)
+		output.tempFilePath = ""
+	}
+	output.rawChunks = nil
 }
 
 func (output *OutputAccumulator) LastLineBytes() int {
@@ -291,6 +320,17 @@ func (output *OutputAccumulator) trimTail() {
 	output.tailBytes = len(output.tailText)
 }
 
+// retainedText returns the retained tail for display. Clipping drops the partial
+// first line of the tail; when the tail is only the end of one over-long line
+// (plus blank lines), nothing is left, so it keeps the end of that line instead.
+func (output *OutputAccumulator) retainedText() string {
+	clipped := output.snapshotText()
+	if strings.TrimSpace(clipped) == "" {
+		return output.tailText
+	}
+	return clipped
+}
+
 func (output *OutputAccumulator) snapshotText() string {
 	if output.tailStartsAtLineBoundary {
 		return output.tailText
@@ -319,7 +359,7 @@ func (output *OutputAccumulator) ensureTempFile() error {
 	for _, chunk := range output.rawChunks {
 		if err := writeAll(file, chunk); err != nil {
 			_ = file.Close()
-			_ = os.Remove(path)
+			removeTempFile(path)
 			return err
 		}
 	}
@@ -327,6 +367,10 @@ func (output *OutputAccumulator) ensureTempFile() error {
 	output.tempFilePath = path
 	output.tempFile = file
 	return nil
+}
+
+func removeTempFile(path string) {
+	_ = os.Remove(path)
 }
 
 func createOutputTempFile(prefix string) (string, *os.File, error) {

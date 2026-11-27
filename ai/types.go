@@ -159,6 +159,7 @@ type Usage struct {
 	CacheRead     int64  `json:"cacheRead"`
 	CacheWrite    int64  `json:"cacheWrite"`
 	Reasoning     *int64 `json:"reasoning,omitempty"`
+	ImageOutput   *int64 `json:"imageOutput,omitempty"`
 	TotalTokens   int64  `json:"totalTokens"`
 	Cost          Cost   `json:"cost"`
 	CacheWrite1h  *int64 `json:"cacheWrite1h,omitempty"`

@@ -1,11 +1,15 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/OrdalieTech/orb/agent"
+	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
 	"github.com/OrdalieTech/orb/agent/modes"
 	"github.com/OrdalieTech/orb/internal/jstrim"
@@ -334,3 +338,43 @@ func parseToolList(value string) []string {
 }
 
 func stringValue(value string) *string { return &value }
+
+// applyAgentDirArg strips `--agent-dir <dir>` from argv (stopping at `--`) and
+// sets ORB_AGENT_DIR to the resolved absolute path. The last flag wins.
+func applyAgentDirArg(argv []string) ([]string, error) {
+	rest := make([]string, 0, len(argv))
+	var agentDir string
+	for i := 0; i < len(argv); i++ {
+		arg := argv[i]
+		if arg == "--" {
+			rest = append(rest, argv[i:]...)
+			break
+		}
+		if arg != "--agent-dir" {
+			rest = append(rest, arg)
+			continue
+		}
+		i++
+		if i >= len(argv) || argv[i] == "" {
+			return nil, errors.New("--agent-dir requires a directory")
+		}
+		agentDir = argv[i]
+	}
+	if agentDir != "" {
+		expanded := agentDir
+		if expanded == "~" || strings.HasPrefix(expanded, "~/") {
+			if home, err := os.UserHomeDir(); err == nil {
+				if expanded == "~" {
+					expanded = home
+				} else {
+					expanded = filepath.Join(home, expanded[2:])
+				}
+			}
+		}
+		if abs, err := filepath.Abs(expanded); err == nil {
+			expanded = abs
+		}
+		_ = os.Setenv(config.EnvAgentDir, expanded)
+	}
+	return rest, nil
+}

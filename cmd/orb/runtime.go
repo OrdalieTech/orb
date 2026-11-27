@@ -561,6 +561,8 @@ func resolveRuntimeModel(
 		if args.allowNoModel || args.useUnknownModel {
 			if args.allowNoModel {
 				diagnostics = append(diagnostics, strings.TrimSuffix(formatModelList(nil, ""), "\n"))
+			} else if args.useUnknownModel {
+				diagnostics = append(diagnostics, agent.FormatNoModelsAvailableMessage())
 			}
 			return nil, nil, scoped, diagnostics, nil
 		}

@@ -1,6 +1,6 @@
 // orb-extension-sdk: @earendil-works/pi-ai surface as extensions see it (upstream
-// packages/coding-agent/src/core/extensions/pi-ai-extension-view.ts, pi 1.5.2,
-// commit b4afdddf): pi-ai's compat entry plus TypeBox's Type and a TypeBox
+// packages/coding-agent/src/core/extensions/pi-ai-extension-view.ts, pi 1.7.0,
+// commit fb0fe823): pi-ai's compat entry plus TypeBox's Type and a TypeBox
 // StringEnum, served for both the root and "/compat" (ai-compat.mjs).
 // modelsAreEqual is ported from pi-ai (packages/ai/src/models.ts, MIT (c) Mario
 // Zechner); every other upstream export throws OrbUnsupportedCapability on use.

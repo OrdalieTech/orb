@@ -16,7 +16,7 @@ import (
 const (
 	openAICodexWebSocketBeta       = "responses_websockets=2026-02-06"
 	openAICodexWebSocketIdleTTL    = 5 * time.Minute
-	openAICodexWebSocketMaximumAge = 55 * time.Minute
+	openAICodexWebSocketMaximumAge = 45 * time.Minute
 	defaultCodexWebSocketTimeout   = 15 * time.Second
 )
 

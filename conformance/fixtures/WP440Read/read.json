@@ -38,7 +38,7 @@
         "content": [
           {
             "type": "text",
-            "text": "Read image file [image/png]\n[Current model does not support images. The image will be omitted from this request.]"
+            "text": "Read image file [image/png]"
           },
           {
             "type": "image",
@@ -46,11 +46,12 @@
             "mimeType": "image/png"
           }
         ],
+        "details": {},
         "structuredContent": {
           "type": "image",
           "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=",
           "mimeType": "image/png",
-          "note": "Read image file [image/png]\n[Current model does not support images. The image will be omitted from this request.]"
+          "note": "Read image file [image/png]"
         }
       }
     }

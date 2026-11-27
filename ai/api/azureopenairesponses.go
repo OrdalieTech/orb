@@ -334,12 +334,12 @@ func postAzureOpenAIStream(
 	if err != nil {
 		return nil, fmt.Errorf("encode Azure OpenAI request: %w", err)
 	}
-	endpoint, err := url.Parse(strings.TrimRight(config.baseURL, "/") + "/responses")
+	endpoint, err := url.Parse(config.baseURL)
 	if err != nil {
 		return nil, err
 	}
+	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + "/responses"
 	apiVersion := "api-version=" + url.QueryEscape(config.apiVersion)
-	endpoint.RawQuery = strings.ReplaceAll(endpoint.RawQuery, "/", "%2F")
 	if endpoint.RawQuery == "" {
 		endpoint.RawQuery = apiVersion
 	} else {

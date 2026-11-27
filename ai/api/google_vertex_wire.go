@@ -284,6 +284,10 @@ func googleVertexPart(value json.RawMessage) (json.RawMessage, error) {
 			return nil, fmt.Errorf("%s parameter is not supported in Gemini Enterprise Agent Platform (previously known as Vertex AI).", field.name) //nolint:staticcheck // Exact SDK text.
 		}
 	}
+	functionResponse, err := googleVertexWireFunctionResponse(input.FunctionResponse)
+	if err != nil {
+		return nil, err
+	}
 	return ai.Marshal(struct {
 		MediaResolution     json.RawMessage `json:"mediaResolution,omitempty"`
 		CodeExecutionResult json.RawMessage `json:"codeExecutionResult,omitempty"`
@@ -299,9 +303,35 @@ func googleVertexPart(value json.RawMessage) (json.RawMessage, error) {
 	}{
 		MediaResolution: googleNonNullRaw(input.MediaResolution), CodeExecutionResult: googleNonNullRaw(input.CodeExecutionResult),
 		ExecutableCode: googleNonNullRaw(input.ExecutableCode), FileData: googleNonNullRaw(input.FileData),
-		FunctionCall: googleNonNullRaw(input.FunctionCall), FunctionResponse: googleNonNullRaw(input.FunctionResponse),
+		FunctionCall: googleNonNullRaw(input.FunctionCall), FunctionResponse: functionResponse,
 		InlineData: googleNonNullRaw(input.InlineData), Text: googleNonNullRaw(input.Text), Thought: googleNonNullRaw(input.Thought),
 		ThoughtSignature: googleNonNullRaw(input.ThoughtSignature), VideoMetadata: googleNonNullRaw(input.VideoMetadata),
+	})
+}
+
+func googleVertexWireFunctionResponse(value json.RawMessage) (json.RawMessage, error) {
+	if !googleRawPresent(value) {
+		return nil, nil
+	}
+	var input struct {
+		ID       json.RawMessage `json:"id"`
+		Name     json.RawMessage `json:"name"`
+		Response json.RawMessage `json:"response"`
+		Parts    json.RawMessage `json:"parts"`
+	}
+	if err := json.Unmarshal(value, &input); err != nil {
+		return nil, err
+	}
+	return ai.Marshal(struct {
+		ID       json.RawMessage `json:"id,omitempty"`
+		Name     json.RawMessage `json:"name,omitempty"`
+		Response json.RawMessage `json:"response,omitempty"`
+		Parts    json.RawMessage `json:"parts,omitempty"`
+	}{
+		ID:       googleNonNullRaw(input.ID),
+		Name:     googleNonNullRaw(input.Name),
+		Response: googleNonNullRaw(input.Response),
+		Parts:    googleNonNullRaw(input.Parts),
 	})
 }
 

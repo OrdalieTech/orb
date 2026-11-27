@@ -86,7 +86,7 @@ func TestOpenAICodexRequestShapeAndDoneEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantBody := `{"model":"gpt-codex-fixture","store":false,"stream":true,"instructions":"Use the tool.","input":[{"role":"user","content":[{"type":"input_text","text":"hello"}]}],"text":{"verbosity":"high"},"include":["reasoning.encrypted_content"],"prompt_cache_key":"` + strings.Repeat("s", 64) + `","tool_choice":"required","parallel_tool_calls":true,"temperature":0,"service_tier":"priority","tools":[{"type":"function","name":"echo","description":"Echo text","parameters":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]},"strict":null}],"reasoning":{"effort":"xhigh","summary":"concise"}}`
+	wantBody := `{"model":"gpt-codex-fixture","store":false,"stream":true,"input":[{"role":"developer","content":"Use the tool."},{"role":"user","content":[{"type":"input_text","text":"hello"}]}],"text":{"verbosity":"high"},"include":["reasoning.encrypted_content"],"prompt_cache_key":"` + strings.Repeat("s", 64) + `","tool_choice":"required","parallel_tool_calls":true,"temperature":0,"service_tier":"priority","tools":[{"type":"function","name":"echo","description":"Echo text","parameters":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]},"strict":null}],"reasoning":{"effort":"xhigh","summary":"concise"}}`
 	if string(decodedBody) != wantBody {
 		t.Fatalf("body = %s\nwant = %s", decodedBody, wantBody)
 	}

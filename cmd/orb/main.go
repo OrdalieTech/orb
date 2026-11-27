@@ -54,8 +54,8 @@ import (
 var version = "dev"
 
 const (
-	upstreamVersion     = "1.5.2"
-	upstreamCommit      = "b4afdddf44e059c67ccf5097e5317d913521b470"
+	upstreamVersion     = "1.7.0"
+	upstreamCommit      = "fb0fe823539f6d04850f6e34748c01f01f212e1f"
 	latestReleaseURL    = selfupdate.LatestReleaseURL
 	versionCheckTimeout = 10 * time.Second
 )
@@ -186,6 +186,11 @@ func runCLIWithDependencies(ctx context.Context, argv []string, streams cliStrea
 	}
 	if streams.Stderr == nil {
 		streams.Stderr = io.Discard
+	}
+	var agentDirErr error
+	argv, agentDirErr = applyAgentDirArg(argv)
+	if agentDirErr != nil {
+		return reportCLIError(streams.Stderr, agentDirErr)
 	}
 	if dependencies.createRuntime == nil {
 		dependencies.createRuntime = createRuntimeInputs

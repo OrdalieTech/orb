@@ -57,7 +57,7 @@
       "expected": {
         "exitCode": 1,
         "stdout": "",
-        "stderr": "No API key found for the selected model.\n\nUse /login to log into a provider via OAuth or API key. See:\n  <package>/docs/providers.md\n  <package>/docs/models.md\n"
+        "stderr": "Warning: No models available. Use /login to log into a provider via OAuth or API key. See:\n  <package>/docs/providers.md\n  <package>/docs/models.md\nNo API key found for the selected model.\n\nUse /login to log into a provider via OAuth or API key. See:\n  <package>/docs/providers.md\n  <package>/docs/models.md\n"
       }
     },
     {
@@ -82,7 +82,7 @@
       "expected": {
         "exitCode": 1,
         "stdout": "{\"type\":\"session\",\"version\":3,\"id\":\"f7-cli-json\",\"timestamp\":\"<timestamp>\",\"cwd\":\"<cwd>\"}\n",
-        "stderr": "No API key found for the selected model.\n\nUse /login to log into a provider via OAuth or API key. See:\n  <package>/docs/providers.md\n  <package>/docs/models.md\n"
+        "stderr": "Warning: No models available. Use /login to log into a provider via OAuth or API key. See:\n  <package>/docs/providers.md\n  <package>/docs/models.md\nNo API key found for the selected model.\n\nUse /login to log into a provider via OAuth or API key. See:\n  <package>/docs/providers.md\n  <package>/docs/models.md\n"
       }
     },
     {
@@ -106,7 +106,7 @@
       "expected": {
         "exitCode": 0,
         "stdout": "{\"id\":\"state\",\"type\":\"response\",\"command\":\"get_state\",\"success\":true,\"data\":{\"model\":{\"id\":\"unknown\",\"name\":\"unknown\",\"api\":\"unknown\",\"provider\":\"unknown\",\"baseUrl\":\"\",\"reasoning\":false,\"input\":[],\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0},\"contextWindow\":0,\"maxTokens\":0},\"thinkingLevel\":\"off\",\"isStreaming\":false,\"isCompacting\":false,\"steeringMode\":\"one-at-a-time\",\"followUpMode\":\"one-at-a-time\",\"sessionId\":\"f7-cli-rpc\",\"autoCompactionEnabled\":true,\"messageCount\":0,\"pendingMessageCount\":0}}\n{\"id\":\"prompt\",\"type\":\"response\",\"command\":\"prompt\",\"success\":false,\"error\":\"No API key found for the selected model.\\n\\nUse /login to log into a provider via OAuth or API key. See:\\n  <package>/docs/providers.md\\n  <package>/docs/models.md\"}\n",
-        "stderr": ""
+        "stderr": "Warning: No models available. Use /login to log into a provider via OAuth or API key. See:\n  <package>/docs/providers.md\n  <package>/docs/models.md\n"
       }
     }
   ]

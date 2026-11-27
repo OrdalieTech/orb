@@ -537,6 +537,9 @@ func postProviderJSON(
 		if err != nil {
 			return attempt, err
 		}
+		if options != nil && options.OnResponse != nil {
+			_ = options.OnResponse(ctx, providerResponse(attempt), model)
+		}
 		return attempt, &retryableHTTPStatusError{status: attempt.StatusCode, headers: attempt.Header, inner: errorFor(attempt.StatusCode, contents)}
 	})
 	if statusError, ok := errors.AsType[*retryableHTTPStatusError](err); ok {

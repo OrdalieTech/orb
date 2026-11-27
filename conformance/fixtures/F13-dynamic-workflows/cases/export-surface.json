@@ -294,6 +294,8 @@
       "encodeITerm2",
       "encodeKitty",
       "foregroundAnsi",
+      "formatProgramResume",
+      "formatProgramResumeClear",
       "formatProgramStatus",
       "fuzzyFilter",
       "fuzzyMatch",
@@ -342,6 +344,7 @@
       "stripTerminalSequences",
       "styleText",
       "styleTextWithAnsi",
+      "takeProgramResumeToken",
       "truncateToWidth",
       "visibleWidth",
       "wrapTextWithAnsi"

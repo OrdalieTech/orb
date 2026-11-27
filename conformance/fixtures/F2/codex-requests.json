@@ -67,7 +67,7 @@
           "x-fixture": "codex-default",
           "x-model-header": "codex-default"
         },
-        "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"instructions\":\"You are concise.\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello <fixture>\"}]}],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"prompt_cache_key\":\"ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss\",\"tool_choice\":\"auto\",\"parallel_tool_calls\":true,\"temperature\":0,\"reasoning\":{\"effort\":\"none\",\"summary\":\"auto\"}}"
+        "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"input\":[{\"role\":\"developer\",\"content\":\"You are concise.\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello <fixture>\"}]}],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"prompt_cache_key\":\"ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss\",\"tool_choice\":\"auto\",\"parallel_tool_calls\":true,\"temperature\":0,\"reasoning\":{\"effort\":\"none\",\"summary\":\"auto\"}}"
       }
     },
     {
@@ -162,7 +162,7 @@
           "openai-beta": "responses=experimental",
           "originator": "pi"
         },
-        "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"instructions\":\"Inspect and use tools.\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"inspect\"},{\"type\":\"input_image\",\"detail\":\"auto\",\"image_url\":\"data:image/png;base64,AAEC\"}]}],\"text\":{\"verbosity\":\"high\"},\"include\":[\"reasoning.encrypted_content\"],\"tool_choice\":\"required\",\"parallel_tool_calls\":true,\"service_tier\":\"priority\",\"tools\":[{\"type\":\"function\",\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]}},\"required\":[\"text\"],\"additionalProperties\":false},\"strict\":null}],\"reasoning\":{\"effort\":\"xhigh\",\"summary\":\"concise\"}}"
+        "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"input\":[{\"role\":\"developer\",\"content\":\"Inspect and use tools.\"},{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"inspect\"},{\"type\":\"input_image\",\"detail\":\"auto\",\"image_url\":\"data:image/png;base64,AAEC\"}]}],\"text\":{\"verbosity\":\"high\"},\"include\":[\"reasoning.encrypted_content\"],\"tool_choice\":\"required\",\"parallel_tool_calls\":true,\"service_tier\":\"priority\",\"tools\":[{\"type\":\"function\",\"name\":\"echo\",\"description\":\"Echo structured text\",\"parameters\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"mode\":{\"type\":\"string\",\"enum\":[\"plain\",\"loud\"]}},\"required\":[\"text\"],\"additionalProperties\":false},\"strict\":null}],\"reasoning\":{\"effort\":\"xhigh\",\"summary\":\"concise\"}}"
       }
     },
     {
@@ -210,7 +210,7 @@
           "openai-beta": "responses=experimental",
           "originator": "pi"
         },
-        "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"instructions\":\"You are a helpful assistant.\",\"input\":[],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"tool_choice\":\"auto\",\"parallel_tool_calls\":true,\"reasoning\":{\"effort\":\"none\"}}"
+        "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"input\":[],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"tool_choice\":\"auto\",\"parallel_tool_calls\":true,\"reasoning\":{\"effort\":\"none\"}}"
       }
     },
     {
@@ -266,7 +266,7 @@
           "openai-beta": "responses=experimental",
           "originator": "pi"
         },
-        "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"instructions\":\"You are a helpful assistant.\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"simple\"}]}],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"tool_choice\":\"auto\",\"parallel_tool_calls\":true}"
+        "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"simple\"}]}],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"tool_choice\":\"auto\",\"parallel_tool_calls\":true,\"max_output_tokens\":8192}"
       }
     },
     {
@@ -321,7 +321,7 @@
           "openai-beta": "responses=experimental",
           "originator": "pi"
         },
-        "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"instructions\":\"You are a helpful assistant.\",\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"think hard\"}]}],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"tool_choice\":\"auto\",\"parallel_tool_calls\":true,\"reasoning\":{\"effort\":\"high\",\"summary\":\"auto\"}}"
+        "body": "{\"model\":\"gpt-codex-fixture\",\"store\":false,\"stream\":true,\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"think hard\"}]}],\"text\":{\"verbosity\":\"low\"},\"include\":[\"reasoning.encrypted_content\"],\"tool_choice\":\"auto\",\"parallel_tool_calls\":true,\"reasoning\":{\"effort\":\"high\",\"summary\":\"auto\"}}"
       }
     }
   ]

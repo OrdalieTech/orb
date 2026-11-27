@@ -89,7 +89,8 @@
           "fixture-enabled",
           "fixture-unconfigured",
           "remote-only-model"
-        ]
+        ],
+        "availableClassifierModelIds": []
       }
     },
     {
@@ -180,7 +181,8 @@
         "availableModelIds": [
           "fixture-enabled",
           "fixture-unconfigured"
-        ]
+        ],
+        "availableClassifierModelIds": []
       }
     },
     {
@@ -265,7 +267,8 @@
         "refresh": "refresh",
         "access": "tid=fixture;proxy-ep=proxy.business.githubcopilot.com",
         "expires": 1799999700000,
-        "availableModelIds": []
+        "availableModelIds": [],
+        "availableClassifierModelIds": []
       }
     },
     {
@@ -360,7 +363,8 @@
           "fixture-enabled",
           "fixture-unconfigured",
           "remote-only-model"
-        ]
+        ],
+        "availableClassifierModelIds": []
       }
     }
   ]

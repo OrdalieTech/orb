@@ -210,7 +210,7 @@
               "totalTokens": 30,
               "cost": {
                 "input": 0.000014999999999999999,
-                "output": 0.000039999999999999996,
+                "output": 0.00004,
                 "cacheRead": 0.0000012499999999999999,
                 "cacheWrite": 0,
                 "total": 0.00005625,
@@ -265,7 +265,7 @@
               "totalTokens": 30,
               "cost": {
                 "input": 0.000014999999999999999,
-                "output": 0.000039999999999999996,
+                "output": 0.00004,
                 "cacheRead": 0.0000012499999999999999,
                 "cacheWrite": 0,
                 "total": 0.00005625,
@@ -321,7 +321,7 @@
               "totalTokens": 30,
               "cost": {
                 "input": 0.000014999999999999999,
-                "output": 0.000039999999999999996,
+                "output": 0.00004,
                 "cacheRead": 0.0000012499999999999999,
                 "cacheWrite": 0,
                 "total": 0.00005625,
@@ -377,7 +377,7 @@
               "totalTokens": 30,
               "cost": {
                 "input": 0.000014999999999999999,
-                "output": 0.000039999999999999996,
+                "output": 0.00004,
                 "cacheRead": 0.0000012499999999999999,
                 "cacheWrite": 0,
                 "total": 0.00005625,
@@ -432,7 +432,7 @@
               "totalTokens": 30,
               "cost": {
                 "input": 0.000014999999999999999,
-                "output": 0.000039999999999999996,
+                "output": 0.00004,
                 "cacheRead": 0.0000012499999999999999,
                 "cacheWrite": 0,
                 "total": 0.00005625,
@@ -488,7 +488,7 @@
               "totalTokens": 30,
               "cost": {
                 "input": 0.000014999999999999999,
-                "output": 0.000039999999999999996,
+                "output": 0.00004,
                 "cacheRead": 0.0000012499999999999999,
                 "cacheWrite": 0,
                 "total": 0.00005625,
@@ -556,7 +556,7 @@
               "totalTokens": 30,
               "cost": {
                 "input": 0.000014999999999999999,
-                "output": 0.000039999999999999996,
+                "output": 0.00004,
                 "cacheRead": 0.0000012499999999999999,
                 "cacheWrite": 0,
                 "total": 0.00005625,
@@ -611,7 +611,7 @@
               "totalTokens": 30,
               "cost": {
                 "input": 0.000014999999999999999,
-                "output": 0.000039999999999999996,
+                "output": 0.00004,
                 "cacheRead": 0.0000012499999999999999,
                 "cacheWrite": 0,
                 "total": 0.00005625,
@@ -1626,7 +1626,7 @@
             },
             "stopReason": "error",
             "timestamp": 1700000000123,
-            "errorMessage": "got status: undefined. {\"2\":\"two\",\"10\":\"ten\",\"error\":{\"code\":\"4.03e2\",\"message\":\"a\"}}",
+            "errorMessage": "Incomplete JSON segment at the end",
             "durationMs": 0
           }
         }

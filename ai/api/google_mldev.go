@@ -345,9 +345,9 @@ func googleWireBlob(value json.RawMessage) (json.RawMessage, error) {
 		return nil, errors.New("displayName parameter is not supported in Gemini API.") //nolint:staticcheck // Exact SDK text.
 	}
 	return ai.Marshal(struct {
-		Data     json.RawMessage `json:"data,omitempty"`
 		MimeType json.RawMessage `json:"mimeType,omitempty"`
-	}{Data: googleNonNullRaw(input.Data), MimeType: googleNonNullRaw(input.MimeType)})
+		Data     json.RawMessage `json:"data,omitempty"`
+	}{MimeType: googleNonNullRaw(input.MimeType), Data: googleNonNullRaw(input.Data)})
 }
 
 func googleWireFunctionCall(value json.RawMessage) (json.RawMessage, error) {

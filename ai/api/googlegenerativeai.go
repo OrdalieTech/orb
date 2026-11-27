@@ -33,6 +33,7 @@ const (
 	GoogleThinkingLow         GoogleThinkingLevel = "LOW"
 	GoogleThinkingMedium      GoogleThinkingLevel = "MEDIUM"
 	GoogleThinkingHigh        GoogleThinkingLevel = "HIGH"
+	GoogleThinkingXHigh       GoogleThinkingLevel = "XHIGH"
 )
 
 type GoogleThinkingOptions struct {
@@ -61,9 +62,21 @@ var (
 )
 
 type googleGenerateContentResponse struct {
-	ResponseID    string               `json:"responseId"`
-	Candidates    []googleCandidate    `json:"candidates"`
-	UsageMetadata *googleUsageMetadata `json:"usageMetadata"`
+	ResponseID     string                `json:"responseId"`
+	Candidates     []googleCandidate     `json:"candidates"`
+	UsageMetadata  *googleUsageMetadata  `json:"usageMetadata"`
+	PromptFeedback *googlePromptFeedback `json:"promptFeedback"`
+}
+
+type googlePromptFeedback struct {
+	BlockReason        string               `json:"blockReason"`
+	BlockReasonMessage string               `json:"blockReasonMessage"`
+	SafetyRatings      []googleSafetyRating `json:"safetyRatings"`
+}
+
+type googleSafetyRating struct {
+	Category    string `json:"category"`
+	Probability string `json:"probability"`
 }
 
 type googleCandidate struct {
@@ -215,11 +228,21 @@ func streamGoogleWithOptions(
 			return
 		}
 		processor := googleStreamProcessor{model: model, output: output}
+		providerName := "Google"
+		if model.API == ai.APIGoogleVertex {
+			providerName = "Google Vertex"
+		}
+		receivedChunkCount := 0
+		promptBlockError := ""
 		err = readGoogleSSE(response.Body, func(raw json.RawMessage) error {
 			emitProviderStreamEvent(ctx, streamOptions, model, raw)
 			var chunk googleGenerateContentResponse
 			if err := json.Unmarshal(raw, &chunk); err != nil {
 				return err
+			}
+			receivedChunkCount++
+			if chunk.PromptFeedback != nil && chunk.PromptFeedback.BlockReason != "" && promptBlockError == "" {
+				promptBlockError = formatGooglePromptBlockError(providerName, chunk.PromptFeedback)
 			}
 			events, processErr := processor.process(chunk)
 			for _, event := range events {
@@ -249,11 +272,15 @@ func streamGoogleWithOptions(
 			return
 		}
 		if output.StopReason == ai.StopReasonPending {
-			message := "Google stream ended without a finish reason"
-			if model.API == ai.APIGoogleVertex {
-				message = "Google Vertex stream ended without a finish reason"
+			if promptBlockError != "" {
+				fail(errors.New(promptBlockError))
+				return
 			}
-			fail(errors.New(message))
+			chunkLabel := "chunks"
+			if receivedChunkCount == 1 {
+				chunkLabel = "chunk"
+			}
+			fail(fmt.Errorf("%s stream ended without a finish reason after receiving %d %s", providerName, receivedChunkCount, chunkLabel))
 			return
 		}
 		if output.StopReason == ai.StopReasonAborted || output.StopReason == ai.StopReasonError {
@@ -485,26 +512,11 @@ func googleJSNumber(value json.RawMessage) (float64, bool) {
 	if len(trimmed) == 0 {
 		return 0, false
 	}
-	switch trimmed[0] {
-	case '"':
-		var text string
-		if json.Unmarshal(trimmed, &text) != nil {
-			return 0, false
-		}
-		text = strings.TrimSpace(text)
-		if text == "" {
-			return 0, true
-		}
-		number, err := strconv.ParseFloat(text, 64)
-		return number, err == nil
-	case 't':
-		return 1, true
-	case 'f', 'n':
-		return 0, true
-	default:
-		number, err := strconv.ParseFloat(string(trimmed), 64)
-		return number, err == nil
+	if trimmed[0] == '"' || trimmed[0] == 't' || trimmed[0] == 'f' || trimmed[0] == 'n' {
+		return 0, false
 	}
+	number, err := strconv.ParseFloat(string(trimmed), 64)
+	return number, err == nil
 }
 
 func googleJSString(object map[string]json.RawMessage, name string) string {
@@ -727,6 +739,8 @@ func googleThinkingLevel(effort ai.ThinkingLevel) *GoogleThinkingLevel {
 		return googleThinkingLevelPointer(GoogleThinkingMedium)
 	case ai.ThinkingHigh:
 		return googleThinkingLevelPointer(GoogleThinkingHigh)
+	case ai.ThinkingXHigh:
+		return googleThinkingLevelPointer(GoogleThinkingXHigh)
 	}
 	return nil
 }
@@ -739,6 +753,9 @@ func googleThinkingLevelPointer(level GoogleThinkingLevel) *GoogleThinkingLevel 
 // from a model's budget table resolves to undefined, which omits the
 // thinkingConfig budget instead of sending 0. (OT-m9)
 func googleThinkingBudget(model *ai.Model, effort ai.ThinkingLevel, custom *ai.ThinkingBudgets) *int64 {
+	if effort == ai.ThinkingXHigh {
+		effort = ai.ThinkingHigh
+	}
 	if custom != nil {
 		var value *int
 		switch effort {
@@ -788,7 +805,7 @@ func resolveGoogleThinkingLevel(model *ai.Model, level ai.ThinkingLevel) (ai.Thi
 		}
 	}
 	switch resolved {
-	case ai.ThinkingMinimal, ai.ThinkingLow, ai.ThinkingMedium, ai.ThinkingHigh:
+	case ai.ThinkingMinimal, ai.ThinkingLow, ai.ThinkingMedium, ai.ThinkingHigh, ai.ThinkingXHigh:
 		return resolved, nil
 	}
 	return "", fmt.Errorf("Unsupported Google thinking level mapping for %s/%s: %s -> %s", model.Provider, model.ID, level, mapping) //nolint:staticcheck // Upstream diagnostic text is observable.
