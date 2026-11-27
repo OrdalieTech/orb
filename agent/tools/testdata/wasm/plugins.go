@@ -16,34 +16,6 @@ import (
 	"github.com/OrdalieTech/orb/plugins/usage"
 )
 
-type memoryStore struct{ items []memory.Item }
-
-func (s *memoryStore) Append(_ context.Context, item memory.Item) (string, error) {
-	item.ID = fmt.Sprint(len(s.items) + 1)
-	s.items = append(s.items, item)
-	return item.ID, nil
-}
-func (s *memoryStore) Query(context.Context, memory.Filter) ([]memory.Item, error) {
-	return append([]memory.Item(nil), s.items...), nil
-}
-func (s *memoryStore) Get(_ context.Context, id string) (memory.Item, error) {
-	for _, item := range s.items {
-		if item.ID == id {
-			return item, nil
-		}
-	}
-	return memory.Item{}, fmt.Errorf("missing memory %s", id)
-}
-func (s *memoryStore) Delete(_ context.Context, id string) error {
-	for i, item := range s.items {
-		if item.ID == id {
-			s.items = append(s.items[:i], s.items[i+1:]...)
-			return nil
-		}
-	}
-	return fmt.Errorf("missing memory %s", id)
-}
-
 type quotaTransport struct{}
 
 func (quotaTransport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -55,7 +27,7 @@ func (quotaTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 func checkPlugins() {
 	for _, fact := range []string{"First instance fact.", "Second instance fact."} {
-		store := &memoryStore{}
+		store := memory.NewMemoryStore()
 		registry := extensions.NewRegistry("/workspace")
 		if err := registry.Register("memory", memoryextension.Extension(store)); err != nil {
 			panic(err)
@@ -67,8 +39,8 @@ func checkPlugins() {
 		for _, registered := range runner.AllRegisteredTools() {
 			tool := extensions.WrapRegisteredTool(registered, runner)
 			switch tool.Spec().Name {
-			case "remember":
-				run(tool, map[string]any{"target": "memory", "content": fact})
+			case "memory":
+				run(tool, map[string]any{"action": "profile", "op": "add", "content": fact})
 			case "todo":
 				result := run(tool, map[string]any{"items": []any{map[string]any{"text": "Portable task", "status": "pending"}}})
 				if !strings.Contains(ai.ContentText(result.Content), "Portable task") {
@@ -76,7 +48,11 @@ func checkPlugins() {
 				}
 			}
 		}
-		if len(store.items) != 1 || store.items[0].Content != fact {
+		profile, err := store.GetProfile(context.Background())
+		if err != nil {
+			panic(err)
+		}
+		if len(profile) != 1 || profile[0].Content != fact {
 			panic("memory stores were not isolated")
 		}
 	}

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/OrdalieTech/orb/internal/document"
-	"github.com/OrdalieTech/orb/plugins/memory/filestore"
 
 	"github.com/OrdalieTech/orb/agent"
 	"github.com/OrdalieTech/orb/agent/config"
@@ -581,21 +580,6 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if err := os.WriteFile(settingsPath, settingsBytes, 0600); err != nil {
 		t.Fatal(err)
 	}
-	memoryStore, err := filestore.NewFileStore(filepath.Join(agentDir, "memory"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, err := memoryStore.Append(ctx, memory.Item{Content: "remembered", Tags: []string{"project"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	deleted, err := memoryStore.Append(ctx, memory.Item{Content: "forgotten"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = memoryStore.Delete(ctx, deleted); err != nil {
-		t.Fatal(err)
-	}
 	dir, err := nativemitosis.Dir("personal")
 	if err != nil {
 		t.Fatal(err)
@@ -664,9 +648,20 @@ func TestNativeMigrationPreservesCapabilitiesAndFiles(t *testing.T) {
 	if len(settings.DrainErrors()) != 0 {
 		t.Fatal("native settings failed")
 	}
-	rows, err := state.Memory().Query(ctx, memory.Filter{Tags: []string{"project"}})
-	if err != nil || len(rows) != 1 || rows[0].ID != id {
-		t.Fatal("memory migration", rows, err)
+	entry, err := state.Memory().AppendEntry(ctx, memory.Entry{Kind: memory.KindNote, Text: "remembered"})
+	if err != nil {
+		t.Fatal("native memory append", err)
+	}
+	entries, err := state.Memory().ListEntries(ctx, 0, -1)
+	if err != nil || len(entries) != 1 || entries[0].ID != entry.ID || entries[0].Text != "remembered" {
+		t.Fatal("native memory entries", entries, err)
+	}
+	if err := state.Memory().SaveProfile(ctx, []memory.ProfileEntry{{ID: "p1", Content: "prefers concise answers"}}); err != nil {
+		t.Fatal("native memory profile save", err)
+	}
+	profile, err := state.Memory().GetProfile(ctx)
+	if err != nil || len(profile) != 1 || profile[0].Content != "prefers concise answers" {
+		t.Fatal("native memory profile read", profile, err)
 	}
 	queue := state.DB.Chat(state.ChatNamespace(dataDir))
 	pending, err := queue.Pending(ctx)

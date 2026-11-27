@@ -1,23 +1,22 @@
 package assembly
 
 import (
-	"context"
 	"path/filepath"
+	"strings"
 
 	"github.com/OrdalieTech/orb/agent/config"
 	"github.com/OrdalieTech/orb/agent/extensions"
-	"github.com/OrdalieTech/orb/plugins/memory"
 	memoryextension "github.com/OrdalieTech/orb/plugins/memory/extension"
 	"github.com/OrdalieTech/orb/plugins/memory/filestore"
 	"github.com/OrdalieTech/orb/plugins/memtree"
 )
 
 // Storage is opened only when the product enables the memory plugin.
-func memoryExtension(store memory.Store, agentDir string, onWrite func()) extensions.Factory {
+func memoryExtension(options CatalogOptions) extensions.Factory {
 	return func(api extensions.API) error {
-		activeStore := store
+		activeStore := options.Memory
 		if activeStore == nil {
-			dir := agentDir
+			dir := options.AgentDir
 			if dir == "" {
 				var err error
 				dir, err = config.GetAgentDir()
@@ -31,77 +30,50 @@ func memoryExtension(store memory.Store, agentDir string, onWrite func()) extens
 				return err
 			}
 		}
-		if onWrite != nil {
-			activeStore = wrapMemoryNotify(activeStore, onWrite)
+		viewBytes, compactorModel := memorySettings(options.Settings)
+		opts := memoryextension.Options{
+			ViewBytes:      viewBytes,
+			CompactorModel: compactorModel,
+			StreamFn:       options.StreamFn,
+			OnWrite:        options.OnMemoryWrite,
 		}
-		return memoryextension.Extension(activeStore)(api)
+		return memoryextension.Extension(activeStore, opts)(api)
 	}
 }
 
-func wrapMemoryNotify(store memory.Store, onWrite func()) memory.Store {
-	base := notifyingMemory{Store: store, onWrite: onWrite}
-	if ts, ok := store.(memory.TransactionalStore); ok {
-		return notifyingTransactionalMemory{notifyingMemory: base, tx: ts}
+func memorySettings(settings *config.SettingsManager) (viewBytes int, compactorModel string) {
+	if settings == nil {
+		return 0, ""
 	}
-	return base
-}
-
-type notifyingMemory struct {
-	memory.Store
-	onWrite func()
-}
-
-func (s notifyingMemory) Append(ctx context.Context, item memory.Item) (string, error) {
-	id, err := s.Store.Append(ctx, item)
-	if err == nil {
-		s.onWrite()
+	readMap := func(m map[string]any) {
+		if m == nil {
+			return
+		}
+		switch v := m["viewBytes"].(type) {
+		case int:
+			if v > 0 {
+				viewBytes = v
+			}
+		case int64:
+			if v > 0 {
+				viewBytes = int(v)
+			}
+		case float64:
+			if v > 0 {
+				viewBytes = int(v)
+			}
+		}
+		if s, ok := m["compactorModel"].(string); ok {
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				compactorModel = trimmed
+			}
+		}
 	}
-	return id, err
-}
-
-func (s notifyingMemory) Delete(ctx context.Context, id string) error {
-	err := s.Store.Delete(ctx, id)
-	if err == nil {
-		s.onWrite()
+	if top, ok := settings.GetSettings()["memory"].(map[string]any); ok {
+		readMap(top)
 	}
-	return err
-}
-
-type notifyingTransactionalMemory struct {
-	notifyingMemory
-	tx memory.TransactionalStore
-}
-
-func (s notifyingTransactionalMemory) Transact(ctx context.Context, fn func(memory.Store) error) error {
-	mutated := false
-	err := s.tx.Transact(ctx, func(inner memory.Store) error {
-		return fn(txTracker{Store: inner, mutated: &mutated})
-	})
-	if err == nil && mutated {
-		s.onWrite()
-	}
-	return err
-}
-
-type txTracker struct {
-	memory.Store
-	mutated *bool
-}
-
-func (t txTracker) Append(ctx context.Context, item memory.Item) (string, error) {
-	id, err := t.Store.Append(ctx, item)
-	if err == nil {
-		*t.mutated = true
-	}
-	return id, err
-}
-
-func (t txTracker) Delete(ctx context.Context, id string) error {
-	err := t.Store.Delete(ctx, id)
-	if err == nil {
-		*t.mutated = true
-	}
-	return err
+	readMap(settings.GetPluginSettings("memory"))
+	return viewBytes, compactorModel
 }
 
 // memtreeExtension reads memtree's settings; the plugin keeps its summaries in the session.

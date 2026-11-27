@@ -47,8 +47,8 @@ func TestSchemaV5MigrationDefaults(t *testing.T) {
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 5 {
-		t.Fatalf("expected user_version=5, got %d", version)
+	if version != 6 {
+		t.Fatalf("expected user_version=6, got %d", version)
 	}
 
 	r := db.Sessions("default")
@@ -76,8 +76,8 @@ func TestSchemaV5MigrationDefaults(t *testing.T) {
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 5 {
-		t.Fatalf("expected migrated user_version=5, got %d", version)
+	if version != 6 {
+		t.Fatalf("expected migrated user_version=6, got %d", version)
 	}
 	if err := db.QueryRowContext(ctx, "SELECT archived, local_only FROM sessions WHERE id='sess-1'").Scan(&archived, &localOnly); err != nil {
 		t.Fatal(err)

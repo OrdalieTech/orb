@@ -80,13 +80,41 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		return envelopes[x.PeerID()] != nil
 	}
 	memorized := func(x *Mitosis) []string {
-		items, _ := memories[x].Query(ctx, memory.Filter{Limit: -1})
+		profile, _ := memories[x].GetProfile(ctx)
 		var out []string
-		for _, item := range items {
+		for _, item := range profile {
 			out = append(out, item.ID)
 		}
 		slices.Sort(out)
 		return out
+	}
+	setProfile := func(x *Mitosis, id, content string) {
+		t.Helper()
+		cur, err := memories[x].GetProfile(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next, _, err := memory.ProfileSet(cur, id, content, time.Now().UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := memories[x].SaveProfile(ctx, next); err != nil {
+			t.Fatal(err)
+		}
+	}
+	delProfile := func(x *Mitosis, id string) {
+		t.Helper()
+		cur, err := memories[x].GetProfile(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next, ok := memory.ProfileRemove(cur, id)
+		if !ok {
+			t.Fatalf("profile %q not found", id)
+		}
+		if err := memories[x].SaveProfile(ctx, next); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := owner.Admin(ctx, "sync", json.RawMessage(`{"add":"`+b.PeerID()+`"}`)); Code(err) != "not_found" {
 		t.Fatal("admitted a device it never paired with", err)
@@ -102,21 +130,26 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		t.Fatal("a member changed the group")
 	}
 	// Memory merges by item, and the vault outgrows one answer: it arrives in chunks.
-	_, _ = memories[owner].Append(ctx, memory.Item{ID: "m1", Content: strings.Repeat("o", vaultChunk)})
-	_, _ = memories[b].Append(ctx, memory.Item{ID: "m2", Content: "from b"})
+	_, _ = memories[owner].AppendEntry(ctx, memory.Entry{Kind: memory.KindNote, Text: strings.Repeat("o", vaultChunk), TS: time.Now().UTC()})
+	_, _ = memories[b].AppendEntry(ctx, memory.Entry{Kind: memory.KindNote, Text: "from b", TS: time.Now().UTC()})
+	setProfile(owner, "m1", "from owner")
+	setProfile(b, "m2", "from b")
 	round()
 	for _, x := range []*Mitosis{owner, b, c} {
 		if key(x, "openai") != "o1" || key(x, "anthropic") != "a1" {
 			raw, _ := stores[x].Read(ctx)
 			t.Fatalf("not merged: %s", raw)
 		}
+		if count, err := memories[x].EntryCount(ctx); err != nil || count != 2 {
+			t.Fatalf("memory entries not merged: count=%d err=%v", count, err)
+		}
 		if got := memorized(x); !slices.Equal(got, []string{"m1", "m2"}) {
 			t.Fatal("memory not merged", got)
 		}
 	}
 	// What either the owner or a member explicitly deletes is deleted everywhere.
-	_ = memories[owner].Delete(ctx, "m1")
-	_ = memories[c].Delete(ctx, "m2")
+	delProfile(owner, "m1")
+	delProfile(c, "m2")
 	round()
 	for _, x := range []*Mitosis{owner, b, c} {
 		if got := memorized(x); len(got) != 0 {
@@ -124,7 +157,7 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 		}
 	}
 	// Re-add one item so the forged-vault check below has a non-empty memory vault.
-	_, _ = memories[owner].Append(ctx, memory.Item{ID: "m2", Content: "restored"})
+	setProfile(owner, "m2", "restored")
 	round()
 
 	// A vault is checked against its signed digest before anything opens it.
@@ -204,7 +237,7 @@ func TestSyncMergesAndCutsRemovedOrBlockedDevices(t *testing.T) {
 
 	// An owner vault that does not arrive holds back only its own class.
 	_ = document.Replace(ctx, stores[owner], []byte(`{"openai":{"type":"api_key","key":"o2"}}`))
-	_, _ = memories[owner].Append(ctx, memory.Item{ID: "m3", Content: "late"})
+	setProfile(owner, "m3", "late")
 	admin(owner, `{}`)
 	v = owner.pointers(group, owner.PeerID())["memory"]
 	owner.mu.Lock()
@@ -744,7 +777,7 @@ func TestSyncMemberRemovals(t *testing.T) {
 		}
 	}
 	memIDs := func(n *node) []string {
-		items, err := n.memories.Query(ctx, memory.Filter{Limit: -1})
+		items, err := n.memories.GetProfile(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -755,11 +788,52 @@ func TestSyncMemberRemovals(t *testing.T) {
 		slices.Sort(ids)
 		return ids
 	}
+	setProfile := func(n *node, id, content string) {
+		t.Helper()
+		cur, err := n.memories.GetProfile(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next, _, err := memory.ProfileSet(cur, id, content, time.Now().UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := n.memories.SaveProfile(ctx, next); err != nil {
+			t.Fatal(err)
+		}
+	}
+	delProfile := func(n *node, id string) {
+		t.Helper()
+		cur, err := n.memories.GetProfile(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next, ok := memory.ProfileRemove(cur, id)
+		if !ok {
+			t.Fatalf("profile %q not found", id)
+		}
+		if err := n.memories.SaveProfile(ctx, next); err != nil {
+			t.Fatal(err)
+		}
+	}
+	getProfile := func(n *node, id string) (memory.ProfileEntry, bool) {
+		t.Helper()
+		cur, err := n.memories.GetProfile(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range cur {
+			if p.ID == id {
+				return p, true
+			}
+		}
+		return memory.ProfileEntry{}, false
+	}
 
 	// Seed owner with memories, credentials, and a named account.
-	_, _ = owner.memories.Append(ctx, memory.Item{ID: "keep", Content: "keep me"})
-	_, _ = owner.memories.Append(ctx, memory.Item{ID: "drop", Content: "drop me"})
-	_, _ = owner.memories.Append(ctx, memory.Item{ID: "race", Content: "v1"})
+	setProfile(owner, "keep", "keep me")
+	setProfile(owner, "drop", "drop me")
+	setProfile(owner, "race", "v1")
 	_, _ = owner.auth.Modify(ctx, "openai", func(*aiauth.Credential) (*aiauth.Credential, error) {
 		return aiauth.APIKeyCredential("sk-default"), nil
 	})
@@ -773,9 +847,7 @@ func TestSyncMemberRemovals(t *testing.T) {
 	}
 
 	// (1) Member forget -> gone on owner and stays gone on all members after several rounds.
-	if err := mem1.memories.Delete(ctx, "drop"); err != nil {
-		t.Fatal(err)
-	}
+	delProfile(mem1, "drop")
 	round(owner, mem1, mem2)
 	round(owner, mem1, mem2)
 	for name, n := range map[string]*node{"owner": owner, "mem1": mem1, "mem2": mem2} {
@@ -806,7 +878,7 @@ func TestSyncMemberRemovals(t *testing.T) {
 		t.Fatalf("wiped member caused removal: owner=%v mem1=%v", memIDs(owner), memIDs(mem1))
 	}
 	// Member back from offline with an older set removes nothing on owner.
-	_, _ = owner.memories.Append(ctx, memory.Item{ID: "newer", Content: "added while mem2 offline"})
+	setProfile(owner, "newer", "added while mem2 offline")
 	round(owner)
 	round(owner, mem2)
 	if !slices.Equal(memIDs(owner), []string{"keep", "newer", "race"}) || !slices.Equal(memIDs(mem2), []string{"keep", "newer", "race"}) {
@@ -814,17 +886,13 @@ func TestSyncMemberRemovals(t *testing.T) {
 	}
 
 	// (3) Owner modifies "race" locally after mem1 removes it -> owner keeps v2, mem1 gets v2.
-	if err := mem1.memories.Delete(ctx, "race"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := owner.memories.Append(ctx, memory.Item{ID: "race", Content: "v2"}); err != nil {
-		t.Fatal(err)
-	}
+	delProfile(mem1, "race")
+	setProfile(owner, "race", "v2")
 	round(owner, mem1)
 	for name, n := range map[string]*node{"owner": owner, "mem1": mem1} {
-		it, err := n.memories.Get(ctx, "race")
-		if err != nil || it.Content != "v2" {
-			t.Fatalf("%s race item = %+v, %v; want v2", name, it, err)
+		it, ok := getProfile(n, "race")
+		if !ok || it.Content != "v2" {
+			t.Fatalf("%s race item = %+v, %v; want v2", name, it, ok)
 		}
 	}
 
@@ -887,18 +955,14 @@ func TestSyncMemberRemovals(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := mem1.memories.Append(ctx, memory.Item{ID: "brief", Content: "added then forgotten"}); err != nil {
-		t.Fatal(err)
-	}
+	setProfile(mem1, "brief", "added then forgotten")
 	syncOnce(mem1)
 	send(mem1, owner)
 	syncOnce(owner)
-	if _, err := owner.memories.Get(ctx, "brief"); err != nil {
-		t.Fatalf("owner did not take the hand-in: %v", err)
+	if _, ok := getProfile(owner, "brief"); !ok {
+		t.Fatal("owner did not take the hand-in")
 	}
-	if err := mem1.memories.Delete(ctx, "brief"); err != nil {
-		t.Fatal(err)
-	}
+	delProfile(mem1, "brief")
 	syncOnce(mem1) // still on the owner's vault from before the hand-in
 	round(owner, mem1, mem2)
 	round(owner, mem1, mem2)

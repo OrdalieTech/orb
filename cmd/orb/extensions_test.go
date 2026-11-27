@@ -58,7 +58,7 @@ func TestFirstPartyPluginsAreDormantUntilEnabled(t *testing.T) {
 		want           []string
 	}{
 		{name: "default off", settings: `{}`, want: []string{"tool_search"}},
-		{name: "enabled", settings: `{"plugins":{"tasks":true,"websearch":true,"subagents":true,"permissions":{"mode":"log"},"memory":true}}`, want: []string{"fetch_content", "forget", "recall", "remember", "replace", "subagent", "todo", "tool_search", "web_search"}},
+		{name: "enabled", settings: `{"plugins":{"tasks":true,"websearch":true,"subagents":true,"permissions":{"mode":"log"},"memory":true}}`, want: []string{"fetch_content", "memory", "subagent", "todo", "tool_search", "web_search"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -249,7 +249,7 @@ func TestTelegramAndACPConversationsShareTheAgentsMemory(t *testing.T) {
 	provider.SetResponses([]faux.ResponseStep{
 		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
 			telegramTools = toolNames(request)
-			return faux.AssistantMessage(faux.ToolCall("remember", map[string]any{"target": "memory", "content": "The launch is on Tuesday."}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}), nil
+			return faux.AssistantMessage(faux.ToolCall("memory", map[string]any{"action": "profile", "op": "add", "content": "The launch is on Tuesday."}), faux.AssistantMessageOptions{StopReason: ai.StopReasonToolUse}), nil
 		}),
 		faux.AssistantMessage("Noted."),
 		faux.Factory(func(_ context.Context, request ai.Context, _ *ai.StreamOptions, _ faux.State, _ *ai.Model) (*ai.AssistantMessage, error) {
@@ -460,7 +460,7 @@ func TestLiveConversationsShareMemoryAsItChanges(t *testing.T) {
 	provider := faux.New(faux.Options{API: "faux", Provider: "faux"})
 	provider.SetResponses([]faux.ResponseStep{
 		record(faux.Text("Hello."), ai.StopReasonStop),
-		record(faux.ToolCall("remember", map[string]any{"target": "memory", "content": "The code of the day is tournesol."}), ai.StopReasonToolUse),
+		record(faux.ToolCall("memory", map[string]any{"action": "profile", "op": "add", "content": "The code of the day is tournesol."}), ai.StopReasonToolUse),
 		record(faux.Text("Saved."), ai.StopReasonStop),
 		record(faux.Text("Tournesol."), ai.StopReasonStop),
 		record(faux.Text("Still tournesol."), ai.StopReasonStop),
@@ -491,10 +491,10 @@ func TestLiveConversationsShareMemoryAsItChanges(t *testing.T) {
 	if after.prompt != before.prompt {
 		t.Fatalf("the channel's prompt changed:\n%s\n---\n%s", before.prompt, after.prompt)
 	}
-	if !strings.Contains(after.context, "MEMORY: The code of the day is tournesol.") {
+	if !strings.Contains(after.context, "USER PROFILE: The code of the day is tournesol.") {
 		t.Fatalf("the channel did not learn the saved memory: %s", after.context)
 	}
-	if strings.Contains(saver.context, "Persistent memory changed") {
+	if strings.Contains(saver.context, "USER PROFILE: The code of the day is tournesol.") {
 		t.Fatalf("the saver was told its own change: %s", saver.context)
 	}
 }

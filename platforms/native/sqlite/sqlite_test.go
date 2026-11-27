@@ -224,7 +224,7 @@ func TestOpenRefusesUnsafeOrUnknownDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("DROP TABLE foreign_sessions; DROP TABLE foreign_sources; DROP TABLE memory_items; DROP TABLE chat_pending; ALTER TABLE sessions DROP COLUMN preview; ALTER TABLE sessions DROP COLUMN message_count; ALTER TABLE sessions DROP COLUMN local_only; PRAGMA user_version=1"); err != nil {
+	if _, err := db.Exec("DROP TABLE foreign_sessions; DROP TABLE foreign_sources; DROP TABLE memory_items; DROP TABLE chat_pending; DROP TABLE memory_entries; DROP TABLE memory_nodes; DROP TABLE memory_profile; ALTER TABLE sessions DROP COLUMN preview; ALTER TABLE sessions DROP COLUMN message_count; ALTER TABLE sessions DROP COLUMN local_only; PRAGMA user_version=1"); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Document("upgrade", "retained").Update(ctx, func([]byte) ([]byte, error) { return []byte("retained"), nil }); err != nil {
@@ -378,23 +378,26 @@ func TestMemoryRemovalTombstones(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	store := db.Memory("agent")
-	if _, err := store.Append(ctx, memory.Item{ID: "m1", Content: "secret forgotten fact"}); err != nil {
+	ts := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+	entry := memory.ProfileEntry{ID: "m1", Content: "secret forgotten fact", TS: ts}
+	if err := store.SaveProfile(ctx, []memory.ProfileEntry{entry}); err != nil {
 		t.Fatal(err)
 	}
-	item, err := store.Get(ctx, "m1")
+	profile, err := store.GetProfile(ctx)
+	if err != nil || len(profile) != 1 {
+		t.Fatalf("GetProfile = %+v, %v", profile, err)
+	}
+	itemRaw, err := json.Marshal(profile[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	itemRaw, err := json.Marshal(item)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Delete(ctx, "m1"); err != nil {
+	// Removing from profile records digest tombstone under "p/<id>".
+	if err := store.SaveProfile(ctx, nil); err != nil {
 		t.Fatal(err)
 	}
 	rem, err := store.Removed(ctx)
-	if err != nil || rem["m1"] != jsonwire.Digest(itemRaw) {
-		t.Fatalf("Removed after Delete = %+v, %v; want %s", rem, err, jsonwire.Digest(itemRaw))
+	if err != nil || rem["p/m1"] != jsonwire.Digest(itemRaw) {
+		t.Fatalf("Removed after SaveProfile(nil) = %+v, %v; want %s", rem, err, jsonwire.Digest(itemRaw))
 	}
 	// Forgotten text must not remain in orb.db documents.
 	var docContent []byte
@@ -405,17 +408,17 @@ func TestMemoryRemovalTombstones(t *testing.T) {
 		t.Fatalf("orb.db documents retained forgotten text: %s", docContent)
 	}
 	// Local re-add clears tombstone.
-	if _, err := store.Append(ctx, memory.Item{ID: "m1", Content: "again"}); err != nil {
+	if err := store.SaveProfile(ctx, []memory.ProfileEntry{{ID: "m1", Content: "again", TS: ts}}); err != nil {
 		t.Fatal(err)
 	}
 	if rem, err := store.Removed(ctx); err != nil || len(rem) != 0 {
 		t.Fatalf("Removed after re-add = %+v, %v", rem, err)
 	}
-	// Delete again, then Purge drops both item and tombstone.
-	if err := store.Delete(ctx, "m1"); err != nil {
+	// Remove again, then Purge drops both profile row and tombstone.
+	if err := store.SaveProfile(ctx, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Purge(ctx, "m1"); err != nil {
+	if err := store.Purge(ctx, "p/m1"); err != nil {
 		t.Fatal(err)
 	}
 	if rem, err := store.Removed(ctx); err != nil || len(rem) != 0 {

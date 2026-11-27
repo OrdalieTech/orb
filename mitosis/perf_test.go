@@ -276,7 +276,7 @@ func TestNetworkSyncEfficiencyInitialIdleAndIncremental(t *testing.T) {
 		x.SetClass("credentials", aiauth.NewDocumentStore(store))
 		x.SetClass("memory", memory.Shared{Store: mem})
 	}
-	_, _ = mems[owner].Append(ctx, memory.Item{ID: "m1", Content: "Initial shared fact across all peers"})
+	_, _ = mems[owner].AppendEntry(ctx, memory.Entry{Kind: memory.KindNote, Text: "Initial shared fact across all peers"})
 
 	var conns []*meteredConn
 	link := func(x, y *Mitosis) {
@@ -338,7 +338,7 @@ func TestNetworkSyncEfficiencyInitialIdleAndIncremental(t *testing.T) {
 	idleBytes2, idleWrites2 := syncAll()
 
 	// Add 1 memory item on member b and measure incremental sync cost.
-	_, _ = mems[b].Append(ctx, memory.Item{ID: "m2", Content: "One new incremental memory item"})
+	_, _ = mems[b].AppendEntry(ctx, memory.Entry{Kind: memory.KindNote, Text: "One new incremental memory item"})
 	deltaBytes, deltaWrites := syncAll()
 	idleAfterDelta1, idleAfterWrites1 := syncAll()
 	idleAfterDelta2, idleAfterWrites2 := syncAll()

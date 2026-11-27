@@ -61,7 +61,7 @@ func MigrationStatus(ctx context.Context, path, name string) (bool, error) {
 			return false, nil
 		}
 	}
-	if id != applicationID || version < 1 || version > 5 {
+	if id != applicationID || version < 1 || version > 6 {
 		return false, errors.New("unsupported database schema")
 	}
 	return (&DB{DB: handle}).Migrated(ctx, name)
@@ -136,7 +136,7 @@ func Open(ctx context.Context, path string) (_ *DB, err error) {
 		if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 			return nil, err
 		}
-		if id == applicationID && version == 5 {
+		if id == applicationID && version == 6 {
 			var journal string
 			if err = db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&journal); err != nil {
 				return nil, err
@@ -166,7 +166,7 @@ func Open(ctx context.Context, path string) (_ *DB, err error) {
 	if err = tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return nil, err
 	}
-	if (id != 0 && id != applicationID) || version > 5 {
+	if (id != 0 && id != applicationID) || version > 6 {
 		return nil, errors.New("unsupported database schema")
 	}
 	if id == 0 {
@@ -252,6 +252,25 @@ PRAGMA user_version=4;`)
 	if version < 5 {
 		_, err = tx.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN local_only INTEGER NOT NULL DEFAULT 0;
 PRAGMA user_version=5;`)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if version < 6 {
+		_, err = tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS memory_entries(
+ namespace TEXT NOT NULL, id INTEGER NOT NULL, kind TEXT NOT NULL,
+ text TEXT NOT NULL, peer TEXT NOT NULL DEFAULT '', session TEXT NOT NULL DEFAULT '',
+ ts TEXT NOT NULL, PRIMARY KEY(namespace, id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS memory_nodes(
+ namespace TEXT NOT NULL, level INTEGER NOT NULL, idx INTEGER NOT NULL,
+ text TEXT NOT NULL, ts TEXT NOT NULL DEFAULT '', PRIMARY KEY(namespace, level, idx)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS memory_profile(
+ namespace TEXT NOT NULL, id TEXT NOT NULL, content TEXT NOT NULL, ts TEXT NOT NULL,
+ PRIMARY KEY(namespace, id)
+) WITHOUT ROWID;
+PRAGMA user_version=6;`)
 		if err != nil {
 			return nil, err
 		}

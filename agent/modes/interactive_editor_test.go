@@ -175,7 +175,7 @@ func TestFollowUpAutocomplete(t *testing.T) {
 		tui.SetKeybindings(editor.keybindings)
 		editor.SetAutocompleteProvider(&followUpTestAutocompleteProvider{
 			suggestions: func(before string) *tui.AutocompleteSuggestions {
-				if strings.HasPrefix(before, "/") && !strings.Contains(before, " ") {
+				if before == "/mo" {
 					return &tui.AutocompleteSuggestions{
 						Prefix: before,
 						Items:  []tui.AutocompleteItem{{Value: "/model ", Label: "model"}},

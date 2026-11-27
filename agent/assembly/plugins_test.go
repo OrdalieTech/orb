@@ -283,16 +283,37 @@ func TestPermissionsSessionApprovalAvoidsSecondPrompt(t *testing.T) {
 }
 
 func TestMemoryCatalogUsesAgentDirStore(t *testing.T) {
+	ctx := context.Background()
 	agentDir := t.TempDir()
-	tool := pluginTool(t, "memory", "remember", CatalogOptions{AgentDir: agentDir}, extensions.RunnerOptions{})
-	_ = must(tool.Execute(context.Background(), "remember-local", map[string]any{
-		"target": "memory", "content": "Local profile marker.",
+	tool := pluginTool(t, "memory", "memory", CatalogOptions{AgentDir: agentDir}, extensions.RunnerOptions{})
+	_ = must(tool.Execute(ctx, "profile-add", map[string]any{
+		"action": "profile", "op": "add", "content": "Local profile marker.",
 	}, nil))
 	store := must(filestore.NewFileStore(filepath.Join(agentDir, "memory")))
-	items := must(store.Query(context.Background(), memorysdk.Filter{}))
-	if len(items) != 1 || items[0].Content != "Local profile marker." {
-		t.Fatalf("local items = %#v", items)
+	profile := must(store.GetProfile(ctx))
+	if len(profile) != 1 || profile[0].Content != "Local profile marker." {
+		t.Fatalf("local profile = %#v", profile)
 	}
+
+	// Verify search, zoom, and date actions on timeline entries in the same store.
+	entry := must(store.AppendEntry(ctx, memorysdk.Entry{
+		Kind: memorysdk.KindUser,
+		Text: "Migrated auth middleware to JWT tokens.",
+	}))
+	searchRes := must(tool.Execute(ctx, "search", map[string]any{
+		"action": "search", "query": "JWT",
+	}, nil))
+	require(t, strings.Contains(ai.ContentText(searchRes.Content), "JWT"), "search output = %q", ai.ContentText(searchRes.Content))
+
+	zoomRes := must(tool.Execute(ctx, "zoom", map[string]any{
+		"action": "zoom", "id": entry.ID,
+	}, nil))
+	require(t, strings.Contains(ai.ContentText(zoomRes.Content), "Migrated auth middleware"), "zoom output = %q", ai.ContentText(zoomRes.Content))
+
+	dateRes := must(tool.Execute(ctx, "date", map[string]any{
+		"action": "date", "id": entry.ID,
+	}, nil))
+	require(t, strings.Contains(ai.ContentText(dateRes.Content), fmt.Sprintf("entry #%d", entry.ID)), "date output = %q", ai.ContentText(dateRes.Content))
 }
 
 func pluginTool(t *testing.T, plugin, tool string, options CatalogOptions, runnerOptions extensions.RunnerOptions) engine.AgentTool {
@@ -475,28 +496,24 @@ func TestMemoryOnMemoryWriteFiresAfterCommit(t *testing.T) {
 	writes := 0
 	opts := CatalogOptions{AgentDir: agentDir, OnMemoryWrite: func() { writes++ }}
 
-	remember := pluginTool(t, "memory", "remember", opts, extensions.RunnerOptions{})
-	replace := pluginTool(t, "memory", "replace", opts, extensions.RunnerOptions{})
-	forget := pluginTool(t, "memory", "forget", opts, extensions.RunnerOptions{})
-	recall := pluginTool(t, "memory", "recall", opts, extensions.RunnerOptions{})
+	mem := pluginTool(t, "memory", "memory", opts, extensions.RunnerOptions{})
 
-	_ = must(remember.Execute(ctx, "1", map[string]any{"target": "memory", "content": "fact one"}, nil))
-	require(t, writes == 1, "writes after remember = %d, want 1", writes)
+	_ = must(mem.Execute(ctx, "1", map[string]any{"action": "profile", "op": "add", "content": "fact one"}, nil))
+	require(t, writes == 1, "writes after profile add = %d, want 1", writes)
 
-	// Duplicate remember and read-only recall do not trigger OnMemoryWrite.
-	_ = must(remember.Execute(ctx, "2", map[string]any{"target": "memory", "content": "fact one"}, nil))
-	_ = must(recall.Execute(ctx, "3", map[string]any{"query": "fact"}, nil))
-	require(t, writes == 1, "writes after no-op remember + recall = %d, want 1", writes)
+	// Read-only search does not trigger OnMemoryWrite.
+	_ = must(mem.Execute(ctx, "2", map[string]any{"action": "search", "query": "fact"}, nil))
+	require(t, writes == 1, "writes after search = %d, want 1", writes)
 
-	_ = must(replace.Execute(ctx, "4", map[string]any{"target": "memory", "old_text": "fact one", "content": "fact two"}, nil))
-	require(t, writes == 2, "writes after replace = %d, want 2", writes)
+	_ = must(mem.Execute(ctx, "4", map[string]any{"action": "profile", "op": "set", "old_text": "fact one", "content": "fact two"}, nil))
+	require(t, writes == 2, "writes after profile set = %d, want 2", writes)
 
-	// Failing forget must not fire OnMemoryWrite.
-	if _, err := forget.Execute(ctx, "5", map[string]any{"query": "missing"}, nil); err == nil {
-		t.Fatal("expected forget of missing item to fail")
+	// Failing profile remove must not fire OnMemoryWrite.
+	if _, err := mem.Execute(ctx, "5", map[string]any{"action": "profile", "op": "remove", "old_text": "missing"}, nil); err == nil {
+		t.Fatal("expected remove of missing item to fail")
 	}
-	require(t, writes == 2, "writes after failed forget = %d, want 2", writes)
+	require(t, writes == 2, "writes after failed remove = %d, want 2", writes)
 
-	_ = must(forget.Execute(ctx, "6", map[string]any{"query": "fact two"}, nil))
-	require(t, writes == 3, "writes after forget = %d, want 3", writes)
+	_ = must(mem.Execute(ctx, "6", map[string]any{"action": "profile", "op": "remove", "old_text": "fact two"}, nil))
+	require(t, writes == 3, "writes after profile remove = %d, want 3", writes)
 }

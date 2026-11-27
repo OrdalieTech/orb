@@ -260,7 +260,21 @@ func open(object js.Value) js.Value {
 			Tools: tools(peer.AgentCalls(mitosis.open), object.Get("run")),
 			Extensions: func(settings *config.SettingsManager, store host.Store) map[string]extensions.Factory {
 				portable := portable(settings)
-				portable["memory"] = memoryextension.Extension(peer.Memory(store))
+				var memOpts memoryextension.Options
+				if cfg := settings.GetPluginSettings("memory"); cfg != nil {
+					switch v := cfg["viewBytes"].(type) {
+					case int:
+						memOpts.ViewBytes = v
+					case int64:
+						memOpts.ViewBytes = int(v)
+					case float64:
+						memOpts.ViewBytes = int(v)
+					}
+					if s, ok := cfg["compactorModel"].(string); ok {
+						memOpts.CompactorModel = strings.TrimSpace(s)
+					}
+				}
+				portable["memory"] = memoryextension.Extension(peer.Memory(store), memOpts)
 				chosen := map[string]extensions.Factory{}
 				for name, on := range settings.GetPlugins() {
 					if on && portable[name] != nil {

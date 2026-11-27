@@ -685,7 +685,7 @@ export function createMockPeer({ emit, rowCount = 2000 }) {
       }
       if (m.do === "plugins") {
         reply([
-          { name: "memory", on: true, about: "Persistent memory tools", choices: [] },
+          { name: "memory", on: true, about: "OptChat summary tree and curated user profile with one unified memory tool", choices: [] },
           { name: "tasks", on: true, about: "Live task list", choices: [] },
           { name: "permissions", on: true, about: "Tool approval policy", choices: [{ key: "mode", value: "auto", values: ["enforce", "auto", "log"] }] },
         ]);

@@ -886,6 +886,11 @@ type toolActivityRow struct {
 func fallbackToolTitle(name string, args any) (string, int) {
 	title := theme.FG("toolTitle", theme.Bold(name))
 	values, _ := args.(map[string]any)
+	if strings.EqualFold(name, "memory") && len(values) > 0 {
+		if summary := memoryToolSummary(values); summary != "" {
+			return title + theme.FG("muted", " "+summary), 0
+		}
+	}
 	for _, key := range []string{"file_path", "path", "command", "url", "urls", "query", "pattern", "description", "input"} {
 		value, more := values[key], 0
 		if list, ok := value.([]any); ok && len(list) > 0 {
@@ -924,10 +929,60 @@ func toolActivityKind(name string) string {
 		return "web search"
 	case "fetch_content", "webfetch", "web_fetch":
 		return "page"
-	case "recall":
+	case "memory":
 		return "memory"
 	}
 	return ""
+}
+
+func memoryToolSummary(values map[string]any) string {
+	action, _ := values["action"].(string)
+	action = strings.TrimSpace(action)
+	if action == "" {
+		return ""
+	}
+	var detail string
+	switch action {
+	case "search":
+		if q, ok := values["query"].(string); ok {
+			detail = strings.Join(strings.Fields(q), " ")
+		}
+	case "zoom", "date":
+		if ref, ok := values["ref"].(string); ok && strings.TrimSpace(ref) != "" {
+			detail = strings.TrimSpace(ref)
+		} else if id, ok := intArg(values["id"]); ok {
+			if action == "zoom" {
+				span, ok := intArg(values["span"])
+				if !ok || span < 1 {
+					span = 1
+				}
+				detail = fmt.Sprintf("%d+%d", id, span)
+			} else {
+				detail = fmt.Sprintf("%d", id)
+			}
+		}
+	case "profile":
+		if op, ok := values["op"].(string); ok {
+			detail = strings.TrimSpace(op)
+		}
+	}
+	if detail == "" {
+		return action
+	}
+	return action + " " + detail
+}
+
+func intArg(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	default:
+		return 0, false
+	}
 }
 
 // activityKinds orders a group's counts; plurals are irregular for two.
