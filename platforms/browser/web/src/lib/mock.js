@@ -96,8 +96,10 @@ export function generateHeavyRows(count = 2000, prefix = "r") {
   return rows;
 }
 
-export function createMockPeer({ emit, rowCount = 2000 }) {
-  const swarmMode = typeof location !== "undefined" && new URLSearchParams(location.search).get("swarm") === "1";
+export function createMockPeer({ emit, rowCount = 2000, demo = "" }) {
+  const search = typeof location !== "undefined" ? new URLSearchParams(location.search) : null;
+  const swarmMode = search?.get("swarm") === "1";
+  const runningMode = (demo || search?.get("demo") || "") === "running";
   const selfId = "orb:ed25519:TABBENCH00000000000000000000000000000000001";
   const macId = "orb:ed25519:MACBOOKP00000000000000000000000000000000002";
   const boxId = "orb:ed25519:SERVERBX00000000000000000000000000000000003";
@@ -382,6 +384,204 @@ export function createMockPeer({ emit, rowCount = 2000 }) {
     ]);
   }
 
+  let summaryText = "1 working · Deploy pipeline check";
+
+  if (runningMode) {
+    machines.length = 0;
+    tabs.length = 0;
+    entries.length = 0;
+    rowMap.clear();
+
+    machines.push(
+      {
+        id: selfId,
+        name: "this tab",
+        self: true,
+        connected: true,
+        version: "0.28.0",
+        launch: false,
+        hue: 0,
+        running: [],
+        folders: [],
+      },
+      {
+        id: labId,
+        name: "ordalie-lab-3",
+        self: false,
+        connected: true,
+        version: "0.28.0",
+        launch: true,
+        hue: 2,
+        running: [
+          { instance: "inst-lab-1", label: "orb · Refactor auth middleware", busy: true, open: true },
+          { instance: "inst-lab-2", label: "orb · Docs cleanup", busy: false, open: true },
+        ],
+        folders: [
+          { cwd: "/home/ordalie/orb", threads: 16, modified: now - 25000, live: true },
+          { cwd: "/home/ordalie/ordalie-back", threads: 9, modified: now - 720000, live: false },
+        ],
+      },
+      {
+        id: macId,
+        name: "macbook-pro",
+        self: false,
+        connected: true,
+        version: "0.28.0",
+        launch: true,
+        hue: 1,
+        running: [
+          { instance: "inst-mac-1", label: "ordalie-back · Schema notes", busy: false, open: true },
+        ],
+        folders: [
+          { cwd: "/Users/baudouin/Documents/GitHub/orb", threads: 14, modified: now - 7200000, live: false },
+        ],
+      },
+    );
+
+    tabs.push(
+      {
+        id: "tab-running",
+        title: "Refactor auth middleware",
+        peer: labId,
+        where: "ordalie-lab-3",
+        remote: true,
+        cwd: "/home/ordalie/orb",
+        busy: true,
+        acting: false,
+        online: true,
+        asleep: false,
+        loaded: true,
+        earlier: false,
+        streaming: false,
+        status: "",
+        model: "anthropic/claude-sonnet-4-6",
+        thinking: "high",
+        levels: ["off", "low", "medium", "high", "max"],
+        context: 0.42,
+        cost: 0.56,
+        usage: {
+          plan: "Max 20x",
+          at: now - 60000,
+          windows: [{ name: "5h", left: 78, resets: now + 3 * 3600000 }],
+        },
+        ask: null,
+        slots: [],
+        unread: 0,
+        commands: [],
+        models: ["anthropic/claude-sonnet-4-6", "anthropic/claude-opus-4-6"],
+      },
+      {
+        id: "tab-bg",
+        title: "Audit SQL migrations",
+        peer: labId,
+        where: "ordalie-lab-3",
+        remote: true,
+        cwd: "/home/ordalie/ordalie-back",
+        busy: true,
+        acting: false,
+        online: true,
+        asleep: false,
+        loaded: true,
+        earlier: false,
+        streaming: false,
+        status: "analyzing diff…",
+        model: "openai-codex/gpt-5.3-codex",
+        thinking: "medium",
+        levels: ["off", "low", "medium", "high"],
+        context: 0.31,
+        cost: 0.19,
+        usage: null,
+        ask: null,
+        slots: [],
+        unread: 1,
+        commands: [],
+        models: ["openai-codex/gpt-5.3-codex", "anthropic/claude-sonnet-4-6"],
+      },
+      {
+        id: "tab-idle",
+        title: "Schema notes",
+        peer: macId,
+        where: "macbook-pro",
+        remote: true,
+        cwd: "/Users/baudouin/Documents/GitHub/orb",
+        busy: false,
+        acting: false,
+        online: true,
+        asleep: false,
+        loaded: true,
+        earlier: false,
+        streaming: false,
+        status: "",
+        model: "anthropic/claude-sonnet-4-6",
+        thinking: "medium",
+        levels: ["off", "low", "medium", "high"],
+        context: 0.18,
+        cost: 0.08,
+        usage: null,
+        ask: null,
+        slots: [],
+        unread: 0,
+        commands: [],
+        models: ["anthropic/claude-sonnet-4-6"],
+      },
+    );
+
+    entries.push(
+      { key: "t:tab-running", title: "Refactor auth middleware", machine: labId, cwd: "/home/ordalie/orb", modified: now - 15000, live: true, asks: false, open: true, tab: "tab-running", deletable: false },
+      { key: "t:tab-bg", title: "Audit SQL migrations", machine: labId, cwd: "/home/ordalie/ordalie-back", modified: now - 45000, live: true, asks: false, open: true, tab: "tab-bg", deletable: false },
+      { key: "t:tab-idle", title: "Schema notes", machine: macId, cwd: "/Users/baudouin/Documents/GitHub/orb", modified: now - 12 * 60000, live: false, asks: false, open: true, tab: "tab-idle", deletable: false },
+      { key: "s:resting-1", title: "Tighten WebSocket reconnect backoff", machine: labId, cwd: "/home/ordalie/orb", modified: now - 12 * 60000, live: false, asks: false, open: false, tab: "", deletable: true },
+      { key: "s:resting-2", title: "Migrate session store to WAL mode", machine: macId, cwd: "/Users/baudouin/Documents/GitHub/orb", modified: now - 2 * 3600000, live: false, asks: false, open: false, tab: "", deletable: true },
+      { key: "s:resting-3", title: "Fix mobile viewport safe-area padding", machine: macId, cwd: "/Users/baudouin/Documents/GitHub/orb", modified: now - 5 * 3600000, live: false, asks: false, open: false, tab: "", deletable: true },
+    );
+
+    rowMap.set("tab-running", [
+      {
+        k: "run-1",
+        kind: "you",
+        text: "Refactor the JWT middleware to validate key rotation without blocking active requests, then run the full auth test suite.",
+      },
+      {
+        k: "run-2",
+        kind: "md",
+        block: {
+          type: "p",
+          spans: [
+            { t: "I've updated " },
+            { t: "internal/auth/middleware.go", c: true },
+            { t: " to swap JWKS snapshots atomically with " },
+            { t: "atomic.Pointer", c: true },
+            { t: " and removed the read-path mutex contention. Running the auth package tests now." },
+          ],
+        },
+      },
+      {
+        k: "run-3",
+        kind: "run",
+        live: true,
+        what: "read 2 files, edited 1 file",
+        now: "bash · running",
+        failed: 0,
+        actions: [
+          { k: "run-3-a1", verb: "read", target: "internal/auth/middleware.go", result: "184 lines", live: false, failed: false },
+          { k: "run-3-a2", verb: "edit", target: "internal/auth/middleware.go", result: "+28 -19", live: false, failed: false },
+          { k: "run-3-a3", verb: "bash", target: "go test -race ./internal/auth/...", result: "", live: true, failed: false },
+        ],
+      },
+    ]);
+
+    rowMap.set("tab-bg", [
+      { k: "bg-1", kind: "you", text: "Check migration 042 for any table locks on orders." },
+    ]);
+
+    rowMap.set("tab-idle", [
+      { k: "idle-1", kind: "you", text: "Summarize the current index layout." },
+      { k: "idle-2", kind: "md", block: { type: "p", spans: [{ t: "All primary indexes are covering and aligned with the query planner." }] } },
+    ]);
+
+    summaryText = "2 working · Refactor auth middleware, Audit SQL migrations";
+  }
+
   let streamTimer = null;
 
   function emitState() {
@@ -390,7 +590,7 @@ export function createMockPeer({ emit, rowCount = 2000 }) {
       self: selfId,
       up: true,
       tabs,
-      summary: "1 working · Deploy pipeline check",
+      summary: summaryText,
       latest: "0.27.0",
       commands: BUILTIN_COMMANDS,
     }));

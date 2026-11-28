@@ -62,6 +62,42 @@ export function word(t) {
   return "";
 }
 
+export function peerActivity(machine) {
+  const list = machine?.running || [];
+  let working = 0;
+  let open = 0;
+  for (const r of list) {
+    if (r?.busy) working++;
+    else open++;
+  }
+  let label = "";
+  if (working > 0 && open > 0) label = `${working} working · ${open} open`;
+  else if (working > 0) label = `${working} working`;
+  else if (open > 0) label = `${open} open`;
+  return { working, open, label };
+}
+
+export function busyActivity(tab, rows = []) {
+  if (!tab?.busy) return "";
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    if (r?.kind === "run" && r.live) {
+      if (r.now) return r.now;
+      const actions = r.actions || [];
+      for (let j = actions.length - 1; j >= 0; j--) {
+        if (actions[j]?.live && actions[j].verb) {
+          return `${actions[j].verb} · running`;
+        }
+      }
+    }
+    if (r?.kind === "peer" && r.live && r.exchange?.who) {
+      return r.exchange.status ? `${r.exchange.who} · ${r.exchange.status}` : `${r.exchange.who} · working`;
+    }
+  }
+  if (tab.status) return tab.status;
+  return "working";
+}
+
 export function tightestWindow(usage) {
   if (!usage?.windows?.length) return null;
   let min = usage.windows[0];

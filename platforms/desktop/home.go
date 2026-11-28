@@ -58,12 +58,29 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 
 	// Top: compact Mitosis peer grid + quiet 1-line summary right under it.
 	a.homeScopeBar(c)
+	workingCount := 0
+	for _, m := range o.home.Machines {
+		_, w := peerActivityLabel(m.Running)
+		workingCount += w
+	}
+	if workingCount == 0 {
+		for _, t := range o.state.Tabs {
+			if t.Busy {
+				workingCount++
+			}
+		}
+	}
 	ui.Row(c).FillWidth().Margin(0, 0, 14).Gap(8).AlignItems(ui.Center).Children(func() {
+		needs := strings.HasPrefix(o.state.Summary, "needs")
 		ink := pal.meta
-		if strings.HasPrefix(o.state.Summary, "needs you") {
+		if needs {
 			ink = rupture
 		}
-		dot(c, map[bool]ui.Color{true: pal.fg, false: pal.rule}[o.state.Up], 6, !o.state.Up, false)
+		dotColor := map[bool]ui.Color{true: pal.fg, false: pal.rule}[o.state.Up]
+		if needs {
+			dotColor = rupture
+		}
+		dot(c, dotColor, 6, !o.state.Up || workingCount > 0, false)
 		ui.Text(c, cmp.Or(o.state.Summary, "starting Mitosis…")).Grow(1).Basis(0).FontSize(12).TextColor(ink).SingleLine()
 		if link(c, "settings", keys(",")) {
 			a.settings()
@@ -146,7 +163,7 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 				case t.Asleep:
 					state = "asleep"
 				}
-				row := sessionRow(c.Key("tab:"+t.ID), title, meta, state, t.Busy || !t.Asleep, t.Ask != nil, true, o.hue(t.Peer))
+				row := sessionRow(c.Key("tab:"+t.ID), title, meta, state, t.Busy, t.Ask != nil, true, o.hue(t.Peer))
 				row.ContextMenu(func(m *ui.Menu) {
 					if m.Item("Rename…").Chosen() {
 						a.rename = &renaming{name: title, row: t.ID, apply: func(name string) { o.send("rename", "tab", t.ID, "name", name) }}
@@ -193,13 +210,24 @@ func sessionRow(c *ui.Context, title, meta, age string, live, asks, current bool
 		case asks:
 			state = "asks"
 		case live:
-			state = "live"
+			state = "working"
 		}
 		ink := pal.meta
-		if asks {
+		stateWeight := 400
+		switch {
+		case asks:
 			ink = rupture
+			stateWeight = medium
+		case live:
+			ink = pal.fg
+			stateWeight = medium
 		}
-		ui.Text(c, strings.Join(nonEmpty(meta, state), " · ")).FontSize(small).TextColor(ink).SingleLine()
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Shrink(0).Children(func() {
+			if live && !asks {
+				dot(c, pal.fg, 5, true, false)
+			}
+			ui.Text(c, strings.Join(nonEmpty(meta, state), " · ")).FontSize(small).FontWeight(stateWeight).TextColor(ink).SingleLine()
+		})
 	})
 }
 
@@ -509,7 +537,7 @@ func (a *app) homeScopeBar(c *ui.Context) {
 						if m.Self {
 							name = device
 						}
-						statusText := fmt.Sprintf("%d running", len(m.Running))
+						statusText, working := peerActivityLabel(m.Running)
 						if !up {
 							statusText = map[bool]string{true: "starting…", false: "offline"}[m.Self]
 						}
@@ -520,6 +548,14 @@ func (a *app) homeScopeBar(c *ui.Context) {
 						card := ui.Column(c.Key("peer:"+m.ID)).FillWidth().Height(68).Padding(10, 12).Radius(8).
 							Background(pal.raised).Border(1, border).Justify(ui.SpaceBetween)
 						hover(card, pal.hover)
+						if up && working > 0 {
+							railColor := hue(c, o.hue(m.ID), pal.fg)
+							reduceMotion := c.Preferences().ReduceMotion
+							card.DrawOver(func(pt *ui.Painter, r ui.Rect) {
+								rail := ui.Rect{X: r.X + 6, Y: r.Y + r.H - 1.5, W: max(r.W-12, 0), H: 1.5}
+								paintActivityRail(pt, rail, railColor, reduceMotion)
+							})
+						}
 						card.ContextMenu(func(menu *ui.Menu) {
 							if on {
 								if menu.Item("Clear filter").Chosen() {
@@ -587,7 +623,7 @@ func (a *app) homeScopeBar(c *ui.Context) {
 						})
 						card.Children(func() {
 							ui.Row(c).FillWidth().Gap(7).AlignItems(ui.Center).Children(func() {
-								where(c, o.hue(m.ID), len(m.Running) > 0, !up && !m.Self, map[bool]ui.Color{true: pal.fg, false: pal.mute}[on])
+								where(c, o.hue(m.ID), up && working > 0, !up && !m.Self, map[bool]ui.Color{true: pal.fg, false: pal.mute}[on])
 								ui.Text(c, name).Grow(1).Basis(0).MinWidth(0).FontSize(13).FontWeight(strong).TextColor(pal.fg).SingleLine()
 								verdict, vInk := "承認", pal.meta
 								if !up {
@@ -596,7 +632,14 @@ func (a *app) homeScopeBar(c *ui.Context) {
 								ui.Text(c, verdict).FontSize(10.5).TextColor(vInk).SingleLine()
 							})
 							ui.Row(c).FillWidth().Gap(5).AlignItems(ui.Center).Children(func() {
-								ui.Text(c, statusText).FontSize(11).TextColor(map[bool]ui.Color{true: pal.meta, false: rupture}[up]).SingleLine()
+								statusInk, statusWeight := pal.meta, 400
+								switch {
+								case !up:
+									statusInk = rupture
+								case working > 0:
+									statusInk, statusWeight = pal.fg, medium
+								}
+								ui.Text(c, statusText).FontSize(11).FontWeight(statusWeight).TextColor(statusInk).SingleLine()
 								if len(m.Folders) > 0 {
 									fLabel := fmt.Sprintf("· %d folders", len(m.Folders))
 									if len(m.Folders) == 1 {

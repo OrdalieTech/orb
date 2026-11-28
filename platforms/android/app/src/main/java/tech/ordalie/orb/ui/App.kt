@@ -411,7 +411,10 @@ private fun TabMark(s: Tab, word: String, hue: Int, on: Boolean, near: () -> Flo
             // The tab on screen closes from its own ×; any tab from its menu, held down.
             if (on) Box(Modifier.press(onClick = close).padding(start = 8.dp, end = 2.dp, top = 6.dp, bottom = 6.dp)) { T("×", size = 16.sp, color = p.meta) }
         }
-        Box(Modifier.fillMaxWidth().height(2.dp).graphicsLayer { alpha = near() }.background(p.fg))
+        Box(Modifier.fillMaxWidth().height(2.dp), contentAlignment = Alignment.BottomCenter) {
+            Box(Modifier.fillMaxWidth().height(2.dp).graphicsLayer { alpha = near() * if (s.busy) 0.35f else 1f }.background(p.fg))
+            if (s.busy) ActivityRail(active = true, color = if (s.ask != null) Ink.Rupture else hue(hue, p.fg))
+        }
     }
 }
 

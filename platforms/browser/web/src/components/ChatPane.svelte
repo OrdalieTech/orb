@@ -1,6 +1,6 @@
 <script>
   import { orb } from "../lib/store.svelte.js";
-  import { ago, hasVisibleText, stripAnsi, tidy, tightestWindow, usageLabel, word } from "../lib/utils.js";
+  import { ago, busyActivity, hasVisibleText, stripAnsi, tidy, tightestWindow, usageLabel, word } from "../lib/utils.js";
   import VirtualTranscript from "./VirtualTranscript.svelte";
   import PromptBox from "./PromptBox.svelte";
 
@@ -15,7 +15,8 @@
   });
 
   let rows = $derived(orb.rowsByTab[tab.id] || []);
-  let statusWord = $derived(word(tab));
+  let statusWord = $derived(tab.ask ? "asks" : tab.busy ? busyActivity(tab, rows) : word(tab));
+  let stripLoc = $derived([tab.remote && tab.where, tab.cwd && tidy(tab.cwd)].filter(Boolean).join(" · "));
   let tightWin = $derived(tightestWindow(tab.usage));
   let visibleSlots = $derived((tab.slots || []).filter(s => hasVisibleText(s.lines)));
   let isFocusedPane = $derived(orb.isSplit && orb.activeTileId === tileId);
@@ -76,6 +77,12 @@
   />
 
   <div class="strip-dock">
+    <div
+      class="activity-rail"
+      class:active={!!tab.busy || !!tab.streaming}
+      class:asks={!!tab.ask}
+      aria-hidden="true"
+    ></div>
     <div class="strip" class:busy={tab.busy} oncontextmenu={openTileMenu}>
       <span class="strip-where" title={tidy(tab.cwd || tab.where)}>
         {#if orb.isSplit}
@@ -84,8 +91,11 @@
         {:else if tab.busy || tab.ask}
           <i class="led" class:live={tab.busy} class:asks={!!tab.ask} style="--hue: var(--hue{orb.getMachine(tab.peer)?.hue || 0})"></i>
         {/if}
-        <span class="strip-loc">{[tab.remote && tab.where, tab.cwd && tidy(tab.cwd)].filter(Boolean).join(" · ")}</span>
+        {#if stripLoc}
+          <span class="strip-loc">{stripLoc}</span>
+        {/if}
         {#if statusWord}
+          {#if stripLoc}<span class="strip-sep" aria-hidden="true">·</span>{/if}
           <span class="strip-status" class:live={tab.busy} class:asks={!!tab.ask}>{statusWord}</span>
         {/if}
       </span>
@@ -252,8 +262,17 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .strip-status {
+  .strip-sep {
     flex-shrink: 0;
+    color: var(--meta);
+    opacity: 0.65;
+  }
+  .strip-status {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 1;
     color: var(--meta);
   }
   .strip-status.live {
@@ -467,6 +486,8 @@
     overflow: hidden;
   }
   @media (max-width: 600px) {
-    .strip-pill .jp { display: none; }
+    .strip-pill .jp,
+    .strip.busy .strip-loc,
+    .strip.busy .strip-sep { display: none; }
   }
 </style>

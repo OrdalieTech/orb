@@ -111,10 +111,10 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 					switch {
 					case t.Streaming:
 						caret(c)
-					case t.Busy && !lastLive:
+					case t.Busy && !t.Streaming && !lastLive:
 						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 							dot(c, rupture, 5, true, false)
-							ui.Text(c, "working…").FontSize(small).TextColor(pal.meta)
+							ui.Text(c, cmp.Or(strings.TrimSpace(t.Status), "working…")).FontSize(small).TextColor(pal.meta)
 						})
 					}
 				})
@@ -158,6 +158,11 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 				}
 			})
 		}
+		railColor := pal.fg
+		if t.Ask != nil {
+			railColor = rupture
+		}
+		activityRail(c, t.Busy || t.Streaming, railColor)
 		a.promptBox(c, t, "What next?")
 	})
 }
@@ -169,6 +174,17 @@ func (a *app) strip(c *ui.Context, t *Tab) {
 	pal := p(c)
 	a.titleBar(c, func() {
 		a.tileTools(c)
+		if t.Busy && !(a.tight && a.corner) {
+			dotColor := pal.fg
+			if t.Ask != nil {
+				dotColor = rupture
+			}
+			status := cmp.Or(tabBusyLabel(*t, a.o.rows[t.ID]), "working")
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Shrink(0).Children(func() {
+				dot(c, dotColor, 5, true, false)
+				ui.Text(c, status).MaxWidth(160).FontSize(12).FontWeight(medium).TextColor(pal.mute).SingleLine()
+			})
+		}
 		// A tight tile under the window's controls has room for its title and its terminal only.
 		if t.Context > 0 && !(a.tight && a.corner) {
 			ink := pal.meta

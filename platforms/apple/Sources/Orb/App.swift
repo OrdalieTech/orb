@@ -154,7 +154,12 @@ private struct Bar: View {
             if on { Button("×") { nav.close(t.id, orb) }.foregroundStyle(Ink.meta) }
         }
         .foregroundStyle(on ? Ink.fg : Ink.mute).padding(.horizontal, 8)
-        .overlay(alignment: .bottom) { Rectangle().fill(on ? Ink.fg : .clear).frame(height: 2) }
+        .overlay(alignment: .bottom) {
+            ZStack(alignment: .bottom) {
+                Rectangle().fill(on ? Ink.fg.opacity(t.busy ? 0.35 : 1) : .clear).frame(height: 2)
+                if t.busy { ActivityRail(active: true, color: t.ask != nil ? Ink.rupture : orb.hue(t.peer)) }
+            }
+        }
     }
 }
 
@@ -181,8 +186,15 @@ private struct Start: View {
                             HStack { Text("No paired devices").foregroundStyle(Ink.mute); Spacer(); Text("Pair ›").fontWeight(.medium) }.padding(.vertical, 10)
                         }
                     }
-                    Text(orb.state.up ? orb.state.launching.isEmpty ? orb.state.summary : orb.state.launching : "starting Mitosis…")
-                        .font(.mono(Size.small)).foregroundStyle(Ink.meta)
+                    let summary = orb.state.up ? (orb.state.launching.isEmpty ? orb.state.summary : orb.state.launching) : "starting Mitosis…"
+                    let anyBusy = orb.home.machines.contains { $0.running.contains { $0.busy } } || orb.state.tabs.contains { $0.busy }
+                    let needs = summary.hasPrefix("needs")
+                    HStack(spacing: 6) {
+                        if anyBusy { Dot(color: needs ? Ink.rupture : Ink.fg, size: 6, pulse: true) }
+                        Text(summary)
+                            .font(.mono(Size.small, anyBusy || needs ? .medium : .regular))
+                            .foregroundStyle(needs ? Ink.rupture : anyBusy ? Ink.fg : Ink.meta)
+                    }
                 }
                 // No rules between rows, on the page's own ground.
                 .listRowBackground(Color.clear).listRowSeparator(.hidden)
@@ -209,7 +221,14 @@ private struct Start: View {
                 Text(sub).font(.mono(Size.small)).foregroundStyle(hue).lineLimit(1)
             }
             Spacer(minLength: 0)
-            if asks { Dot() } else if live { Dot(pulse: true) }
+            if asks {
+                Dot()
+            } else if live {
+                HStack(spacing: 5) {
+                    Dot(color: Ink.fg, size: 5, pulse: true)
+                    Text("working").font(.mono(Size.small, .medium)).foregroundStyle(Ink.fg)
+                }
+            }
         }
         .padding(.vertical, 2)
     }

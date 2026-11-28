@@ -1,6 +1,6 @@
 <script>
   import { orb } from "../lib/store.svelte.js";
-  import { ago, base, named, tidy, word } from "../lib/utils.js";
+  import { ago, base, named, peerActivity, tidy, word } from "../lib/utils.js";
   import PromptBox from "./PromptBox.svelte";
 
   let threadFilter = $state("");
@@ -75,6 +75,11 @@
 
   let launching = $derived(orb.state.launching || "");
   let starting = $derived(launching.startsWith("starting"));
+  let hasWorking = $derived(
+    (orb.state.tabs || []).some(t => t.busy) ||
+    (orb.home.machines || []).some(m => (m.running || []).some(r => r.busy)),
+  );
+  let summaryAsks = $derived((orb.state.summary || "").startsWith("needs"));
 </script>
 
 <div class="home">
@@ -86,26 +91,42 @@
         {@const ok = up && !m.outdated}
         {@const isHidden = orb.isPeerHidden(m.id)}
         {@const folderCount = m.folders?.length || 0}
+        {@const activity = peerActivity(m)}
+        {@const isWorking = ok && activity.working > 0}
         <button
           type="button"
           class="magi-unit"
           class:on={orb.deviceFilter === m.id}
           class:down={!ok}
+          class:working={isWorking}
           class:hidden-peer={isHidden}
           onclick={() => selectPeer(m)}
           oncontextmenu={e => { e.preventDefault(); orb.openDeviceMenu(m); }}
           title="Click to filter · Right-click for options"
         >
           <span class="magi-top">
-            <i class="led" style="--hue: var(--hue{m.hue || 0})"></i>
+            <i class="led" class:live={isWorking} style="--hue: var(--hue{m.hue || 0})"></i>
             <span class="magi-name">{m.self ? "this tab" : m.name}</span>
             <b class="magi-verdict">{ok ? "承認" : "否決"}</b>
           </span>
           <span class="magi-bot">
             <span>
-              {!up ? "offline" : m.outdated ? "update Orb" : `${m.running?.length || 0} running`}{folderCount > 0 ? ` · ${folderCount} ${folderCount === 1 ? "folder" : "folders"}` : ""}
+              {#if !up}
+                offline
+              {:else if m.outdated}
+                update Orb
+              {:else if activity.working > 0}
+                <strong class="magi-working">{activity.working} working</strong>{#if activity.open > 0}{" · "}{activity.open} open{/if}
+              {:else if activity.open > 0}
+                {activity.open} open
+              {:else}
+                0 open
+              {/if}{#if folderCount > 0}{" · "}{folderCount} {folderCount === 1 ? "folder" : "folders"}{/if}
             </span>
           </span>
+          {#if isWorking}
+            <span class="magi-rail activity-rail active" aria-hidden="true"></span>
+          {/if}
         </button>
       {/each}
       <button
@@ -120,7 +141,12 @@
     </div>
 
     <div class="summary-bar">
-      <p class="summary" class:asks={(orb.state.summary || "").startsWith("needs")}>{orb.state.summary || ""}</p>
+      <p class="summary" class:asks={summaryAsks} class:live={hasWorking && !summaryAsks}>
+        {#if hasWorking && !summaryAsks && orb.state.summary}
+          <i class="led round live summary-led" aria-hidden="true"></i>
+        {/if}
+        <span>{orb.state.summary || ""}</span>
+      </p>
       <div class="summary-actions">
         {#if hiddenCount > 0}
           <button
@@ -239,13 +265,21 @@
           >
             <i class="led" class:live={isLive} class:asks={isAsks} style="--hue: var(--hue{m?.hue || 0})"></i>
             <span class="entry-title">{named(e.title)}</span>
-            <small class="entry-meta" class:asks={isAsks}>
-              {[
-                !orb.deviceFilter && m && (m.self ? "this tab" : m.name),
-                isAsks ? "asks" : isLive ? "working" : age || (e.unstored ? "open" : ago(e.modified)),
-              ]
-                .filter(Boolean)
-                .join(" · ")}
+            <small class="entry-meta" class:asks={isAsks} class:live={isLive && !isAsks}>
+              {#if !orb.deviceFilter && m}
+                <span class="meta-peer">{m.self ? "this tab" : m.name}</span>
+                <span class="meta-sep">·</span>
+              {/if}
+              {#if isAsks}
+                <span>asks</span>
+              {:else if isLive}
+                <span class="meta-live">
+                  <i class="led round live" style="--hue: var(--hue{m?.hue || 0})" aria-hidden="true"></i>
+                  <span>working</span>
+                </span>
+              {:else}
+                <span>{age || (e.unstored ? "open" : ago(e.modified))}</span>
+              {/if}
             </small>
             {#if !e.unstored}
               <button
@@ -318,6 +352,7 @@
   }
   .magi-unit {
     position: relative;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -330,6 +365,16 @@
     background: var(--raised);
     cursor: pointer;
     transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+  .magi-rail {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+  .magi-working {
+    color: var(--fg);
+    font-weight: 500;
   }
   .magi-unit.hidden-peer {
     opacity: 0.58;
@@ -434,11 +479,19 @@
     color: var(--fg);
   }
   .summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
     font-size: 12px;
     font-weight: 500;
     color: var(--meta);
   }
+  .summary.live { color: var(--fg); }
   .summary.asks { color: var(--rupture); font-weight: 700; }
+  .summary-led {
+    width: 6px;
+    height: 6px;
+  }
   .browse-btn { font-size: 12px; color: var(--fg); }
 
   .folder-strip {
@@ -572,11 +625,25 @@
   }
   .entry-row.asks .entry-title { font-weight: 700; color: var(--fg); }
   .entry-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     flex-shrink: 0;
     font-size: 12px;
     color: var(--meta);
   }
   .entry-meta.asks { color: var(--rupture); font-weight: 700; }
+  .meta-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--fg);
+    font-weight: 500;
+  }
+  .meta-live .led {
+    width: 5px;
+    height: 5px;
+  }
   .entry-act,
   .entry-x {
     flex-shrink: 0;

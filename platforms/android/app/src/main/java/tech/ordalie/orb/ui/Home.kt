@@ -67,7 +67,12 @@ fun ColumnScope.Home(c: Ctx) {
         }
     }
     // What runs, as the desktop's sidebar says it under the same cards: "2 working · …", "needs you · …".
-    T(v.state.summary, Modifier.padding(horizontal = Margin + 2.dp, vertical = 2.dp), size = 13.sp, color = if (v.state.summary.startsWith("needs")) Ink.Rupture else p.meta, lines = 1)
+    val anyBusy = v.home.machines.any { m -> m.running.any { it.busy } } || v.state.tabs.any { it.busy }
+    val needs = v.state.summary.startsWith("needs")
+    Row(Modifier.padding(horizontal = Margin + 2.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (anyBusy) Dot(color = if (needs) Ink.Rupture else p.fg, size = 6.dp, pulse = true)
+        T(v.state.summary, size = 13.sp, weight = if (anyBusy || needs) Medium else Regular, color = if (needs) Ink.Rupture else if (anyBusy) p.fg else p.meta, lines = 1)
+    }
     // Every thread on every machine in one list, newest first: where it lives is a detail of the row.
     // A machine's card narrows the list to it (and its folders open from here). New conversations
     // start from the prompt box, which also chooses where.
@@ -90,7 +95,8 @@ fun ColumnScope.Home(c: Ctx) {
         items(shown, key = { it.key }) { e ->
             val m = v.machine(e.machine)
             // An open one says its state as its tab does, its age once at rest; a re-sort slides it into place.
-            SessionRow(named(e.title), m?.name.takeIf { device.isEmpty() }.orEmpty(), v.tab(e.tab)?.let(v::word).orEmpty().ifEmpty { if (e.unstored) "open" else ago(e.modified) },
+            val state = v.tab(e.tab)?.let(v::word).orEmpty().ifEmpty { if (e.live) "working" else if (e.unstored) "open" else ago(e.modified) }
+            SessionRow(named(e.title), m?.name.takeIf { device.isEmpty() }.orEmpty(), state,
                 e.live, e.asks, e.open, Modifier.animateItem(), hue = v.hue(e.machine), rename = { c.threadMenu(e) }) { c.open(e.key) }
         }
         // Until the view sends Home (its Mitosis starting), a loader rather than an empty list.
@@ -173,14 +179,9 @@ private fun Magi(c: Ctx, device: String, pick: (String) -> Unit) {
                     val yes = up && (!m.self || current)
                     val ink = if (yes) p.mute else Ink.Rupture
                     val on = device == m.id
-                    val sub = when {
-                        !up -> if (m.self) "starting…" else "offline"
-                        !yes -> "update"
-                        else -> buildList {
-                            add("${m.running.size} running")
-                            if (m.folders.isNotEmpty()) add("${m.folders.size} folder" + if (m.folders.size == 1) "" else "s")
-                        }.joinToString(" · ")
-                    }
+                    val working = m.running.count { it.busy }
+                    val open = m.running.size
+                    val folders = if (m.folders.isNotEmpty()) "${m.folders.size} folder" + if (m.folders.size == 1) "" else "s" else ""
                     Column(
                         Modifier.weight(1f).clip(Pane)
                             .background(if (on) p.raised else p.fg.copy(alpha = 0.03f))
@@ -208,16 +209,36 @@ private fun Magi(c: Ctx, device: String, pick: (String) -> Unit) {
                                         "forget · revoke access" -> c.v.send("forget", "machine" to m.id)
                                     }
                                 })
-                            }) { pick(m.id) }
-                            .padding(horizontal = 11.dp, vertical = 9.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                            }) { pick(m.id) },
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Where(v.hue(m.id))
-                            T(if (m.self) "this phone" else m.name, Modifier.weight(1f), size = 14.sp, weight = Strong, color = if (on) p.fg else if (isHidden) p.meta else p.fg.copy(alpha = 0.88f), lines = 1)
-                            T(if (yes) "承認" else "否決", size = Size.Label, weight = Strong, color = ink)
+                        Column(Modifier.padding(horizontal = 11.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Where(v.hue(m.id), live = working > 0)
+                                T(if (m.self) "this phone" else m.name, Modifier.weight(1f), size = 14.sp, weight = Strong, color = if (on) p.fg else if (isHidden) p.meta else p.fg.copy(alpha = 0.88f), lines = 1)
+                                T(if (yes) "承認" else "否決", size = Size.Label, weight = Strong, color = ink)
+                            }
+                            if (!up) {
+                                T(if (m.self) "starting…" else "offline", size = 12.sp, color = ink, lines = 1)
+                            } else if (!yes) {
+                                T("update", size = 12.sp, color = ink, lines = 1)
+                            } else if (working > 0) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    T("$working working", size = 12.sp, weight = Medium, color = p.fg, lines = 1)
+                                    val rest = buildList {
+                                        if (open > working) add("${open - working} open")
+                                        if (folders.isNotEmpty()) add(folders)
+                                    }.joinToString(" · ")
+                                    if (rest.isNotEmpty()) T(" · $rest", size = 12.sp, color = p.meta, lines = 1)
+                                }
+                            } else {
+                                val sub = buildList {
+                                    if (open > 0) add("$open open")
+                                    if (folders.isNotEmpty()) add(folders)
+                                }.joinToString(" · ").ifEmpty { "0 open" }
+                                T(sub, size = 12.sp, color = p.meta, lines = 1)
+                            }
                         }
-                        T(sub, size = 12.sp, color = ink, lines = 1)
+                        ActivityRail(active = working > 0, color = hue(v.hue(m.id), p.fg))
                     }
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
@@ -280,7 +301,17 @@ fun SessionRow(title: String, meta: String, age: String, live: Boolean, asks: Bo
     Row(modifier.fillMaxWidth().press(onLong = rename, onClick = open).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Where(hue, live, asks)
         T(title, Modifier.weight(1f), size = 15.sp, weight = if (current || live) Strong else Regular, lines = 1)
-        T(listOf(meta, if (asks) "asks" else if (live) "working" else age).filter(String::isNotEmpty).joinToString(" · "), size = 13.sp, color = if (asks) Ink.Rupture else p.meta, lines = 1)
+        if (asks) {
+            T(listOf(meta, "asks").filter(String::isNotEmpty).joinToString(" · "), size = 13.sp, color = Ink.Rupture, lines = 1)
+        } else if (live) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                if (meta.isNotEmpty()) T("$meta ·", size = 13.sp, color = p.meta, lines = 1)
+                Dot(color = p.fg, size = 5.dp, pulse = true)
+                T(age.ifEmpty { "working" }, size = 13.sp, weight = Medium, color = p.fg, lines = 1)
+            }
+        } else {
+            T(listOf(meta, age).filter(String::isNotEmpty).joinToString(" · "), size = 13.sp, color = p.meta, lines = 1)
+        }
     }
 
 /** Where a session runs, as a square: the ink for this phone, a paired device's own hue, red while

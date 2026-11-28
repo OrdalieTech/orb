@@ -310,12 +310,18 @@
   }
 
   let statusWorking = $derived(
-    status === "sending…" || status === "opening the thread…" || status === "reconnecting",
+    status === "sending…" ||
+      status === "opening the thread…" ||
+      status === "reconnecting" ||
+      (busy && !!status && !status.startsWith("error") && !status.startsWith("failed") && !status.startsWith("refused")),
   );
   let statusAlarm = $derived(
     !!status && !statusWorking && !status.startsWith("asleep") && !status.startsWith("offline"),
   );
   let lastRowLive = $derived(rows.length > 0 && !!rows[rows.length - 1]?.live);
+  let showingTailWorking = $derived(
+    !streaming && rows.length > 0 && (statusWorking || (busy && !lastRowLive)),
+  );
 </script>
 
 <div class="transcript-shell">
@@ -350,7 +356,7 @@
             <span>{status}</span>
           {:else if busy}
             <i class="led round live"></i>
-            <span>working…</span>
+            <span class="empty-working">{status || "working…"}</span>
           {:else if statusAlarm}
             <p class="status-banner alarm" role="alert">{status}</p>
           {:else if asleep}
@@ -381,10 +387,10 @@
         {:else if busy && !lastRowLive && rows.length > 0}
           <div class="working-line">
             <i class="led round live"></i>
-            <span>working…</span>
+            <span>{status || "working…"}</span>
           </div>
         {/if}
-        {#if status && !statusWorking && (rows.length > 0 || !statusAlarm)}
+        {#if status && !statusWorking && !showingTailWorking && (rows.length > 0 || !statusAlarm)}
           <p class="status-line" class:alarm={statusAlarm}>{status}</p>
         {/if}
       </div>
@@ -459,14 +465,18 @@
     background: var(--rupture);
     animation: led-step 0.9s steps(1) infinite;
   }
+  .empty-working {
+    color: var(--fg);
+    font-weight: 500;
+  }
   .working-line {
     display: inline-flex;
     align-items: center;
     gap: 8px;
     padding-top: 6px;
     font-size: 12px;
-    font-weight: 600;
-    color: var(--meta);
+    font-weight: 500;
+    color: var(--fg);
   }
   .status-line {
     font-size: 12px;

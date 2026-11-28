@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	_ "embed"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -223,6 +224,101 @@ func field(c *ui.Context, value *string, hint string, secret bool) ui.Element {
 // beat is the period of a dot's pulse, and beatRate the frames a second its fade looks as smooth
 // at as at the display's: something works for minutes, and the window draws only the dot meanwhile.
 const beat, beatRate = 1400 * time.Millisecond, 20
+
+const railPeriod = 1600 * time.Millisecond
+
+// paintActivityRail draws a subtle travelling sheen over a faint track, or a calm steady hairline
+// when Reduce Motion is enabled. Painted directly so it never rebuilds the view tree.
+func paintActivityRail(pt *ui.Painter, r ui.Rect, color ui.Color, reduceMotion bool) {
+	if r.W <= 0 || r.H <= 0 {
+		return
+	}
+	if reduceMotion {
+		pt.Fill(r, color.Alpha(0.35), 0)
+		return
+	}
+	pt.Fill(r, color.Alpha(0.12), 0)
+	at := float32(pt.Now().UnixNano()%int64(railPeriod)) / float32(railPeriod)
+	sw := min(max(r.W*0.32, 24), r.W)
+	x0 := r.X - sw + (r.W+sw)*ui.EaseInOut(at)
+	cx0 := max(x0, r.X)
+	cx1 := min(x0+sw, r.X+r.W)
+	if cx1 > cx0 {
+		pt.Fill(ui.Rect{X: cx0, Y: r.Y, W: cx1 - cx0, H: r.H}, color.Alpha(0.50), 0)
+	}
+	pt.AnimationFrameRate(beatRate)
+}
+
+// activityRail is a razor-thin 1.5-DIP full-width horizontal hairline that sweeps gently while
+// active, and stays a transparent spacer of the same height when inactive (zero layout jump).
+func activityRail(c *ui.Context, active bool, color ui.Color) ui.Element {
+	e := ui.Box(c).Height(1.5).FillWidth()
+	if !active {
+		return e
+	}
+	reduceMotion := c.Preferences().ReduceMotion
+	return e.Draw(func(pt *ui.Painter, r ui.Rect) {
+		paintActivityRail(pt, r, color, reduceMotion)
+	})
+}
+
+// peerActivityLabel summarizes a peer's running processes, separating actively working agents
+// from idle open sessions.
+func peerActivityLabel(running []Running) (text string, working int) {
+	for _, r := range running {
+		if r.Busy {
+			working++
+		}
+	}
+	idle := len(running) - working
+	switch {
+	case len(running) == 0:
+		return "0 open", 0
+	case working == 0:
+		return fmt.Sprintf("%d open", idle), 0
+	case idle == 0:
+		return fmt.Sprintf("%d working", working), working
+	default:
+		return fmt.Sprintf("%d working · %d open", working, idle), working
+	}
+}
+
+// tabBusyLabel returns a concise active step label for a busy conversation (e.g., "bash · running"
+// or "working"), or "" when the conversation is idle.
+func tabBusyLabel(t Tab, rows []Row) string {
+	if !t.Busy {
+		return ""
+	}
+	for i := len(rows) - 1; i >= 0; i-- {
+		r := rows[i]
+		if !r.Live {
+			continue
+		}
+		if r.Kind == "run" {
+			for j := len(r.Actions) - 1; j >= 0; j-- {
+				if r.Actions[j].Live && r.Actions[j].Verb != "" {
+					return r.Actions[j].Verb + " · running"
+				}
+			}
+			if len(r.Actions) == 1 && r.Actions[0].Verb != "" {
+				return r.Actions[0].Verb + " · running"
+			}
+			if s := strings.TrimSpace(r.Now); s != "" {
+				return s
+			}
+			if s := strings.TrimSpace(r.What); s != "" {
+				return s
+			}
+		}
+		if r.Kind == "peer" && r.Exchange != nil && r.Exchange.Who != "" {
+			return r.Exchange.Who + " · running"
+		}
+	}
+	if s := strings.TrimSpace(t.Status); s != "" {
+		return s
+	}
+	return "working"
+}
 
 // dot marks what lives: round, or square for where a session runs; it pulses while it works.
 func dot(c *ui.Context, color ui.Color, size float32, pulse, square bool) ui.Element {

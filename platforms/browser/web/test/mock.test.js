@@ -138,3 +138,33 @@ test("createMockPeer handles archive, threads.archived, and unarchive", () => {
   peer.app(JSON.stringify({ do: "threads.archived", id: "req-list-2" }));
   assert.equal(replyFor("req-list-2").result.entries.length, 0);
 });
+
+test("createMockPeer supports demo=running preset with working and idle peers", () => {
+  globalThis.window ??= {};
+  const frames = [];
+  const peer = createMockPeer({
+    emit: raw => frames.push(JSON.parse(raw)),
+    demo: "running",
+  });
+  peer.app(JSON.stringify({ do: "hello" }));
+
+  const home = frames.filter(f => f.t === "home").at(-1);
+  const state = frames.filter(f => f.t === "state").at(-1);
+
+  const lab = home.machines.find(m => m.name === "ordalie-lab-3");
+  const mac = home.machines.find(m => m.name === "macbook-pro");
+  assert.ok(lab);
+  assert.ok(mac);
+  assert.equal(lab.running.filter(r => r.busy).length, 1);
+  assert.equal(lab.running.filter(r => !r.busy).length, 1);
+  assert.equal(mac.running.filter(r => r.busy).length, 0);
+  assert.equal(mac.running.filter(r => !r.busy).length, 1);
+
+  const runningTab = state.tabs.find(t => t.id === "tab-running");
+  const bgTab = state.tabs.find(t => t.id === "tab-bg");
+  assert.equal(runningTab.busy, true);
+  assert.equal(bgTab.busy, true);
+  assert.equal(bgTab.streaming, false);
+  assert.ok(home.entries.some(e => e.live));
+  assert.ok(home.entries.some(e => !e.live && !e.open));
+});

@@ -45,7 +45,9 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
     AnimatedVisibility(t.acting && !dismissedActing, enter = expandVertically(spring(stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
         PatternBlue(stop = { v.send("abort", "tab" to t.id) }, dismiss = { dismissedActing = true })
     }
-    val turns = turns(v.rows[t.id].orEmpty())
+    val rows = v.rows[t.id].orEmpty()
+    val turns = turns(rows)
+    val lastRowLive = rows.lastOrNull()?.live == true
     // Anchored at the top, the list never moves on its own: what streams in follows only a reader at
     // the bottom. Scrolling away leaves them where they read until they come back down, or send. It
     // opens at its end, and only a scroll the reader ends there or away decides whether it follows.
@@ -61,10 +63,14 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
         // to come, so an opening thread never flashes "ready".
         var waited by remember(t.id) { mutableStateOf(false) }
         LaunchedEffect(t.id) { delay(700); waited = true }
-        val ghost by animateFloatAsState(if (turns.isEmpty() && (waited || !t.loaded)) 1f else 0f, tween(400), label = "standby")
+        val ghost by animateFloatAsState(if (turns.isEmpty() && (waited || !t.loaded || t.busy)) 1f else 0f, tween(400), label = "standby")
         if (ghost > 0f && turns.isEmpty()) Column(Modifier.fillMaxSize().alpha(ghost), Arrangement.spacedBy(10.dp, Alignment.CenterVertically), Alignment.CenterHorizontally) {
-            if (!t.loaded) Dot(p.mute, pulse = true) else if (!t.asleep) Ordalie()
-            T(t.empty, label = true, color = p.meta)
+            if (t.busy) {
+                WorkingCue(t.status.ifBlank { "working…" })
+            } else {
+                if (!t.loaded) Dot(p.mute, pulse = true) else if (!t.asleep) Ordalie()
+                T(t.empty, label = true, color = p.meta)
+            }
         }
         // Items never slide: a streamed line would set every row around it moving.
         LazyColumn(Modifier.fillMaxSize(), list) {
@@ -82,8 +88,13 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
                 // A held finger selects words, in what anyone said, with the system's copy and share.
                 SelectionContainer(Modifier.animateItem(fadeInSpec = tween(280), placementSpec = null, fadeOutSpec = tween(160))) { Turn(b, first = i == 0, t, c) }
             }
-            // Room under the last message, where the caret waits while Orb writes.
-            item(key = "end") { Box(Modifier.fillMaxWidth().height(40.dp).padding(start = Margin, top = 6.dp)) { if (t.streaming) Caret(Ink.Rupture, (SIZE * 0.55f).dp, (SIZE * 1.1f).dp) } }
+            // Room under the last message, where the caret or working cue waits while Orb runs.
+            item(key = "end") {
+                Box(Modifier.fillMaxWidth().height(40.dp).padding(start = Margin, top = 6.dp)) {
+                    if (t.streaming) Caret(Ink.Rupture, (SIZE * 0.55f).dp, (SIZE * 1.1f).dp)
+                    else if (t.busy && !lastRowLive) WorkingCue(t.status.ifBlank { "working…" })
+                }
+            }
         }
         // Over the room under the last message, so the list never changes height as it comes and goes.
         androidx.compose.animation.AnimatedVisibility(t.status.isNotBlank(), Modifier.align(Alignment.BottomStart), enter = fadeIn(), exit = fadeOut()) {
@@ -92,6 +103,7 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
     }
     // What its plugins show beside it: the task list, a status, the last notice.
     t.slots.forEach { s -> Box(Modifier.padding(horizontal = Margin + 6.dp, vertical = 2.dp)) { Folded(s.lines.joinToString("\n"), if (s.alarm) Ink.Rupture else p.meta) } }
+    ActivityRail(active = t.busy || t.streaming, color = if (t.ask != null) Ink.Rupture else p.fg)
     PromptBox(t, c, c.palette(t), placeholder = "What next?") { follow = true; c.send(t, it) }
 }
 
@@ -103,7 +115,11 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
 @Composable
 private fun Strip(t: Tab, word: String, usage: () -> Unit, terminal: () -> Unit) =
     Row(Modifier.fillMaxWidth().padding(start = Margin, end = 10.dp).height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        T(listOfNotNull(t.where.takeIf { t.remote }, word.ifEmpty { null }).joinToString(" · "), Modifier.weight(1f), size = 13.sp, weight = Medium, color = if (t.busy) p.fg else p.meta, lines = 1)
+        val label = word.ifEmpty { if (t.busy) "working" else "" }
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (t.busy) Dot(color = if (t.ask != null) Ink.Rupture else p.fg, size = 5.dp, pulse = true)
+            T(listOfNotNull(t.where.takeIf { t.remote }, label.ifEmpty { null }).joinToString(" · "), size = 13.sp, weight = Medium, color = if (t.busy) p.fg else p.meta, lines = 1)
+        }
         // Context as a synchronisation rate, as Evangelion reads one out.
         if (t.context > 0) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Gauge(t.context, 0.8)

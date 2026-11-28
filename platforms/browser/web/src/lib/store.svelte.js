@@ -1032,8 +1032,11 @@ function createOrbStore() {
       send({ do: "hello", budget: 6 });
       send({ do: "visible", on: true });
       screen = "app";
-      if (params.get("open") === "heavy") {
+      const openParam = params.get("open");
+      if (openParam === "heavy") {
         setTimeout(() => focus("tab-heavy"), 30);
+      } else if (openParam) {
+        setTimeout(() => focus(openParam), 30);
       }
       return true;
     }

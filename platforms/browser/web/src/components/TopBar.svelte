@@ -94,6 +94,9 @@
           aria-label="Close {named(c.title)}"
           onclick={e => { e.stopPropagation(); orb.closeTab(c); }}
         >×</button>
+        {#if c.busy}
+          <span class="tab-rail activity-rail active" class:asks={!!c.ask} aria-hidden="true"></span>
+        {/if}
       </div>
     {/each}
   </div>
@@ -332,6 +335,13 @@
     transition: opacity var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
   }
   .tab-chip.on .tab-x { opacity: 0.65; }
+  .tab-chip .tab-rail {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 0;
+    width: auto;
+  }
 
   .bar-btn {
     display: grid;

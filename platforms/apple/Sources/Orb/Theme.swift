@@ -104,6 +104,47 @@ struct Dot: View {
     }
 }
 
+/// A razor-thin 1.5pt hairline that stays invisible at rest and sweeps a quiet sheen while active.
+struct ActivityRail: View {
+    var active: Bool
+    var color: Color = Ink.fg
+
+    var body: some View {
+        if active {
+            TimelineView(.animation) { timeline in
+                let t = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
+                let eased = t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
+                let pos = -0.35 + 1.7 * eased
+                Canvas { ctx, size in
+                    ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(color.opacity(0.10)))
+                    let span = size.width * 0.35
+                    let center = pos * size.width
+                    let gradient = Gradient(colors: [.clear, color.opacity(0.48), .clear])
+                    ctx.fill(
+                        Path(CGRect(origin: .zero, size: size)),
+                        with: .linearGradient(gradient, startPoint: CGPoint(x: center - span, y: 0), endPoint: CGPoint(x: center + span, y: 0))
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity).frame(height: 1.5)
+        } else {
+            Color.clear.frame(maxWidth: .infinity).frame(height: 1.5)
+        }
+    }
+}
+
+/// A quiet inline indicator for when an agent is working before text streams or tool rows appear.
+struct WorkingCue: View {
+    var text: String = "working…"
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Dot(color: Ink.fg, size: 5, pulse: true)
+            Text(text).font(.mono(Size.small)).foregroundStyle(Ink.mute).lineLimit(1)
+        }
+    }
+}
+
 extension View {
     /// The surface a box floats on over the conversation: Liquid Glass where iOS has it (built
     /// with its SDK), the raised ink with a hairline before; [accent] edges it either way.

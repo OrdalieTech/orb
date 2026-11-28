@@ -309,11 +309,43 @@ kbd {
   border-radius: 0;
 }
 .led.live {
-  animation: led-step 0.9s steps(1) infinite;
+  animation: led-breathe 1.4s ease-in-out infinite;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--hue, var(--fg)) 18%, transparent);
 }
 .led.asks {
   background: var(--rupture);
   animation: led-step 0.55s steps(1) infinite;
+}
+
+/* Subtle 1.5px indeterminate activity hairline */
+.activity-rail {
+  position: relative;
+  height: 1.5px;
+  width: 100%;
+  overflow: hidden;
+  background: transparent;
+  pointer-events: none;
+}
+.activity-rail.active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 34%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--fg) 55%, transparent) 50%,
+    transparent
+  );
+  animation: rail-sweep 1.6s ease-in-out infinite;
+}
+.activity-rail.active.asks::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--rupture) 75%, transparent) 50%,
+    transparent
+  );
 }
 
 /* Raw 10-segment hardware context gauge */
@@ -360,6 +392,14 @@ kbd {
 @keyframes led-step {
   50% { opacity: 0.18; }
 }
+@keyframes led-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.28; }
+}
+@keyframes rail-sweep {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(310%); }
+}
 @keyframes view-in {
   from { opacity: 0; transform: translateY(2px); }
   to { opacity: 1; transform: translateY(0); }
@@ -394,5 +434,14 @@ kbd {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+  .activity-rail.active::after {
+    width: 100%;
+    opacity: 0.35;
+    transform: none;
+    background: var(--fg);
+  }
+  .activity-rail.active.asks::after {
+    background: var(--rupture);
   }
 }

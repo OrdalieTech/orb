@@ -51,10 +51,13 @@ struct Conversation: View {
                     if let ask = t.ask {
                         Interrupt(ask: ask) { orb.send("answer", ["tab": t.id, "value": $0 as Any? ?? NSNull()]) }
                     } else {
-                        PromptBox(tab: t, place: Text(t.remote ? t.where : device).foregroundStyle(t.remote ? orb.hue(t.peer) : Ink.mute)) { text in
-                            follow = true
-                            position.scrollTo(edge: .bottom)
-                            Task { (try? await orb.ask("send", ["tab": t.id, "text": text], as: Outcome.self)).map(go) }
+                        VStack(spacing: 0) {
+                            ActivityRail(active: t.busy || t.streaming, color: t.ask != nil ? Ink.rupture : Ink.fg)
+                            PromptBox(tab: t, place: Text(t.remote ? t.where : device).foregroundStyle(t.remote ? orb.hue(t.peer) : Ink.mute)) { text in
+                                follow = true
+                                position.scrollTo(edge: .bottom)
+                                Task { (try? await orb.ask("send", ["tab": t.id, "text": text], as: Outcome.self)).map(go) }
+                            }
                         }
                     }
                 }
@@ -66,7 +69,9 @@ struct Conversation: View {
     }
 
     private var transcript: some View {
-        let turns = turns(orb.feed(t.id).rows)
+        let rows = orb.feed(t.id).rows
+        let turns = turns(rows)
+        let lastRowLive = rows.last?.live == true
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 // Reaching the top loads the hundred messages before it; what was read stays in place.
@@ -78,8 +83,17 @@ struct Conversation: View {
                         }
                 }
                 ForEach(turns, id: \.first!.k) { Turn(rows: $0, tab: t.id).equatable() }
-                // Room under the last message, where the caret waits while Orb writes.
-                Rectangle().fill(t.streaming ? Ink.rupture : .clear).frame(width: 8, height: 16).padding(.leading, 28).padding(.top, 6).padding(.bottom, 24)
+                // Room under the last message, where the caret or working cue waits while Orb runs.
+                Group {
+                    if t.streaming {
+                        Rectangle().fill(Ink.rupture).frame(width: 8, height: 16)
+                    } else if t.busy && !lastRowLive {
+                        WorkingCue(text: t.status.isEmpty ? "working…" : t.status)
+                    } else {
+                        Color.clear.frame(height: 16)
+                    }
+                }
+                .padding(.leading, 28).padding(.top, 6).padding(.bottom, 24)
             }
             .scrollTargetLayout()
             .frame(maxWidth: 820).frame(maxWidth: .infinity)
@@ -89,7 +103,13 @@ struct Conversation: View {
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .overlay {
             if turns.isEmpty {
-                if t.loaded { Caps("ready") } else { ProgressView().controlSize(.small) }
+                if t.busy {
+                    WorkingCue(text: t.status.isEmpty ? "working…" : t.status)
+                } else if t.loaded {
+                    Caps("ready")
+                } else {
+                    ProgressView().controlSize(.small)
+                }
             }
         }
         .onChange(of: turns.first?.first?.k) {

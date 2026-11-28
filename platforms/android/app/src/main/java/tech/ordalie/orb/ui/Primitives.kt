@@ -95,9 +95,53 @@ fun AnimatedVisibilityScope.Sheet(dismiss: () -> Unit, modifier: Modifier = Modi
 
 @Composable
 fun Dot(color: Color = Ink.Rupture, size: Dp = 8.dp, pulse: Boolean = false, square: Boolean = false) {
-    val on = if (pulse) blink(700) else null
-    Box(Modifier.size(size).graphicsLayer { alpha = if (on?.value == false) 0.25f else 1f }.background(color, if (square) RoundedCornerShape(0) else CircleShape))
+    val alpha = if (pulse) {
+        val transition = rememberInfiniteTransition(label = "dot")
+        transition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0.25f,
+            animationSpec = infiniteRepeatable(tween(700, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "dotAlpha",
+        ).value
+    } else 1f
+    Box(Modifier.size(size).graphicsLayer { this.alpha = alpha }.background(color, if (square) RoundedCornerShape(0) else CircleShape))
 }
+
+/** A razor-thin 1.5dp hairline that stays invisible at rest and sweeps a quiet sheen while active. */
+@Composable
+fun ActivityRail(active: Boolean, color: Color = p.fg, modifier: Modifier = Modifier) {
+    if (!active) {
+        Box(modifier.fillMaxWidth().height(1.5.dp))
+        return
+    }
+    val transition = rememberInfiniteTransition(label = "rail")
+    val pos by transition.animateFloat(
+        initialValue = -0.35f,
+        targetValue = 1.35f,
+        animationSpec = infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        label = "railSweep",
+    )
+    Canvas(modifier.fillMaxWidth().height(1.5.dp)) {
+        drawRect(color.copy(alpha = 0.10f))
+        val span = size.width * 0.35f
+        val center = pos * size.width
+        drawRect(
+            Brush.horizontalGradient(
+                colors = listOf(Color.Transparent, color.copy(alpha = 0.48f), Color.Transparent),
+                startX = center - span,
+                endX = center + span,
+            ),
+        )
+    }
+}
+
+/** A quiet inline indicator for when an agent is working before text streams or tool rows appear. */
+@Composable
+fun WorkingCue(text: String = "working…", modifier: Modifier = Modifier) =
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Dot(color = p.fg, size = 5.dp, pulse = true)
+        T(text, size = 13.sp, color = p.mute, lines = 1)
+    }
 
 @Composable
 fun Caret(color: Color = p.fg, width: Dp = 8.dp, height: Dp = 16.dp) {

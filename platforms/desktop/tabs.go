@@ -104,15 +104,28 @@ func (a *app) tabChips(c *ui.Context, x *tile) {
 				}
 			}).Tooltip(strings.Join(nonEmpty(t.Title, strings.Join(nonEmpty(t.Where, tidy(t.CWD)), " · "), t.Status), "\n"))
 			a.carry(e, carried{tab: id})
-			if over, ok := ui.DragOver[carried](e); ok && over.tab != "" && over.tab != id {
+			over, isDragOver := ui.DragOver[carried](e)
+			showDrag := isDragOver && over.tab != "" && over.tab != id
+			if t.Busy || showDrag {
+				railColor := hue(c, o.hue(t.Peer), pal.fg)
+				if t.Ask != nil {
+					railColor = rupture
+				}
+				reduceMotion := c.Preferences().ReduceMotion
 				from := slices.Index(x.tabs, over.tab)
 				after := from >= 0 && from < i
 				e.DrawOver(func(pt *ui.Painter, r ui.Rect) {
-					lx := r.X
-					if after {
-						lx = r.X + r.W - 2
+					if t.Busy {
+						rail := ui.Rect{X: r.X + 4, Y: r.Y + r.H - 1.5, W: max(r.W-8, 0), H: 1.5}
+						paintActivityRail(pt, rail, railColor, reduceMotion)
 					}
-					pt.Fill(ui.Rect{X: lx, Y: r.Y + 4, W: 2, H: r.H - 8}, pal.fg, 1)
+					if showDrag {
+						lx := r.X
+						if after {
+							lx = r.X + r.W - 2
+						}
+						pt.Fill(ui.Rect{X: lx, Y: r.Y + 4, W: 2, H: r.H - 8}, pal.fg, 1)
+					}
 				})
 			}
 			if v, ok := ui.Drop[carried](e); ok && v.tab != "" && v.tab != id {
