@@ -157,14 +157,28 @@ test("createMockPeer supports demo=running preset with working and idle peers", 
   assert.ok(mac);
   assert.equal(lab.running.filter(r => r.busy).length, 1);
   assert.equal(lab.running.filter(r => !r.busy).length, 1);
-  assert.equal(mac.running.filter(r => r.busy).length, 0);
+  assert.equal(mac.running.filter(r => r.busy && !r.open).length, 1);
   assert.equal(mac.running.filter(r => !r.busy).length, 1);
 
   const runningTab = state.tabs.find(t => t.id === "tab-running");
   const bgTab = state.tabs.find(t => t.id === "tab-bg");
+  const askTab = state.tabs.find(t => t.id === "tab-ask");
   assert.equal(runningTab.busy, true);
   assert.equal(bgTab.busy, true);
   assert.equal(bgTab.streaming, false);
+  assert.ok(askTab?.ask?.title);
   assert.ok(home.entries.some(e => e.live));
+  assert.ok(home.entries.some(e => e.asks));
   assert.ok(home.entries.some(e => !e.live && !e.open));
+
+  // Focus tab-running to verify live bash action + live subagent + detail reply
+  peer.app(JSON.stringify({ do: "focus", tab: "tab-running" }));
+  const rowsFrame = frames.filter(f => f.t === "rows" && f.tab === "tab-running").at(-1);
+  assert.ok(rowsFrame.rows.some(r => r.kind === "run" && r.live));
+  assert.ok(rowsFrame.rows.some(r => r.kind === "peer" && r.exchange?.scope === "subagent" && r.exchange?.live));
+
+  peer.app(JSON.stringify({ do: "detail", id: "req-det", tab: "tab-running", key: "run-3-a3" }));
+  const detReply = frames.find(f => f.t === "reply" && f.id === "req-det");
+  assert.ok(detReply?.result?.args?.includes("go test -race"));
+  assert.ok(detReply?.result?.output?.includes("TestMiddlewareKeyRotation"));
 });

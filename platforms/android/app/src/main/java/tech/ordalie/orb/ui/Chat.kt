@@ -103,6 +103,7 @@ fun ColumnScope.Chat(c: Ctx, t: Tab) {
     }
     // What its plugins show beside it: the task list, a status, the last notice.
     t.slots.forEach { s -> Box(Modifier.padding(horizontal = Margin + 6.dp, vertical = 2.dp)) { Folded(s.lines.joinToString("\n"), if (s.alarm) Ink.Rupture else p.meta) } }
+    LiveActivityBar(c, currentTabId = t.id, modifier = Modifier.padding(horizontal = Margin + 2.dp))
     ActivityRail(active = t.busy || t.streaming, color = if (t.ask != null) Ink.Rupture else p.fg)
     PromptBox(t, c, c.palette(t), placeholder = "What next?") { follow = true; c.send(t, it) }
 }
@@ -177,7 +178,7 @@ private fun PeerExchangeView(ex: Exchange) = Column(Modifier.fillMaxWidth().anim
             if (ex.status.isNotEmpty()) T(ex.status, size = Size.Label, color = if (ex.failed) Ink.Rupture else p.meta)
         }
         if (ex.text.isNotBlank()) BasicText(ex.text, style = type(SIZE.sp, p.fg))
-        if (ex.scope == "subagent" && !ex.live && (ex.reply.isNotBlank() || ex.steps.isNotBlank())) {
+        if (ex.scope == "subagent" && (ex.reply.isNotBlank() || ex.steps.isNotBlank())) {
             val preview = if (open) "hide reply" else ex.reply.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: "view details"
             Row(Modifier.press { open = !open }, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 T("←", size = Size.Label, color = p.meta)

@@ -1010,9 +1010,15 @@ function createOrbStore() {
     const params = new URLSearchParams(location.search);
     if (params.has("bench")) {
       isBench = true;
+      const themeParam = params.get("theme");
+      if (themeParam === "dark" || themeParam === "light" || themeParam === "auto") {
+        applyTheme(themeParam);
+      }
       const rowCount = parseInt(params.get("rows") || "2000", 10) || 2000;
+      const demo = params.get("demo") || "";
       const mock = createMockPeer({
         rowCount,
+        demo,
         emit: text => heard(JSON.parse(text)),
       });
       tab = {
@@ -1311,6 +1317,7 @@ function createOrbStore() {
     get dismissedLaunch() { return dismissedLaunch; },
     set dismissedLaunch(v) { dismissedLaunch = v; },
     get theme() { return theme; },
+    get isBench() { return isBench; },
     get settingsPage() { return settingsPage; },
     get latestRelease() { return latestRelease || state.latest || ""; },
     get modelDeckOpen() { return modelDeckOpen; },

@@ -158,6 +158,11 @@ func (a *app) conversation(c *ui.Context, t *Tab) {
 				}
 			})
 		}
+		if !collectLiveActivity(a.o.state.Tabs, a.o.rows, a.o.home, a.o.hue).empty() {
+			reading(c).Padding(0, margin+6, 4).Children(func() {
+				a.liveActivityBar(c, "chat:"+t.ID, t.ID)
+			})
+		}
 		railColor := pal.fg
 		if t.Ask != nil {
 			railColor = rupture
@@ -478,10 +483,18 @@ func (a *app) peerExchange(c *ui.Context, r Row, t *Tab) {
 		if strings.TrimSpace(ex.Text) != "" {
 			ui.Text(c, ex.Text).FontSize(13).TextColor(pal.fg)
 		}
-		if ex.Scope == "subagent" && !ex.Live && (ex.Reply != "" || ex.Steps != "") {
+		if ex.Scope == "subagent" && (ex.Reply != "" || ex.Steps != "") {
 			preview := "view details"
 			if open {
-				preview = "hide reply"
+				if ex.Live {
+					preview = "hide steps"
+				} else {
+					preview = "hide reply"
+				}
+			} else if ex.Live {
+				if first := firstNonEmptyLine(ex.Steps); first != "" {
+					preview = first
+				}
 			} else if first := firstNonEmptyLine(ex.Reply); first != "" {
 				preview = first
 			}

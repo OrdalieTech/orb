@@ -431,6 +431,7 @@ export function createMockPeer({ emit, rowCount = 2000, demo = "" }) {
         hue: 1,
         running: [
           { instance: "inst-mac-1", label: "ordalie-back · Schema notes", busy: false, open: true },
+          { instance: "inst-mac-remote", label: "Deploy worker", busy: true, open: false },
         ],
         folders: [
           { cwd: "/Users/baudouin/Documents/GitHub/orb", threads: 14, modified: now - 7200000, live: false },
@@ -498,6 +499,40 @@ export function createMockPeer({ emit, rowCount = 2000, demo = "" }) {
         models: ["openai-codex/gpt-5.3-codex", "anthropic/claude-sonnet-4-6"],
       },
       {
+        id: "tab-ask",
+        title: "Release preflight",
+        peer: macId,
+        where: "macbook-pro",
+        remote: true,
+        cwd: "/Users/baudouin/Documents/GitHub/orb",
+        busy: false,
+        acting: false,
+        online: true,
+        asleep: false,
+        loaded: true,
+        earlier: false,
+        streaming: false,
+        status: "",
+        model: "anthropic/claude-sonnet-4-6",
+        thinking: "medium",
+        levels: ["off", "low", "medium", "high"],
+        context: 0.24,
+        cost: 0.14,
+        usage: null,
+        ask: {
+          title: "Approve migration lock check?",
+          question: "Run ALTER TABLE dry-run on staging?",
+          options: [
+            { label: "Approve dry-run", description: "Run read-only lock check against staging" },
+            { label: "Skip", description: "Continue without staging dry-run" },
+          ],
+        },
+        slots: [],
+        unread: 1,
+        commands: [],
+        models: ["anthropic/claude-sonnet-4-6"],
+      },
+      {
         id: "tab-idle",
         title: "Schema notes",
         peer: macId,
@@ -529,6 +564,7 @@ export function createMockPeer({ emit, rowCount = 2000, demo = "" }) {
     entries.push(
       { key: "t:tab-running", title: "Refactor auth middleware", machine: labId, cwd: "/home/ordalie/orb", modified: now - 15000, live: true, asks: false, open: true, tab: "tab-running", deletable: false },
       { key: "t:tab-bg", title: "Audit SQL migrations", machine: labId, cwd: "/home/ordalie/ordalie-back", modified: now - 45000, live: true, asks: false, open: true, tab: "tab-bg", deletable: false },
+      { key: "t:tab-ask", title: "Release preflight", machine: macId, cwd: "/Users/baudouin/Documents/GitHub/orb", modified: now - 25000, live: false, asks: true, open: true, tab: "tab-ask", deletable: false },
       { key: "t:tab-idle", title: "Schema notes", machine: macId, cwd: "/Users/baudouin/Documents/GitHub/orb", modified: now - 12 * 60000, live: false, asks: false, open: true, tab: "tab-idle", deletable: false },
       { key: "s:resting-1", title: "Tighten WebSocket reconnect backoff", machine: labId, cwd: "/home/ordalie/orb", modified: now - 12 * 60000, live: false, asks: false, open: false, tab: "", deletable: true },
       { key: "s:resting-2", title: "Migrate session store to WAL mode", machine: macId, cwd: "/Users/baudouin/Documents/GitHub/orb", modified: now - 2 * 3600000, live: false, asks: false, open: false, tab: "", deletable: true },
@@ -568,6 +604,25 @@ export function createMockPeer({ emit, rowCount = 2000, demo = "" }) {
           { k: "run-3-a3", verb: "bash", target: "go test -race ./internal/auth/...", result: "", live: true, failed: false },
         ],
       },
+      {
+        k: "run-4",
+        kind: "peer",
+        live: true,
+        exchange: {
+          scope: "subagent",
+          dir: "out",
+          who: "scout",
+          status: "scanning locks",
+          text: "inspect middleware read-path locks",
+          steps: "read internal/auth/middleware.go\ngrep sync.RWMutex ./internal/auth",
+          live: true,
+          failed: false,
+        },
+      },
+    ]);
+
+    rowMap.set("tab-ask", [
+      { k: "ask-1", kind: "you", text: "Run release preflight checks before tagging v0.28.1." },
     ]);
 
     rowMap.set("tab-bg", [
@@ -835,6 +890,14 @@ export function createMockPeer({ emit, rowCount = 2000, demo = "" }) {
         return;
       }
       if (m.do === "detail") {
+        if (m.key === "run-3-a3") {
+          reply({
+            args: JSON.stringify({ command: "go test -race ./internal/auth/...", timeout: 120 }, null, 2),
+            output: "=== RUN   TestMiddlewareKeyRotation\n=== RUN   TestMiddlewareConcurrentReads\n--- PASS: TestMiddlewareKeyRotation (0.14s)\nrunning TestMiddlewareConcurrentReads…",
+            diff: "",
+          });
+          return;
+        }
         reply({
           text: "Considering virtualizer bounds, prefix sums, and zero-overhead Svelte 5 $state.raw arrays.",
           args: JSON.stringify({ path: "platforms/browser/web/src/components/VirtualTranscript.svelte" }, null, 2),

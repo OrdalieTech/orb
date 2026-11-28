@@ -153,6 +153,7 @@ struct Running: Decodable, Equatable, Hashable {
     @D var instance: String
     @D var label: String
     @D var busy: Bool
+    @D var open: Bool
 }
 
 struct Folder: Decodable, Equatable, Hashable {

@@ -1,7 +1,8 @@
 <script>
   import { orb } from "../lib/store.svelte.js";
-  import { ago, base, named, peerActivity, tidy, word } from "../lib/utils.js";
+  import { ago, base, collectLiveActivity, named, peerActivity, tidy, word } from "../lib/utils.js";
   import PromptBox from "./PromptBox.svelte";
+  import LiveActivityBar from "./LiveActivityBar.svelte";
 
   let threadFilter = $state("");
   let folderFilter = $state("");
@@ -25,6 +26,10 @@
     showHiddenPeers ? allMachines : allMachines.filter(m => !orb.isPeerHidden(m.id)),
   );
   let openTabs = $derived(orb.state.tabs || []);
+  let liveActivity = $derived(collectLiveActivity(orb.state.tabs, orb.rowsByTab, orb.home));
+  let hasLiveActivity = $derived(
+    liveActivity.inputs.length > 0 || liveActivity.agents.length > 0 || liveActivity.remotes.length > 0,
+  );
   let selectedMachine = $derived(orb.deviceFilter ? orb.getMachine(orb.deviceFilter) : null);
   let scopeMachine = $derived(selectedMachine || aim.machine);
   let scopeFolders = $derived((scopeMachine?.folders || []).filter(f => f.cwd).slice(0, 8));
@@ -140,13 +145,19 @@
       </button>
     </div>
 
-    <div class="summary-bar">
-      <p class="summary" class:asks={summaryAsks} class:live={hasWorking && !summaryAsks}>
-        {#if hasWorking && !summaryAsks && orb.state.summary}
-          <i class="led round live summary-led" aria-hidden="true"></i>
-        {/if}
-        <span>{orb.state.summary || ""}</span>
-      </p>
+    <div class="summary-bar" class:has-live={hasLiveActivity}>
+      {#if hasLiveActivity}
+        <div class="summary-live">
+          <LiveActivityBar />
+        </div>
+      {:else}
+        <p class="summary" class:asks={summaryAsks} class:live={hasWorking && !summaryAsks}>
+          {#if hasWorking && !summaryAsks && orb.state.summary}
+            <i class="led round live summary-led" aria-hidden="true"></i>
+          {/if}
+          <span>{orb.state.summary || ""}</span>
+        </p>
+      {/if}
       <div class="summary-actions">
         {#if hiddenCount > 0}
           <button
@@ -456,6 +467,13 @@
     justify-content: space-between;
     gap: 8px;
     padding: 8px 0 4px;
+  }
+  .summary-bar.has-live {
+    align-items: flex-start;
+  }
+  .summary-live {
+    flex: 1;
+    min-width: 0;
   }
   .summary-actions {
     display: inline-flex;

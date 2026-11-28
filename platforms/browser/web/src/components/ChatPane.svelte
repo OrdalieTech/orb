@@ -3,6 +3,7 @@
   import { ago, busyActivity, hasVisibleText, stripAnsi, tidy, tightestWindow, usageLabel, word } from "../lib/utils.js";
   import VirtualTranscript from "./VirtualTranscript.svelte";
   import PromptBox from "./PromptBox.svelte";
+  import LiveActivityBar from "./LiveActivityBar.svelte";
 
   let { tab, tileId = "" } = $props();
 
@@ -198,6 +199,10 @@
       </div>
     {/if}
 
+    <div class="composer-activity">
+      <LiveActivityBar currentTabId={tab.id} />
+    </div>
+
     <PromptBox {tab} onSent={() => transcriptRef?.scrollToBottom()} />
   </div>
 </div>
@@ -221,6 +226,16 @@
     pointer-events: none;
     background: linear-gradient(to bottom, var(--bg) 68%, transparent);
     padding-bottom: 10px;
+  }
+  .composer-activity {
+    width: 100%;
+    max-width: calc(780px + 2 * var(--margin));
+    margin: 0 auto 4px;
+    padding: 4px var(--margin) 2px;
+    background: var(--bg);
+  }
+  .composer-activity:empty {
+    display: none;
   }
   .strip {
     pointer-events: auto;

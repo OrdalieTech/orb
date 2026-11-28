@@ -52,6 +52,7 @@ struct Conversation: View {
                         Interrupt(ask: ask) { orb.send("answer", ["tab": t.id, "value": $0 as Any? ?? NSNull()]) }
                     } else {
                         VStack(spacing: 0) {
+                            LiveActivityBar(currentTabId: t.id).padding(.horizontal, 16)
                             ActivityRail(active: t.busy || t.streaming, color: t.ask != nil ? Ink.rupture : Ink.fg)
                             PromptBox(tab: t, place: Text(t.remote ? t.where : device).foregroundStyle(t.remote ? orb.hue(t.peer) : Ink.mute)) { text in
                                 follow = true
@@ -512,7 +513,7 @@ private struct PeerExchangeView: View {
             if !ex.text.isEmpty {
                 Text(ex.text).font(.body).foregroundStyle(Ink.fg).textSelection(.enabled)
             }
-            if ex.scope == "subagent", !ex.live, !ex.reply.isEmpty || !ex.steps.isEmpty {
+            if ex.scope == "subagent", !ex.reply.isEmpty || !ex.steps.isEmpty {
                 let preview = open ? "hide reply" : (ex.reply.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? "view details")
                 Button { open.toggle() } label: {
                     HStack(spacing: 6) {

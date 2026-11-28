@@ -166,7 +166,7 @@
     {#if ex.text}
       <p class="peer-body">{ex.text}</p>
     {/if}
-    {#if ex.scope === "subagent" && !ex.live && (ex.reply || ex.steps)}
+    {#if ex.scope === "subagent" && (ex.reply || ex.steps || ex.live)}
       <button
         type="button"
         class="peer-reply-toggle"
@@ -174,7 +174,11 @@
         onclick={() => onToggle(row.k)}
       >
         <span class="peer-reply-arrow">←</span>
-        <span class="peer-reply-preview">{subOpen ? "hide reply" : replyPreview || "view details"}</span>
+        <span class="peer-reply-preview">
+          {subOpen
+            ? (ex.live ? "hide live steps" : "hide reply")
+            : (ex.live ? (ex.steps ? "live steps" : "inspect live") : (replyPreview || "view details"))}
+        </span>
       </button>
       {#if subOpen}
         <div class="peer-reply-tray">
@@ -183,6 +187,8 @@
           {/if}
           {#if ex.reply}
             <p class="peer-reply-full">{ex.reply}</p>
+          {:else if ex.live && !ex.steps}
+            <p class="peer-reply-full">{ex.status || "running…"}</p>
           {/if}
         </div>
       {/if}

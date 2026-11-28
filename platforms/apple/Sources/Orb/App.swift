@@ -186,14 +186,19 @@ private struct Start: View {
                             HStack { Text("No paired devices").foregroundStyle(Ink.mute); Spacer(); Text("Pair ›").fontWeight(.medium) }.padding(.vertical, 10)
                         }
                     }
-                    let summary = orb.state.up ? (orb.state.launching.isEmpty ? orb.state.summary : orb.state.launching) : "starting Mitosis…"
-                    let anyBusy = orb.home.machines.contains { $0.running.contains { $0.busy } } || orb.state.tabs.contains { $0.busy }
-                    let needs = summary.hasPrefix("needs")
-                    HStack(spacing: 6) {
-                        if anyBusy { Dot(color: needs ? Ink.rupture : Ink.fg, size: 6, pulse: true) }
-                        Text(summary)
-                            .font(.mono(Size.small, anyBusy || needs ? .medium : .regular))
-                            .foregroundStyle(needs ? Ink.rupture : anyBusy ? Ink.fg : Ink.meta)
+                    let liveSnap = collectLiveActivity(orb: orb)
+                    if !liveSnap.isEmpty {
+                        LiveActivityBar()
+                    } else {
+                        let summary = orb.state.up ? (orb.state.launching.isEmpty ? orb.state.summary : orb.state.launching) : "starting Mitosis…"
+                        let anyBusy = orb.home.machines.contains { $0.running.contains { $0.busy } } || orb.state.tabs.contains { $0.busy }
+                        let needs = summary.hasPrefix("needs")
+                        HStack(spacing: 6) {
+                            if anyBusy { Dot(color: needs ? Ink.rupture : Ink.fg, size: 6, pulse: true) }
+                            Text(summary)
+                                .font(.mono(Size.small, anyBusy || needs ? .medium : .regular))
+                                .foregroundStyle(needs ? Ink.rupture : anyBusy ? Ink.fg : Ink.meta)
+                        }
                     }
                 }
                 // No rules between rows, on the page's own ground.

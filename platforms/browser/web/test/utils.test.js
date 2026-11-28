@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { stripAnsi, hasVisibleText, named, tidy, peerActivity, busyActivity } from "../src/lib/utils.js";
+import { stripAnsi, hasVisibleText, named, tidy, peerActivity, busyActivity, collectLiveActivity } from "../src/lib/utils.js";
 
 test("stripAnsi removes CSI escape sequences and bare SGR codes", () => {
   assert.equal(stripAnsi("\x1b[1;32mhello\x1b[0m world"), "hello world");
@@ -71,4 +71,87 @@ test("busyActivity returns active tool verb, live run now, tab status, or workin
     ]),
     "bash · running",
   );
+});
+
+test("collectLiveActivity returns empty structure when idle", () => {
+  const res = collectLiveActivity(
+    [{ id: "t1", title: "idle", peer: "p1", busy: false, ask: null }],
+    {},
+    { machines: [{ id: "p1", name: "lab", hue: 2, running: [{ instance: "i1", busy: false, open: true }] }] },
+  );
+  assert.deepEqual(res.inputs, []);
+  assert.deepEqual(res.agents, []);
+  assert.deepEqual(res.remotes, []);
+  assert.equal(res.totalRunning, 0);
+  assert.equal(res.summary, "");
+});
+
+test("collectLiveActivity collects inputs, running agents with processes, and unopened remotes", () => {
+  const home = {
+    machines: [
+      { id: "lab", name: "ordalie-lab-3", hue: 2, running: [{ instance: "i1", label: "open", busy: true, open: true }] },
+      {
+        id: "mac",
+        name: "macbook-pro",
+        hue: 1,
+        running: [{ instance: "i-remote", label: "Deploy worker", busy: true, open: false }],
+      },
+    ],
+  };
+  const tabs = [
+    { id: "t-run", title: "refactor auth", peer: "lab", where: "ordalie-lab-3", busy: true, ask: null, status: "" },
+    { id: "t-bg", title: "audit SQL", peer: "lab", where: "ordalie-lab-3", busy: true, ask: null, status: "analyzing diff…" },
+    {
+      id: "t-ask",
+      title: "release preflight",
+      peer: "mac",
+      where: "macbook-pro",
+      busy: false,
+      ask: { title: "Approve migration lock check?" },
+    },
+  ];
+  const rowsByTab = {
+    "t-run": [
+      {
+        k: "r1",
+        kind: "run",
+        live: true,
+        actions: [
+          { k: "a1", verb: "read", target: "auth.go", live: false },
+          { k: "a2", verb: "bash", target: "go test -race ./internal/auth/...", live: true },
+        ],
+      },
+      {
+        k: "r2",
+        kind: "peer",
+        live: true,
+        exchange: { scope: "subagent", who: "scout", text: "inspect locks", steps: "read auth.go", live: true },
+      },
+    ],
+    "t-bg": [],
+  };
+
+  const res = collectLiveActivity(tabs, rowsByTab, home);
+  assert.equal(res.inputs.length, 1);
+  assert.equal(res.inputs[0].tabId, "t-ask");
+  assert.equal(res.inputs[0].prompt, "Approve migration lock check?");
+  assert.equal(res.inputs[0].hue, 1);
+
+  assert.equal(res.agents.length, 2);
+  assert.equal(res.agents[0].processes.length, 2);
+  assert.equal(res.agents[0].processes[0].verb, "bash");
+  assert.equal(res.agents[0].processes[0].target, "go test -race ./internal/auth/...");
+  assert.equal(res.agents[0].processes[1].kind, "subagent");
+  assert.equal(res.agents[0].processes[1].verb, "scout");
+
+  assert.equal(res.agents[1].processes.length, 1);
+  assert.equal(res.agents[1].processes[0].kind, "status");
+  assert.equal(res.agents[1].processes[0].target, "analyzing diff…");
+
+  assert.equal(res.remotes.length, 1);
+  assert.equal(res.remotes[0].instance, "i-remote");
+  assert.equal(res.remotes[0].label, "Deploy worker");
+
+  assert.equal(res.totalRunning, 3);
+  assert.equal(res.summary, "3 running · 1 input · bash: go test -race ./internal/auth/...");
 });

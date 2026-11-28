@@ -67,11 +67,16 @@ fun ColumnScope.Home(c: Ctx) {
         }
     }
     // What runs, as the desktop's sidebar says it under the same cards: "2 working · …", "needs you · …".
-    val anyBusy = v.home.machines.any { m -> m.running.any { it.busy } } || v.state.tabs.any { it.busy }
-    val needs = v.state.summary.startsWith("needs")
-    Row(Modifier.padding(horizontal = Margin + 2.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (anyBusy) Dot(color = if (needs) Ink.Rupture else p.fg, size = 6.dp, pulse = true)
-        T(v.state.summary, size = 13.sp, weight = if (anyBusy || needs) Medium else Regular, color = if (needs) Ink.Rupture else if (anyBusy) p.fg else p.meta, lines = 1)
+    val liveSnap = collectLiveActivity(v)
+    if (!liveSnap.empty) {
+        LiveActivityBar(c, modifier = Modifier.padding(horizontal = Margin + 2.dp))
+    } else {
+        val anyBusy = v.home.machines.any { m -> m.running.any { it.busy } } || v.state.tabs.any { it.busy }
+        val needs = v.state.summary.startsWith("needs")
+        Row(Modifier.padding(horizontal = Margin + 2.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (anyBusy) Dot(color = if (needs) Ink.Rupture else p.fg, size = 6.dp, pulse = true)
+            T(v.state.summary, size = 13.sp, weight = if (anyBusy || needs) Medium else Regular, color = if (needs) Ink.Rupture else if (anyBusy) p.fg else p.meta, lines = 1)
+        }
     }
     // Every thread on every machine in one list, newest first: where it lives is a detail of the row.
     // A machine's card narrows the list to it (and its folders open from here). New conversations

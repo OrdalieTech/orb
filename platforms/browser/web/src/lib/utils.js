@@ -98,6 +98,147 @@ export function busyActivity(tab, rows = []) {
   return "working";
 }
 
+function clipText(str, max = 48) {
+  const s = (str || "").replace(/\s+/g, " ").trim();
+  if (!s || s.length <= max) return s;
+  return s.slice(0, max - 1) + "…";
+}
+
+export function collectLiveActivity(tabs = [], rowsByTab = {}, home = {}) {
+  const machines = home?.machines || [];
+  const machineById = new Map();
+  for (const m of machines) {
+    if (m?.id) machineById.set(m.id, m);
+  }
+
+  const inputs = [];
+  const agents = [];
+  const remotes = [];
+
+  for (const t of tabs || []) {
+    if (!t) continue;
+    const m = machineById.get(t.peer);
+    const hue = m?.hue ?? 0;
+    const where = t.where || m?.name || "";
+
+    if (t.ask) {
+      const prompt = t.ask.title || t.ask.question || t.ask.text || "needs input";
+      inputs.push({
+        tabId: t.id,
+        peer: t.peer || "",
+        where,
+        title: named(t.title),
+        prompt,
+        hue,
+      });
+    }
+
+    if (t.busy) {
+      const rows = (rowsByTab && rowsByTab[t.id]) || [];
+      const processes = [];
+      for (const r of rows) {
+        if (!r) continue;
+        if (r.kind === "run" && r.live) {
+          for (const a of r.actions || []) {
+            if (a?.live) {
+              processes.push({
+                key: a.k || "",
+                verb: a.verb || "tool",
+                target: a.target || "",
+                detail: a.result || "",
+                kind: "action",
+              });
+            }
+          }
+        } else if (r.kind === "action" && r.action?.live) {
+          const a = r.action;
+          processes.push({
+            key: a.k || r.k || "",
+            verb: a.verb || "tool",
+            target: a.target || "",
+            detail: a.result || "",
+            kind: "action",
+          });
+        } else if (r.kind === "peer" && r.exchange?.live) {
+          const ex = r.exchange;
+          processes.push({
+            key: r.k || "",
+            verb: ex.who || (ex.scope === "subagent" ? "subagent" : "peer"),
+            target: ex.text || ex.status || "",
+            detail: ex.steps || "",
+            kind: ex.scope === "subagent" ? "subagent" : "peer",
+          });
+        }
+      }
+      if (processes.length === 0) {
+        processes.push({
+          key: "",
+          verb: "thinking",
+          target: t.status || "working…",
+          detail: "",
+          kind: "status",
+        });
+      }
+      agents.push({
+        tabId: t.id,
+        peer: t.peer || "",
+        where,
+        title: named(t.title),
+        status: t.status || "",
+        hue,
+        processes,
+      });
+    }
+  }
+
+  for (const m of machines) {
+    for (const r of m?.running || []) {
+      if (r?.busy && !r.open) {
+        remotes.push({
+          instance: r.instance || "",
+          peer: m.id || "",
+          where: m.name || "",
+          label: r.label || "running agent",
+          hue: m.hue ?? 0,
+        });
+      }
+    }
+  }
+
+  const totalRunning = agents.length + remotes.length;
+  const parts = [];
+  if (totalRunning > 0) parts.push(`${totalRunning} running`);
+  if (inputs.length > 0) parts.push(`${inputs.length} ${inputs.length === 1 ? "input" : "inputs"}`);
+
+  let highlight = "";
+  for (const ag of agents) {
+    const p = ag.processes.find(x => x.kind === "action" || x.kind === "subagent" || x.kind === "peer");
+    if (p) {
+      const target = clipText(p.target, 44);
+      highlight = target ? `${p.verb}: ${target}` : p.verb;
+      break;
+    }
+  }
+  if (!highlight && inputs.length > 0) {
+    highlight = clipText(inputs[0].prompt, 44);
+  }
+  if (!highlight && agents.length > 0) {
+    highlight = clipText(agents[0].processes[0]?.target || agents[0].title, 44);
+  }
+  if (!highlight && remotes.length > 0) {
+    highlight = clipText(remotes[0].label, 44);
+  }
+  if (highlight) parts.push(highlight);
+
+  return {
+    inputs,
+    agents,
+    remotes,
+    totalRunning,
+    summary: parts.join(" · "),
+  };
+}
+
 export function tightestWindow(usage) {
   if (!usage?.windows?.length) return null;
   let min = usage.windows[0];

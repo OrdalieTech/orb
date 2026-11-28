@@ -70,22 +70,28 @@ func (a *app) homeBody(c *ui.Context, small bool) {
 			}
 		}
 	}
-	ui.Row(c).FillWidth().Margin(0, 0, 14).Gap(8).AlignItems(ui.Center).Children(func() {
-		needs := strings.HasPrefix(o.state.Summary, "needs")
-		ink := pal.meta
-		if needs {
-			ink = rupture
-		}
-		dotColor := map[bool]ui.Color{true: pal.fg, false: pal.rule}[o.state.Up]
-		if needs {
-			dotColor = rupture
-		}
-		dot(c, dotColor, 6, !o.state.Up || workingCount > 0, false)
-		ui.Text(c, cmp.Or(o.state.Summary, "starting Mitosis…")).Grow(1).Basis(0).FontSize(12).TextColor(ink).SingleLine()
-		if link(c, "settings", keys(",")) {
-			a.settings()
-		}
-	})
+	if !collectLiveActivity(o.state.Tabs, o.rows, o.home, o.hue).empty() {
+		ui.Column(c).FillWidth().Margin(0, 0, 14).Children(func() {
+			a.liveActivityBar(c, "home", "")
+		})
+	} else {
+		ui.Row(c).FillWidth().Margin(0, 0, 14).Gap(8).AlignItems(ui.Center).Children(func() {
+			needs := strings.HasPrefix(o.state.Summary, "needs")
+			ink := pal.meta
+			if needs {
+				ink = rupture
+			}
+			dotColor := map[bool]ui.Color{true: pal.fg, false: pal.rule}[o.state.Up]
+			if needs {
+				dotColor = rupture
+			}
+			dot(c, dotColor, 6, !o.state.Up || workingCount > 0, false)
+			ui.Text(c, cmp.Or(o.state.Summary, "starting Mitosis…")).Grow(1).Basis(0).FontSize(12).TextColor(ink).SingleLine()
+			if link(c, "settings", keys(",")) {
+				a.settings()
+			}
+		})
+	}
 
 	// Middle: contextual folder scope pills + launching/boot status.
 	a.homeFolders(c)
