@@ -145,19 +145,9 @@ func TestMemoryToolProfileSearchZoomDate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("zoom: %v", err)
 	}
-	if !strings.Contains(resultText(t, res), "internal/auth/jwt.go") {
-		t.Fatalf("unexpected zoom output: %s", resultText(t, res))
-	}
-
-	res, err = tool.Execute(ctx, "c6", map[string]any{
-		"action": "date",
-		"id":     0,
-	}, nil)
-	if err != nil {
-		t.Fatalf("date: %v", err)
-	}
-	if !strings.Contains(resultText(t, res), "2026-04-01T10:00:00Z") {
-		t.Fatalf("unexpected date output: %s", resultText(t, res))
+	zoomOut := resultText(t, res)
+	if !strings.Contains(zoomOut, "internal/auth/jwt.go") || !strings.Contains(zoomOut, "2026-04-01T10:01:00Z") {
+		t.Fatalf("unexpected zoom output: %s", zoomOut)
 	}
 }
 

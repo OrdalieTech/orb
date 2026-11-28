@@ -388,6 +388,9 @@ func Zoom(ctx context.Context, store Store, id, n, depth, offset int) (string, e
 		if offset < 0 {
 			offset = 0
 		}
+		for offset < len(full) && !utf8.RuneStart(full[offset]) {
+			offset++
+		}
 		if offset >= len(full) {
 			return header + "\n[end of entry]", nil
 		}
@@ -458,18 +461,6 @@ func formatEntryHeader(e Entry) string {
 		kind = KindNote
 	}
 	return fmt.Sprintf("[entry #%d · %s · %s · peer=%s session=%s]", e.ID, kind, ts, e.Peer, e.Session)
-}
-
-// Date returns the timestamp and metadata for entry id.
-func Date(ctx context.Context, store Store, id int) (string, error) {
-	if id < 0 {
-		return "", ErrInvalidRef
-	}
-	e, err := store.GetEntry(ctx, id)
-	if err != nil {
-		return "", err
-	}
-	return formatEntryHeader(e), nil
 }
 
 // Search performs fast case-insensitive lexical search across both summary

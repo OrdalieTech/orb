@@ -242,15 +242,6 @@ func TestZoomSearchDateAndProfile(t *testing.T) {
 		t.Fatalf("expected ErrInvalidRef for unaligned zoom, got %v", err)
 	}
 
-	// Date
-	dateStr, err := Date(ctx, store, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(dateStr, "2026-04-01T12:01:00Z") || !strings.Contains(dateStr, "peer=bob") {
-		t.Fatalf("unexpected Date output: %q", dateStr)
-	}
-
 	// Search
 	hits, err := Search(ctx, store, "postgres vault", 10)
 	if err != nil {

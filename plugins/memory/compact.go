@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -279,12 +280,20 @@ func (c *Compactor) summarizeWithLimit(ctx context.Context, contextLines []strin
 			return "", err
 		}
 		res = strings.TrimSpace(res)
+		if res == "" {
+			prompt = fmt.Sprintf("%s\n\nPrevious attempt returned an empty summary. Provide a concise non-empty summary of at most %d UTF-8 bytes.",
+				basePrompt.String(), NodeBytes)
+			continue
+		}
 		last = res
 		if len(res) <= NodeBytes {
 			return res, nil
 		}
 		prompt = fmt.Sprintf("%s\n\nPrevious attempt was %d UTF-8 bytes, which exceeds the %d-byte limit. Shorten it to at most %d UTF-8 bytes:\n%s",
 			basePrompt.String(), len(res), NodeBytes, NodeBytes, res)
+	}
+	if last == "" {
+		return "", errors.New("memory compactor: summarizer returned empty output")
 	}
 	return strings.TrimSpace(truncateUTF8(last, NodeBytes)), nil
 }

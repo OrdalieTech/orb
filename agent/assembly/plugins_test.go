@@ -295,7 +295,7 @@ func TestMemoryCatalogUsesAgentDirStore(t *testing.T) {
 		t.Fatalf("local profile = %#v", profile)
 	}
 
-	// Verify search, zoom, and date actions on timeline entries in the same store.
+	// Verify search and zoom actions on timeline entries in the same store.
 	entry := must(store.AppendEntry(ctx, memorysdk.Entry{
 		Kind: memorysdk.KindUser,
 		Text: "Migrated auth middleware to JWT tokens.",
@@ -309,11 +309,7 @@ func TestMemoryCatalogUsesAgentDirStore(t *testing.T) {
 		"action": "zoom", "id": entry.ID,
 	}, nil))
 	require(t, strings.Contains(ai.ContentText(zoomRes.Content), "Migrated auth middleware"), "zoom output = %q", ai.ContentText(zoomRes.Content))
-
-	dateRes := must(tool.Execute(ctx, "date", map[string]any{
-		"action": "date", "id": entry.ID,
-	}, nil))
-	require(t, strings.Contains(ai.ContentText(dateRes.Content), fmt.Sprintf("entry #%d", entry.ID)), "date output = %q", ai.ContentText(dateRes.Content))
+	require(t, strings.Contains(ai.ContentText(zoomRes.Content), fmt.Sprintf("entry #%d", entry.ID)), "zoom header = %q", ai.ContentText(zoomRes.Content))
 }
 
 func pluginTool(t *testing.T, plugin, tool string, options CatalogOptions, runnerOptions extensions.RunnerOptions) engine.AgentTool {

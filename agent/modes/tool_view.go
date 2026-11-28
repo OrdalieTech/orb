@@ -947,19 +947,15 @@ func memoryToolSummary(values map[string]any) string {
 		if q, ok := values["query"].(string); ok {
 			detail = strings.Join(strings.Fields(q), " ")
 		}
-	case "zoom", "date":
+	case "zoom":
 		if ref, ok := values["ref"].(string); ok && strings.TrimSpace(ref) != "" {
 			detail = strings.TrimSpace(ref)
 		} else if id, ok := intArg(values["id"]); ok {
-			if action == "zoom" {
-				span, ok := intArg(values["span"])
-				if !ok || span < 1 {
-					span = 1
-				}
-				detail = fmt.Sprintf("%d+%d", id, span)
-			} else {
-				detail = fmt.Sprintf("%d", id)
+			span, ok := intArg(values["n"])
+			if !ok || span < 1 {
+				span = 1
 			}
+			detail = fmt.Sprintf("%d+%d", id, span)
 		}
 	case "profile":
 		if op, ok := values["op"].(string); ok {

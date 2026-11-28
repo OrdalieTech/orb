@@ -20,7 +20,7 @@ import (
 const (
 	maxWorkSummaryBytes = 480
 	maxCommandPreview   = 80
-	memoryHintLine      = "Use the `memory` tool (search, zoom, date, profile) to inspect older timeline entries or update the user profile."
+	memoryHintLine      = "Use the `memory` tool (search, zoom, profile) to inspect older timeline entries or update the user profile."
 	changesHeader       = "Memory updated by another session since last turn:"
 )
 
@@ -30,8 +30,8 @@ var memoryToolSchema = ai.JSONSchema(`{
   "properties": {
     "action": {
       "type": "string",
-      "enum": ["search", "zoom", "date", "profile"],
-      "description": "Operation to perform: search timeline/summaries, zoom into an entry or summary node, inspect entry date/metadata, or edit USER PROFILE."
+      "enum": ["search", "zoom", "profile"],
+      "description": "Operation to perform: search timeline/summaries, zoom into an entry or summary node (verbatim zoom includes timestamp, peer, and session), or edit USER PROFILE."
     },
     "query": {
       "type": "string",
@@ -46,7 +46,7 @@ var memoryToolSchema = ai.JSONSchema(`{
     "id": {
       "type": "integer",
       "minimum": 0,
-      "description": "Entry ID for action=zoom or action=date."
+      "description": "Entry ID for action=zoom."
     },
     "n": {
       "type": "integer",
@@ -545,18 +545,11 @@ func (rt *Runtime) runMemoryTool(ctx context.Context, _ string, raw any, _ engin
 		}
 		return textResult(out), nil
 
-	case "date":
-		out, err := memorysdk.Date(ctx, rt.store, input.ID)
-		if err != nil {
-			return engine.AgentToolResult{}, err
-		}
-		return textResult(out), nil
-
 	case "profile":
 		return rt.runProfileAction(ctx, input.Op, input.Content, input.OldText, input.Query)
 
 	default:
-		return engine.AgentToolResult{}, fmt.Errorf("memory: unsupported action %q (expected search, zoom, date, or profile)", input.Action)
+		return engine.AgentToolResult{}, fmt.Errorf("memory: unsupported action %q (expected search, zoom, or profile)", input.Action)
 	}
 }
 
